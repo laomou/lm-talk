@@ -1,0 +1,10 @@
+{
+  "identity_public_key_base64": "42SyCpbihPTjxVmRXnisYCeQFy4m4dblp8h3BUdbzwk=",
+  "identity_seed_hex": "0707070707070707070707070707070707070707070707070707070707070707",
+  "name": "identity_v1_fixed_seed_07",
+  "passphrase_input": "  ＡＢＣ　１２３  ",
+  "passphrase_normalized": "ABC 123",
+  "storage_key_hex": "0a02e4d1ad91910930df27a78f7bb9aa7f547fdaf88b824c4926e2025535208f",
+  "user_id": "lm1_s4yqkfcdxh4zhuzf3fwzykzgalz2xrvct3eoimxz",
+  "x25519_public_key_base64": "5KiqG8zpSXMjpaab+3aJKDmnl3GYrLDtiESF3dnqBjo="
+}

@@ -1,0 +1,10 @@
+/target/
+**/target/
+/apps/web/node_modules/
+/apps/web/dist/
+/apps/web/src/wasm/
+/.tools/
+.DS_Store
+*.log
+
+/apps/web/test-results/

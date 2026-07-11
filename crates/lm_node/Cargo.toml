@@ -1,0 +1,16 @@
+[package]
+name = "lm_node"
+version = "0.1.0"
+description = "Native public peer / DHT scaffold for LM Talk"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+lm_core = { path = "../lm_core" }
+base64.workspace = true
+blake3.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true

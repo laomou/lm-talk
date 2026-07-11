@@ -1,0 +1,9 @@
+{
+  "conversation_id": "conv-vector",
+  "decrypts": true,
+  "envelope_json": "{\n  \"type\": \"lm-direct-envelope-v1\",\n  \"version\": 1,\n  \"crypto\": \"x25519-static-hkdf-xchacha20poly1305-v1\",\n  \"message_id\": \"11111111-2222-4333-8444-555555555555\",\n  \"from_user_id\": \"lm1_s4yqkfcdxh4zhuzf3fwzykzgalz2xrvct3eoimxz\",\n  \"to_user_id\": \"lm1_wax2yganx3ghwztwvkwthxpciz42xzrsoakznrqz\",\n  \"created_at\": 1783781524,\n  \"nonce\": \"yOfZSUWWs2hmcd0NXzK4xjUsSkVsILjL\",\n  \"ciphertext\": \"3RRptjcL1sVOB4DYbIXOmMVTVge9sMnALlsdvwzxVa6XglnEl8670YPaYCyQ739sW5BuDnOcz9xnQlr3ZwIVAj9g/SQM/g2TaOlCr4rF67GYUpO+dV+2Rst2Ez1kUVo/dj/DWcPtTlGJQyCUoBXqb8YIohLJITEOJ62M0vqDnjN8Fg==\"\n}",
+  "from_user_id": "lm1_s4yqkfcdxh4zhuzf3fwzykzgalz2xrvct3eoimxz",
+  "name": "message_crypto_v1_alice_to_bob",
+  "plaintext": "hello encrypted vector",
+  "to_user_id": "lm1_wax2yganx3ghwztwvkwthxpciz42xzrsoakznrqz"
+}

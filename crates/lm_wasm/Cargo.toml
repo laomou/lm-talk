@@ -1,0 +1,26 @@
+[package]
+name = "lm_wasm"
+version = "0.1.0"
+description = "WebAssembly bindings for LM Talk core"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+lm_core = { path = "../lm_core" }
+base64.workspace = true
+ed25519-dalek.workspace = true
+getrandom.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde-wasm-bindgen.workspace = true
+x25519-dalek.workspace = true
+uuid.workspace = true
+wasm-bindgen.workspace = true
+
+[features]
+default = []

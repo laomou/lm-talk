@@ -1,0 +1,25 @@
+{
+  "name": "lm-talk-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:wasm": "wasm-pack build ../../crates/lm_wasm --target web --out-dir ../../apps/web/src/wasm --no-opt",
+    "dev": "npm run build:wasm && vite --host 0.0.0.0",
+    "build": "npm run build:wasm && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "typecheck": "vue-tsc --noEmit",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@vitejs/plugin-vue": "latest",
+    "qrcode": "^1.5.4",
+    "vite": "latest",
+    "vue": "latest"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "typescript": "~5.9.3",
+    "vue-tsc": "^3.3.7"
+  }
+}

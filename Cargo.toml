@@ -1,0 +1,35 @@
+[workspace]
+members = [
+  "crates/lm_core",
+  "crates/lm_wasm",
+  "crates/lm_node"
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://example.invalid/lm-talk"
+rust-version = "1.97"
+
+[workspace.dependencies]
+argon2 = { version = "0.5", features = ["zeroize"] }
+base64 = "0.22"
+blake3 = "1"
+chacha20poly1305 = "0.10"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+getrandom = { version = "0.2", features = ["js"] }
+hkdf = "0.12"
+postcard = { version = "1", features = ["alloc"] }
+rand_core = "0.6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+unicode-normalization = "0.1"
+uuid = { version = "1", features = ["v4", "serde", "js"] }
+wasm-bindgen = "0.2"
+serde-wasm-bindgen = "0.6"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+data-encoding = "2"
+zeroize = { version = "1", features = ["derive"] }
