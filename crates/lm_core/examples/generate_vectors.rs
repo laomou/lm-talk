@@ -99,7 +99,7 @@ fn main() {
         bob.user_id().clone(),
         alice_card,
         Some("hello vector".into()),
-        3600,
+        100 * 365 * 24 * 60 * 60,
     )
     .unwrap();
     let friend_vector = FriendVector {
