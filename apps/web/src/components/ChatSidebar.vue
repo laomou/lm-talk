@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import DebugPage from './DebugPage.vue'
+
 defineProps<{ ctx: any }>()
 </script>
 
@@ -55,6 +57,14 @@ defineProps<{ ctx: any }>()
           <li>本地数据保存在 IndexedDB，可导出完整加密备份。</li>
           <li>协议对象有大小限制：文本 64KB，Signal 256KB，文件 MVP 16MB。</li>
         </ul>
+      </details>
+
+      <details class="add-box advanced-debug-gate">
+        <summary>高级调试入口（默认隐藏）</summary>
+        <p class="hint">日常聊天不需要打开。这里保留协议 JSON、节点、Mailbox、PreKey、双棘轮、文件等高级排障工具；也可点击顶部“调试”进入独立调试页。</p>
+        <div class="debug-panel">
+          <DebugPage :ctx="ctx" />
+        </div>
       </details>
 
       <details class="add-box">
