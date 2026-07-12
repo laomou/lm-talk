@@ -20,7 +20,7 @@
 
 - `lm_core`：身份/备份、Contact Card、好友请求/响应、DirectEnvelope、X3DH PreKey、Double Ratchet、群 Sender Key、群权限状态、文件分片加密包、本地安全策略、Outbox、MemoryStore、大小限制、测试向量。
 - `lm_wasm`：大部分 core 能力已导出，并有 smoke 测试。
-- `lm_node`：HTTP control plane、Public Peer announce、Kademlia ID/distance/closest scaffold、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、one-time prekey 消费记录、PreKey 过期清理/轮换重置/低水位提示、snapshot sync/import、serve-control 定时 snapshot sync、状态文件保存。
+- `lm_node`：HTTP control plane、Public Peer announce、Kademlia ID/distance/closest scaffold、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、one-time prekey 消费记录、PreKey 过期清理/轮换重置/低水位提示、snapshot sync/import、serve-control 定时 snapshot sync、控制面 token/CORS 基础安全、状态文件保存。
 - 测试：`scripts/test.sh all` 当前通过 Rust 测试、core/node e2e、HTTP control flow、WASM smoke、Web build/e2e。
 
 关键边界：
@@ -856,10 +856,11 @@ MVP 群聊采用逐个加密。
    - [ ] 后续升级为独立 signed one-time-prekey records，避免 bundle 级签名与消费记录耦合。
 
 4. **控制面安全**
-   - 本地开发模式和公网模式分离。
-   - CORS 白名单。
-   - 管理 API token 或本地 socket 限制。
-   - TLS/反向代理部署说明。
+   - [x] 未配置 token 时，除 `/health` 外只允许 loopback 客户端访问。
+   - [x] `--control-token` / `LM_NODE_CONTROL_TOKEN` 支持 Bearer token 保护非 health API。
+   - [x] `--cors-allow-origin` / `LM_NODE_CORS_ALLOW_ORIGIN` 支持 CORS 白名单。
+   - [ ] token 配置文件和轮换策略。
+   - [ ] TLS/反向代理部署说明。
 
 ### P1：节点自动同步与网络
 

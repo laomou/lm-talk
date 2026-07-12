@@ -25,6 +25,7 @@ fn node_prekey_sync_mailbox_ratchet_e2e() {
         path: "/prekey/publish".into(),
         body: serde_json::json!({ "prekey_bundle_text": bob_prekey.to_export_text().unwrap() })
             .to_string(),
+        headers: Vec::new(),
     });
     assert_eq!(publish.status, 201);
 
@@ -35,6 +36,7 @@ fn node_prekey_sync_mailbox_ratchet_e2e() {
                 method: "GET".into(),
                 path: "/sync/snapshot".into(),
                 body: String::new(),
+                headers: Vec::new(),
             })
             .body,
     )
@@ -43,6 +45,7 @@ fn node_prekey_sync_mailbox_ratchet_e2e() {
         method: "POST".into(),
         path: "/sync/import".into(),
         body: serde_json::json!({ "snapshot": snapshot }).to_string(),
+        headers: Vec::new(),
     });
     assert_eq!(import.status, 200);
 
@@ -50,6 +53,7 @@ fn node_prekey_sync_mailbox_ratchet_e2e() {
         method: "GET".into(),
         path: format!("/prekey/get?user_id={}", bob.user_id()),
         body: String::new(),
+        headers: Vec::new(),
     });
     assert_eq!(get.status, 200);
     let get_body: serde_json::Value = serde_json::from_str(&get.body).unwrap();
@@ -105,6 +109,7 @@ fn node_prekey_sync_mailbox_ratchet_e2e() {
             "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
         })
         .to_string(),
+        headers: Vec::new(),
     });
     assert_eq!(push.status, 201);
 
@@ -115,6 +120,7 @@ fn node_prekey_sync_mailbox_ratchet_e2e() {
                 method: "GET".into(),
                 path: "/sync/snapshot".into(),
                 body: String::new(),
+                headers: Vec::new(),
             })
             .body,
     )
@@ -123,6 +129,7 @@ fn node_prekey_sync_mailbox_ratchet_e2e() {
         method: "POST".into(),
         path: "/sync/import".into(),
         body: serde_json::json!({ "snapshot": snapshot }).to_string(),
+        headers: Vec::new(),
     });
     assert_eq!(import.status, 200);
 
@@ -130,6 +137,7 @@ fn node_prekey_sync_mailbox_ratchet_e2e() {
         method: "GET".into(),
         path: format!("/mailbox/take?user_id={}", bob.user_id()),
         body: String::new(),
+        headers: Vec::new(),
     });
     assert_eq!(take.status, 200);
     let body: serde_json::Value = serde_json::from_str(&take.body).unwrap();

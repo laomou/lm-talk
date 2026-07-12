@@ -17,6 +17,10 @@ Node options:
   --bind HOST:PORT
   --state-file PATH       default: ./lm-node-state.prd.json
   --peer-id ID            default: lm-node-prd
+  --control-token TOKEN   require Authorization: Bearer TOKEN for non-health APIs
+  --cors-allow-origin CSV allow only listed browser origins
+  --sync-peer URL[,URL]   periodically import peer snapshots
+  --sync-interval-seconds N
 USAGE
 }
 
@@ -57,6 +61,10 @@ esac
 bind="0.0.0.0:8787"
 state_file="$ROOT/lm-node-state.prd.json"
 peer_id="lm-node-prd"
+control_token="${LM_NODE_CONTROL_TOKEN:-}"
+cors_allow_origin="${LM_NODE_CORS_ALLOW_ORIGIN:-}"
+sync_peer=""
+sync_interval_seconds="0"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -66,6 +74,10 @@ while [[ $# -gt 0 ]]; do
     --bind) bind="${2:?--bind requires HOST:PORT}"; shift 2 ;;
     --state-file) state_file="${2:?--state-file requires PATH}"; shift 2 ;;
     --peer-id) peer_id="${2:?--peer-id requires ID}"; shift 2 ;;
+    --control-token) control_token="${2:?--control-token requires TOKEN}"; shift 2 ;;
+    --cors-allow-origin) cors_allow_origin="${2:?--cors-allow-origin requires ORIGIN}"; shift 2 ;;
+    --sync-peer) sync_peer="${2:?--sync-peer requires URL[,URL]}"; shift 2 ;;
+    --sync-interval-seconds) sync_interval_seconds="${2:?--sync-interval-seconds requires N}"; shift 2 ;;
     --debug|--release)
       echo "run.sh 是 PRD runtime，不接受 $1；固定 build --release 并执行 target/release/lm_node" >&2
       exit 2
@@ -80,6 +92,17 @@ echo "启动 LM Talk 同步服务（PRD）"
 echo "绑定地址：$bind"
 echo "Peer ID：$peer_id"
 echo "状态文件：$state_file"
+if [[ -n "$control_token" ]]; then
+  echo "控制面认证：Bearer token enabled"
+else
+  echo "控制面认证：未配置 token，仅允许 loopback 非 health 请求"
+fi
+if [[ -n "$cors_allow_origin" ]]; then
+  echo "CORS allow origin：$cors_allow_origin"
+fi
+if [[ -n "$sync_peer" && "$sync_interval_seconds" != "0" ]]; then
+  echo "自动同步：$sync_peer every ${sync_interval_seconds}s"
+fi
 echo "构建：release binary"
 print_urls "$bind"
 echo
@@ -88,4 +111,17 @@ echo
 
 cd "$ROOT"
 cargo build --release -p lm_node
-exec "$ROOT/target/release/lm_node" serve-control --bind "$bind" --peer-id "$peer_id" --state-file "$state_file"
+args=(serve-control --bind "$bind" --peer-id "$peer_id" --state-file "$state_file")
+if [[ -n "$control_token" ]]; then
+  args+=(--control-token "$control_token")
+fi
+if [[ -n "$cors_allow_origin" ]]; then
+  args+=(--cors-allow-origin "$cors_allow_origin")
+fi
+if [[ -n "$sync_peer" ]]; then
+  args+=(--sync-peer "$sync_peer")
+fi
+if [[ "$sync_interval_seconds" != "0" ]]; then
+  args+=(--sync-interval-seconds "$sync_interval_seconds")
+fi
+exec "$ROOT/target/release/lm_node" "${args[@]}"

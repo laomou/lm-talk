@@ -917,6 +917,17 @@ pub struct ControlRequest {
     pub method: String,
     pub path: String,
     pub body: String,
+    pub headers: Vec<(String, String)>,
+}
+
+impl ControlRequest {
+    pub fn header(&self, name: &str) -> Option<&str> {
+        let name = name.to_ascii_lowercase();
+        self.headers
+            .iter()
+            .find(|(header_name, _)| header_name.eq_ignore_ascii_case(&name))
+            .map(|(_, value)| value.as_str())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1618,12 +1629,14 @@ mod tests {
             method: "POST".into(),
             path: "/announce".into(),
             body,
+            headers: Vec::new(),
         });
         assert_eq!(response.status, 201);
         let response = node.handle_control_request(ControlRequest {
             method: "GET".into(),
             path: "/peers/closest?target=peer-a&limit=1".into(),
             body: String::new(),
+            headers: Vec::new(),
         });
         assert_eq!(response.status, 200);
         assert!(response.body.contains("peer-a"));
@@ -1655,6 +1668,7 @@ mod tests {
             method: "POST".into(),
             path: "/mailbox/push".into(),
             body,
+            headers: Vec::new(),
         });
         assert_eq!(response.status, 201);
         assert_eq!(node.mailbox.pending_for(bob.user_id()), 1);
@@ -1662,6 +1676,7 @@ mod tests {
             method: "GET".into(),
             path: format!("/mailbox/take?user_id={}", bob.user_id()),
             body: String::new(),
+            headers: Vec::new(),
         });
         assert_eq!(response.status, 200);
         assert!(response.body.contains("ciphertext"));
@@ -1679,6 +1694,7 @@ mod tests {
                 "delivery_ids": [delivery_id],
             })
             .to_string(),
+            headers: Vec::new(),
         });
         assert_eq!(response.status, 200);
         assert_eq!(node.mailbox.pending_for(bob.user_id()), 0);
@@ -1708,6 +1724,7 @@ mod tests {
                 "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
             })
             .to_string(),
+            headers: Vec::new(),
         });
         assert_eq!(response.status, 400);
         assert!(response.body.contains("payload too large"));
@@ -1765,6 +1782,7 @@ mod tests {
                 "prekey_bundle_text": bundle.to_export_text().unwrap(),
             })
             .to_string(),
+            headers: Vec::new(),
         });
         assert_eq!(response.status, 201);
         assert_eq!(node.prekeys.len(), 1);
@@ -1772,6 +1790,7 @@ mod tests {
             method: "GET".into(),
             path: format!("/prekey/get?user_id={}", alice.user_id()),
             body: String::new(),
+            headers: Vec::new(),
         });
         assert_eq!(response.status, 200);
         assert!(response.body.contains("lm-prekey-bundle-v1"));
@@ -1820,6 +1839,7 @@ mod tests {
             method: "GET".into(),
             path: "/sync/snapshot".into(),
             body: String::new(),
+            headers: Vec::new(),
         });
         assert_eq!(snapshot_response.status, 200);
 
@@ -1832,6 +1852,7 @@ mod tests {
             method: "POST".into(),
             path: "/sync/import".into(),
             body: serde_json::json!({ "snapshot": snapshot }).to_string(),
+            headers: Vec::new(),
         });
         assert_eq!(import_response.status, 200);
         assert!(target.prekeys.get_for_unchecked(alice.user_id()).is_some());
@@ -1904,6 +1925,7 @@ mod tests {
                 "prekey_bundle_text": bundle.to_export_text().unwrap(),
             })
             .to_string(),
+            headers: Vec::new(),
         });
         assert_eq!(publish_response.status, 201);
         let publish_body: serde_json::Value = serde_json::from_str(&publish_response.body).unwrap();
@@ -1915,6 +1937,7 @@ mod tests {
             method: "GET".into(),
             path: format!("/prekey/get?user_id={}&consume=true", alice.user_id()),
             body: String::new(),
+            headers: Vec::new(),
         });
         assert_eq!(response.status, 200);
         let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();

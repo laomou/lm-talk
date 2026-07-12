@@ -226,6 +226,51 @@ fn real_http_control_plane_auto_snapshot_sync_imports_mailbox() {
     }
 }
 
+#[test]
+fn real_http_control_plane_requires_token_and_enforces_cors() {
+    let port = free_port();
+    let base = format!("127.0.0.1:{port}");
+    let _node = spawn_node_with_args(
+        &base,
+        "http-secure-node",
+        &[
+            "--control-token",
+            "secret-token",
+            "--cors-allow-origin",
+            "https://allowed.example",
+        ],
+    );
+    wait_for_health(&base);
+
+    let unauthorized = http_request(&base, "GET", "/sync/snapshot", "");
+    assert_eq!(unauthorized.status, 401);
+
+    let forbidden_origin = http_request_with_headers(
+        &base,
+        "GET",
+        "/sync/snapshot",
+        "",
+        &[
+            ("authorization", "Bearer secret-token"),
+            ("origin", "https://evil.example"),
+        ],
+    );
+    assert_eq!(forbidden_origin.status, 403);
+
+    let authorized = http_request_with_headers(
+        &base,
+        "GET",
+        "/sync/snapshot",
+        "",
+        &[
+            ("authorization", "Bearer secret-token"),
+            ("origin", "https://allowed.example"),
+        ],
+    );
+    assert_eq!(authorized.status, 200, "{}", authorized.body);
+    assert!(authorized.body.contains("http-secure-node"));
+}
+
 fn spawn_node(bind: &str, peer_id: &str) -> TestNodeProcess {
     spawn_node_with_args(bind, peer_id, &[])
 }
@@ -299,7 +344,17 @@ fn http_json(addr: &str, method: &str, path: &str, value: serde_json::Value) -> 
 }
 
 fn http_request(addr: &str, method: &str, path: &str, body: &str) -> HttpResponse {
-    try_http_request(addr, method, path, body).unwrap_or_else(|err| {
+    http_request_with_headers(addr, method, path, body, &[])
+}
+
+fn http_request_with_headers(
+    addr: &str,
+    method: &str,
+    path: &str,
+    body: &str,
+    headers: &[(&str, &str)],
+) -> HttpResponse {
+    try_http_request_with_headers(addr, method, path, body, headers).unwrap_or_else(|err| {
         panic!("HTTP request {method} {path} to {addr} failed: {err}");
     })
 }
@@ -310,11 +365,25 @@ fn try_http_request(
     path: &str,
     body: &str,
 ) -> std::io::Result<HttpResponse> {
+    try_http_request_with_headers(addr, method, path, body, &[])
+}
+
+fn try_http_request_with_headers(
+    addr: &str,
+    method: &str,
+    path: &str,
+    body: &str,
+    headers: &[(&str, &str)],
+) -> std::io::Result<HttpResponse> {
     let mut stream = TcpStream::connect(addr)?;
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+    let extra_headers = headers
+        .iter()
+        .map(|(name, value)| format!("{name}: {value}\r\n"))
+        .collect::<String>();
     let request = format!(
-        "{method} {path} HTTP/1.1\r\nhost: {addr}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        "{method} {path} HTTP/1.1\r\nhost: {addr}\r\ncontent-type: application/json\r\n{extra_headers}content-length: {}\r\nconnection: close\r\n\r\n{body}",
         body.len()
     );
     stream.write_all(request.as_bytes())?;
