@@ -159,7 +159,78 @@ fn real_http_control_plane_syncs_prekeys_and_mailbox_between_nodes() {
     assert_eq!(take_again_body["messages"].as_array().unwrap().len(), 0);
 }
 
+#[test]
+fn real_http_control_plane_auto_snapshot_sync_imports_mailbox() {
+    let port_a = free_port();
+    let port_b = free_port();
+    let base_a = format!("127.0.0.1:{port_a}");
+    let base_b = format!("127.0.0.1:{port_b}");
+    let _node_a = spawn_node(&base_a, "http-auto-node-a");
+    let _node_b = spawn_node_with_args(
+        &base_b,
+        "http-auto-node-b",
+        &[
+            "--sync-peer",
+            &format!("http://{base_a}"),
+            "--sync-interval-seconds",
+            "1",
+        ],
+    );
+    wait_for_health(&base_a);
+    wait_for_health(&base_b);
+
+    let (alice, _) = Identity::create_with_passphrase("http auto alice").unwrap();
+    let (bob, _) = Identity::create_with_passphrase("http auto bob").unwrap();
+    let mailbox = MailboxMessage::new(
+        &alice,
+        bob.user_id().clone(),
+        MailboxMessageKind::DirectEnvelope,
+        "auto-sync-mailbox".into(),
+        3600,
+    )
+    .unwrap();
+    let push = http_json(
+        &base_a,
+        "POST",
+        "/mailbox/push",
+        json!({
+            "message_text": mailbox.to_export_text().unwrap(),
+            "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
+        }),
+    );
+    assert_eq!(push.status, 201, "{}", push.body);
+
+    let deadline = Instant::now() + Duration::from_secs(6);
+    loop {
+        let take = http_request(
+            &base_b,
+            "GET",
+            &format!("/mailbox/take?user_id={}", bob.user_id()),
+            "",
+        );
+        assert_eq!(take.status, 200, "{}", take.body);
+        let body: serde_json::Value = serde_json::from_str(&take.body).unwrap();
+        let messages = body["messages"].as_array().unwrap();
+        if messages.len() == 1 {
+            assert_eq!(
+                messages[0]["message"]["ciphertext"].as_str().unwrap(),
+                "auto-sync-mailbox"
+            );
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for automatic snapshot sync"
+        );
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+
 fn spawn_node(bind: &str, peer_id: &str) -> TestNodeProcess {
+    spawn_node_with_args(bind, peer_id, &[])
+}
+
+fn spawn_node_with_args(bind: &str, peer_id: &str, extra_args: &[&str]) -> TestNodeProcess {
     let state_file = env::temp_dir().join(format!(
         "lm-node-http-test-{peer_id}-{}-{}.json",
         std::process::id(),
@@ -178,6 +249,7 @@ fn spawn_node(bind: &str, peer_id: &str) -> TestNodeProcess {
             "--state-file",
         ])
         .arg(&state_file)
+        .args(extra_args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

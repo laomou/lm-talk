@@ -20,7 +20,7 @@
 
 - `lm_core`：身份/备份、Contact Card、好友请求/响应、DirectEnvelope、X3DH PreKey、Double Ratchet、群 Sender Key、群权限状态、文件分片加密包、本地安全策略、Outbox、MemoryStore、大小限制、测试向量。
 - `lm_wasm`：大部分 core 能力已导出，并有 smoke 测试。
-- `lm_node`：HTTP control plane、Public Peer announce、Kademlia ID/distance/closest scaffold、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、one-time prekey 消费记录、snapshot sync/import、状态文件保存。
+- `lm_node`：HTTP control plane、Public Peer announce、Kademlia ID/distance/closest scaffold、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、one-time prekey 消费记录、snapshot sync/import、serve-control 定时 snapshot sync、状态文件保存。
 - 测试：`scripts/test.sh all` 当前通过 Rust 测试、core/node e2e、HTTP control flow、WASM smoke、Web build/e2e。
 
 关键边界：
@@ -103,8 +103,9 @@
    - 重复拉取不重复显示消息。
 
 3. **节点同步自动化**
-   - 当前节点之间只有手动 snapshot sync。
-   - 需要自动拉取 peer snapshot 或后续替换为真正 DHT 查询/复制。
+   - [x] `serve-control --sync-peer http://host:port --sync-interval-seconds N` 可定时拉取 peer snapshot 并 merge。
+   - [ ] 支持多个 sync peer 的持久配置文件和失败退避。
+   - [ ] 后续替换为真正 DHT 查询/复制。
 
 4. **联系人更新**
    - 支持 Contact Card 更新 display name、设备列表、PreKey 信息。
@@ -862,9 +863,10 @@ MVP 群聊采用逐个加密。
 ### P1：节点自动同步与网络
 
 1. **自动 snapshot sync**
-   - 配置 peer control URL 列表。
-   - 定时拉取 `/sync/snapshot` 并 `/sync/import`。
-   - 合并 peers/mailbox/prekeys/consumed records 时保持幂等。
+   - [x] CLI 参数配置 peer control URL 列表：`--sync-peer http://a,http://b`。
+   - [x] `serve-control` 定时拉取 `/sync/snapshot` 并 merge 到本地节点。
+   - [x] 合并 peers/mailbox/prekeys/consumed records 时保持幂等。
+   - [ ] 增加配置文件、失败退避、last_sync_at/错误统计。
 
 2. **DHT scaffold 演进**
    - 增加 find_node/find_value/store record 抽象。
@@ -1003,7 +1005,7 @@ docs/
 4. Mailbox 自动发送、收取、解密、ack、去重和失败重试。
 5. 本地数据应用层加密：消息明文、联系人备注、群名、outbox、ratchet session。
 6. Native node 正式持久化：SQLite/SQLCipher 或等价数据库，含过期清理和崩溃恢复测试。
-7. 节点自动同步：先做定时 snapshot sync，后续替换为 DHT replication。
+7. 节点自动同步增强：配置文件、失败退避、同步状态指标；后续替换为 DHT replication。
 8. Outbox 调度器：指数退避、取消发送、过期、delivery status。
 9. 协议稳定化：错误码、对象大小限制、Contact Card 更新策略、PreKey 轮换策略。
 10. 安全测试增强：proptest/fuzz、跨平台测试向量、ratchet replay/window/skipped-key 不变量。

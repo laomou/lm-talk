@@ -8,6 +8,7 @@ use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     process,
+    time::{Duration, Instant},
 };
 
 fn main() {
@@ -86,6 +87,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let bind = optional_arg(&mut args, "--bind")?.unwrap_or("127.0.0.1:8787".into());
             let peer_id = optional_arg(&mut args, "--peer-id")?.unwrap_or("lm-node-dev".into());
             let state_file = optional_arg(&mut args, "--state-file")?;
+            let sync_peers = optional_arg(&mut args, "--sync-peer")?
+                .map(|value| parse_csv(&value))
+                .unwrap_or_default();
+            let sync_interval_seconds = optional_arg(&mut args, "--sync-interval-seconds")?
+                .map(|value| value.parse::<u64>())
+                .transpose()?
+                .unwrap_or(0);
             let mut node = if let Some(path) = &state_file {
                 load_node_state(path).unwrap_or_else(|_| {
                     NativeNode::new(NodeConfig {
@@ -99,7 +107,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     ..Default::default()
                 })
             };
-            serve_control(&bind, &mut node, state_file.as_deref())?;
+            serve_control(
+                &bind,
+                &mut node,
+                state_file.as_deref(),
+                sync_peers,
+                sync_interval_seconds,
+            )?;
         }
         "help" | "--help" | "-h" => print_help(),
         _ => {
@@ -118,16 +132,23 @@ fn optional_arg(
     args: &mut impl Iterator<Item = String>,
     name: &str,
 ) -> Result<Option<String>, String> {
-    let mut rest = Vec::new();
     let mut found = None;
     while let Some(arg) = args.next() {
         if arg == name {
             found = args.next();
             break;
         }
-        rest.push(arg);
     }
     Ok(found)
+}
+
+fn parse_csv(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 fn load_node_state(path: &str) -> Result<NativeNode, Box<dyn std::error::Error>> {
@@ -146,15 +167,40 @@ fn serve_control(
     bind: &str,
     node: &mut NativeNode,
     state_file: Option<&str>,
+    sync_peers: Vec<String>,
+    sync_interval_seconds: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(bind)?;
+    listener.set_nonblocking(true)?;
+    let mut next_sync = if sync_peers.is_empty() || sync_interval_seconds == 0 {
+        None
+    } else {
+        Some(Instant::now())
+    };
     println!("LM Talk control plane listening on http://{bind}");
     println!(
         "endpoints: GET /health, POST /announce, GET /peers/closest, POST /mailbox/push, GET /mailbox/take, POST /mailbox/ack, POST /prekey/publish, GET /prekey/get, GET /sync/snapshot, POST /sync/import"
     );
-    for stream in listener.incoming() {
-        match stream {
-            Ok(mut stream) => {
+    if !sync_peers.is_empty() && sync_interval_seconds > 0 {
+        println!(
+            "auto snapshot sync: every {sync_interval_seconds}s from {}",
+            sync_peers.join(",")
+        );
+    }
+    loop {
+        if let Some(deadline) = next_sync {
+            if Instant::now() >= deadline {
+                run_snapshot_sync(node, &sync_peers);
+                if let Some(path) = state_file {
+                    if let Err(err) = save_node_state(path, node) {
+                        eprintln!("state save error: {err}");
+                    }
+                }
+                next_sync = Some(Instant::now() + Duration::from_secs(sync_interval_seconds));
+            }
+        }
+        match listener.accept() {
+            Ok((mut stream, _addr)) => {
                 if let Err(err) = handle_stream(&mut stream, node) {
                     let body = format!("request error: {err}");
                     let response = format!(
@@ -169,10 +215,53 @@ fn serve_control(
                     }
                 }
             }
+            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(25));
+            }
             Err(err) => eprintln!("connection error: {err}"),
         }
     }
-    Ok(())
+}
+
+fn run_snapshot_sync(node: &mut NativeNode, peers: &[String]) {
+    for peer in peers {
+        match fetch_snapshot(peer) {
+            Ok(snapshot) => {
+                let stats = node.merge_snapshot(snapshot);
+                println!(
+                    "snapshot sync from {peer}: peers={} mailbox_deliveries={} prekey_bundles={}",
+                    stats.peers, stats.mailbox_deliveries, stats.prekey_bundles
+                );
+            }
+            Err(err) => eprintln!("snapshot sync from {peer} failed: {err}"),
+        }
+    }
+}
+
+fn fetch_snapshot(peer: &str) -> Result<NodeStateSnapshot, Box<dyn std::error::Error>> {
+    let normalized = peer.trim().trim_end_matches('/');
+    let without_scheme = normalized
+        .strip_prefix("http://")
+        .ok_or("only http:// sync peers are supported")?;
+    let (host_port, path_prefix) = without_scheme
+        .split_once('/')
+        .map(|(host, path)| (host, format!("/{path}")))
+        .unwrap_or((without_scheme, String::new()));
+    let path = format!("{path_prefix}/sync/snapshot");
+    let mut stream = TcpStream::connect(host_port)?;
+    let request = format!("GET {path} HTTP/1.1\r\nhost: {host_port}\r\nconnection: close\r\n\r\n");
+    stream.write_all(request.as_bytes())?;
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response)?;
+    let response = String::from_utf8(response)?;
+    let (headers, body) = response
+        .split_once("\r\n\r\n")
+        .ok_or("invalid http response")?;
+    let status_line = headers.lines().next().ok_or("missing status line")?;
+    if !status_line.contains(" 200 ") {
+        return Err(format!("sync peer returned {status_line}").into());
+    }
+    Ok(serde_json::from_str(body)?)
 }
 
 fn handle_stream(
@@ -242,6 +331,7 @@ fn print_help() {
 Commands:\n  \
 announce --backup-file <file> --passphrase <text> [--peer-id <id>] [--addr <multiaddr,csv>] [--cap <bootstrap,dht,relay,mailbox>]\n  \
 inspect-public --text-file <file> --identity-public-key <base64>\n  \
-run [--peer-id <id>] [--addr <multiaddr>]\n"
+run [--peer-id <id>] [--addr <multiaddr>]\n  \
+serve-control [--bind <host:port>] [--peer-id <id>] [--state-file <file>] [--sync-peer <url,csv>] [--sync-interval-seconds <n>]\n"
     );
 }
