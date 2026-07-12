@@ -3,6 +3,7 @@ use lm_node::{
     ControlRequest, NativeNode, NodeConfig, NodeStateSnapshot, decode_identity_public_key_base64,
     parse_capabilities_csv, restore_identity_from_backup_text,
 };
+use serde::Deserialize;
 use std::{
     env, fs,
     io::{Read, Write},
@@ -85,34 +86,62 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             println!("bucket_index={:?}", a_id.bucket_index(&b_id));
         }
         "serve-control" => {
-            let bind = optional_arg(&args, "--bind")?.unwrap_or("127.0.0.1:8787".into());
-            let peer_id = optional_arg(&args, "--peer-id")?.unwrap_or("lm-node-dev".into());
-            let state_file = optional_arg(&args, "--state-file")?;
-            let sync_peer_urls = optional_arg(&args, "--sync-peer")?
-                .map(|value| parse_csv(&value))
-                .unwrap_or_default();
+            let config_file = optional_arg(&args, "--config-file")?
+                .or_else(|| env::var("LM_NODE_CONFIG_FILE").ok());
+            let file_config = match &config_file {
+                Some(path) => ServeControlConfigFile::load(path)?,
+                None => ServeControlConfigFile::default(),
+            };
+            let bind = optional_arg(&args, "--bind")?
+                .or(file_config.bind)
+                .unwrap_or("127.0.0.1:8787".into());
+            let peer_id = optional_arg(&args, "--peer-id")?
+                .or(file_config.peer_id)
+                .unwrap_or("lm-node-dev".into());
+            let state_file = optional_arg(&args, "--state-file")?.or(file_config.state_file);
             let sync_peer_token = optional_arg(&args, "--sync-peer-token")?
                 .or_else(|| env::var("LM_NODE_SYNC_PEER_TOKEN").ok());
-            let sync_peers = sync_peer_urls
+            let mut sync_peers = file_config
+                .sync_peers
+                .unwrap_or_default()
                 .into_iter()
-                .map(|url| SyncPeerConfig {
-                    url,
-                    token: sync_peer_token.clone(),
+                .map(|peer| SyncPeerConfig {
+                    url: peer.url,
+                    token: peer.token,
                 })
                 .collect::<Vec<_>>();
+            if let Some(sync_peer_urls) = optional_arg(&args, "--sync-peer")? {
+                sync_peers = parse_csv(&sync_peer_urls)
+                    .into_iter()
+                    .map(|url| SyncPeerConfig {
+                        url,
+                        token: sync_peer_token.clone(),
+                    })
+                    .collect();
+            } else if let Some(token) = sync_peer_token {
+                for peer in &mut sync_peers {
+                    if peer.token.is_none() {
+                        peer.token = Some(token.clone());
+                    }
+                }
+            }
             let sync_interval_seconds = optional_arg(&args, "--sync-interval-seconds")?
                 .map(|value| value.parse::<u64>())
                 .transpose()?
+                .or(file_config.sync_interval_seconds)
                 .unwrap_or(0);
             let sync_max_backoff_seconds = optional_arg(&args, "--sync-max-backoff-seconds")?
                 .map(|value| value.parse::<u64>())
                 .transpose()?
+                .or(file_config.sync_max_backoff_seconds)
                 .unwrap_or(300);
             let token = optional_arg(&args, "--control-token")?
-                .or_else(|| env::var("LM_NODE_CONTROL_TOKEN").ok());
+                .or_else(|| env::var("LM_NODE_CONTROL_TOKEN").ok())
+                .or(file_config.control_token);
             let cors_allow_origins = optional_arg(&args, "--cors-allow-origin")?
                 .or_else(|| env::var("LM_NODE_CORS_ALLOW_ORIGIN").ok())
                 .map(|value| parse_csv(&value))
+                .or(file_config.cors_allow_origins)
                 .unwrap_or_default();
             let security = ControlSecurityConfig {
                 token,
@@ -190,6 +219,31 @@ struct SyncPeerRuntime {
     config: SyncPeerConfig,
     next_attempt_at: Instant,
     consecutive_failures: u32,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct ServeControlConfigFile {
+    bind: Option<String>,
+    peer_id: Option<String>,
+    state_file: Option<String>,
+    control_token: Option<String>,
+    cors_allow_origins: Option<Vec<String>>,
+    sync_peers: Option<Vec<SyncPeerConfigFile>>,
+    sync_interval_seconds: Option<u64>,
+    sync_max_backoff_seconds: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct SyncPeerConfigFile {
+    url: String,
+    token: Option<String>,
+}
+
+impl ServeControlConfigFile {
+    fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let text = fs::read_to_string(path)?;
+        Ok(serde_json::from_str(&text)?)
+    }
 }
 
 impl ControlSecurityConfig {
@@ -578,13 +632,13 @@ Commands:\n  \
 announce --backup-file <file> --passphrase <text> [--peer-id <id>] [--addr <multiaddr,csv>] [--cap <bootstrap,dht,relay,mailbox>]\n  \
 inspect-public --text-file <file> --identity-public-key <base64>\n  \
 run [--peer-id <id>] [--addr <multiaddr>]\n  \
-serve-control [--bind <host:port>] [--peer-id <id>] [--state-file <file>] [--sync-peer <url,csv>] [--sync-interval-seconds <n>]\n"
+serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--state-file <file>] [--sync-peer <url,csv>] [--sync-interval-seconds <n>]\n"
     );
 }
 
 #[cfg(test)]
 mod tests {
-    use super::sync_backoff_delay_seconds;
+    use super::{ServeControlConfigFile, sync_backoff_delay_seconds};
 
     #[test]
     fn sync_backoff_is_exponential_and_capped() {
@@ -593,5 +647,36 @@ mod tests {
         assert_eq!(sync_backoff_delay_seconds(10, 300, 2), 20);
         assert_eq!(sync_backoff_delay_seconds(10, 300, 3), 40);
         assert_eq!(sync_backoff_delay_seconds(10, 30, 4), 30);
+    }
+
+    #[test]
+    fn serve_control_config_file_parses_sync_and_security() {
+        let config: ServeControlConfigFile = serde_json::from_str(
+            r#"{
+                "bind": "127.0.0.1:9999",
+                "peer_id": "cfg-node",
+                "state_file": "state.json",
+                "control_token": "control",
+                "cors_allow_origins": ["https://allowed.example"],
+                "sync_interval_seconds": 5,
+                "sync_max_backoff_seconds": 60,
+                "sync_peers": [
+                    { "url": "http://127.0.0.1:8787", "token": "peer-token" }
+                ]
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(config.bind.as_deref(), Some("127.0.0.1:9999"));
+        assert_eq!(config.peer_id.as_deref(), Some("cfg-node"));
+        assert_eq!(config.control_token.as_deref(), Some("control"));
+        assert_eq!(
+            config.cors_allow_origins.unwrap(),
+            vec!["https://allowed.example"]
+        );
+        assert_eq!(config.sync_interval_seconds, Some(5));
+        assert_eq!(config.sync_max_backoff_seconds, Some(60));
+        let peer = &config.sync_peers.unwrap()[0];
+        assert_eq!(peer.url, "http://127.0.0.1:8787");
+        assert_eq!(peer.token.as_deref(), Some("peer-token"));
     }
 }

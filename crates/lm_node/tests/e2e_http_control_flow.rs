@@ -243,6 +243,55 @@ fn real_http_control_plane_auto_snapshot_sync_imports_mailbox() {
 }
 
 #[test]
+fn real_http_control_plane_loads_config_file() {
+    let port = free_port();
+    let base = format!("127.0.0.1:{port}");
+    let config_file = env::temp_dir().join(format!(
+        "lm-node-http-config-test-{}-{}.json",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let state_file = config_file.with_extension("state.json");
+    std::fs::write(
+        &config_file,
+        json!({
+            "bind": base,
+            "peer_id": "http-config-node",
+            "state_file": state_file,
+            "control_token": "config-secret",
+            "cors_allow_origins": ["https://allowed.example"],
+            "sync_interval_seconds": 0,
+            "sync_max_backoff_seconds": 7,
+            "sync_peers": []
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let _node = spawn_node_config(&config_file);
+    wait_for_health(&base);
+
+    let unauthorized = http_request(&base, "GET", "/sync/snapshot", "");
+    assert_eq!(unauthorized.status, 401);
+    let authorized = http_request_with_headers(
+        &base,
+        "GET",
+        "/sync/snapshot",
+        "",
+        &[
+            ("authorization", "Bearer config-secret"),
+            ("origin", "https://allowed.example"),
+        ],
+    );
+    assert_eq!(authorized.status, 200, "{}", authorized.body);
+    assert!(authorized.body.contains("http-config-node"));
+    let _ = std::fs::remove_file(&config_file);
+    let _ = std::fs::remove_file(&state_file);
+}
+
+#[test]
 fn real_http_control_plane_requires_token_and_enforces_cors() {
     let port = free_port();
     let base = format!("127.0.0.1:{port}");
@@ -285,6 +334,26 @@ fn real_http_control_plane_requires_token_and_enforces_cors() {
     );
     assert_eq!(authorized.status, 200, "{}", authorized.body);
     assert!(authorized.body.contains("http-secure-node"));
+}
+
+fn spawn_node_config(config_file: &std::path::Path) -> TestNodeProcess {
+    let state_file = env::temp_dir().join(format!(
+        "lm-node-http-config-dummy-state-{}-{}.json",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let child = Command::new(lm_node_binary())
+        .args(["serve-control", "--config-file"])
+        .arg(config_file)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap_or_else(|err| panic!("failed to spawn lm_node serve-control with config: {err}"));
+    TestNodeProcess { child, state_file }
 }
 
 fn spawn_node(bind: &str, peer_id: &str) -> TestNodeProcess {

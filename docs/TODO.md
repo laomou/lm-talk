@@ -859,7 +859,8 @@ MVP 群聊采用逐个加密。
    - [x] 未配置 token 时，除 `/health` 外只允许 loopback 客户端访问。
    - [x] `--control-token` / `LM_NODE_CONTROL_TOKEN` 支持 Bearer token 保护非 health API。
    - [x] `--cors-allow-origin` / `LM_NODE_CORS_ALLOW_ORIGIN` 支持 CORS 白名单。
-   - [ ] token 配置文件和轮换策略。
+   - [x] token 可从配置文件、CLI 或环境变量加载。
+   - [ ] token 轮换策略和 secret 文件加载。
    - [ ] TLS/反向代理部署说明。
 
 ### P1：节点自动同步与网络
@@ -871,7 +872,8 @@ MVP 群聊采用逐个加密。
    - [x] 增加 `/sync/status`，记录 attempts/successes/failures/last_success_at/last_error/next_attempt_at。
    - [x] `--sync-peer-token` / `LM_NODE_SYNC_PEER_TOKEN` 支持从受 token 保护的 peer 拉取 snapshot。
    - [x] 同步失败指数退避：`--sync-max-backoff-seconds`。
-   - [ ] 增加配置文件。
+   - [x] `serve-control --config-file` / `LM_NODE_CONFIG_FILE` 支持 JSON 配置文件。
+   - [ ] 配置文件 schema 文档和敏感字段拆分（token 从环境或 secret 文件加载）。
 
 2. **DHT scaffold 演进**
    - 增加 find_node/find_value/store record 抽象。
@@ -1011,7 +1013,7 @@ docs/
 4. Mailbox 自动发送、收取、解密、ack、去重和失败重试。
 5. 本地数据应用层加密：消息明文、联系人备注、群名、outbox、ratchet session。
 6. Native node 正式持久化：SQLite/SQLCipher 或等价数据库，含过期清理和崩溃恢复测试。
-7. 节点自动同步增强：配置文件、失败退避、同步状态指标；后续替换为 DHT replication。
+7. 节点自动同步增强：配置 schema 文档、secret 文件、同步状态指标细化；后续替换为 DHT replication。
 8. Outbox 调度器：指数退避、取消发送、过期、delivery status。
 9. 协议稳定化：错误码、对象大小限制、Contact Card 更新策略、PreKey 轮换策略。
 10. 安全测试增强：proptest/fuzz、跨平台测试向量、ratchet replay/window/skipped-key 不变量。

@@ -14,8 +14,9 @@ Node options:
   --local                 bind 127.0.0.1:8787
   --lan                   bind 0.0.0.0:8787 (default)
   --ipv6                  bind [::]:8787
+  --config-file PATH      JSON config for lm_node serve-control
   --bind HOST:PORT
-  --state-file PATH       default: ./lm-node-state.prd.json
+  --state-file PATH       default: ./lm-node-state.prd.json unless --config-file is used
   --peer-id ID            default: lm-node-prd
   --control-token TOKEN   require Authorization: Bearer TOKEN for non-health APIs
   --cors-allow-origin CSV allow only listed browser origins
@@ -60,9 +61,13 @@ case "$cmd" in
   *) usage >&2; exit 2 ;;
 esac
 
+config_file="${LM_NODE_CONFIG_FILE:-}"
 bind="0.0.0.0:8787"
+bind_set=0
 state_file="$ROOT/lm-node-state.prd.json"
+state_file_set=0
 peer_id="lm-node-prd"
+peer_id_set=0
 control_token="${LM_NODE_CONTROL_TOKEN:-}"
 cors_allow_origin="${LM_NODE_CORS_ALLOW_ORIGIN:-}"
 sync_peer=""
@@ -72,12 +77,13 @@ sync_max_backoff_seconds="300"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --local) bind="127.0.0.1:8787"; shift ;;
-    --lan) bind="0.0.0.0:8787"; shift ;;
-    --ipv6) bind="[::]:8787"; shift ;;
-    --bind) bind="${2:?--bind requires HOST:PORT}"; shift 2 ;;
-    --state-file) state_file="${2:?--state-file requires PATH}"; shift 2 ;;
-    --peer-id) peer_id="${2:?--peer-id requires ID}"; shift 2 ;;
+    --config-file) config_file="${2:?--config-file requires PATH}"; shift 2 ;;
+    --local) bind="127.0.0.1:8787"; bind_set=1; shift ;;
+    --lan) bind="0.0.0.0:8787"; bind_set=1; shift ;;
+    --ipv6) bind="[::]:8787"; bind_set=1; shift ;;
+    --bind) bind="${2:?--bind requires HOST:PORT}"; bind_set=1; shift 2 ;;
+    --state-file) state_file="${2:?--state-file requires PATH}"; state_file_set=1; shift 2 ;;
+    --peer-id) peer_id="${2:?--peer-id requires ID}"; peer_id_set=1; shift 2 ;;
     --control-token) control_token="${2:?--control-token requires TOKEN}"; shift 2 ;;
     --cors-allow-origin) cors_allow_origin="${2:?--cors-allow-origin requires ORIGIN}"; shift 2 ;;
     --sync-peer) sync_peer="${2:?--sync-peer requires URL[,URL]}"; shift 2 ;;
@@ -95,9 +101,18 @@ done
 
 mkdir -p "$(dirname "$state_file")"
 echo "启动 LM Talk 同步服务（PRD）"
-echo "绑定地址：$bind"
-echo "Peer ID：$peer_id"
-echo "状态文件：$state_file"
+if [[ -n "$config_file" ]]; then
+  echo "配置文件：$config_file"
+fi
+if [[ -z "$config_file" || "$bind_set" == "1" ]]; then
+  echo "绑定地址：$bind"
+fi
+if [[ -z "$config_file" || "$peer_id_set" == "1" ]]; then
+  echo "Peer ID：$peer_id"
+fi
+if [[ -z "$config_file" || "$state_file_set" == "1" ]]; then
+  echo "状态文件：$state_file"
+fi
 if [[ -n "$control_token" ]]; then
   echo "控制面认证：Bearer token enabled"
 else
@@ -120,7 +135,19 @@ echo
 
 cd "$ROOT"
 cargo build --release -p lm_node
-args=(serve-control --bind "$bind" --peer-id "$peer_id" --state-file "$state_file")
+args=(serve-control)
+if [[ -n "$config_file" ]]; then
+  args+=(--config-file "$config_file")
+fi
+if [[ -z "$config_file" || "$bind_set" == "1" ]]; then
+  args+=(--bind "$bind")
+fi
+if [[ -z "$config_file" || "$peer_id_set" == "1" ]]; then
+  args+=(--peer-id "$peer_id")
+fi
+if [[ -z "$config_file" || "$state_file_set" == "1" ]]; then
+  args+=(--state-file "$state_file")
+fi
 if [[ -n "$control_token" ]]; then
   args+=(--control-token "$control_token")
 fi
