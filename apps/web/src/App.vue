@@ -1080,11 +1080,19 @@ async function afterLoginAutomation() {
 
 async function syncNow() {
   if (!nodeEnabled.value) {
+    appendLog('⚠️ 消息同步未开启')
     showAlert('未开启消息同步', '请先在“我 → 消息同步”开启同步。', 'warning')
     return
   }
-  if (autoPublishPreKey.value) await publishPreKeyToNode()
-  await takeMailboxFromNode()
+  appendLog('🔄 开始消息同步')
+  try {
+    if (autoPublishPreKey.value) await publishPreKeyToNode()
+    await takeMailboxFromNode()
+    appendLog('✅ 消息同步完成')
+  } catch (e) {
+    appendLog(`❌ 消息同步失败：${userFacingError(e)}`)
+    throw e
+  }
 }
 
 function nodeUrlList(): string[] {

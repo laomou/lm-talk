@@ -183,6 +183,8 @@ test('登录页创建身份后进入左联系人/群组、右聊天框布局', a
   await expect(page.locator('.app-shell')).not.toContainText('生成邀请')
   await page.getByRole('button', { name: '我', exact: true }).click()
   await expect(page.getByRole('button', { name: '立即同步' })).toBeVisible()
+  await expect(page.getByText('同步状态')).toBeVisible()
+  await expect(page.getByText('最近记录')).toBeVisible()
   await expect(page.getByRole('button', { name: '诊断工具' })).toBeVisible()
   await expect(page.locator('.app-shell')).not.toContainText('调试页面')
   await page.getByRole('button', { name: '聊天', exact: true }).click()
