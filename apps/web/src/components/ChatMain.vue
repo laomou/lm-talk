@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DebugPage from './DebugPage.vue'
 const props = defineProps<{ ctx: any }>()
 const contactName = (userId: string) => props.ctx.contacts.value.find((c: any) => c.user_id === userId)?.display_name || userId
 const pendingOutbox = () => props.ctx.outbox.value.filter((o: any) => o.peer_user_id === props.ctx.activeContact.value?.user_id && o.status !== 'sent')
@@ -20,7 +21,7 @@ const pendingOutbox = () => props.ctx.outbox.value.filter((o: any) => o.peer_use
         </div>
         <div v-else>
           <h2>请选择联系人或群组</h2>
-          <small>左侧添加或选择</small>
+          <small>左侧只保留会话列表；添加、建群、网络和调试入口在这里。</small>
         </div>
         <div class="row compact" v-if="ctx.activeContact.value">
           <button @click="ctx.createFriendRequestForActive">生成好友请求</button>
@@ -52,6 +53,150 @@ const pendingOutbox = () => props.ctx.outbox.value.filter((o: any) => o.peer_use
           <button v-if="m.envelope_json" @click="ctx.showQr(m.envelope_json, 'Envelope')">二维码</button>
         </div>
         <div v-if="(ctx.activeContact.value || ctx.activeGroup.value) && ctx.activeMessages.value.length === 0" class="empty center">还没有消息</div>
+        <section v-if="!ctx.activeContact.value && !ctx.activeGroup.value" class="chat-home-panel">
+          <div class="home-card identity-card">
+            <h3>我的账号</h3>
+            <label>我的显示名</label>
+            <input v-model="ctx.displayName.value" @change="ctx.refreshMyContactCard" />
+            <div class="row compact">
+              <button @click="ctx.refreshMyContactCard">更新我的卡片</button>
+              <button @click="ctx.copyText(ctx.myContactCardText.value, '我的 Contact Card')">复制我的卡片</button>
+              <button @click="ctx.showQr(ctx.myContactCardText.value, '我的 Contact Card')">卡片二维码</button>
+              <button @click="ctx.copyText(ctx.backupText.value, '身份备份包')">复制备份包</button>
+              <button @click="ctx.showQr(ctx.backupText.value, '身份备份包')">备份包二维码</button>
+            </div>
+          </div>
+
+          <div class="home-grid">
+            <section class="home-card">
+              <h3>添加联系人</h3>
+              <label>添加联系人 Contact Card</label>
+              <textarea v-model="ctx.addContactText.value" rows="4" placeholder="lm-contact-card-v1:..." />
+              <button @click="ctx.addContact">添加联系人</button>
+            </section>
+
+            <section class="home-card">
+              <h3>创建群</h3>
+              <label>群名</label>
+              <input v-model="ctx.newGroupName.value" placeholder="例如：测试群" />
+              <label>选择 Friend 联系人</label>
+              <label v-for="c in ctx.friendContacts.value" :key="c.user_id" class="check-row">
+                <input type="checkbox" :value="c.user_id" v-model="ctx.selectedGroupMembers.value" />
+                {{ c.display_name || c.user_id }}
+              </label>
+              <button @click="ctx.createGroup">创建群</button>
+            </section>
+
+            <section class="home-card">
+              <h3>网络设置</h3>
+              <label>网络设置</label>
+              <input v-model="ctx.nodeControlUrl.value" placeholder="lm_node 控制面 URL，例如 http://127.0.0.1:8787" />
+              <div class="row compact">
+                <button @click="ctx.toggleNodeEnabled">{{ ctx.nodeEnabled.value ? '停用节点' : '启用节点' }}</button>
+                <button @click="ctx.saveNetworkSettings">保存设置</button>
+                <button @click="ctx.checkNodeHealth">检查连接</button>
+                <button @click="ctx.takeMailboxFromNode">收取消息</button>
+                <button @click="ctx.autoPublishPreKeyIfEnabled">发布 PreKey</button>
+              </div>
+              <label class="check-row"><input type="checkbox" v-model="ctx.autoMailboxTake.value" @change="ctx.saveNetworkSettings" /> 登录后自动收取 Mailbox</label>
+              <label class="check-row"><input type="checkbox" v-model="ctx.autoPublishPreKey.value" @change="ctx.saveNetworkSettings" /> 登录后自动发布 PreKey</label>
+              <label class="check-row"><input type="checkbox" v-model="ctx.autoNodeSync.value" @change="ctx.saveNetworkSettings" /> 自动从 Peer 节点同步 snapshot</label>
+              <small>状态：{{ ctx.nodeEnabled.value ? '节点已启用' : '节点已停用' }} · {{ ctx.nodeControlStatus.value }}</small>
+            </section>
+
+            <section class="home-card">
+              <h3>好友请求</h3>
+              <label>好友请求收件箱</label>
+              <textarea v-model="ctx.incomingFriendRequestText.value" rows="3" placeholder="lm-friend-request-v1:..." />
+              <button @click="ctx.addIncomingFriendRequest">加入收件箱</button>
+              <div v-if="ctx.friendRequests.value.length" class="requests">
+                <div v-for="req in ctx.friendRequests.value" :key="req.request_id" class="request-item">
+                  <b>{{ req.from_user_id }}</b>
+                  <small>{{ req.note || '无备注' }}</small>
+                  <div class="row compact">
+                    <button @click="ctx.acceptInboxRequest(req)">接受</button>
+                    <button class="danger" @click="ctx.rejectInboxRequest(req)">忽略</button>
+                  </div>
+                </div>
+              </div>
+              <div v-else class="empty">暂无好友请求</div>
+            </section>
+          </div>
+
+          <details class="home-card">
+            <summary>安全会话建立（推荐）</summary>
+            <p class="hint">无服务器复制粘贴流程：A 创建 Offer 发给 B；B 应用 Offer 后生成 Response 发回 A；A 应用 Response。</p>
+            <div class="row compact">
+              <button @click="ctx.createSecureSessionOfferText">1. 创建 Offer</button>
+              <button @click="ctx.applySecureSessionOfferText">2. 应用 Offer 并生成 Response</button>
+              <button @click="ctx.applySecureSessionResponseText">3. 应用 Response</button>
+            </div>
+            <label>发给对方的 Offer</label>
+            <textarea v-model="ctx.secureSessionOfferText.value" rows="5" placeholder="lm-secure-session-offer-v1 JSON" />
+            <label>收到的 Offer 或 Response</label>
+            <textarea v-model="ctx.incomingSecureSessionText.value" rows="5" placeholder="粘贴对方发来的 Offer/Response JSON" />
+            <label>发回对方的 Response</label>
+            <textarea v-model="ctx.secureSessionResponseText.value" rows="5" placeholder="lm-secure-session-response-v1 JSON" />
+            <div class="row compact">
+              <button @click="ctx.copyText(ctx.secureSessionOfferText.value, 'Secure Session Offer')">复制 Offer</button>
+              <button @click="ctx.copyText(ctx.secureSessionResponseText.value, 'Secure Session Response')">复制 Response</button>
+              <button @click="ctx.showQr(ctx.secureSessionOfferText.value || ctx.secureSessionResponseText.value, 'Secure Session')">二维码</button>
+            </div>
+            <label>状态</label>
+            <textarea v-model="ctx.secureSessionStatusText.value" rows="3" readonly />
+          </details>
+
+          <details class="home-card">
+            <summary>群邀请 / 设备 / 数据备份</summary>
+            <label>群邀请收件箱</label>
+            <textarea v-model="ctx.incomingGroupInviteText.value" rows="3" placeholder="lm-group-invite-v1:..." />
+            <small>先在联系人列表选择邀请者，再加入群邀请以验签。</small>
+            <button @click="ctx.addIncomingGroupInvite">加入群邀请</button>
+            <div v-if="ctx.groupInvites.value.length" class="requests">
+              <div v-for="inv in ctx.groupInvites.value" :key="inv.invite_id" class="request-item">
+                <b>{{ inv.group_name }}</b>
+                <small>邀请者：{{ inv.inviter_user_id }} · {{ inv.member_user_ids.length }} 人</small>
+                <div class="row compact">
+                  <button @click="ctx.acceptGroupInvite(inv)">接受入群</button>
+                  <button class="danger" @click="ctx.ignoreGroupInvite(inv)">忽略</button>
+                </div>
+              </div>
+            </div>
+            <hr />
+            <label>设备管理</label>
+            <div class="row compact">
+              <button @click="ctx.createMyDeviceCert">生成本设备证书</button>
+              <button @click="ctx.copyText(ctx.myDeviceCertJson.value, '设备证书')">复制设备证书</button>
+            </div>
+            <small>本设备：{{ ctx.myDeviceId.value || '未生成' }}</small>
+            <label>撤销 device_id</label>
+            <input v-model="ctx.revokeDeviceId.value" placeholder="dev1_..." />
+            <label>撤销原因</label>
+            <input v-model="ctx.revokeReason.value" placeholder="lost / compromised / old device" />
+            <div class="row compact">
+              <button @click="ctx.createDeviceRevokeText">生成撤销事件</button>
+              <button @click="ctx.copyText(ctx.deviceRevokeText.value, '设备撤销事件')">复制撤销事件</button>
+            </div>
+            <textarea v-model="ctx.deviceRevokeText.value" rows="3" placeholder="lm-device-revoke-v1:..." />
+            <hr />
+            <label>完整数据备份</label>
+            <div class="row compact">
+              <button @click="ctx.exportFullDataBackup">导出完整备份</button>
+              <button @click="ctx.importFullDataBackup">导入完整备份</button>
+              <button @click="ctx.downloadText(ctx.dataBackupText.value, 'lm-data-backup.txt')">下载</button>
+              <button @click="ctx.showQr(ctx.dataBackupText.value, '完整数据备份')">二维码</button>
+            </div>
+            <textarea v-model="ctx.dataBackupText.value" rows="3" placeholder="lm-data-backup-v1:..." />
+          </details>
+
+          <details class="home-card advanced-debug-gate">
+            <summary>高级调试入口（默认隐藏）</summary>
+            <p class="hint">日常聊天不需要打开。这里保留协议 JSON、节点、Mailbox、PreKey、双棘轮、文件等高级排障工具；也可点击顶部“调试”进入独立调试页。</p>
+            <div class="debug-panel">
+              <DebugPage :ctx="ctx" />
+            </div>
+          </details>
+        </section>
       </div>
 
       <footer class="composer" v-if="ctx.activeContact.value || ctx.activeGroup.value">
@@ -60,7 +205,44 @@ const pendingOutbox = () => props.ctx.outbox.value.filter((o: any) => o.peer_use
       </footer>
 
       <section class="tools" v-if="ctx.activeContact.value || ctx.activeGroup.value">
+        <details class="right-quick-actions" open>
+          <summary>添加 / 网络 / 调试</summary>
+          <div class="right-tools-grid">
+            <section>
+              <h3>添加联系人</h3>
+              <label>添加联系人 Contact Card</label>
+              <textarea v-model="ctx.addContactText.value" rows="3" placeholder="lm-contact-card-v1:..." />
+              <button @click="ctx.addContact">添加联系人</button>
+            </section>
+            <section class="add-box">
+              <h3>创建群</h3>
+              <label>群名</label>
+              <input v-model="ctx.newGroupName.value" placeholder="例如：测试群" />
+              <label>选择 Friend 联系人</label>
+              <label v-for="c in ctx.friendContacts.value" :key="c.user_id" class="check-row">
+                <input type="checkbox" :value="c.user_id" v-model="ctx.selectedGroupMembers.value" />
+                {{ c.display_name || c.user_id }}
+              </label>
+              <button @click="ctx.createGroup">创建群</button>
+            </section>
+            <section>
+              <h3>网络设置</h3>
+              <label class="check-row"><input type="checkbox" v-model="ctx.autoNodeSync.value" @change="ctx.saveNetworkSettings" /> 自动从 Peer 节点同步 snapshot</label>
+              <div class="row compact">
+                <button @click="ctx.takeMailboxFromNode">收取消息</button>
+                <button @click="ctx.checkNodeHealth">检查连接</button>
+              </div>
+            </section>
+          </div>
+        </details>
 
+        <details class="advanced-debug-gate">
+          <summary>高级调试入口（默认隐藏）</summary>
+          <p class="hint">协议 JSON、节点、Mailbox、PreKey、双棘轮、文件等高级排障工具。</p>
+          <div class="debug-panel">
+            <DebugPage :ctx="ctx" />
+          </div>
+        </details>
 
         <details v-if="ctx.activeContact.value">
           <summary>设备撤销</summary>
@@ -75,7 +257,7 @@ const pendingOutbox = () => props.ctx.outbox.value.filter((o: any) => o.peer_use
           </div>
         </details>
 
-        <details v-if="ctx.activeContact.value" open>
+        <details v-if="ctx.activeContact.value">
           <summary>WebRTC 直连</summary>
           <p class="hint">状态：{{ ctx.rtcStatus.value }}</p>
           <div class="row compact">
@@ -141,7 +323,7 @@ const pendingOutbox = () => props.ctx.outbox.value.filter((o: any) => o.peer_use
           </div>
           <textarea v-model="ctx.filePackageInfoText.value" rows="5" placeholder="文件包信息" readonly />
         </details>
-        <details v-if="ctx.activeGroup.value" open>
+        <details v-if="ctx.activeGroup.value">
           <summary>群邀请 / 群发 fanout 密文</summary>
           <label>群邀请</label>
           <textarea v-model="ctx.groupInviteText.value" rows="3" />

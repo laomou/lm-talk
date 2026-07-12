@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import LoginPage from './components/LoginPage.vue'
 import ChatPage from './components/ChatPage.vue'
 import DebugPage from './components/DebugPage.vue'
@@ -239,13 +240,38 @@ type PersistedMeta = {
   schemaVersion: number
 }
 
+type LocalIdentityRecord = {
+  id: string
+  user_id: string
+  display_name: string
+  backup_text: string
+  updated_at: number
+}
+
+const LOCAL_IDENTITIES_KEY = 'lm-talk-local-identities-v1'
+
 const ready = ref(false)
 const loggedIn = ref(false)
 const log = ref<string[]>([])
 const qrTitle = ref('')
 const qrDataUrl = ref('')
 const qrRawText = ref('')
-const currentPage = ref<'chat' | 'debug'>('chat')
+const route = useRoute()
+const router = useRouter()
+const authMode = computed(() => route.path === '/register' ? 'register' : route.path === '/import' ? 'import' : 'login')
+const currentPage = computed(() => route.path === '/debug' ? 'debug' : 'chat')
+type ToastKind = 'success' | 'error' | 'warning' | 'info'
+type ToastItem = { id: string; kind: ToastKind; text: string }
+type ConfirmDialogState = {
+  open: boolean
+  title: string
+  message: string
+  danger: boolean
+  resolve?: (value: boolean) => void
+}
+const toasts = ref<ToastItem[]>([])
+const alertDialog = ref({ open: false, title: '', message: '', kind: 'info' as ToastKind })
+const confirmDialog = ref<ConfirmDialogState>({ open: false, title: '', message: '', danger: false })
 
 const MAX_TEXT_MESSAGE_BYTES = 64 * 1024
 const MAX_CONTACT_CARD_BYTES = 32 * 1024
@@ -259,6 +285,9 @@ const passphrase = ref('')
 const backupText = ref('')
 const identity = ref<(IdentityOutput | RestoreOutput) | null>(null)
 const displayName = ref('Me')
+const localIdentities = ref<LocalIdentityRecord[]>([])
+const selectedLocalIdentityId = ref('')
+const lastRegisteredIdentity = ref<LocalIdentityRecord | null>(null)
 const myContactCardText = ref('')
 const myDeviceCertJson = ref('')
 const myDeviceId = ref('')
@@ -419,9 +448,14 @@ const groupSenderDistributionFanoutItems = computed(() => {
   }
 })
 
+router.afterEach((to) => {
+  if (to.path === '/import') backupText.value = ''
+})
+
 onMounted(async () => {
   try {
     await init()
+    loadLocalIdentityList()
     await loadPersistedState()
     startOutboxRetryLoop()
     startNodeSyncLoop()
@@ -444,12 +478,98 @@ function appendLog(line: string) {
   log.value = [`${new Date().toLocaleTimeString()} ${line}`, ...log.value].slice(0, 50)
 }
 
+function newId(): string {
+  const webCrypto = globalThis.crypto
+  if (typeof webCrypto?.randomUUID === 'function') return webCrypto.randomUUID()
+  if (typeof webCrypto?.getRandomValues === 'function') {
+    const bytes = webCrypto.getRandomValues(new Uint8Array(16))
+    bytes[6] = (bytes[6] & 0x0f) | 0x40
+    bytes[8] = (bytes[8] & 0x3f) | 0x80
+    const hex = [...bytes].map((b) => b.toString(16).padStart(2, '0'))
+    return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`
+  }
+  return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
+function toast(text: string, kind: ToastKind = 'info') {
+  const id = newId()
+  toasts.value.push({ id, kind, text })
+  window.setTimeout(() => {
+    toasts.value = toasts.value.filter((item) => item.id !== id)
+  }, 2800)
+}
+
+function showAlert(title: string, message: string, kind: ToastKind = 'info') {
+  alertDialog.value = { open: true, title, message, kind }
+}
+
+function closeAlert() {
+  alertDialog.value.open = false
+}
+
+function showConfirm(title: string, message: string, danger = false): Promise<boolean> {
+  return new Promise((resolve) => {
+    confirmDialog.value = { open: true, title, message, danger, resolve }
+  })
+}
+
+function closeConfirm(value: boolean) {
+  const resolve = confirmDialog.value.resolve
+  confirmDialog.value = { open: false, title: '', message: '', danger: false }
+  resolve?.(value)
+}
+
+function loadLocalIdentityList() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LOCAL_IDENTITIES_KEY) || '[]') as LocalIdentityRecord[]
+    localIdentities.value = Array.isArray(parsed) ? parsed.filter((x) => x?.backup_text && x?.user_id) : []
+    if (!selectedLocalIdentityId.value && localIdentities.value.length) selectedLocalIdentityId.value = localIdentities.value[0].id
+  } catch {
+    localIdentities.value = []
+  }
+}
+
+function saveLocalIdentityList() {
+  localStorage.setItem(LOCAL_IDENTITIES_KEY, JSON.stringify(localIdentities.value))
+}
+
+function rememberLocalIdentity(userId: string, name: string, backup: string): LocalIdentityRecord {
+  const id = userId
+  const item: LocalIdentityRecord = {
+    id,
+    user_id: userId,
+    display_name: name || userId,
+    backup_text: backup,
+    updated_at: Date.now(),
+  }
+  localIdentities.value = [item, ...localIdentities.value.filter((x) => x.id !== id)]
+  selectedLocalIdentityId.value = id
+  saveLocalIdentityList()
+  return item
+}
+
+function selectedLocalIdentity(): LocalIdentityRecord | undefined {
+  return localIdentities.value.find((x) => x.id === selectedLocalIdentityId.value) ?? localIdentities.value[0]
+}
+
+function userFacingError(e: unknown): string {
+  const raw = String(e)
+  if (raw.includes('WrongPassphrase')) return '提示词不正确，请重新输入。'
+  if (raw.includes('invalid wasm backup')) return '身份文本格式不正确。'
+  if (raw.includes('backup user_id mismatch')) return '身份文本校验失败。'
+  if (raw.includes('请粘贴身份文本')) return '请粘贴身份文本。'
+  if (raw.includes('请输入提示词')) return '请输入提示词。'
+  return raw.replace(/^Error:\s*/, '')
+}
+
 function run(label: string, fn: () => void) {
   try {
     fn()
     appendLog(`✅ ${label}`)
   } catch (e) {
-    appendLog(`❌ ${label}: ${String(e)}`)
+    const message = userFacingError(e)
+    appendLog(`❌ ${label}: ${message}`)
+    showAlert(label, message, 'error')
   }
 }
 
@@ -516,14 +636,19 @@ function base64ToBytesRaw(value: string): Uint8Array {
 
 async function localStorageCryptoKey(): Promise<CryptoKey | null> {
   if (!identity.value || !passphrase.value) return null
-  const material = await crypto.subtle.importKey(
+  const webCrypto = globalThis.crypto
+  if (!webCrypto?.subtle) {
+    appendLog('⚠️ 当前页面没有 WebCrypto subtle，无法解密/加密本地敏感数据；请优先使用 http://127.0.0.1 或 https 访问')
+    return null
+  }
+  const material = await webCrypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(normalize_passphrase(passphrase.value)),
     'PBKDF2',
     false,
     ['deriveKey'],
   )
-  return crypto.subtle.deriveKey(
+  return webCrypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
       salt: new TextEncoder().encode(`lm-talk-local-store-v1:${identity.value.user_id}`),
@@ -539,8 +664,10 @@ async function localStorageCryptoKey(): Promise<CryptoKey | null> {
 
 async function encryptLocalString(value: string, key: CryptoKey | null): Promise<string | EncryptedStringV1> {
   if (!key || !value) return value
-  const iv = crypto.getRandomValues(new Uint8Array(12))
-  const ct = new Uint8Array(await crypto.subtle.encrypt(
+  const webCrypto = globalThis.crypto
+  if (!webCrypto?.subtle) return value
+  const iv = webCrypto.getRandomValues(new Uint8Array(12))
+  const ct = new Uint8Array(await webCrypto.subtle.encrypt(
     { name: 'AES-GCM', iv: iv as BufferSource },
     key,
     new TextEncoder().encode(value),
@@ -552,7 +679,9 @@ async function decryptLocalString(value: unknown, key: CryptoKey | null): Promis
   if (typeof value === 'string') return value
   if (!isEncryptedString(value)) return ''
   if (!key) return value as any
-  const plain = await crypto.subtle.decrypt(
+  const webCrypto = globalThis.crypto
+  if (!webCrypto?.subtle) return value as any
+  const plain = await webCrypto.subtle.decrypt(
     { name: 'AES-GCM', iv: base64ToBytesRaw(value.iv) as BufferSource },
     key,
     base64ToBytesRaw(value.ct) as BufferSource,
@@ -765,6 +894,12 @@ async function loadStateFromTables(): Promise<boolean> {
   messages.value = await Promise.all((await idbTableGetAll<any>(TABLES.messages)).map((m: any) => decryptMessageFromStore(m, key)))
   outbox.value = await Promise.all((await idbTableGetAll<any>(TABLES.outbox)).map((o: any) => decryptOutboxFromStore(o, key)))
   ratchetSessions.value = await Promise.all((await idbTableGetAll<any>(TABLES.ratchetSessions)).map((r: any) => decryptRatchetFromStore(r, key)))
+  if (backupText.value && myContactCardText.value) {
+    try {
+      const info = safeJson<ContactInfo>(inspect_contact_card(myContactCardText.value))
+      rememberLocalIdentity(info.user_id, info.display_name || displayName.value, backupText.value)
+    } catch { /* ignore old/incomplete local identity */ }
+  }
   return true
 }
 
@@ -799,6 +934,10 @@ async function clearPersisted() {
   await idbDel('chat-state-schema-v2')
   await Promise.all(Object.values(TABLES).map((table) => idbTableClear(table)))
   localStorage.removeItem('lm-talk-chat-state-v1')
+  localStorage.removeItem(LOCAL_IDENTITIES_KEY)
+  localIdentities.value = []
+  selectedLocalIdentityId.value = ''
+  lastRegisteredIdentity.value = null
   backupText.value = ''
   identity.value = null
   contacts.value = []
@@ -914,7 +1053,7 @@ async function pushMailboxPayload(to: ContactItem, kind: string, payload: string
 function createOutboxItem(contact: ContactItem, payload: string, messageId?: string, kind: OutboxItem['kind'] = 'direct-envelope'): OutboxItem {
   const now = Date.now()
   return {
-    id: crypto.randomUUID(),
+    id: newId(),
     peer_user_id: contact.user_id,
     envelope_json: payload,
     message_id: messageId,
@@ -1047,16 +1186,69 @@ async function ensureRatchetSessionFromNode(contact: ContactItem): Promise<boole
   return true
 }
 
-function createIdentityAndEnter() {
-  run('创建身份并进入', () => {
+
+
+async function removeLocalIdentity(id: string) {
+  const item = localIdentities.value.find((x) => x.id === id)
+  if (!item) return
+  const ok = await showConfirm(
+    '删除本地身份',
+    `删除本地身份「${item.display_name || item.user_id}」？这只会删除本机保存的登录入口，请确认你已保存身份文件。`,
+    true,
+  )
+  if (!ok) return
+  localIdentities.value = localIdentities.value.filter((x) => x.id !== id)
+  if (selectedLocalIdentityId.value === id) selectedLocalIdentityId.value = localIdentities.value[0]?.id ?? ''
+  if (lastRegisteredIdentity.value?.id === id) lastRegisteredIdentity.value = null
+  saveLocalIdentityList()
+  appendLog('✅ 已删除本地身份')
+  toast('已删除本地身份', 'success')
+}
+
+function resetRegisterForm() {
+  lastRegisteredIdentity.value = null
+  displayName.value = ''
+  passphrase.value = ''
+  void router.push('/register')
+}
+
+function loginSelectedIdentity() {
+  const selected = selectedLocalIdentity()
+  if (selected) {
+    backupText.value = selected.backup_text
+    displayName.value = selected.display_name || displayName.value
+  }
+  restoreAndEnter()
+}
+
+function importIdentityOnly() {
+  run('导入身份', () => {
+    if (!backupText.value.trim()) throw new Error('请粘贴身份文本')
     if (!passphrase.value.trim()) throw new Error('请输入提示词')
+    const out = safeJson<RestoreOutput>(restore_identity(backupText.value, passphrase.value))
+    rememberLocalIdentity(out.user_id, displayName.value || 'Me', backupText.value)
+    passphrase.value = ''
+    appendLog('✅ 身份已导入，请在登录页登录')
+    toast('身份已导入，请登录', 'success')
+    void router.push('/login')
+  })
+}
+
+function createIdentityAndEnter() {
+  run('注册身份', () => {
+    if (!passphrase.value.trim()) throw new Error('请输入提示词')
+    const registerName = displayName.value.trim() || 'Me'
+    displayName.value = registerName
     const out = safeJson<IdentityOutput>(create_identity(passphrase.value))
     identity.value = out
     backupText.value = out.backup_text
-    loggedIn.value = true
     exportMyCard()
+    lastRegisteredIdentity.value = rememberLocalIdentity(out.user_id, registerName, out.backup_text)
     persist()
-    void afterLoginAutomation()
+    loggedIn.value = false
+    passphrase.value = ''
+    appendLog('✅ 注册完成，请下载身份文件，然后返回登录')
+    toast('注册成功', 'success')
   })
 }
 
@@ -1070,10 +1262,16 @@ function restoreAndEnter() {
       .then(() => {
         loggedIn.value = true
         if (!myContactCardText.value) exportMyCard()
+        rememberLocalIdentity(out.user_id, displayName.value, backupText.value)
         persist()
+        void router.push('/chat')
         void afterLoginAutomation()
       })
-      .catch((e) => appendLog(`❌ 本地加密数据解密失败：${String(e)}`))
+      .catch((e) => {
+        const message = userFacingError(e)
+        appendLog(`❌ 登录失败：${message}`)
+        showAlert('登录失败', message, 'error')
+      })
   })
 }
 
@@ -1174,8 +1372,10 @@ async function copyText(value: string, label: string) {
     if (!value) throw new Error('内容为空')
     await navigator.clipboard.writeText(value)
     appendLog(`✅ 已复制 ${label}`)
+    toast(`已复制 ${label}`, 'success')
   } catch (e) {
     appendLog(`❌ 复制失败：${String(e)}`)
+    showAlert('复制失败', String(e), 'error')
   }
 }
 
@@ -1498,7 +1698,7 @@ function createGroup() {
     const members = [...new Set(selectedGroupMembers.value)].filter(Boolean)
     if (!newGroupName.value.trim()) throw new Error('请输入群名')
     if (members.length === 0) throw new Error('请选择至少一个 Friend 联系人')
-    const groupId = crypto.randomUUID()
+    const groupId = newId()
     const adminIds = identity.value ? [identity.value.user_id] : []
     const allMembers = identity.value && !members.includes(identity.value.user_id) ? [...members, identity.value.user_id] : members
     const group: GroupItem = {
@@ -1691,7 +1891,7 @@ function applyGroupEventText() {
     const actorId = groupEventActorUserId.value.trim() || activeContact.value?.user_id || identity.value?.user_id || ''
     const result = applyGroupEventRaw(text, actorId)
     messages.value.push({
-      id: crypto.randomUUID(),
+      id: newId(),
       conversation_id: `grp-${result.group_id}`,
       peer_user_id: actorId,
       group_id: result.group_id,
@@ -1897,7 +2097,7 @@ function sendMessage() {
       }
       groupFanoutJson.value = JSON.stringify(fanout, null, 2)
       const msg: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: newId(),
         conversation_id: `grp-${activeGroup.value.group_id}`,
         peer_user_id: '',
         group_id: activeGroup.value.group_id,
@@ -1924,7 +2124,7 @@ function sendMessage() {
       outgoingFiltered.text,
     )
     const msg: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: newId(),
       conversation_id: `conv-${activeContact.value.user_id}`,
       peer_user_id: activeContact.value.user_id,
       direction: 'out',
@@ -1960,7 +2160,7 @@ function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem) {
     const filtered = applyLocalTextFilter(groupSenderPlain.text, 'in')
     if (!filtered.allow) { persist(); return }
     messages.value.push({
-      id: crypto.randomUUID(),
+      id: newId(),
       conversation_id: `grp-${groupSenderPlain.group_id}`,
       peer_user_id: groupSenderPlain.sender_user_id,
       group_id: groupSenderPlain.group_id,
@@ -1990,7 +2190,7 @@ function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem) {
       updated_at: Date.now(),
     })
     messages.value.push({
-      id: crypto.randomUUID(),
+      id: newId(),
       conversation_id: `grp-${parsed.group_id}`,
       peer_user_id: sender.user_id,
       group_id: parsed.group_id,
@@ -2007,7 +2207,7 @@ function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem) {
     const eventText = rawText.slice(GROUP_EVENT_PAYLOAD_PREFIX.length)
     const result = applyGroupEventRaw(eventText, sender.user_id)
     messages.value.push({
-      id: crypto.randomUUID(),
+      id: newId(),
       conversation_id: `grp-${result.group_id}`,
       peer_user_id: sender.user_id,
       group_id: result.group_id,
@@ -2040,7 +2240,7 @@ function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem) {
     }
   }
   messages.value.push({
-    id: crypto.randomUUID(),
+    id: newId(),
     conversation_id: conversationId,
     peer_user_id: sender.user_id,
     group_id: groupId,
@@ -2353,7 +2553,7 @@ function createPublicPeerAnnounceText() {
   run('生成 PublicPeerAnnounce', () => {
     const addresses = parseLines(publicPeerAddressesText.value)
     if (addresses.length === 0) throw new Error('请至少填写一个公网地址')
-    const peerId = publicPeerId.value.trim() || `public-${identity.value?.user_id.slice(0, 12) || crypto.randomUUID()}`
+    const peerId = publicPeerId.value.trim() || `public-${identity.value?.user_id.slice(0, 12) || newId()}`
     publicPeerId.value = peerId
     publicPeerAnnounceText.value = create_public_peer_announce(
       backupText.value,
@@ -3144,7 +3344,7 @@ function decryptIncomingFilePackage() {
     receivedFileName.value = out.name
     if (activeContact.value) {
       messages.value.push({
-        id: crypto.randomUUID(),
+        id: newId(),
         conversation_id: `conv-${activeContact.value.user_id}`,
         peer_user_id: activeContact.value.user_id,
         direction: 'in',
@@ -3166,7 +3366,7 @@ function sendFilePackageOverRtc() {
     if (!filePackageText.value.trim()) throw new Error('请先生成文件包')
     const info = JSON.parse(inspect_file_package(filePackageText.value)) as { manifest: { name: string; size: number } }
     const msg: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: newId(),
       conversation_id: `conv-${activeContact.value.user_id}`,
       peer_user_id: activeContact.value.user_id,
       direction: 'out',
@@ -3208,14 +3408,14 @@ function formatTime(ts: number) {
 }
 
 function goChatPage() {
-  currentPage.value = 'chat'
+  void router.push('/chat')
 }
 
 function goDebugPage() {
-  currentPage.value = 'debug'
+  void router.push('/debug')
 }
 const appContext = {
-  goChatPage, identity, displayName, refreshMyContactCard, myContactCardText, backupText,
+  goChatPage, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, myContactCardText, backupText,
   nodeControlUrl, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, createMyDeviceCert, myDeviceCertJson,
@@ -3265,8 +3465,15 @@ const appContext = {
     v-model:display-name="displayName"
     :normalized="normalized"
     :log="log"
+    :local-identities="localIdentities"
+    :registered-identity="lastRegisteredIdentity"
+    :mode="authMode"
+    v-model:selected-identity-id="selectedLocalIdentityId"
     @create="createIdentityAndEnter"
-    @restore="restoreAndEnter"
+    @login="loginSelectedIdentity"
+    @import-identity="importIdentityOnly"
+    @reset-register="resetRegisterForm"
+    @remove-identity="removeLocalIdentity"
     @clear="clearPersisted"
   />
 
@@ -3287,6 +3494,31 @@ const appContext = {
     <DebugPage v-else :ctx="appContext" />
   </main>
 
+
+  <div class="toast-stack" aria-live="polite">
+    <div v-for="item in toasts" :key="item.id" class="toast" :class="item.kind">{{ item.text }}</div>
+  </div>
+
+  <div v-if="alertDialog.open" class="dialog-mask" @click.self="closeAlert">
+    <section class="dialog-card" :class="alertDialog.kind">
+      <h2>{{ alertDialog.title }}</h2>
+      <p>{{ alertDialog.message }}</p>
+      <div class="row compact dialog-actions">
+        <button @click="closeAlert">知道了</button>
+      </div>
+    </section>
+  </div>
+
+  <div v-if="confirmDialog.open" class="dialog-mask" @click.self="closeConfirm(false)">
+    <section class="dialog-card">
+      <h2>{{ confirmDialog.title }}</h2>
+      <p>{{ confirmDialog.message }}</p>
+      <div class="row compact dialog-actions">
+        <button class="secondary" @click="closeConfirm(false)">取消</button>
+        <button :class="{ danger: confirmDialog.danger }" @click="closeConfirm(true)">确定</button>
+      </div>
+    </section>
+  </div>
 
   <div v-if="qrDataUrl" class="qr-mask" @click.self="closeQr">
     <section class="qr-modal">

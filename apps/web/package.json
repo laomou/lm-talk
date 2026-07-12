@@ -15,7 +15,8 @@
     "@vitejs/plugin-vue": "latest",
     "qrcode": "^1.5.4",
     "vite": "latest",
-    "vue": "latest"
+    "vue": "latest",
+    "vue-router": "^5.1.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

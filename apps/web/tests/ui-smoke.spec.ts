@@ -70,10 +70,19 @@ async function openDetailsByText(page: Page, text: string) {
 async function createIdentity(page: Page, name: string, passphrase: string) {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'LM Talk' })).toBeVisible()
+  await page.getByRole('button', { name: '注册', exact: true }).click()
   await fieldAfterLabel(page, '提示词').fill(passphrase)
-  await fieldAfterLabel(page, '我的显示名', 'input').fill(name)
-  await page.getByRole('button', { name: '创建新身份' }).click()
+  await page.getByRole('button', { name: '注册', exact: true }).last().click()
+  await expect(page.getByRole('heading', { name: '注册成功' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '下载身份' })).toBeVisible()
+  await page.getByRole('button', { name: '去登录' }).click()
+  await expect(page.getByRole('heading', { name: '登录 LM Talk' })).toBeVisible()
+  await expect(page.getByText('Me', { exact: true })).toBeVisible()
+  await fieldAfterLabel(page, '提示词').fill(passphrase)
+  await page.getByRole('button', { name: '登录', exact: true }).last().click()
   await expect(page.locator('.chat-shell')).toBeVisible()
+  await fieldAfterLabel(page, '我的显示名', 'input').fill(name)
+  await page.getByRole('button', { name: '更新我的卡片' }).click()
   await expect(page.locator('.me h2')).toHaveText(name)
 }
 
@@ -102,9 +111,18 @@ test('登录页创建身份后进入左联系人/群组、右聊天框布局', a
   await page.reload()
   await expect(fieldAfterLabel(page, '提示词')).toBeVisible()
 
+  await page.getByRole('button', { name: '注册', exact: true }).click()
   await fieldAfterLabel(page, '提示词').fill('我爱吃菠萝2026')
+  await page.getByRole('button', { name: '注册', exact: true }).last().click()
+  await expect(page.getByRole('heading', { name: '注册成功' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '下载身份' })).toBeVisible()
+  await page.getByRole('button', { name: '去登录' }).click()
+  await expect(page.getByRole('heading', { name: '登录 LM Talk' })).toBeVisible()
+  await expect(page.getByText('Me', { exact: true })).toBeVisible()
+  await fieldAfterLabel(page, '提示词').fill('我爱吃菠萝2026')
+  await page.getByRole('button', { name: '登录', exact: true }).last().click()
   await fieldAfterLabel(page, '我的显示名', 'input').fill('Alice')
-  await page.getByRole('button', { name: '创建新身份' }).click()
+  await page.getByRole('button', { name: '更新我的卡片' }).click()
 
   await expect(page.locator('.chat-shell')).toBeVisible()
   await expect(page.locator('.sidebar')).toBeVisible()
@@ -204,9 +222,9 @@ test('两端可用复制粘贴流程完成好友确认并发送可复制密文',
 
   await alice.reload()
   await expect(fieldAfterLabel(alice, '提示词')).toBeVisible()
+  await expect(alice.getByText('Alice', { exact: true })).toBeVisible()
   await fieldAfterLabel(alice, '提示词').fill('alice passphrase 2026')
-  await fieldAfterLabel(alice, '身份备份包').fill(aliceBackup)
-  await alice.getByRole('button', { name: '恢复并进入' }).click()
+  await alice.getByRole('button', { name: '登录', exact: true }).last().click()
   await expect(alice.locator('.chat-shell')).toBeVisible()
   await expect(alice.locator('.contact').filter({ hasText: 'Bob' })).toBeVisible()
   await alice.locator('.contact').filter({ hasText: 'Bob' }).click()
@@ -249,4 +267,37 @@ test('两端可用复制粘贴流程完成好友确认并发送可复制密文',
 
   await aliceContext.close()
   await bobContext.close()
+})
+
+test('注册后可在独立导入页导入身份，再回登录页登录', async ({ page }) => {
+  await clearBrowserState(page)
+  await page.goto('/#/register')
+  await expect(page.getByRole('heading', { name: '注册 LM Talk' })).toBeVisible()
+  await fieldAfterLabel(page, '提示词').fill('import passphrase 2026')
+  await page.getByRole('button', { name: '注册', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '注册成功' })).toBeVisible()
+
+  const identityText = await page.evaluate(() => {
+    const records = JSON.parse(localStorage.getItem('lm-talk-local-identities-v1') || '[]') as Array<{ backup_text: string }>
+    return records[0]?.backup_text || ''
+  })
+  expect(identityText).toContain('lm-identity-backup-v1:')
+
+  await clearBrowserState(page)
+  await page.goto('/#/import')
+  await expect(page.getByRole('heading', { name: '导入身份', level: 1 })).toBeVisible()
+  await fieldAfterLabel(page, '提示词').fill('wrong passphrase')
+  await fieldAfterLabel(page, '身份文本').fill(identityText)
+  await page.getByRole('button', { name: '导入', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '导入身份', level: 1 })).toBeVisible()
+  await expect(page.getByText('提示词不正确，请重新输入。')).toBeVisible()
+  await page.getByRole('button', { name: '知道了' }).click()
+
+  await fieldAfterLabel(page, '提示词').fill('import passphrase 2026')
+  await page.getByRole('button', { name: '导入', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '登录 LM Talk' })).toBeVisible()
+  await expect(page.getByText('Me', { exact: true })).toBeVisible()
+  await fieldAfterLabel(page, '提示词').fill('import passphrase 2026')
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+  await expect(page.locator('.chat-shell')).toBeVisible()
 })

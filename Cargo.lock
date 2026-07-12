@@ -490,6 +490,7 @@ dependencies = [
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
+ "sha2",
  "uuid",
  "wasm-bindgen",
  "x25519-dalek",
