@@ -30,6 +30,7 @@ function fieldAfterLabel(page: Page, labelText: string, tag = 'textarea'): Locat
 
 
 async function copyMyContactCard(page: Page): Promise<string> {
+  await page.getByRole('button', { name: '我', exact: true }).click()
   await page.getByRole('button', { name: '卡片二维码' }).click()
   await expect(page.locator('.qr-modal')).toBeVisible()
   await page.locator('.qr-modal').getByRole('button', { name: '复制原文' }).click()
@@ -42,7 +43,8 @@ async function copyMyContactCard(page: Page): Promise<string> {
 
 
 async function copyMyBackup(page: Page): Promise<string> {
-  await page.getByRole('button', { name: '备份包二维码' }).click()
+  await page.getByRole('button', { name: '我', exact: true }).click()
+  await page.getByRole('button', { name: '身份文件' }).click()
   await expect(page.locator('.qr-modal')).toBeVisible()
   await page.locator('.qr-modal').getByRole('button', { name: '复制原文' }).click()
   const value = await page.evaluate(() => navigator.clipboard.readText())
@@ -52,15 +54,9 @@ async function copyMyBackup(page: Page): Promise<string> {
 }
 
 async function openDetailsByText(page: Page, text: string) {
+  const found = await page.evaluate((needle) => document.body.textContent?.includes(needle) ?? false, text)
+  if (!found) { await page.getByRole('button', { name: '我', exact: true }).click(); await page.getByRole('button', { name: '调试页面' }).click() }
   await page.evaluate((needle) => {
-    const debugGate = [...document.querySelectorAll('details')] as HTMLDetailsElement[]
-    for (const detail of debugGate) {
-      if (detail.textContent?.includes('高级调试入口')) {
-        detail.open = true
-        const panel = detail.querySelector('.debug-panel') as HTMLElement | null
-        if (panel) panel.style.display = ''
-      }
-    }
     for (const detail of [...document.querySelectorAll('details')] as HTMLDetailsElement[]) {
       if (detail.textContent?.includes(needle)) detail.open = true
     }
@@ -81,8 +77,10 @@ async function createIdentity(page: Page, name: string, passphrase: string) {
   await fieldAfterLabel(page, '提示词').fill(passphrase)
   await page.getByRole('button', { name: '登录', exact: true }).last().click()
   await expect(page.locator('.chat-shell')).toBeVisible()
-  await fieldAfterLabel(page, '我的显示名', 'input').fill(name)
-  await page.getByRole('button', { name: '更新我的卡片' }).click()
+  await page.getByRole('button', { name: '我', exact: true }).click()
+  await fieldAfterLabel(page, '显示名', 'input').fill(name)
+  await page.locator('.home-card').filter({ hasText: '显示名' }).getByRole('button', { name: '保存' }).click()
+  await page.getByRole('button', { name: '聊天', exact: true }).click()
   await expect(page.locator('.me h2')).toHaveText(name)
 }
 
@@ -121,23 +119,25 @@ test('登录页创建身份后进入左联系人/群组、右聊天框布局', a
   await expect(page.getByText('Me', { exact: true })).toBeVisible()
   await fieldAfterLabel(page, '提示词').fill('我爱吃菠萝2026')
   await page.getByRole('button', { name: '登录', exact: true }).last().click()
-  await fieldAfterLabel(page, '我的显示名', 'input').fill('Alice')
-  await page.getByRole('button', { name: '更新我的卡片' }).click()
+  await expect(page.locator('.chat-shell')).toBeVisible()
+  await page.getByRole('button', { name: '我', exact: true }).click()
+  await fieldAfterLabel(page, '显示名', 'input').fill('Alice')
+  await page.locator('.home-card').filter({ hasText: '显示名' }).getByRole('button', { name: '保存' }).click()
+  await page.getByRole('button', { name: '聊天', exact: true }).click()
 
   await expect(page.locator('.chat-shell')).toBeVisible()
   await expect(page.locator('.sidebar')).toBeVisible()
   await expect(page.locator('.chat-main')).toBeVisible()
-  await expect(page.locator('.sidebar').getByRole('heading', { name: '联系人', exact: true })).toBeVisible()
-  await expect(page.locator('.sidebar').getByRole('heading', { name: '群组', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '请选择联系人或群组' })).toBeVisible()
-  await page.getByText('安全会话建立（推荐）').click()
-  await expect(page.getByText('无服务器复制粘贴流程')).toBeVisible()
-  await page.getByText('高级调试入口（默认隐藏）').click()
-  await page.getByText('Public Peer / Mailbox 协议调试').click()
-  await expect(page.getByText('不使用摄像头')).toBeVisible()
+  await expect(page.locator('.sidebar').getByRole('heading', { name: '聊天', exact: true })).toBeVisible()
+  await expect(page.locator('.chat-empty-state').getByRole('heading', { name: '选择一个聊天' })).toBeVisible()
+  await page.getByRole('button', { name: '我', exact: true }).click()
+  await page.getByRole('button', { name: '调试页面' }).click()
+  await openDetailsByText(page, 'Public Peer / Mailbox 协议调试')
   await expect(page.locator('input[capture], video')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '更新我的卡片' })).toBeVisible()
-  await expect(page.getByLabel('自动从 Peer 节点同步 snapshot')).toBeVisible()
+  await page.getByRole('button', { name: '我', exact: true }).click()
+  await expect(page.locator('.home-card').filter({ hasText: '显示名' }).getByRole('button', { name: '保存' })).toBeVisible()
+  await page.getByRole('button', { name: '聊天', exact: true }).click()
+  await expect(page.locator('.chat-empty-state').getByRole('heading', { name: '选择一个聊天' })).toBeVisible()
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', '/manifest.webmanifest')
   const swAvailable = await page.evaluate(() => 'serviceWorker' in navigator)
   expect(swAvailable).toBe(true)
@@ -159,44 +159,55 @@ test('两端可用复制粘贴流程完成好友确认并发送可复制密文',
   const aliceBackup = await copyMyBackup(alice)
   const bobBackup = await copyMyBackup(bob)
 
-  await fieldAfterLabel(alice, '添加联系人 Contact Card').fill(bobCard)
-  await alice.getByRole('button', { name: '添加联系人' }).click()
+  await alice.getByRole('button', { name: '通讯录', exact: true }).click()
+  await fieldAfterLabel(alice, '对方身份文本').fill(bobCard)
+  await alice.getByRole('button', { name: '添加好友' }).click()
+  await alice.getByRole('button', { name: '聊天', exact: true }).click()
   await expect(alice.locator('.contact').filter({ hasText: 'Bob' })).toBeVisible()
-  await fieldAfterLabel(bob, '我的显示名', 'input').fill('Bob 新名')
-  await bob.getByRole('button', { name: '更新我的卡片' }).click()
+  await bob.getByRole('button', { name: '我', exact: true }).click()
+  await fieldAfterLabel(bob, '显示名', 'input').fill('Bob 新名')
+  await bob.locator('.home-card').filter({ hasText: '显示名' }).getByRole('button', { name: '保存' }).click()
   const bobUpdatedCard = await copyMyContactCard(bob)
-  await fieldAfterLabel(alice, '添加联系人 Contact Card').fill(bobUpdatedCard)
-  await alice.getByRole('button', { name: '添加联系人' }).click()
+  await alice.getByRole('button', { name: '聊天', exact: true }).click()
+  await alice.getByRole('button', { name: '通讯录', exact: true }).click()
+  await fieldAfterLabel(alice, '对方身份文本').fill(bobUpdatedCard)
+  await alice.getByRole('button', { name: '添加好友' }).click()
+  await alice.getByRole('button', { name: '聊天', exact: true }).click()
   await expect(alice.locator('.contact').filter({ hasText: 'Bob 新名' })).toBeVisible()
   await expect(alice.locator('.contact').filter({ hasText: 'LocalOnly' })).toBeVisible()
-  await alice.getByRole('button', { name: '生成好友请求' }).click()
+  await alice.locator('.contact').filter({ hasText: 'Bob 新名' }).click()
+  await alice.getByRole('button', { name: '发送好友请求' }).click()
+  await alice.locator('.chat-notice-panel details').filter({ hasText: '离线添加' }).locator('summary').click()
+  await alice.getByRole('button', { name: '复制请求' }).click()
+  const friendRequest = await alice.evaluate(() => navigator.clipboard.readText())
+  expect(friendRequest).toContain('lm-friend-request-v1:')
   await expect(alice.locator('.contact').filter({ hasText: 'RequestSent' })).toBeVisible()
-  await openDetailsByText(alice, '交换区：好友请求 / 收到的密文 Envelope')
-  let friendRequest = ''
-  await expect.poll(async () => {
-    friendRequest = await alice.evaluate(() => ([...document.querySelectorAll('textarea')] as HTMLTextAreaElement[]).map((x) => x.value).find((v) => v.startsWith('lm-friend-request-v1:')) ?? '')
-    return friendRequest
-  }, { timeout: 10_000 }).toContain('lm-friend-request-v1:')
 
   initSync({ module: readFileSync(new URL('../src/wasm/lm_wasm_bg.wasm', import.meta.url)) })
   const friendResponse = accept_friend_request(bobBackup, 'bob passphrase 2026', friendRequest)
   expect(friendResponse).toContain('lm-friend-response-v1:')
 
-  await alice.locator('label:has-text("收到的好友响应") + textarea').fill(friendResponse)
-  await alice.getByRole('button', { name: '应用好友响应' }).click()
+  await alice.locator('.chat-notice-panel details').filter({ hasText: '离线添加' }).evaluate((el: HTMLDetailsElement) => { el.open = true })
+  await alice.getByPlaceholder('粘贴好友响应').fill(friendResponse)
+  await alice.getByRole('button', { name: '应用响应' }).click()
   await expect(alice.locator('.contact').filter({ hasText: 'Friend' })).toBeVisible()
+  await alice.locator('.contact').filter({ hasText: 'Bob 新名' }).click()
 
   await openDetailsByText(alice, '双棘轮状态调试（高级）')
   await alice.getByRole('button', { name: '为当前联系人生成测试状态对' }).click()
   await expect.poll(async () => alice.evaluate(() => ([...document.querySelectorAll('textarea')] as HTMLTextAreaElement[]).map((x) => x.value).find((v) => v.startsWith('lm-ratchet-state-v1:')) ?? ''), { timeout: 10_000 }).toContain('lm-ratchet-state-v1:')
+  await alice.getByRole('button', { name: '聊天', exact: true }).click()
+  await alice.locator('.contact').filter({ hasText: 'Bob 新名' }).click()
 
-  await alice.locator('footer.composer textarea').fill('你好 Bob，P2P 密文测试')
-  await alice.getByRole('button', { name: '发送/生成密文' }).click()
+  await alice.getByPlaceholder('输入消息').fill('你好 Bob，P2P 密文测试')
+  await alice.getByRole('button', { name: '发送', exact: true }).click()
   await expect(alice.locator('.bubble.out')).toContainText('你好 Bob')
-  const envelope = await alice.evaluate(() => ([...document.querySelectorAll('.bubble textarea, textarea')] as HTMLTextAreaElement[]).map((x) => x.value).find((v) => v.includes('x25519-static-hkdf-xchacha20poly1305-v1') || v.includes('x3dh-double-ratchet-v1')) ?? '')
+  await alice.locator('.bubble.out').getByRole('button', { name: '复制密文' }).click()
+  const envelope = await alice.evaluate(() => navigator.clipboard.readText())
   expect(envelope).toContain('x3dh-double-ratchet-v1')
   const sentMessageId = JSON.parse(envelope).message_id
-  const bobUserId = await alice.locator('.contact').filter({ hasText: 'Bob 新名' }).locator('small').innerText()
+  const bobUserIdLine = await alice.locator('.contact').filter({ hasText: 'Bob 新名' }).locator('small').innerText()
+  const bobUserId = bobUserIdLine.split(' · ').pop() || bobUserIdLine
   await openDetailsByText(alice, 'Public Peer / Mailbox 协议调试')
   await alice.locator('textarea[placeholder="mailbox messages"]').fill(JSON.stringify({
     messages: [{
@@ -209,6 +220,8 @@ test('两端可用复制粘贴流程完成好友确认并发送可复制密文',
     }],
   }))
   await alice.getByRole('button', { name: '处理下方 mailbox JSON' }).click()
+  await alice.getByRole('button', { name: '聊天', exact: true }).click()
+  await alice.locator('.contact').filter({ hasText: 'Bob 新名' }).click()
   await expect(alice.locator('.bubble.out')).toContainText('已送达')
 
   await expect.poll(async () => {
@@ -226,6 +239,7 @@ test('两端可用复制粘贴流程完成好友确认并发送可复制密文',
   await fieldAfterLabel(alice, '提示词').fill('alice passphrase 2026')
   await alice.getByRole('button', { name: '登录', exact: true }).last().click()
   await expect(alice.locator('.chat-shell')).toBeVisible()
+  await alice.getByRole('button', { name: '聊天', exact: true }).click()
   await expect(alice.locator('.contact').filter({ hasText: 'Bob' })).toBeVisible()
   await alice.locator('.contact').filter({ hasText: 'Bob' }).click()
   await expect(alice.locator('.bubble.out')).toContainText('你好 Bob')
@@ -241,23 +255,30 @@ test('两端可用复制粘贴流程完成好友确认并发送可复制密文',
   }, { timeout: 10_000 }).toContain('lm-file-package-v1')
   await expect(alice.getByText('文件包已生成')).toBeVisible()
 
-  await fieldAfterLabel(bob, '添加联系人 Contact Card').fill(aliceCard)
-  await bob.getByRole('button', { name: '添加联系人' }).click()
+  await bob.getByRole('button', { name: '通讯录', exact: true }).click()
+  await fieldAfterLabel(bob, '对方身份文本').fill(aliceCard)
+  await bob.getByRole('button', { name: '添加好友' }).click()
+  await bob.getByRole('button', { name: '聊天', exact: true }).click()
   await expect(bob.locator('.contact').filter({ hasText: 'Alice' })).toBeVisible()
+  await bob.locator('.contact').filter({ hasText: 'Alice' }).click()
   await openDetailsByText(bob, '文件传输 MVP')
   await bob.locator('label:has-text("收到的文件包 JSON") + textarea').fill(filePackage)
   await bob.getByRole('button', { name: '解密文件包' }).click()
   await expect(bob.getByText('下载解密文件：hello.txt')).toBeVisible()
+  await bob.getByRole('button', { name: '聊天', exact: true }).click()
+  await bob.locator('.contact').filter({ hasText: 'Alice' }).click()
   await expect(bob.locator('.bubble.in')).toContainText('[文件] hello.txt')
 
+  await alice.getByRole('button', { name: '通讯录', exact: true }).click()
   await alice.getByPlaceholder('例如：测试群').fill('测试群')
   await alice.locator('label.check-row').filter({ hasText: 'Bob' }).locator('input[type="checkbox"]').check()
-  await alice.locator('.add-box').filter({ hasText: '群名' }).getByRole('button', { name: '创建群' }).click()
+  await alice.locator('.home-card').filter({ hasText: '群名' }).getByRole('button', { name: '创建群聊' }).click()
+  await alice.getByRole('button', { name: '聊天', exact: true }).click()
   await expect(alice.locator('.contact').filter({ hasText: '测试群' })).toBeVisible()
   await alice.locator('.contact').filter({ hasText: '测试群' }).click()
   await expect(alice.getByRole('heading', { name: '测试群' })).toBeVisible()
-  await alice.locator('footer.composer textarea').fill('群聊 smoke 测试')
-  await alice.getByRole('button', { name: '发送/生成密文' }).click()
+  await alice.getByPlaceholder('输入消息').fill('群聊 smoke 测试')
+  await alice.getByRole('button', { name: '发送', exact: true }).click()
   await expect(alice.locator('.bubble.out')).toContainText('群聊 smoke 测试')
   await expect.poll(async () => {
     await alice.evaluate(async () => { await (window as any).flushPersistForTests?.() })

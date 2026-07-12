@@ -1,5 +1,5 @@
 const DB_NAME = 'lm-talk-web-db'
-const DB_VERSION = 3
+const DB_VERSION = 4
 const KV_STORE = 'kv'
 
 export const TABLES = {
@@ -100,6 +100,58 @@ export async function idbTableClear(table: TableName): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(table, 'readwrite')
     tx.objectStore(table).clear()
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
+
+export async function idbTableGet<T>(table: TableName, key: IDBValidKey): Promise<T | null> {
+  const db = await openDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(table, 'readonly')
+    const req = tx.objectStore(table).get(key)
+    req.onsuccess = () => resolve((req.result ?? null) as T | null)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+export async function idbTableGetAllByPrefix<T>(table: TableName, prefix: string): Promise<T[]> {
+  const db = await openDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(table, 'readonly')
+    const store = tx.objectStore(table)
+    const values: T[] = []
+    const req = store.openCursor()
+    req.onsuccess = () => {
+      const cursor = req.result
+      if (!cursor) {
+        resolve(values)
+        return
+      }
+      if (typeof cursor.key === 'string' && cursor.key.startsWith(prefix)) values.push(cursor.value as T)
+      cursor.continue()
+    }
+    req.onerror = () => reject(req.error)
+  })
+}
+
+export async function idbTableReplaceByPrefix<T>(table: TableName, prefix: string, entries: Array<[IDBValidKey, T]>): Promise<void> {
+  const db = await openDb()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(table, 'readwrite')
+    const store = tx.objectStore(table)
+    const cursorReq = store.openCursor()
+    cursorReq.onsuccess = () => {
+      const cursor = cursorReq.result
+      if (cursor) {
+        if (typeof cursor.key === 'string' && cursor.key.startsWith(prefix)) cursor.delete()
+        cursor.continue()
+      } else {
+        for (const [key, value] of entries) store.put(cloneForIdb(value), key)
+      }
+    }
+    cursorReq.onerror = () => reject(cursorReq.error)
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error)
   })

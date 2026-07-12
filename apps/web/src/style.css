@@ -224,3 +224,40 @@ em { color: #07c160; font-size: 10px; }
 /* Toast alignment */
 .toast-stack { left: 50%; right: auto; transform: translateX(-50%); top: 72px; justify-items: center; }
 .toast { width: fit-content; max-width: min(360px, calc(100vw - 36px)); text-align: center; }
+.chat-notice-panel { background: #fff; border-bottom: 1px solid #e5e5e5; padding: 10px 20px; }
+.notice-text { display: grid; gap: 2px; color: #666; font-size: 13px; }
+.notice-text b { color: #333; font-size: 14px; }
+.notice-text.ok b { color: #16833a; }
+.inline-details { margin-top: 8px; background: #fafafa; border: 1px solid #ececec; border-radius: 8px; padding: 8px 10px; }
+.inline-details summary { cursor: pointer; font-weight: 650; color: #555; }
+.receive-inline { grid-column: 1 / -1; background: #fff; border: 1px solid #ececec; border-radius: 8px; padding: 8px 10px; }
+.receive-inline summary { cursor: pointer; font-weight: 650; color: #555; }
+.receive-inline textarea { margin-top: 8px; }
+.simple-page { height: calc(100vh - 52px); overflow: auto; background: #f5f5f5; padding: 24px; }
+.simple-header { max-width: 980px; margin: 0 auto 16px; }
+.simple-header h1 { margin: 0 0 6px; font-size: 24px; }
+.simple-header p { margin: 0; color: #777; }
+.simple-grid { max-width: 980px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; align-items: start; }
+.contacts-list-card { max-width: 980px; margin: 14px auto 0; }
+.contacts-list { display: grid; gap: 8px; }
+.contact-row { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 10px; align-items: center; width: 100%; text-align: left; background: #fff; color: #172033; border: 1px solid #ececec; }
+.contact-row:hover { background: #f7f7f7; }
+.contact-row b, .contact-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.address-book-layout { max-width: 980px; margin: 0 auto; display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 16px; align-items: start; }
+.address-menu { background: #fff; border: 1px solid #e3e3e3; border-radius: 10px; overflow: hidden; position: sticky; top: 16px; }
+.address-menu a { display: block; padding: 12px 14px; color: #333; text-decoration: none; border-bottom: 1px solid #f0f0f0; }
+.address-menu a:hover { background: #f7f7f7; }
+.address-content { display: grid; gap: 14px; }
+.chat-empty-state { height: 100%; display: grid; place-content: center; color: #999; text-align: center; }
+.chat-empty-state h2 { margin: 0; font-size: 22px; font-weight: 500; }
+@media (max-width: 850px) { .address-book-layout { grid-template-columns: 1fr; } .address-menu { position: static; } }
+.contacts-header { display: grid; grid-template-columns: 1fr minmax(220px, 360px); gap: 12px; align-items: center; }
+.contacts-search { margin: 0; background: #fff; }
+.contact-detail-card { border-color: #dce7ff; }
+.detail-head { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 12px; align-items: center; }
+.avatar.large { width: 54px; height: 54px; font-size: 20px; }
+.detail-head h3 { margin-bottom: 4px; }
+.detail-head small { overflow-wrap: anywhere; color: #667085; }
+.detail-actions { margin-top: 12px; }
+.detail-members { margin-top: 10px; }
+@media (max-width: 850px) { .contacts-header { grid-template-columns: 1fr; } }

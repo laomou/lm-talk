@@ -4,8 +4,10 @@ import { useRoute, useRouter } from 'vue-router'
 import LoginPage from './components/LoginPage.vue'
 import ChatPage from './components/ChatPage.vue'
 import DebugPage from './components/DebugPage.vue'
+import ContactsPage from './components/ContactsPage.vue'
+import SettingsPage from './components/SettingsPage.vue'
 import QRCode from 'qrcode'
-import { TABLES, idbDel, idbGet, idbSet, idbTableClear, idbTableGetAll, idbTableReplace } from './idb'
+import { TABLES, idbDel, idbGet, idbSet, idbTableClear, idbTableGet, idbTableGetAllByPrefix, idbTableReplaceByPrefix } from './idb'
 import init, {
   accept_friend_request,
   create_device_cert,
@@ -259,7 +261,7 @@ const qrRawText = ref('')
 const route = useRoute()
 const router = useRouter()
 const authMode = computed(() => route.path === '/register' ? 'register' : route.path === '/import' ? 'import' : 'login')
-const currentPage = computed(() => route.path === '/debug' ? 'debug' : 'chat')
+const currentPage = computed(() => route.path === '/debug' ? 'debug' : route.path === '/contacts' ? 'contacts' : (route.path === '/me' || route.path === '/settings') ? 'settings' : 'chat')
 type ToastKind = 'success' | 'error' | 'warning' | 'info'
 type ToastItem = { id: string; kind: ToastKind; text: string }
 type ConfirmDialogState = {
@@ -456,7 +458,6 @@ onMounted(async () => {
   try {
     await init()
     loadLocalIdentityList()
-    await loadPersistedState()
     startOutboxRetryLoop()
     startNodeSyncLoop()
     document.addEventListener('visibilitychange', () => {
@@ -489,6 +490,26 @@ function newId(): string {
     return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`
   }
   return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
+function fallbackCopyText(value: string) {
+  const textarea = document.createElement('textarea')
+  textarea.value = value
+  textarea.setAttribute('readonly', 'true')
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.select()
+  document.execCommand('copy')
+  document.body.removeChild(textarea)
+}
+
+async function writeClipboardText(value: string) {
+  if ((navigator.clipboard as Clipboard | undefined)?.writeText) {
+    await navigator.clipboard.writeText(value)
+    return
+  }
+  fallbackCopyText(value)
 }
 
 function toast(text: string, kind: ToastKind = 'info') {
@@ -810,22 +831,36 @@ function persistedMeta(): PersistedMeta {
   }
 }
 
+function ownerId(): string {
+  return identity.value?.user_id || selectedLocalIdentityId.value || 'anonymous'
+}
+
+function ownerKey(key: string): string {
+  return `${ownerId()}::${key}`
+}
+
+function ownerPrefix(): string {
+  return `${ownerId()}::`
+}
+
 async function persistStateTables() {
+  if (!identity.value) return
   const key = await localStorageCryptoKey()
   const storedContacts = await Promise.all(contacts.value.map((c) => encryptContactForStore(c, key)))
   const storedGroups = await Promise.all(groups.value.map((g) => encryptGroupForStore(g, key)))
   const storedMessages = await Promise.all(messages.value.map((m) => encryptMessageForStore(m, key)))
   const storedOutbox = await Promise.all(outbox.value.map((o) => encryptOutboxForStore(o, key)))
   const storedRatchets = await Promise.all(ratchetSessions.value.map((r) => encryptRatchetForStore(r, key)))
-  await idbTableReplace(TABLES.meta, [['main', persistedMeta()]])
-  await idbTableReplace(TABLES.contacts, storedContacts.map((c) => [c.user_id, c]))
-  await idbTableReplace(TABLES.friendRequests, friendRequests.value.map((r) => [r.request_id, r]))
-  await idbTableReplace(TABLES.groups, storedGroups.map((g) => [g.group_id, g]))
-  await idbTableReplace(TABLES.groupInvites, groupInvites.value.map((g) => [g.invite_id, g]))
-  await idbTableReplace(TABLES.groupSenderKeys, groupSenderKeys.value.map((k) => [k.key_id, k]))
-  await idbTableReplace(TABLES.messages, storedMessages.map((m) => [m.id, m]))
-  await idbTableReplace(TABLES.outbox, storedOutbox.map((o) => [o.id, o]))
-  await idbTableReplace(TABLES.ratchetSessions, storedRatchets.map((r) => [r.peer_user_id, r]))
+  const prefix = ownerPrefix()
+  await idbTableReplaceByPrefix(TABLES.meta, prefix, [[ownerKey('main'), persistedMeta()]])
+  await idbTableReplaceByPrefix(TABLES.contacts, prefix, storedContacts.map((c) => [ownerKey(c.user_id), c]))
+  await idbTableReplaceByPrefix(TABLES.friendRequests, prefix, friendRequests.value.map((r) => [ownerKey(r.request_id), r]))
+  await idbTableReplaceByPrefix(TABLES.groups, prefix, storedGroups.map((g) => [ownerKey(g.group_id), g]))
+  await idbTableReplaceByPrefix(TABLES.groupInvites, prefix, groupInvites.value.map((g) => [ownerKey(g.invite_id), g]))
+  await idbTableReplaceByPrefix(TABLES.groupSenderKeys, prefix, groupSenderKeys.value.map((k) => [ownerKey(k.key_id), k]))
+  await idbTableReplaceByPrefix(TABLES.messages, prefix, storedMessages.map((m) => [ownerKey(m.id), m]))
+  await idbTableReplaceByPrefix(TABLES.outbox, prefix, storedOutbox.map((o) => [ownerKey(o.id), o]))
+  await idbTableReplaceByPrefix(TABLES.ratchetSessions, prefix, storedRatchets.map((r) => [ownerKey(r.peer_user_id), r]))
   await idbSet('chat-state-schema-v2', true)
 }
 
@@ -871,8 +906,8 @@ async function writeStateToTables(state: PersistedState) {
 }
 
 async function loadStateFromTables(): Promise<boolean> {
-  const metas = await idbTableGetAll<PersistedMeta>(TABLES.meta)
-  const meta = metas[0]
+  if (!identity.value) return false
+  const meta = await idbTableGet<PersistedMeta>(TABLES.meta, ownerKey('main'))
   if (!meta) return false
   backupText.value = meta.backupText ?? ''
   myContactCardText.value = meta.myContactCardText ?? ''
@@ -886,14 +921,15 @@ async function loadStateFromTables(): Promise<boolean> {
   autoNodeSync.value = meta.autoNodeSync ?? false
   processedMailboxIds.value = meta.processedMailboxIds ?? []
   const key = await localStorageCryptoKey()
-  contacts.value = await Promise.all((await idbTableGetAll<any>(TABLES.contacts)).map((c: any) => decryptContactFromStore(c, key)))
-  friendRequests.value = await idbTableGetAll<FriendRequestItem>(TABLES.friendRequests)
-  groups.value = await Promise.all((await idbTableGetAll<any>(TABLES.groups)).map((g: any) => decryptGroupFromStore(g, key)))
-  groupInvites.value = await idbTableGetAll<GroupInviteItem>(TABLES.groupInvites)
-  groupSenderKeys.value = await idbTableGetAll<GroupSenderKeyItem>(TABLES.groupSenderKeys)
-  messages.value = await Promise.all((await idbTableGetAll<any>(TABLES.messages)).map((m: any) => decryptMessageFromStore(m, key)))
-  outbox.value = await Promise.all((await idbTableGetAll<any>(TABLES.outbox)).map((o: any) => decryptOutboxFromStore(o, key)))
-  ratchetSessions.value = await Promise.all((await idbTableGetAll<any>(TABLES.ratchetSessions)).map((r: any) => decryptRatchetFromStore(r, key)))
+  const prefix = ownerPrefix()
+  contacts.value = await Promise.all((await idbTableGetAllByPrefix<any>(TABLES.contacts, prefix)).map((c: any) => decryptContactFromStore(c, key)))
+  friendRequests.value = await idbTableGetAllByPrefix<FriendRequestItem>(TABLES.friendRequests, prefix)
+  groups.value = await Promise.all((await idbTableGetAllByPrefix<any>(TABLES.groups, prefix)).map((g: any) => decryptGroupFromStore(g, key)))
+  groupInvites.value = await idbTableGetAllByPrefix<GroupInviteItem>(TABLES.groupInvites, prefix)
+  groupSenderKeys.value = await idbTableGetAllByPrefix<GroupSenderKeyItem>(TABLES.groupSenderKeys, prefix)
+  messages.value = await Promise.all((await idbTableGetAllByPrefix<any>(TABLES.messages, prefix)).map((m: any) => decryptMessageFromStore(m, key)))
+  outbox.value = await Promise.all((await idbTableGetAllByPrefix<any>(TABLES.outbox, prefix)).map((o: any) => decryptOutboxFromStore(o, key)))
+  ratchetSessions.value = await Promise.all((await idbTableGetAllByPrefix<any>(TABLES.ratchetSessions, prefix)).map((r: any) => decryptRatchetFromStore(r, key)))
   if (backupText.value && myContactCardText.value) {
     try {
       const info = safeJson<ContactInfo>(inspect_contact_card(myContactCardText.value))
@@ -927,6 +963,35 @@ async function loadPersistedState() {
   } catch (e) {
     appendLog(`❌ IndexedDB 加载失败：${String(e)}`)
   }
+}
+
+function resetAccountScopedState() {
+  contacts.value = []
+  friendRequests.value = []
+  groups.value = []
+  groupInvites.value = []
+  groupSenderKeys.value = []
+  messages.value = []
+  outbox.value = []
+  ratchetSessions.value = []
+  processedMailboxIds.value = []
+  activePeerId.value = ''
+  activeGroupId.value = ''
+  myContactCardText.value = ''
+  myDeviceCertJson.value = ''
+  myDeviceId.value = ''
+  safetyPolicy.value = {
+    enableTextFilter: true,
+    textFilterLevel: 'Standard',
+    warnExternalLinks: true,
+    warnExecutableFiles: true,
+    dropFilteredIncoming: false,
+  }
+  nodeEnabled.value = false
+  autoMailboxTake.value = true
+  autoPublishPreKey.value = true
+  autoNodeSync.value = false
+  nodeControlStatus.value = '未连接'
 }
 
 async function clearPersisted() {
@@ -1013,9 +1078,22 @@ async function afterLoginAutomation() {
   if (autoMailboxTake.value) await takeMailboxFromNode()
 }
 
+function nodeUrlList(): string[] {
+  return nodeControlUrl.value
+    .split(/[\n,]+/)
+    .map((x) => x.trim())
+    .filter(Boolean)
+}
+
+function primaryNodeUrl(): string {
+  return nodeUrlList()[0] ?? ''
+}
+
 function saveNetworkSettings() {
+  const urls = nodeUrlList()
+  if (urls.length > 0) nodeControlUrl.value = urls.join('\n')
   persist()
-  appendLog(`✅ 已保存网络设置：${nodeEnabled.value ? '启用' : '停用'} ${nodeControlUrl.value}`)
+  appendLog(`✅ 已保存消息同步设置：${nodeEnabled.value ? '启用' : '停用'} ${urls.length ? `${urls.length} 个节点` : '未填写节点'}`)
 }
 
 function toggleNodeEnabled() {
@@ -1253,12 +1331,17 @@ function createIdentityAndEnter() {
 }
 
 function restoreAndEnter() {
-  run('恢复身份并进入', () => {
+  run('登录', () => {
     if (!backupText.value.trim()) throw new Error('请粘贴身份备份包')
     if (!passphrase.value.trim()) throw new Error('请输入提示词')
-    const out = safeJson<RestoreOutput>(restore_identity(backupText.value, passphrase.value))
+    const loginBackup = backupText.value
+    const loginName = displayName.value || 'Me'
+    const out = safeJson<RestoreOutput>(restore_identity(loginBackup, passphrase.value))
     identity.value = out
-    void decryptSensitiveStateInMemory()
+    resetAccountScopedState()
+    backupText.value = loginBackup
+    displayName.value = loginName
+    void loadPersistedState()
       .then(() => {
         loggedIn.value = true
         if (!myContactCardText.value) exportMyCard()
@@ -1284,6 +1367,7 @@ function refreshMyContactCard() {
   run('更新我的 Contact Card', () => {
     if (!backupText.value || !passphrase.value) throw new Error('请先登录')
     exportMyCard()
+    if (identity.value) rememberLocalIdentity(identity.value.user_id, displayName.value || 'Me', backupText.value)
     persist()
     appendLog('✅ 我的 Contact Card 已更新，可重新发布/发送给好友')
   })
@@ -1370,7 +1454,7 @@ function applyDeviceRevokeToActiveContact() {
 async function copyText(value: string, label: string) {
   try {
     if (!value) throw new Error('内容为空')
-    await navigator.clipboard.writeText(value)
+    await writeClipboardText(value)
     appendLog(`✅ 已复制 ${label}`)
     toast(`已复制 ${label}`, 'success')
   } catch (e) {
@@ -1486,6 +1570,7 @@ function addContact() {
     activePeerId.value = item.user_id
     addContactText.value = ''
     persist()
+    if (nodeEnabled.value && item.state === 'LocalOnly') createFriendRequestForActive()
     void ensureRatchetSessionFromNode(item).catch((e) => appendLog(`⚠️ 自动建链失败：${String(e)}`))
   })
 }
@@ -2949,12 +3034,13 @@ function inspectMailboxMessageText() {
   })
 }
 
-function nodeControlEndpoint(path: string): string {
-  return `${nodeControlUrl.value.replace(/\/$/, '')}${path}`
+function nodeControlEndpoint(path: string, baseUrl = primaryNodeUrl()): string {
+  if (!baseUrl) throw new Error('请先填写同步节点')
+  return `${baseUrl.replace(/\/$/, '')}${path}`
 }
 
-async function nodeFetchJson(path: string, init?: RequestInit): Promise<any> {
-  const res = await fetch(nodeControlEndpoint(path), {
+async function fetchNodeOnce(baseUrl: string, path: string, init?: RequestInit): Promise<any> {
+  const res = await fetch(nodeControlEndpoint(path, baseUrl), {
     ...init,
     headers: {
       'content-type': 'application/json',
@@ -2966,6 +3052,25 @@ async function nodeFetchJson(path: string, init?: RequestInit): Promise<any> {
   try { body = text ? JSON.parse(text) : {} } catch {}
   if (!res.ok) throw new Error(typeof body === 'string' ? body : JSON.stringify(body))
   return body
+}
+
+async function nodeFetchJson(path: string, init?: RequestInit): Promise<any> {
+  const urls = nodeUrlList()
+  if (urls.length === 0) throw new Error('请先填写同步节点')
+  const errors: string[] = []
+  for (const url of urls) {
+    try {
+      const body = await fetchNodeOnce(url, path, init)
+      if (nodeControlUrl.value.trim().split(/[\n,]+/)[0]?.trim() !== url) {
+        nodeControlUrl.value = [url, ...urls.filter((x) => x !== url)].join('\n')
+        persist()
+      }
+      return body
+    } catch (e) {
+      errors.push(`${url}: ${String(e).replace(/^Error:\s*/, '')}`)
+    }
+  }
+  throw new Error(`所有同步节点都不可用：${errors.join('；')}`)
 }
 
 async function checkNodeHealth() {
@@ -3139,6 +3244,7 @@ function unwrapMailboxDelivery(item: any): { deliveryId?: string; message: any }
 function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: string } {
   const { deliveryId, message } = unwrapMailboxDelivery(item)
   const kind = typeof message.kind === 'string' ? message.kind : ''
+  const normalizedKind = kind.replace(/[-_]/g, '').toLowerCase()
   const fromUserId = String(message.from_user_id ?? '')
   const ciphertext = String(message.ciphertext ?? '')
   const sender = contactByUserId(fromUserId)
@@ -3153,7 +3259,7 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
   activePeerId.value = sender.user_id
   activeGroupId.value = ''
 
-  if (kind === 'DirectEnvelope' || kind === 'GroupFanout') {
+  if (normalizedKind === 'directenvelope' || normalizedKind === 'groupfanout') {
     try {
       receiveEnvelopeWithContact(ciphertext, sender)
       appendLog(`✅ 已自动解密 mailbox ${kind}`)
@@ -3165,12 +3271,12 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
     }
   }
 
-  if (kind === 'SignalOffer') {
+  if (normalizedKind === 'signaloffer') {
     remoteSignalText.value = ciphertext
     appendLog('✅ 已从 mailbox 填入远端 Signal Offer')
     return { handled: true, deliveryId }
   }
-  if (kind === 'SignalAnswer') {
+  if (normalizedKind === 'signalanswer') {
     remoteSignalText.value = ciphertext
     appendLog('✅ 已从 mailbox 填入远端 Signal Answer')
     return { handled: true, deliveryId }
@@ -3407,16 +3513,38 @@ function formatTime(ts: number) {
   return new Date(ts).toLocaleTimeString()
 }
 
+function goChatHome() {
+  activePeerId.value = ''
+  activeGroupId.value = ''
+  void router.push('/chat')
+}
+
 function goChatPage() {
   void router.push('/chat')
+}
+
+function goContactsPage() {
+  void router.push('/contacts')
+}
+
+function goSettingsPage() {
+  void router.push('/me')
 }
 
 function goDebugPage() {
   void router.push('/debug')
 }
+
+function logout() {
+  loggedIn.value = false
+  identity.value = null
+  passphrase.value = ''
+  resetAccountScopedState()
+  void router.push('/login')
+}
 const appContext = {
-  goChatPage, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, myContactCardText, backupText,
-  nodeControlUrl, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
+  goChatPage, goChatHome, goContactsPage, goSettingsPage, goDebugPage, logout, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, myContactCardText, backupText,
+  nodeControlUrl, nodeUrlList, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, createMyDeviceCert, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
@@ -3484,13 +3612,15 @@ const appContext = {
         <small>{{ identity?.user_id }}</small>
       </div>
       <div class="row compact">
-        <button :class="{ secondary: currentPage !== 'chat' }" @click="goChatPage">聊天</button>
-        <button :class="{ secondary: currentPage !== 'debug' }" @click="goDebugPage">调试</button>
+        <button :class="{ secondary: currentPage !== 'chat' }" @click="goChatHome">聊天</button>
+        <button :class="{ secondary: currentPage !== 'contacts' }" @click="goContactsPage">通讯录</button>
+        <button :class="{ secondary: currentPage !== 'settings' }" @click="goSettingsPage">我</button>
       </div>
     </nav>
 
     <ChatPage v-if="currentPage === 'chat'" :ctx="appContext" />
-
+    <ContactsPage v-else-if="currentPage === 'contacts'" :ctx="appContext" />
+    <SettingsPage v-else-if="currentPage === 'settings'" :ctx="appContext" />
     <DebugPage v-else :ctx="appContext" />
   </main>
 

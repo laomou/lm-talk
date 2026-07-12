@@ -88,6 +88,46 @@ defineProps<{ ctx: any }>()
         <textarea v-model="ctx.ratchetInfoText.value" rows="5" readonly />
       </details>
 
+
+      <details class="add-box">
+        <summary>交换区：好友请求 / 收到的密文 Envelope</summary>
+        <div class="row compact">
+          <button @click="ctx.createFriendRequestForActive">生成好友请求</button>
+          <button @click="ctx.copyText(ctx.friendRequestText.value, '好友请求')">复制好友请求</button>
+          <button @click="ctx.showQr(ctx.friendRequestText.value, '好友请求')">好友请求二维码</button>
+        </div>
+        <label>好友请求</label>
+        <textarea v-model="ctx.friendRequestText.value" rows="3" />
+        <label>收到的好友响应</label>
+        <textarea v-model="ctx.incomingFriendResponseText.value" rows="3" placeholder="lm-friend-response-v1:..." />
+        <button @click="ctx.applyFriendResponse">应用好友响应</button>
+        <label>收到的 Envelope JSON</label>
+        <textarea v-model="ctx.inboundEnvelopeText.value" rows="5" />
+        <button @click="ctx.receiveEnvelope">解密并加入聊天</button>
+      </details>
+
+      <details class="add-box">
+        <summary>文件传输 MVP</summary>
+        <p class="hint">文件会被切块加密成 JSON 包；可通过 DataChannel/Mailbox 发送，也可复制/下载后离线传输。</p>
+        <input type="file" @change="ctx.onFileSelected" />
+        <div class="row compact">
+          <button @click="ctx.createFilePackageForActive">加密文件包</button>
+          <button @click="ctx.sendFilePackageOverRtc">WebRTC 发送文件包</button>
+          <button @click="ctx.copyText(ctx.filePackageText.value, '文件包')">复制文件包</button>
+          <button @click="ctx.downloadText(ctx.filePackageText.value, 'lm-file-package.json')">下载文件包</button>
+        </div>
+        <small>{{ ctx.rtcFileStatus.value }}</small>
+        <textarea v-model="ctx.filePackageText.value" rows="5" placeholder="生成的文件包 JSON" />
+        <label>收到的文件包 JSON</label>
+        <textarea v-model="ctx.incomingFilePackageText.value" rows="5" placeholder="粘贴文件包 JSON" />
+        <div class="row compact">
+          <button @click="ctx.inspectIncomingFilePackage">解析文件包</button>
+          <button @click="ctx.decryptIncomingFilePackage">解密文件包</button>
+          <a v-if="ctx.receivedFileUrl.value" :href="ctx.receivedFileUrl.value" :download="ctx.receivedFileName.value">下载解密文件：{{ ctx.receivedFileName.value }}</a>
+        </div>
+        <textarea v-model="ctx.filePackageInfoText.value" rows="5" placeholder="文件包信息" readonly />
+      </details>
+
       <details class="add-box">
         <summary>本地安全策略 / 过滤</summary>
         <p class="hint">无社区管理员；这里只做本设备本地自治过滤，不上传、不审查全网。</p>
@@ -167,8 +207,8 @@ defineProps<{ ctx: any }>()
         <textarea v-model="ctx.mailboxMessageInfoText.value" rows="4" placeholder="解析结果" readonly />
 
         <hr />
-        <label>lm_node 控制面 URL</label>
-        <input v-model="ctx.nodeControlUrl.value" placeholder="http://127.0.0.1:8787" />
+        <label>lm_node 控制面 URL（每行一个）</label>
+        <textarea v-model="ctx.nodeControlUrl.value" rows="3" placeholder="http://127.0.0.1:8787" />
         <div class="row compact">
           <button @click="ctx.checkNodeHealth">Health</button>
           <button @click="ctx.submitPublicPeerToNode">提交 PublicPeer</button>
