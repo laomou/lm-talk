@@ -99,17 +99,27 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .or(file_config.peer_id)
                 .unwrap_or("lm-node-dev".into());
             let state_file = optional_arg(&args, "--state-file")?.or(file_config.state_file);
-            let sync_peer_token = optional_arg(&args, "--sync-peer-token")?
+            let sync_peer_token_direct = optional_arg(&args, "--sync-peer-token")?
                 .or_else(|| env::var("LM_NODE_SYNC_PEER_TOKEN").ok());
-            let mut sync_peers = file_config
-                .sync_peers
-                .unwrap_or_default()
-                .into_iter()
-                .map(|peer| SyncPeerConfig {
+            let sync_peer_token_from_file = optional_secret_file_arg(
+                &args,
+                "--sync-peer-token-file",
+                "LM_NODE_SYNC_PEER_TOKEN_FILE",
+                None,
+            )?;
+            let sync_peer_token = choose_secret(sync_peer_token_direct, sync_peer_token_from_file);
+            let mut sync_peers = Vec::new();
+            for peer in file_config.sync_peers.unwrap_or_default() {
+                let token_from_file = peer
+                    .token_file
+                    .as_deref()
+                    .map(read_secret_file)
+                    .transpose()?;
+                sync_peers.push(SyncPeerConfig {
                     url: peer.url,
-                    token: peer.token,
-                })
-                .collect::<Vec<_>>();
+                    token: choose_secret(peer.token, token_from_file),
+                });
+            }
             if let Some(sync_peer_urls) = optional_arg(&args, "--sync-peer")? {
                 sync_peers = parse_csv(&sync_peer_urls)
                     .into_iter()
@@ -135,9 +145,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .transpose()?
                 .or(file_config.sync_max_backoff_seconds)
                 .unwrap_or(300);
-            let token = optional_arg(&args, "--control-token")?
+            let control_token_direct = optional_arg(&args, "--control-token")?
                 .or_else(|| env::var("LM_NODE_CONTROL_TOKEN").ok())
                 .or(file_config.control_token);
+            let control_token_from_file = optional_secret_file_arg(
+                &args,
+                "--control-token-file",
+                "LM_NODE_CONTROL_TOKEN_FILE",
+                file_config.control_token_file,
+            )?;
+            let token = choose_secret(control_token_direct, control_token_from_file);
             let cors_allow_origins = optional_arg(&args, "--cors-allow-origin")?
                 .or_else(|| env::var("LM_NODE_CORS_ALLOW_ORIGIN").ok())
                 .map(|value| parse_csv(&value))
@@ -202,6 +219,31 @@ fn parse_csv(value: &str) -> Vec<String> {
         .collect()
 }
 
+fn read_secret_file(path: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let value = fs::read_to_string(path)?.trim().to_string();
+    if value.is_empty() {
+        Err(format!("secret file is empty: {path}").into())
+    } else {
+        Ok(value)
+    }
+}
+
+fn optional_secret_file_arg(
+    args: &[String],
+    arg_name: &str,
+    env_name: &str,
+    config_value: Option<String>,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    let path = optional_arg(args, arg_name)?
+        .or_else(|| env::var(env_name).ok())
+        .or(config_value);
+    path.map(|path| read_secret_file(&path)).transpose()
+}
+
+fn choose_secret(direct: Option<String>, file_value: Option<String>) -> Option<String> {
+    direct.or(file_value)
+}
+
 #[derive(Debug, Clone, Default)]
 struct ControlSecurityConfig {
     token: Option<String>,
@@ -227,6 +269,7 @@ struct ServeControlConfigFile {
     peer_id: Option<String>,
     state_file: Option<String>,
     control_token: Option<String>,
+    control_token_file: Option<String>,
     cors_allow_origins: Option<Vec<String>>,
     sync_peers: Option<Vec<SyncPeerConfigFile>>,
     sync_interval_seconds: Option<u64>,
@@ -237,6 +280,7 @@ struct ServeControlConfigFile {
 struct SyncPeerConfigFile {
     url: String,
     token: Option<String>,
+    token_file: Option<String>,
 }
 
 impl ServeControlConfigFile {
@@ -638,7 +682,10 @@ serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--st
 
 #[cfg(test)]
 mod tests {
-    use super::{ServeControlConfigFile, sync_backoff_delay_seconds};
+    use super::{
+        ServeControlConfigFile, current_unix_timestamp, read_secret_file,
+        sync_backoff_delay_seconds,
+    };
 
     #[test]
     fn sync_backoff_is_exponential_and_capped() {
@@ -650,6 +697,23 @@ mod tests {
     }
 
     #[test]
+    fn secret_file_loader_trims_and_rejects_empty_files() {
+        let path = std::env::temp_dir().join(format!(
+            "lm-node-secret-test-{}-{}.txt",
+            std::process::id(),
+            current_unix_timestamp()
+        ));
+        std::fs::write(&path, "  secret-value\n").unwrap();
+        assert_eq!(
+            read_secret_file(path.to_str().unwrap()).unwrap(),
+            "secret-value"
+        );
+        std::fs::write(&path, "  \n").unwrap();
+        assert!(read_secret_file(path.to_str().unwrap()).is_err());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
     fn serve_control_config_file_parses_sync_and_security() {
         let config: ServeControlConfigFile = serde_json::from_str(
             r#"{
@@ -657,11 +721,12 @@ mod tests {
                 "peer_id": "cfg-node",
                 "state_file": "state.json",
                 "control_token": "control",
+                "control_token_file": "control.secret",
                 "cors_allow_origins": ["https://allowed.example"],
                 "sync_interval_seconds": 5,
                 "sync_max_backoff_seconds": 60,
                 "sync_peers": [
-                    { "url": "http://127.0.0.1:8787", "token": "peer-token" }
+                    { "url": "http://127.0.0.1:8787", "token": "peer-token", "token_file": "peer.secret" }
                 ]
             }"#,
         )
@@ -669,6 +734,7 @@ mod tests {
         assert_eq!(config.bind.as_deref(), Some("127.0.0.1:9999"));
         assert_eq!(config.peer_id.as_deref(), Some("cfg-node"));
         assert_eq!(config.control_token.as_deref(), Some("control"));
+        assert_eq!(config.control_token_file.as_deref(), Some("control.secret"));
         assert_eq!(
             config.cors_allow_origins.unwrap(),
             vec!["https://allowed.example"]
@@ -678,5 +744,6 @@ mod tests {
         let peer = &config.sync_peers.unwrap()[0];
         assert_eq!(peer.url, "http://127.0.0.1:8787");
         assert_eq!(peer.token.as_deref(), Some("peer-token"));
+        assert_eq!(peer.token_file.as_deref(), Some("peer.secret"));
     }
 }

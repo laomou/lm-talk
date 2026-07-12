@@ -255,13 +255,15 @@ fn real_http_control_plane_loads_config_file() {
             .as_nanos()
     ));
     let state_file = config_file.with_extension("state.json");
+    let token_file = config_file.with_extension("token");
+    std::fs::write(&token_file, "config-secret\n").unwrap();
     std::fs::write(
         &config_file,
         json!({
             "bind": base,
             "peer_id": "http-config-node",
             "state_file": state_file,
-            "control_token": "config-secret",
+            "control_token_file": token_file,
             "cors_allow_origins": ["https://allowed.example"],
             "sync_interval_seconds": 0,
             "sync_max_backoff_seconds": 7,
@@ -289,6 +291,7 @@ fn real_http_control_plane_loads_config_file() {
     assert!(authorized.body.contains("http-config-node"));
     let _ = std::fs::remove_file(&config_file);
     let _ = std::fs::remove_file(&state_file);
+    let _ = std::fs::remove_file(&token_file);
 }
 
 #[test]

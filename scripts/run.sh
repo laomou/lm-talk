@@ -19,9 +19,11 @@ Node options:
   --state-file PATH       default: ./lm-node-state.prd.json unless --config-file is used
   --peer-id ID            default: lm-node-prd
   --control-token TOKEN   require Authorization: Bearer TOKEN for non-health APIs
+  --control-token-file PATH read control token from file
   --cors-allow-origin CSV allow only listed browser origins
   --sync-peer URL[,URL]   periodically import peer snapshots
   --sync-peer-token TOKEN Bearer token used when fetching sync peer snapshots
+  --sync-peer-token-file PATH read sync peer token from file
   --sync-interval-seconds N
   --sync-max-backoff-seconds N maximum retry backoff after sync failures (default: 300)
 USAGE
@@ -69,9 +71,11 @@ state_file_set=0
 peer_id="lm-node-prd"
 peer_id_set=0
 control_token="${LM_NODE_CONTROL_TOKEN:-}"
+control_token_file="${LM_NODE_CONTROL_TOKEN_FILE:-}"
 cors_allow_origin="${LM_NODE_CORS_ALLOW_ORIGIN:-}"
 sync_peer=""
 sync_peer_token="${LM_NODE_SYNC_PEER_TOKEN:-}"
+sync_peer_token_file="${LM_NODE_SYNC_PEER_TOKEN_FILE:-}"
 sync_interval_seconds="0"
 sync_max_backoff_seconds="300"
 
@@ -85,9 +89,11 @@ while [[ $# -gt 0 ]]; do
     --state-file) state_file="${2:?--state-file requires PATH}"; state_file_set=1; shift 2 ;;
     --peer-id) peer_id="${2:?--peer-id requires ID}"; peer_id_set=1; shift 2 ;;
     --control-token) control_token="${2:?--control-token requires TOKEN}"; shift 2 ;;
+    --control-token-file) control_token_file="${2:?--control-token-file requires PATH}"; shift 2 ;;
     --cors-allow-origin) cors_allow_origin="${2:?--cors-allow-origin requires ORIGIN}"; shift 2 ;;
     --sync-peer) sync_peer="${2:?--sync-peer requires URL[,URL]}"; shift 2 ;;
     --sync-peer-token) sync_peer_token="${2:?--sync-peer-token requires TOKEN}"; shift 2 ;;
+    --sync-peer-token-file) sync_peer_token_file="${2:?--sync-peer-token-file requires PATH}"; shift 2 ;;
     --sync-interval-seconds) sync_interval_seconds="${2:?--sync-interval-seconds requires N}"; shift 2 ;;
     --sync-max-backoff-seconds) sync_max_backoff_seconds="${2:?--sync-max-backoff-seconds requires N}"; shift 2 ;;
     --debug|--release)
@@ -113,7 +119,7 @@ fi
 if [[ -z "$config_file" || "$state_file_set" == "1" ]]; then
   echo "状态文件：$state_file"
 fi
-if [[ -n "$control_token" ]]; then
+if [[ -n "$control_token" || -n "$control_token_file" ]]; then
   echo "控制面认证：Bearer token enabled"
 else
   echo "控制面认证：未配置 token，仅允许 loopback 非 health 请求"
@@ -123,7 +129,7 @@ if [[ -n "$cors_allow_origin" ]]; then
 fi
 if [[ -n "$sync_peer" && "$sync_interval_seconds" != "0" ]]; then
   echo "自动同步：$sync_peer every ${sync_interval_seconds}s, max backoff ${sync_max_backoff_seconds}s"
-  if [[ -n "$sync_peer_token" ]]; then
+  if [[ -n "$sync_peer_token" || -n "$sync_peer_token_file" ]]; then
     echo "同步认证：Bearer token enabled"
   fi
 fi
@@ -151,6 +157,9 @@ fi
 if [[ -n "$control_token" ]]; then
   args+=(--control-token "$control_token")
 fi
+if [[ -n "$control_token_file" ]]; then
+  args+=(--control-token-file "$control_token_file")
+fi
 if [[ -n "$cors_allow_origin" ]]; then
   args+=(--cors-allow-origin "$cors_allow_origin")
 fi
@@ -159,6 +168,9 @@ if [[ -n "$sync_peer" ]]; then
 fi
 if [[ -n "$sync_peer_token" ]]; then
   args+=(--sync-peer-token "$sync_peer_token")
+fi
+if [[ -n "$sync_peer_token_file" ]]; then
+  args+=(--sync-peer-token-file "$sync_peer_token_file")
 fi
 if [[ "$sync_interval_seconds" != "0" ]]; then
   args+=(--sync-interval-seconds "$sync_interval_seconds")
