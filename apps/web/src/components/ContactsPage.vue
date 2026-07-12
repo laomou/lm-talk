@@ -43,12 +43,12 @@ const filteredGroups = computed(() => {
             <span class="avatar large">{{ (ctx.activeContact.value.display_name || ctx.activeContact.value.user_id || '?').slice(0, 1).toUpperCase() }}</span>
             <div>
               <h3>{{ ctx.activeContact.value.display_name || '未命名' }}</h3>
-              <small>{{ ctx.activeContact.value.state }} · {{ ctx.activeContact.value.user_id }}</small>
+              <small>{{ ctx.activeContact.value.state === 'Friend' ? '好友' : ctx.activeContact.value.state === 'RequestSent' ? '等待通过' : ctx.activeContact.value.state === 'Blocked' ? '已拉黑' : '未验证' }} · {{ ctx.activeContact.value.user_id }}</small>
             </div>
           </div>
           <div class="row compact detail-actions">
             <button @click="ctx.goChatPage()">发消息</button>
-            <button class="secondary" @click="ctx.showQr(ctx.activeContact.value.contact_card_text, '好友身份')">身份二维码</button>
+            <button class="secondary" @click="ctx.showQr(ctx.activeContact.value.contact_card_text, '好友身份')">查看名片</button>
             <button v-if="ctx.activeContact.value.state !== 'Blocked'" class="secondary" @click="ctx.blockActiveContact">拉黑</button>
             <button v-else class="secondary" @click="ctx.unblockActiveContact">解除拉黑</button>
             <button class="danger" @click="ctx.removeActiveContact">删除好友</button>
@@ -68,14 +68,13 @@ const filteredGroups = computed(() => {
           </div>
           <div class="row compact detail-actions">
             <button @click="ctx.goChatPage()">进入群聊</button>
-            <button class="secondary" @click="ctx.createInviteForActiveGroup">生成邀请</button>
-            <button class="secondary" @click="ctx.copyText(ctx.groupInviteText.value, '群邀请')">复制邀请</button>
+            
             <button class="danger" @click="ctx.removeActiveGroup">删除群聊</button>
           </div>
         </section>
 
         <section id="new-friends" class="home-card">
-          <h3>新朋友</h3>
+          <div class="section-title-row"><h3>新朋友</h3><button class="secondary" @click="ctx.syncNow">刷新</button></div>
           <div v-if="ctx.friendRequests.value.length" class="requests contact-requests">
             <div v-for="req in ctx.friendRequests.value" :key="req.request_id" class="request-item">
               <b>{{ req.from_user_id }}</b>
@@ -88,19 +87,9 @@ const filteredGroups = computed(() => {
           </div>
           <div v-else class="empty">暂无好友请求</div>
 
-          <details class="inline-details">
-            <summary>离线添加</summary>
-            <label>收到的好友请求</label>
-            <textarea v-model="ctx.incomingFriendRequestText.value" rows="4" placeholder="粘贴好友请求" />
-            <button @click="ctx.addIncomingFriendRequest">加入收件箱</button>
-            <p class="hint">没有开启消息同步时，才需要用复制粘贴方式交换好友请求。</p>
-          </details>
 
           <details class="inline-details">
             <summary>群邀请</summary>
-            <label>收到的群邀请</label>
-            <textarea v-model="ctx.incomingGroupInviteText.value" rows="3" placeholder="粘贴群邀请" />
-            <button @click="ctx.addIncomingGroupInvite">加入收件箱</button>
             <div v-if="ctx.groupInvites.value.length" class="requests contact-requests">
               <div v-for="inv in ctx.groupInvites.value" :key="inv.invite_id" class="request-item">
                 <b>{{ inv.group_name }}</b>
@@ -131,7 +120,7 @@ const filteredGroups = computed(() => {
           <div v-if="filteredContacts.length" class="contacts-list">
             <button v-for="c in filteredContacts" :key="c.user_id" class="contact-row" @click="ctx.selectContact(c.user_id)">
               <span class="avatar">{{ (c.display_name || c.user_id || '?').slice(0, 1).toUpperCase() }}</span>
-              <span><b>{{ c.display_name || '未命名' }}</b><small>{{ c.state }} · {{ c.user_id }}</small></span>
+              <span><b>{{ c.display_name || '未命名' }}</b><small>{{ c.state === 'Friend' ? '好友' : c.state === 'RequestSent' ? '等待通过' : c.state === 'Blocked' ? '已拉黑' : '未验证' }} · {{ c.user_id }}</small></span>
             </button>
           </div>
           <div v-else class="empty">暂无好友</div>
@@ -139,8 +128,8 @@ const filteredGroups = computed(() => {
 
         <section id="add-friend" class="home-card">
           <h3>添加好友</h3>
-          <label>对方身份文本</label>
-          <textarea v-model="ctx.addContactText.value" rows="5" placeholder="粘贴对方身份文本" />
+          <label>对方账号或名片</label>
+          <textarea v-model="ctx.addContactText.value" rows="5" placeholder="输入或粘贴对方发来的名片" />
           <button @click="ctx.addContact">添加好友</button>
         </section>
 

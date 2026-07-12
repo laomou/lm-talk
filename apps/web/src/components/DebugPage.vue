@@ -92,7 +92,7 @@ defineProps<{ ctx: any }>()
       <details class="add-box">
         <summary>交换区：好友请求 / 收到的密文 Envelope</summary>
         <div class="row compact">
-          <button @click="ctx.createFriendRequestForActive">生成好友请求</button>
+          <button @click="ctx.createFriendRequestForActiveLocalOnly">生成好友请求</button>
           <button @click="ctx.copyText(ctx.friendRequestText.value, '好友请求')">复制好友请求</button>
           <button @click="ctx.showQr(ctx.friendRequestText.value, '好友请求')">好友请求二维码</button>
         </div>

@@ -1078,6 +1078,15 @@ async function afterLoginAutomation() {
   if (autoMailboxTake.value) await takeMailboxFromNode()
 }
 
+async function syncNow() {
+  if (!nodeEnabled.value) {
+    showAlert('未开启消息同步', '请先在“我 → 消息同步”开启同步。', 'warning')
+    return
+  }
+  if (autoPublishPreKey.value) await publishPreKeyToNode()
+  await takeMailboxFromNode()
+}
+
 function nodeUrlList(): string[] {
   return nodeControlUrl.value
     .split(/[\n,]+/)
@@ -1477,9 +1486,9 @@ function statusLabel(status: MessageStatus) {
   switch (status) {
     case 'queued': return '待发送'
     case 'sent': return '已发送'
-    case 'mailbox': return '已投递 mailbox'
+    case 'mailbox': return '已发送'
     case 'delivered': return '已送达'
-    case 'copied': return '已复制'
+    case 'copied': return '待发送'
     case 'received': return '已接收'
     case 'failed': return '失败'
   }
@@ -1553,8 +1562,8 @@ function closeQr() {
 
 
 function addContact() {
-  run('添加/更新联系人', () => {
-    ensureUiTextSize('Contact Card', addContactText.value, MAX_CONTACT_CARD_BYTES)
+  run('添加好友', () => {
+    ensureUiTextSize('名片', addContactText.value, MAX_CONTACT_CARD_BYTES)
     const info = safeJson<ContactInfo>(inspect_contact_card(addContactText.value))
     import_contact_as_json(addContactText.value, 'LinkImported')
     const index = contacts.value.findIndex((c) => c.user_id === info.user_id)
@@ -1562,10 +1571,11 @@ function addContact() {
     const item = mergeContactCard(existing, info, addContactText.value)
     if (index >= 0) {
       contacts.value[index] = item
-      appendLog('✅ 已更新联系人资料（保留好友/拉黑状态和已验证身份）')
+      appendLog('✅ 已更新联系人资料')
     } else {
       contacts.value.push(item)
       appendLog('✅ 已添加联系人')
+      toast('已添加联系人', 'success')
     }
     activePeerId.value = item.user_id
     addContactText.value = ''
@@ -1590,6 +1600,7 @@ function addIncomingFriendRequest() {
     if (index >= 0) friendRequests.value[index] = item
     else friendRequests.value.unshift(item)
     incomingFriendRequestText.value = ''
+    toast('收到新的好友请求', 'info')
     persist()
   })
 }
@@ -1608,8 +1619,17 @@ function acceptInboxRequest(req: FriendRequestItem) {
     persist()
     if (nodeEnabled.value) {
       void pushMailboxPayload(contact, 'other', response)
-        .then(() => appendLog('✅ 好友接受响应已通过 Mailbox 返回'))
-        .catch((e) => appendLog(`⚠️ 好友响应 Mailbox 返回失败：${String(e)}`))
+        .then(() => {
+          appendLog('✅ 已通过好友请求')
+          toast('已添加好友', 'success')
+        })
+        .catch((e) => {
+          const message = userFacingError(e)
+          appendLog(`⚠️ 好友确认发送失败：${message}`)
+          showAlert('已添加好友，但通知对方失败', message, 'warning')
+        })
+    } else {
+      toast('已添加好友', 'success')
     }
   })
 }
@@ -1649,7 +1669,7 @@ function createGroupSenderDistributionFanout(group: GroupItem, distributionText:
   const recipients = group.member_user_ids.filter((uid) => uid !== identity.value?.user_id)
   const fanout = recipients.map((uid) => {
     const contact = contacts.value.find((c) => c.user_id === uid)
-    if (!contact || contact.state !== 'Friend') throw new Error(`群成员不是 Friend: ${uid}`)
+    if (!contact || contact.state !== 'Friend') throw new Error(`群成员还不是好友: ${uid}`)
     const envelope = encryptEnvelopeForContact(
       contact,
       `grp-key-${group.group_id}`,
@@ -1707,7 +1727,7 @@ function createGroupSenderKeyForActiveGroup() {
 function importGroupSenderKeyForActiveContact() {
   run('导入群 Sender Key', () => {
     if (!activeContact.value) throw new Error('请选择 Sender 联系人')
-    if (!groupSenderDistributionText.value.trim()) throw new Error('请粘贴 Sender Key Distribution')
+    if (!groupSenderDistributionText.value.trim()) throw new Error('请填写 Sender Key Distribution')
     const stateJson = import_group_sender_key(groupSenderDistributionText.value, activeContact.value.contact_card_text)
     const parsed = JSON.parse(stateJson) as { group_id: string; sender_user_id: string }
     const item: GroupSenderKeyItem = {
@@ -1727,7 +1747,7 @@ function importGroupSenderKeyForActiveContact() {
 function createGroupSenderDistributionFanoutForActiveGroup() {
   run('生成 Sender Key Distribution fanout', () => {
     if (!activeGroup.value) throw new Error('请选择群组')
-    if (!groupSenderDistributionText.value.trim()) throw new Error('请先创建或粘贴 Sender Key Distribution')
+    if (!groupSenderDistributionText.value.trim()) throw new Error('请先创建 Sender Key Distribution')
     createGroupSenderDistributionFanout(activeGroup.value, groupSenderDistributionText.value.trim())
     persist()
   })
@@ -1801,23 +1821,49 @@ function createGroup() {
     newGroupName.value = ''
     selectedGroupMembers.value = []
     persist()
+    void sendGroupInviteToMembers(group)
   })
 }
 
 
+function groupInviteFor(group: GroupItem): string {
+  const memberIds = [...group.member_user_ids]
+  if (identity.value && !memberIds.includes(identity.value.user_id)) memberIds.push(identity.value.user_id)
+  return create_group_invite(
+    backupText.value,
+    passphrase.value,
+    group.group_id,
+    group.name,
+    JSON.stringify(memberIds),
+  )
+}
+
 function createInviteForActiveGroup() {
   run('生成群邀请', () => {
     if (!activeGroup.value) throw new Error('请选择群组')
-    const memberIds = [...activeGroup.value.member_user_ids]
-    if (identity.value && !memberIds.includes(identity.value.user_id)) memberIds.push(identity.value.user_id)
-    groupInviteText.value = create_group_invite(
-      backupText.value,
-      passphrase.value,
-      activeGroup.value.group_id,
-      activeGroup.value.name,
-      JSON.stringify(memberIds),
-    )
+    groupInviteText.value = groupInviteFor(activeGroup.value)
   })
+}
+
+async function sendGroupInviteToMembers(group: GroupItem) {
+  if (!nodeEnabled.value) return
+  const invite = groupInviteFor(group)
+  groupInviteText.value = invite
+  let sent = 0
+  let failed = 0
+  for (const userId of group.member_user_ids) {
+    const contact = contacts.value.find((c) => c.user_id === userId)
+    if (!contact || contact.state !== 'Friend') { failed += 1; continue }
+    try {
+      await pushMailboxPayload(contact, 'other', invite)
+      sent += 1
+    } catch (e) {
+      failed += 1
+      appendLog(`⚠️ 群邀请发送失败：${contact.display_name || contact.user_id}: ${String(e)}`)
+    }
+  }
+  if (sent > 0) toast(`已邀请 ${sent} 位好友入群`, 'success')
+  if (failed > 0) appendLog(`群邀请发送完成：成功 ${sent}，失败 ${failed}`)
 }
 
 function nextGroupSequence(group: GroupItem): number {
@@ -1997,7 +2043,7 @@ function createGroupEventFanout() {
     if (!groupEventText.value.trim()) throw new Error('请先生成群事件')
     const fanout = activeGroup.value.member_user_ids.map((uid) => {
       const contact = contacts.value.find((c) => c.user_id === uid)
-      if (!contact || contact.state !== 'Friend') throw new Error(`群成员不是 Friend: ${uid}`)
+      if (!contact || contact.state !== 'Friend') throw new Error(`群成员还不是好友: ${uid}`)
       const envelope = encryptEnvelopeForContact(
         contact,
         `grp-${activeGroup.value!.group_id}`,
@@ -2012,7 +2058,7 @@ function createGroupEventFanout() {
 
 function addIncomingGroupInvite() {
   run('加入群邀请收件箱', () => {
-    if (!activeContact.value) throw new Error('请先选择邀请者联系人，用其 Contact Card 验签')
+    if (!activeContact.value) throw new Error('请先选择邀请者联系人')
     const info = JSON.parse(inspect_group_invite(incomingGroupInviteText.value, activeContact.value.contact_card_text)) as Omit<GroupInviteItem, 'invite_text'>
     if (identity.value && !info.member_user_ids.includes(identity.value.user_id)) {
       throw new Error('该群邀请成员列表不包含当前身份')
@@ -2062,7 +2108,8 @@ function removeActiveGroup() {
   persist()
 }
 
-function createFriendRequestForActive() {
+
+function createFriendRequestForActiveLocalOnly() {
   run('生成好友请求', () => {
     if (!activeContact.value) throw new Error('请选择联系人')
     if (!myContactCardText.value) exportMyCard()
@@ -2077,11 +2124,42 @@ function createFriendRequestForActive() {
     activeContact.value.state = 'RequestSent'
     activeContact.value.pending_request_id = req.request_id
     persist()
-    if (nodeEnabled.value) {
-      void pushMailboxPayload(activeContact.value, 'other', friendRequestText.value)
-        .then(() => appendLog('✅ 好友请求已通过 Mailbox 投递'))
-        .catch((e) => appendLog(`⚠️ 好友请求 Mailbox 投递失败：${String(e)}`))
+  })
+}
+
+function createFriendRequestForActive() {
+  run('发送好友请求', () => {
+    if (!activeContact.value) throw new Error('请选择联系人')
+    if (!myContactCardText.value) exportMyCard()
+    friendRequestText.value = create_friend_request(
+      backupText.value,
+      passphrase.value,
+      myContactCardText.value,
+      activeContact.value.contact_card_text,
+      '你好，我想添加你',
+    )
+    const req = safeJson<any>(inspect_friend_request(friendRequestText.value))
+    if (!nodeEnabled.value) {
+      showAlert('请先开启消息同步', '好友请求需要通过消息同步发送。请到“我 → 消息同步”开启后重试。', 'warning')
+      return
     }
+    const contact = activeContact.value
+    contact.state = 'RequestSent'
+    contact.pending_request_id = req.request_id
+    persist()
+    void pushMailboxPayload(contact, 'other', friendRequestText.value)
+      .then(() => {
+        appendLog('✅ 好友请求已发送')
+        toast('好友请求已发送', 'success')
+      })
+      .catch((e) => {
+        contact.state = 'LocalOnly'
+        contact.pending_request_id = undefined
+        persist()
+        const message = userFacingError(e)
+        appendLog(`⚠️ 好友请求发送失败：${message}`)
+        showAlert('发送失败', message, 'error')
+      })
   })
 }
 
@@ -2150,12 +2228,12 @@ async function sendGroupFanoutPayloads(group: GroupItem, fanout: Array<{ to_user
   }
   const msg = messages.value.find((m) => m.id === messageId)
   if (msg) msg.status = failedCount > 0 ? 'failed' : queuedCount > 0 ? 'queued' : 'mailbox'
-  appendLog(`群 fanout 投递完成：mailbox/sent ${mailboxCount}，queued ${queuedCount}，failed ${failedCount}`)
+  appendLog(`群消息发送完成：已发送 ${mailboxCount}，待发送 ${queuedCount}，失败 ${failedCount}`)
   persist()
 }
 
 function sendMessage() {
-  run('加密并保存待发送消息', () => {
+  run('发送消息', () => {
     if (!composerText.value.trim()) return
     ensureUiTextSize('消息', composerText.value, MAX_TEXT_MESSAGE_BYTES)
 
@@ -2171,7 +2249,7 @@ function sendMessage() {
       } else {
         fanout = activeGroup.value.member_user_ids.map((uid) => {
           const contact = contacts.value.find((c) => c.user_id === uid)
-          if (!contact || contact.state !== 'Friend') throw new Error(`群成员不是 Friend: ${uid}`)
+          if (!contact || contact.state !== 'Friend') throw new Error(`群成员还不是好友: ${uid}`)
           const envelope = encryptEnvelopeForContact(
             contact,
             `grp-${activeGroup.value!.group_id}`,
@@ -2193,7 +2271,7 @@ function sendMessage() {
         created_at: Date.now(),
       }
       messages.value.push(msg)
-      appendLog(`✅ 已为 ${fanout.length} 个群成员生成密文 fanout`)
+      appendLog(`✅ 群消息已准备发送给 ${fanout.length} 个成员`)
       composerText.value = ''
       persist()
       void sendGroupFanoutPayloads(activeGroup.value, fanout, msg.id)
@@ -2202,7 +2280,7 @@ function sendMessage() {
 
     if (!activeContact.value) throw new Error('请选择联系人')
     if (activeContact.value.state === 'Blocked') throw new Error('联系人已被拉黑')
-    if (activeContact.value.state !== 'Friend') throw new Error('联系人还不是 Friend，请先完成好友确认')
+    if (activeContact.value.state !== 'Friend') throw new Error('对方通过好友请求后才能聊天')
     const envelope = encryptEnvelopeForContact(
       activeContact.value,
       `conv-${activeContact.value.user_id}`,
@@ -2221,15 +2299,15 @@ function sendMessage() {
     }
     inboundEnvelopeText.value = envelope
     if (dc && dc.readyState === 'open') {
-      sendRtcText(envelope, '消息密文')
+      sendRtcText(envelope, '消息')
       msg.status = 'sent'
-      appendLog('✅ 已通过 WebRTC 发送密文')
+      appendLog('✅ 消息已发送')
     } else if (nodeEnabled.value) {
-      appendLog('WebRTC 未连接，正在尝试通过 Mailbox 投递')
+      appendLog('正在通过消息同步发送')
       void tryMailboxDeliveryForMessage(activeContact.value, envelope, msg)
     } else {
       outbox.value.push(createOutboxItem(activeContact.value, envelope, msg.id, 'direct-envelope'))
-      appendLog('WebRTC 未连接且未启用节点，已加入待发送队列，可手动复制')
+      appendLog('未开启消息同步，消息已暂存，开启同步后会自动重发')
     }
     messages.value.push(msg)
     composerText.value = ''
@@ -2351,18 +2429,32 @@ function receiveEnvelope() {
 
 function applyFriendResponse() {
   run('应用好友响应', () => {
-    if (!activeContact.value) throw new Error('请选择响应来自的联系人')
-    const info = safeJson<any>(inspect_friend_response(incomingFriendResponseText.value, activeContact.value.contact_card_text))
+    const candidates = activeContact.value ? [activeContact.value, ...contacts.value.filter((c) => c.user_id !== activeContact.value?.user_id)] : contacts.value
+    let matchedContact: ContactItem | null = null
+    let info: any = null
+    let lastError: unknown = null
+    for (const contact of candidates) {
+      try {
+        const parsed = safeJson<any>(inspect_friend_response(incomingFriendResponseText.value, contact.contact_card_text))
+        if (parsed.from_user_id === contact.user_id) {
+          matchedContact = contact
+          info = parsed
+          break
+        }
+      } catch (e) {
+        lastError = e
+      }
+    }
+    if (!matchedContact || !info) throw lastError instanceof Error ? lastError : new Error('找不到这个好友响应对应的联系人')
     if (identity.value && info.to_user_id !== identity.value.user_id) {
       throw new Error('这个好友响应不是发给当前身份的')
     }
-    if (info.from_user_id !== activeContact.value.user_id) {
-      throw new Error('响应发送者不是当前联系人')
-    }
-    if (activeContact.value.pending_request_id && info.request_id !== activeContact.value.pending_request_id) {
+    if (matchedContact.pending_request_id && info.request_id !== matchedContact.pending_request_id) {
       throw new Error('响应 request_id 与待确认请求不匹配')
     }
-    activeContact.value.state = info.accepted ? 'Friend' : 'Rejected'
+    matchedContact.state = info.accepted ? 'Friend' : 'Rejected'
+    activePeerId.value = matchedContact.user_id
+    activeGroupId.value = ''
     incomingFriendResponseText.value = ''
     persist()
   })
@@ -3233,6 +3325,14 @@ function startNodeSyncLoop() {
 function contactByUserId(userId: string): ContactItem | null {
   return contacts.value.find((c) => c.user_id === userId) ?? null
 }
+function contactInfoFromCardText(cardText: string): ContactInfo | null {
+  try {
+    return safeJson<ContactInfo>(inspect_contact_card(cardText))
+  } catch {
+    return null
+  }
+}
+
 
 function unwrapMailboxDelivery(item: any): { deliveryId?: string; message: any } {
   if (item && typeof item === 'object' && item.message) {
@@ -3247,9 +3347,22 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
   const normalizedKind = kind.replace(/[-_]/g, '').toLowerCase()
   const fromUserId = String(message.from_user_id ?? '')
   const ciphertext = String(message.ciphertext ?? '')
-  const sender = contactByUserId(fromUserId)
+  let sender = contactByUserId(fromUserId)
+  if (!sender && ciphertext.startsWith('lm-friend-request-v1:')) {
+    try {
+      const info = safeJson<Omit<FriendRequestItem, 'request_text'>>(inspect_friend_request(ciphertext))
+      const cardInfo = contactInfoFromCardText(info.from_contact_card_text)
+      const contact: ContactItem | null = cardInfo ? { ...mergeContactCard(undefined, cardInfo, info.from_contact_card_text), state: 'RequestReceived' } : null
+      if (contact) {
+        contacts.value.push(contact)
+        sender = contact
+      }
+    } catch (e) {
+      appendLog(`好友请求解析失败：${String(e)}`)
+    }
+  }
   if (!sender) {
-    appendLog(`mailbox 消息来自未知联系人：${fromUserId}`)
+    appendLog(`消息来自未知联系人：${fromUserId}`)
     return { handled: false, deliveryId }
   }
   if (sender.state === 'Blocked') {
@@ -3290,6 +3403,11 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
   if (ciphertext.startsWith('lm-friend-response-v1:')) {
     incomingFriendResponseText.value = ciphertext
     applyFriendResponse()
+    return { handled: true, deliveryId }
+  }
+  if (ciphertext.startsWith('lm-group-invite-v1:')) {
+    incomingGroupInviteText.value = ciphertext
+    addIncomingGroupInvite()
     return { handled: true, deliveryId }
   }
   try {
@@ -3544,7 +3662,7 @@ function logout() {
 }
 const appContext = {
   goChatPage, goChatHome, goContactsPage, goSettingsPage, goDebugPage, logout, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, myContactCardText, backupText,
-  nodeControlUrl, nodeUrlList, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
+  nodeControlUrl, nodeUrlList, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, createMyDeviceCert, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
@@ -3557,7 +3675,7 @@ const appContext = {
   removeActiveGroup, activeMessages, formatTime, statusLabel, copyMessageEnvelope, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
-  flushOutboxForActive, clearSentOutbox, friendRequestText, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
+  flushOutboxForActive, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
   receiveEnvelope, onFileSelected, createFilePackageForActive, sendFilePackageOverRtc, filePackageText, rtcFileStatus,
   incomingFilePackageText, inspectIncomingFilePackage, decryptIncomingFilePackage, receivedFileUrl, receivedFileName, filePackageInfoText,
   createGroupSenderKeyForActiveGroup, groupSenderDistributionText, importGroupSenderKeyForActiveContact, groupSenderEncryptDebug, groupSenderDecryptDebug, createGroupSenderDistributionFanoutForActiveGroup,

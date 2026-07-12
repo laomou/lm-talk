@@ -20,7 +20,7 @@ defineProps<{ ctx: any }>()
       >
         <span class="avatar">{{ (c.display_name || c.user_id || '?').slice(0, 1).toUpperCase() }}</span>
         <span class="contact-main">
-          <b>{{ c.display_name || '未命名' }} <em>{{ c.state }}</em></b>
+          <b>{{ c.display_name || '未命名' }} <em v-if="c.state === 'RequestSent'">等待通过</em><em v-else-if="c.state === 'Blocked'">已拉黑</em></b>
           <small>私聊 · {{ c.user_id }}</small>
         </span>
       </button>
