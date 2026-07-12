@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type BrowserContext, type Locator, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { accept_friend_request, initSync } from '../src/wasm/lm_wasm.js'
 
@@ -22,6 +22,50 @@ async function clearBrowserState(page: Page) {
 
 function fieldAfterLabel(page: Page, labelText: string, tag = 'textarea'): Locator {
   return page.locator(`label:has-text("${labelText}") + ${tag}`).first()
+}
+
+
+type MockMailboxMessage = { delivery_id: string; message: any }
+
+function decodePrefixedJson(text: string): any {
+  const payload = text.includes(':') ? text.slice(text.indexOf(':') + 1) : text
+  const normalized = payload.replace(/-/g, '+').replace(/_/g, '/')
+  const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4)
+  return JSON.parse(Buffer.from(padded, 'base64').toString('utf8'))
+}
+
+async function installMockSyncNode(context: BrowserContext, mailboxes: Map<string, MockMailboxMessage[]>) {
+  await context.route('**/*', async (route) => {
+    const req = route.request()
+    const url = new URL(req.url())
+    if (url.hostname !== 'sync.test') return route.continue()
+    if (url.pathname === '/health') return route.fulfill({ json: { ok: true } })
+    if (url.pathname === '/prekey/publish') return route.fulfill({ json: { ok: true } })
+    if (url.pathname === '/mailbox/ack') return route.fulfill({ json: { ok: true } })
+    if (url.pathname === '/mailbox/push') {
+      const body = req.postDataJSON() as { message_text: string }
+      const message = decodePrefixedJson(body.message_text)
+      const deliveryId = `mock-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const key = String(message.to_user_id)
+      mailboxes.set(key, [...(mailboxes.get(key) ?? []), { delivery_id: deliveryId, message }])
+      return route.fulfill({ json: { delivery_id: deliveryId } })
+    }
+    if (url.pathname === '/mailbox/take') {
+      const userId = url.searchParams.get('user_id') || ''
+      const messages = mailboxes.get(userId) ?? []
+      mailboxes.set(userId, [])
+      return route.fulfill({ json: { messages } })
+    }
+    return route.fulfill({ json: { ok: true } })
+  })
+}
+
+async function enableSync(page: Page) {
+  await page.getByRole('button', { name: '我', exact: true }).click()
+  await fieldAfterLabel(page, '同步服务').fill('http://sync.test')
+  const button = page.getByRole('button', { name: '开启同步' })
+  if (await button.isVisible()) await button.click()
+  await expect(page.getByRole('button', { name: '关闭同步' })).toBeVisible()
 }
 
 
@@ -172,7 +216,7 @@ test('两端可用复制粘贴流程完成好友确认并发送可复制密文',
   const bobBackup = await copyMyBackup(bob)
 
   await alice.getByRole('button', { name: '通讯录', exact: true }).click()
-  await fieldAfterLabel(alice, '对方账号或名片').fill(bobCard)
+  await fieldAfterLabel(alice, '对方名片').fill(bobCard)
   await alice.getByRole('button', { name: '添加好友' }).click()
   await alice.getByRole('button', { name: '聊天', exact: true }).click()
   await expect(alice.locator('.contact').filter({ hasText: 'Bob' })).toBeVisible()
@@ -182,7 +226,7 @@ test('两端可用复制粘贴流程完成好友确认并发送可复制密文',
   const bobUpdatedCard = await copyMyContactCard(bob)
   await alice.getByRole('button', { name: '聊天', exact: true }).click()
   await alice.getByRole('button', { name: '通讯录', exact: true }).click()
-  await fieldAfterLabel(alice, '对方账号或名片').fill(bobUpdatedCard)
+  await fieldAfterLabel(alice, '对方名片').fill(bobUpdatedCard)
   await alice.getByRole('button', { name: '添加好友' }).click()
   await alice.getByRole('button', { name: '聊天', exact: true }).click()
   await expect(alice.locator('.contact').filter({ hasText: 'Bob 新名' })).toBeVisible()
@@ -273,7 +317,7 @@ test('两端可用复制粘贴流程完成好友确认并发送可复制密文',
   await expect(alice.getByText('文件包已生成')).toBeVisible()
 
   await bob.getByRole('button', { name: '通讯录', exact: true }).click()
-  await fieldAfterLabel(bob, '对方账号或名片').fill(aliceCard)
+  await fieldAfterLabel(bob, '对方名片').fill(aliceCard)
   await bob.getByRole('button', { name: '添加好友' }).click()
   await bob.getByRole('button', { name: '聊天', exact: true }).click()
   await expect(bob.locator('.contact').filter({ hasText: 'Alice' })).toBeVisible()
@@ -338,4 +382,47 @@ test('注册后可在独立导入页导入身份，再回登录页登录', async
   await fieldAfterLabel(page, '提示词').fill('import passphrase 2026')
   await page.getByRole('button', { name: '登录', exact: true }).click()
   await expect(page.locator('.chat-shell')).toBeVisible()
+})
+
+
+test('消息同步可完成真实好友请求收发', async ({ browser }) => {
+  const mailboxes = new Map<string, MockMailboxMessage[]>()
+  const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  await installMockSyncNode(aliceContext, mailboxes)
+  await installMockSyncNode(bobContext, mailboxes)
+  const alice = await aliceContext.newPage()
+  const bob = await bobContext.newPage()
+  await clearBrowserState(alice)
+  await clearBrowserState(bob)
+
+  await createIdentity(alice, 'Alice', 'alice real sync 2026')
+  await createIdentity(bob, 'Bob', 'bob real sync 2026')
+  const bobCard = await copyMyContactCard(bob)
+
+  await enableSync(alice)
+  await enableSync(bob)
+
+  await alice.getByRole('button', { name: '通讯录', exact: true }).click()
+  await fieldAfterLabel(alice, '对方名片').fill(bobCard)
+  await alice.getByRole('button', { name: '添加好友' }).click()
+  await alice.getByRole('button', { name: '聊天', exact: true }).click()
+  await alice.locator('.contact').filter({ hasText: 'Bob' }).click()
+  await expect(alice.locator('.contact').filter({ hasText: '等待通过' })).toBeVisible()
+
+  await bob.getByRole('button', { name: '通讯录', exact: true }).click()
+  await bob.getByRole('button', { name: '刷新' }).click()
+  await expect(bob.getByRole('button', { name: '接受' })).toBeVisible()
+  await bob.getByRole('button', { name: '接受' }).click()
+  await expect(bob.locator('.contact-detail-card')).toContainText('Alice')
+
+  await alice.getByRole('button', { name: '通讯录', exact: true }).click()
+  await alice.getByRole('button', { name: '刷新' }).click()
+  await alice.getByRole('button', { name: '聊天', exact: true }).click()
+  await alice.locator('.contact').filter({ hasText: 'Bob' }).click()
+  await expect(alice.locator('.clean-chat-header')).toContainText('好友')
+  await expect(alice.getByPlaceholder('输入消息')).toBeVisible()
+
+  await aliceContext.close()
+  await bobContext.close()
 })

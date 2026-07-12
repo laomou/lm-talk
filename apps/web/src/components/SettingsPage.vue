@@ -22,8 +22,8 @@ defineProps<{ ctx: any }>()
 
       <section class="home-card">
         <h3>消息同步</h3>
-        <label>同步节点</label>
-        <textarea v-model="ctx.nodeControlUrl.value" rows="4" placeholder="每行一个节点地址，例如：&#10;http://127.0.0.1:8787&#10;https://node.example.com" />
+        <label>同步服务</label>
+        <textarea v-model="ctx.nodeControlUrl.value" rows="4" placeholder="每行一个同步服务地址，例如：&#10;http://127.0.0.1:8787&#10;https://node.example.com" />
         <small>开启后可自动收发好友请求和离线消息。可填写多个同步服务地址。</small>
         <div class="row compact">
           <button @click="ctx.toggleNodeEnabled">{{ ctx.nodeEnabled.value ? '关闭同步' : '开启同步' }}</button>

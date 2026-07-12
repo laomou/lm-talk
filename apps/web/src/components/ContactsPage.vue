@@ -128,8 +128,8 @@ const filteredGroups = computed(() => {
 
         <section id="add-friend" class="home-card">
           <h3>添加好友</h3>
-          <label>对方账号或名片</label>
-          <textarea v-model="ctx.addContactText.value" rows="5" placeholder="输入或粘贴对方发来的名片" />
+          <label>对方名片</label>
+          <textarea v-model="ctx.addContactText.value" rows="5" placeholder="粘贴对方发来的名片" />
           <button @click="ctx.addContact">添加好友</button>
         </section>
 
