@@ -146,7 +146,7 @@ Friend Request -> Friend Response
 |---|---|---|
 | `lm_core` | 已实现身份、备份、Contact Card、好友请求/响应、DirectEnvelope、X3DH PreKey、Double Ratchet 状态与 envelope、群 Sender Key、群权限状态、文件分片加密包、本地安全策略、Outbox、MemoryStore、大小限制、测试向量 | 核心协议层已具备 MVP 主干，约 75-85% MVP 完整；仍需生产级审计、持久化接口、属性/模糊测试、多设备完整流程 |
 | `lm_wasm` | 已暴露大部分 core API，覆盖身份、联系人、好友、消息、PreKey/X3DH、Ratchet、群、文件、Public Peer、Mailbox、Signaling | 绑定层覆盖较全，约 70-80% MVP 完整；仍需随 core API 稳定后整理命名、错误码和兼容策略 |
-| `lm_node` | 已实现控制面 HTTP scaffold、Public Peer announce、Kademlia ID/XOR distance/closest peers、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、one-time prekey 消费记录、snapshot sync/import、serve-control 定时 snapshot sync、状态文件保存 | 可支撑节点辅助 PreKey + Mailbox + 粗粒度同步 demo，约 55-60% MVP 完整；不是生产 DHT/relay 节点 |
+| `lm_node` | 已实现控制面 HTTP scaffold、Public Peer announce、Kademlia ID/XOR distance/closest peers、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、one-time prekey 消费记录、PreKey 过期清理/轮换重置/低水位提示、snapshot sync/import、serve-control 定时 snapshot sync、状态文件保存 | 可支撑节点辅助 PreKey + Mailbox + 粗粒度同步 demo，约 58-62% MVP 完整；不是生产 DHT/relay 节点 |
 | CLI / 运维 | 已有 `announce`、`inspect-public`、`distance`、`run`、`serve-control` 等基础命令 | 调试可用；缺配置文件、认证、TLS、日志、指标、数据库、限流、后台任务 |
 | 测试 | `scripts/test.sh all` 覆盖 Rust fmt/test、core e2e、node e2e、HTTP control flow、WASM smoke、Web build/e2e | 基础回归较好；仍需 proptest/fuzz、跨实现向量、真实网络故障/压力测试 |
 
@@ -1653,7 +1653,7 @@ MVP 不做：
 - Public Peer announce 生成、验签、导入、closest 查询。
 - Kademlia NodeId、XOR distance、bucket、closest peer 排序。
 - Mailbox：`/mailbox/push`、`/mailbox/take`、`/mailbox/ack`。
-- PreKey：`/prekey/publish`、`/prekey/get`、`consume=true` 精确记录 one-time prekey 消费。
+- PreKey：`/prekey/publish`、`/prekey/get`、`consume=true` 精确记录 one-time prekey 消费，并返回 remaining/low watermark；bundle 过期会清理，signed prekey 轮换会重置消费记录。
 - Snapshot：`/sync/snapshot`、`/sync/import`，可粗粒度同步 peers/mailbox/prekeys。
 - 自动 snapshot sync：`serve-control --sync-peer http://host:port --sync-interval-seconds N` 定时拉取并 merge peer snapshot。
 - `serve-control --state-file` 可保存/恢复节点状态。
@@ -1998,7 +1998,7 @@ Web 现已支持 Sender Key Distribution fanout：
 - `PreKeyBundle::select_one_time_prekey_by_id`。
 - `x3dh_initiator_secret_with_one_time_prekey_id` 可指定使用某个 one-time prekey。
 - `lm_node /prekey/get?consume=true` 不再删除整个 bundle，而是记录已消费的 one-time key id。
-- 响应返回 `selected_one_time_prekey_id` 和 `consumed_one_time_prekey_ids`。
+- 响应返回 `selected_one_time_prekey_id`、`consumed_one_time_prekey_ids`、`remaining_one_time_prekeys` 和 `low_one_time_prekeys`。
 - Web 拉取/领取 PreKey 后会保存 selected id，并在创建 X3DH initial message 时指定该 id。
 
-限制：当前 bundle 签名仍覆盖整个 one-time key 列表，节点通过消费记录避免重复选择；后续可升级为独立 signed one-time-prekey records。
+限制：当前 bundle 签名仍覆盖整个 one-time key 列表，节点通过消费记录避免重复选择；节点只提示低水位，不代替客户端生成私钥补货；后续可升级为独立 signed one-time-prekey records。

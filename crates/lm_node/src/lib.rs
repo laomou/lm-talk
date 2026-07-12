@@ -561,11 +561,27 @@ pub struct PreKeyStore {
 impl PreKeyStore {
     pub fn publish_verified(&mut self, bundle: PreKeyBundle) -> Result<()> {
         bundle.verify()?;
-        self.bundles.insert(bundle.user_id.clone(), bundle);
+        let user_id = bundle.user_id.clone();
+        let reset_consumed = self
+            .bundles
+            .get(&user_id)
+            .map(|existing| existing.signed_prekey_id != bundle.signed_prekey_id)
+            .unwrap_or(true);
+        self.bundles.insert(user_id.clone(), bundle);
+        if reset_consumed {
+            self.consumed_one_time_prekeys.remove(&user_id);
+        } else {
+            self.prune_consumed_for(&user_id);
+        }
         Ok(())
     }
 
-    pub fn get_for(&self, user_id: &UserId) -> Option<PreKeyBundle> {
+    pub fn get_for(&mut self, user_id: &UserId) -> Option<PreKeyBundle> {
+        self.prune_expired(current_unix_timestamp());
+        self.bundles.get(user_id).cloned()
+    }
+
+    pub fn get_for_unchecked(&self, user_id: &UserId) -> Option<PreKeyBundle> {
         self.bundles.get(user_id).cloned()
     }
 
@@ -579,7 +595,8 @@ impl PreKeyStore {
         user_id: &UserId,
         consume: bool,
     ) -> Option<(PreKeyBundle, Option<u32>)> {
-        let bundle = self.get_for(user_id)?;
+        self.prune_expired(current_unix_timestamp());
+        let bundle = self.bundles.get(user_id).cloned()?;
         let consumed = self
             .consumed_one_time_prekeys
             .entry(user_id.clone())
@@ -606,6 +623,59 @@ impl PreKeyStore {
             .unwrap_or_default()
     }
 
+    pub fn remaining_one_time_prekeys_for(&self, user_id: &UserId) -> Option<usize> {
+        let bundle = self.bundles.get(user_id)?;
+        let consumed = self.consumed_one_time_prekeys.get(user_id);
+        Some(
+            bundle
+                .one_time_prekeys
+                .iter()
+                .filter(|key| {
+                    !consumed
+                        .map(|ids| ids.contains(&key.key_id))
+                        .unwrap_or(false)
+                })
+                .count(),
+        )
+    }
+
+    pub fn prune_expired(&mut self, now: u64) -> usize {
+        let expired: Vec<_> = self
+            .bundles
+            .iter()
+            .filter(|(_, bundle)| {
+                bundle.expires_at <= now || bundle.signed_prekey_expires_at <= now
+            })
+            .map(|(user_id, _)| user_id.clone())
+            .collect();
+        let removed = expired.len();
+        for user_id in expired {
+            self.bundles.remove(&user_id);
+            self.consumed_one_time_prekeys.remove(&user_id);
+        }
+        removed
+    }
+
+    fn prune_consumed_for(&mut self, user_id: &UserId) {
+        let Some(bundle) = self.bundles.get(user_id) else {
+            self.consumed_one_time_prekeys.remove(user_id);
+            return;
+        };
+        let valid_ids: Vec<_> = bundle
+            .one_time_prekeys
+            .iter()
+            .map(|key| key.key_id)
+            .collect();
+        if let Some(consumed) = self.consumed_one_time_prekeys.get_mut(user_id) {
+            consumed.retain(|id| valid_ids.contains(id));
+            consumed.sort_unstable();
+            consumed.dedup();
+            if consumed.is_empty() {
+                self.consumed_one_time_prekeys.remove(user_id);
+            }
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.bundles.len()
     }
@@ -621,8 +691,11 @@ impl PreKeyStore {
     fn restore_bundles(&mut self, bundles: Vec<PreKeyBundle>) {
         self.bundles.clear();
         for bundle in bundles {
-            self.bundles.insert(bundle.user_id.clone(), bundle);
+            if bundle.verify().is_ok() {
+                self.bundles.insert(bundle.user_id.clone(), bundle);
+            }
         }
+        self.prune_expired(current_unix_timestamp());
     }
 
     fn merge_bundles(&mut self, bundles: Vec<PreKeyBundle>) -> usize {
@@ -631,8 +704,19 @@ impl PreKeyStore {
             if bundle.verify().is_err() {
                 continue;
             }
-            let is_new = !self.bundles.contains_key(&bundle.user_id);
-            self.bundles.insert(bundle.user_id.clone(), bundle);
+            let user_id = bundle.user_id.clone();
+            let reset_consumed = self
+                .bundles
+                .get(&user_id)
+                .map(|existing| existing.signed_prekey_id != bundle.signed_prekey_id)
+                .unwrap_or(true);
+            let is_new = !self.bundles.contains_key(&user_id);
+            self.bundles.insert(user_id.clone(), bundle);
+            if reset_consumed {
+                self.consumed_one_time_prekeys.remove(&user_id);
+            } else {
+                self.prune_consumed_for(&user_id);
+            }
             if is_new {
                 inserted += 1;
             }
@@ -647,13 +731,15 @@ impl PreKeyStore {
 
     fn merge_consumed(&mut self, consumed: Vec<ConsumedOneTimePreKey>) {
         for item in consumed {
+            let user_id = item.user_id;
             let ids = self
                 .consumed_one_time_prekeys
-                .entry(item.user_id)
+                .entry(user_id.clone())
                 .or_default();
             ids.push(item.key_id);
             ids.sort_unstable();
             ids.dedup();
+            self.prune_consumed_for(&user_id);
         }
     }
 }
@@ -955,6 +1041,9 @@ struct PublishPreKeyResponse {
     stored: bool,
     user_id: String,
     prekey_bundles: usize,
+    one_time_prekeys: usize,
+    remaining_one_time_prekeys: usize,
+    low_one_time_prekeys: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -964,6 +1053,8 @@ struct GetPreKeyResponse {
     prekey_bundle_text: Option<String>,
     selected_one_time_prekey_id: Option<u32>,
     consumed_one_time_prekey_ids: Vec<u32>,
+    remaining_one_time_prekeys: Option<usize>,
+    low_one_time_prekeys: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1155,15 +1246,23 @@ impl NativeNode {
             Err(e) => return ControlResponse::text(400, e.to_string()),
         };
         let user_id = bundle.user_id.clone();
+        let one_time_prekeys = bundle.one_time_prekeys.len();
         if let Err(e) = self.prekeys.publish_verified(bundle) {
             return ControlResponse::text(400, e.to_string());
         }
+        let remaining = self
+            .prekeys
+            .remaining_one_time_prekeys_for(&user_id)
+            .unwrap_or(0);
         ControlResponse::json(
             201,
             &PublishPreKeyResponse {
                 stored: true,
                 user_id: user_id.to_string(),
                 prekey_bundles: self.prekeys.len(),
+                one_time_prekeys,
+                remaining_one_time_prekeys: remaining,
+                low_one_time_prekeys: remaining <= 1,
             },
         )
     }
@@ -1191,6 +1290,7 @@ impl NativeNode {
             },
             None => (None, None),
         };
+        let remaining = self.prekeys.remaining_one_time_prekeys_for(&user_id);
         ControlResponse::json(
             200,
             &GetPreKeyResponse {
@@ -1199,6 +1299,8 @@ impl NativeNode {
                 prekey_bundle_text: bundle_text,
                 selected_one_time_prekey_id,
                 consumed_one_time_prekey_ids: self.prekeys.consumed_for(&user_id),
+                remaining_one_time_prekeys: remaining,
+                low_one_time_prekeys: remaining.map(|value| value <= 1).unwrap_or(false),
             },
         )
     }
@@ -1684,7 +1786,12 @@ mod tests {
         let (bundle, _) = PreKeyBundle::new(&alice, 1, 1, 3600).unwrap();
         node.prekeys.publish_verified(bundle).unwrap();
         let restored = NativeNode::from_state_snapshot(node.to_state_snapshot());
-        assert!(restored.prekeys.get_for(alice.user_id()).is_some());
+        assert!(
+            restored
+                .prekeys
+                .get_for_unchecked(alice.user_id())
+                .is_some()
+        );
     }
 
     #[test]
@@ -1727,7 +1834,7 @@ mod tests {
             body: serde_json::json!({ "snapshot": snapshot }).to_string(),
         });
         assert_eq!(import_response.status, 200);
-        assert!(target.prekeys.get_for(alice.user_id()).is_some());
+        assert!(target.prekeys.get_for_unchecked(alice.user_id()).is_some());
         assert_eq!(target.mailbox.pending_for(bob.user_id()), 1);
     }
 
@@ -1747,6 +1854,73 @@ mod tests {
         assert_eq!(second, Some(1));
         assert_eq!(store.consumed_for(alice.user_id()), vec![0, 1]);
         assert!(store.get_for(alice.user_id()).is_some());
+    }
+
+    #[test]
+    fn prekey_rotation_resets_consumed_one_time_keys() {
+        let (alice, _) = Identity::create_with_passphrase("alice prekey rotate").unwrap();
+        let mut store = PreKeyStore::default();
+        let (first, _) = PreKeyBundle::new(&alice, 1, 2, 3600).unwrap();
+        store.publish_verified(first).unwrap();
+        let (_, selected) = store
+            .take_for_with_selected_one_time_prekey(alice.user_id(), true)
+            .unwrap();
+        assert_eq!(selected, Some(0));
+        assert_eq!(store.consumed_for(alice.user_id()), vec![0]);
+
+        let (rotated, _) = PreKeyBundle::new(&alice, 2, 2, 3600).unwrap();
+        store.publish_verified(rotated).unwrap();
+        assert_eq!(store.consumed_for(alice.user_id()), Vec::<u32>::new());
+        assert_eq!(
+            store.remaining_one_time_prekeys_for(alice.user_id()),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn prekey_store_prunes_expired_bundles_and_consumed_state() {
+        let (alice, _) = Identity::create_with_passphrase("alice prekey prune").unwrap();
+        let mut store = PreKeyStore::default();
+        let (bundle, _) = PreKeyBundle::new(&alice, 1, 1, 3600).unwrap();
+        store.publish_verified(bundle).unwrap();
+        store
+            .take_for_with_selected_one_time_prekey(alice.user_id(), true)
+            .unwrap();
+        assert_eq!(store.len(), 1);
+        assert_eq!(store.prune_expired(u64::MAX), 1);
+        assert_eq!(store.len(), 0);
+        assert_eq!(store.consumed_for(alice.user_id()), Vec::<u32>::new());
+    }
+
+    #[test]
+    fn control_plane_prekey_get_reports_remaining_and_low_watermark() {
+        let (alice, _) = Identity::create_with_passphrase("alice prekey status").unwrap();
+        let mut node = NativeNode::new(NodeConfig::default());
+        let (bundle, _) = PreKeyBundle::new(&alice, 1, 2, 3600).unwrap();
+        let publish_response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/prekey/publish".into(),
+            body: serde_json::json!({
+                "prekey_bundle_text": bundle.to_export_text().unwrap(),
+            })
+            .to_string(),
+        });
+        assert_eq!(publish_response.status, 201);
+        let publish_body: serde_json::Value = serde_json::from_str(&publish_response.body).unwrap();
+        assert_eq!(publish_body["one_time_prekeys"], 2);
+        assert_eq!(publish_body["remaining_one_time_prekeys"], 2);
+        assert_eq!(publish_body["low_one_time_prekeys"], false);
+
+        let response = node.handle_control_request(ControlRequest {
+            method: "GET".into(),
+            path: format!("/prekey/get?user_id={}&consume=true", alice.user_id()),
+            body: String::new(),
+        });
+        assert_eq!(response.status, 200);
+        let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(body["selected_one_time_prekey_id"], 0);
+        assert_eq!(body["remaining_one_time_prekeys"], 1);
+        assert_eq!(body["low_one_time_prekeys"], true);
     }
 
     #[test]

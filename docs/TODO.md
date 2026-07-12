@@ -20,7 +20,7 @@
 
 - `lm_core`：身份/备份、Contact Card、好友请求/响应、DirectEnvelope、X3DH PreKey、Double Ratchet、群 Sender Key、群权限状态、文件分片加密包、本地安全策略、Outbox、MemoryStore、大小限制、测试向量。
 - `lm_wasm`：大部分 core 能力已导出，并有 smoke 测试。
-- `lm_node`：HTTP control plane、Public Peer announce、Kademlia ID/distance/closest scaffold、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、one-time prekey 消费记录、snapshot sync/import、serve-control 定时 snapshot sync、状态文件保存。
+- `lm_node`：HTTP control plane、Public Peer announce、Kademlia ID/distance/closest scaffold、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、one-time prekey 消费记录、PreKey 过期清理/轮换重置/低水位提示、snapshot sync/import、serve-control 定时 snapshot sync、状态文件保存。
 - 测试：`scripts/test.sh all` 当前通过 Rust 测试、core/node e2e、HTTP control flow、WASM smoke、Web build/e2e。
 
 关键边界：
@@ -849,10 +849,11 @@ MVP 群聊采用逐个加密。
    - `take` 不删除，只有处理成功后 `ack` 删除的语义已存在，需要持久化和重试测试。
 
 3. **PreKey 生命周期**
-   - signed prekey 轮换。
-   - one-time prekey 低水位补货。
-   - bundle 过期。
-   - 后续升级为独立 signed one-time-prekey records，避免 bundle 级签名与消费记录耦合。
+   - [x] signed prekey 轮换时重置旧 one-time prekey 消费记录。
+   - [x] one-time prekey 低水位提示：`remaining_one_time_prekeys` / `low_one_time_prekeys`。
+   - [x] bundle 过期清理：restore/get/take/merge 路径会移除过期 bundle 和消费状态。
+   - [ ] 自动补货仍由客户端持有 private prekey 后重新发布；节点不生成用户密钥。
+   - [ ] 后续升级为独立 signed one-time-prekey records，避免 bundle 级签名与消费记录耦合。
 
 4. **控制面安全**
    - 本地开发模式和公网模式分离。
