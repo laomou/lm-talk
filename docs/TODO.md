@@ -868,7 +868,9 @@ MVP 群聊采用逐个加密。
    - [x] CLI 参数配置 peer control URL 列表：`--sync-peer http://a,http://b`。
    - [x] `serve-control` 定时拉取 `/sync/snapshot` 并 merge 到本地节点。
    - [x] 合并 peers/mailbox/prekeys/consumed records 时保持幂等。
-   - [ ] 增加配置文件、失败退避、last_sync_at/错误统计。
+   - [x] 增加 `/sync/status`，记录 attempts/successes/failures/last_success_at/last_error。
+   - [x] `--sync-peer-token` / `LM_NODE_SYNC_PEER_TOKEN` 支持从受 token 保护的 peer 拉取 snapshot。
+   - [ ] 增加配置文件和失败退避。
 
 2. **DHT scaffold 演进**
    - 增加 find_node/find_value/store record 抽象。
@@ -877,8 +879,9 @@ MVP 群聊采用逐个加密。
 
 3. **节点可观测性**
    - 结构化日志。
-   - health/status/stats。
-   - mailbox/prekey/peer 数量和过期清理指标。
+   - [x] `/health` 暴露 mailbox/prekey/peer 基础数量。
+   - [x] `/sync/status` 暴露同步 peer attempts/successes/failures/last_success_at/last_error。
+   - [ ] 更完整 stats：请求数、错误率、过期清理次数、限流命中次数。
 
 ### P2：生产网络能力
 

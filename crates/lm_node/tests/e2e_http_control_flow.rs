@@ -95,7 +95,7 @@ fn real_http_control_plane_syncs_prekeys_and_mailbox_between_nodes() {
         3600,
     )
     .unwrap();
-    let push = http_json(
+    let push = http_json_with_headers(
         &base_a,
         "POST",
         "/mailbox/push",
@@ -103,6 +103,7 @@ fn real_http_control_plane_syncs_prekeys_and_mailbox_between_nodes() {
             "message_text": mailbox.to_export_text().unwrap(),
             "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
         }),
+        &[("authorization", "Bearer sync-secret")],
     );
     assert_eq!(push.status, 201, "{}", push.body);
 
@@ -165,13 +166,19 @@ fn real_http_control_plane_auto_snapshot_sync_imports_mailbox() {
     let port_b = free_port();
     let base_a = format!("127.0.0.1:{port_a}");
     let base_b = format!("127.0.0.1:{port_b}");
-    let _node_a = spawn_node(&base_a, "http-auto-node-a");
+    let _node_a = spawn_node_with_args(
+        &base_a,
+        "http-auto-node-a",
+        &["--control-token", "sync-secret"],
+    );
     let _node_b = spawn_node_with_args(
         &base_b,
         "http-auto-node-b",
         &[
             "--sync-peer",
             &format!("http://{base_a}"),
+            "--sync-peer-token",
+            "sync-secret",
             "--sync-interval-seconds",
             "1",
         ],
@@ -189,7 +196,7 @@ fn real_http_control_plane_auto_snapshot_sync_imports_mailbox() {
         3600,
     )
     .unwrap();
-    let push = http_json(
+    let push = http_json_with_headers(
         &base_a,
         "POST",
         "/mailbox/push",
@@ -197,6 +204,7 @@ fn real_http_control_plane_auto_snapshot_sync_imports_mailbox() {
             "message_text": mailbox.to_export_text().unwrap(),
             "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
         }),
+        &[("authorization", "Bearer sync-secret")],
     );
     assert_eq!(push.status, 201, "{}", push.body);
 
@@ -224,6 +232,14 @@ fn real_http_control_plane_auto_snapshot_sync_imports_mailbox() {
         );
         thread::sleep(Duration::from_millis(100));
     }
+
+    let sync_status = http_request(&base_b, "GET", "/sync/status", "");
+    assert_eq!(sync_status.status, 200, "{}", sync_status.body);
+    let sync_body: serde_json::Value = serde_json::from_str(&sync_status.body).unwrap();
+    let peer_status = &sync_body["peers"][format!("http://{base_a}")];
+    assert!(peer_status["successes"].as_u64().unwrap() >= 1);
+    assert!(peer_status["last_success_at"].as_u64().is_some());
+    assert_eq!(peer_status["last_error"], serde_json::Value::Null);
 }
 
 #[test]
@@ -340,7 +356,17 @@ fn wait_for_health(addr: &str) {
 }
 
 fn http_json(addr: &str, method: &str, path: &str, value: serde_json::Value) -> HttpResponse {
-    http_request(addr, method, path, &value.to_string())
+    http_json_with_headers(addr, method, path, value, &[])
+}
+
+fn http_json_with_headers(
+    addr: &str,
+    method: &str,
+    path: &str,
+    value: serde_json::Value,
+    headers: &[(&str, &str)],
+) -> HttpResponse {
+    http_request_with_headers(addr, method, path, &value.to_string(), headers)
 }
 
 fn http_request(addr: &str, method: &str, path: &str, body: &str) -> HttpResponse {

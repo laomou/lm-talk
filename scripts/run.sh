@@ -20,6 +20,7 @@ Node options:
   --control-token TOKEN   require Authorization: Bearer TOKEN for non-health APIs
   --cors-allow-origin CSV allow only listed browser origins
   --sync-peer URL[,URL]   periodically import peer snapshots
+  --sync-peer-token TOKEN Bearer token used when fetching sync peer snapshots
   --sync-interval-seconds N
 USAGE
 }
@@ -64,6 +65,7 @@ peer_id="lm-node-prd"
 control_token="${LM_NODE_CONTROL_TOKEN:-}"
 cors_allow_origin="${LM_NODE_CORS_ALLOW_ORIGIN:-}"
 sync_peer=""
+sync_peer_token="${LM_NODE_SYNC_PEER_TOKEN:-}"
 sync_interval_seconds="0"
 
 while [[ $# -gt 0 ]]; do
@@ -77,6 +79,7 @@ while [[ $# -gt 0 ]]; do
     --control-token) control_token="${2:?--control-token requires TOKEN}"; shift 2 ;;
     --cors-allow-origin) cors_allow_origin="${2:?--cors-allow-origin requires ORIGIN}"; shift 2 ;;
     --sync-peer) sync_peer="${2:?--sync-peer requires URL[,URL]}"; shift 2 ;;
+    --sync-peer-token) sync_peer_token="${2:?--sync-peer-token requires TOKEN}"; shift 2 ;;
     --sync-interval-seconds) sync_interval_seconds="${2:?--sync-interval-seconds requires N}"; shift 2 ;;
     --debug|--release)
       echo "run.sh 是 PRD runtime，不接受 $1；固定 build --release 并执行 target/release/lm_node" >&2
@@ -102,6 +105,9 @@ if [[ -n "$cors_allow_origin" ]]; then
 fi
 if [[ -n "$sync_peer" && "$sync_interval_seconds" != "0" ]]; then
   echo "自动同步：$sync_peer every ${sync_interval_seconds}s"
+  if [[ -n "$sync_peer_token" ]]; then
+    echo "同步认证：Bearer token enabled"
+  fi
 fi
 echo "构建：release binary"
 print_urls "$bind"
@@ -120,6 +126,9 @@ if [[ -n "$cors_allow_origin" ]]; then
 fi
 if [[ -n "$sync_peer" ]]; then
   args+=(--sync-peer "$sync_peer")
+fi
+if [[ -n "$sync_peer_token" ]]; then
+  args+=(--sync-peer-token "$sync_peer_token")
 fi
 if [[ "$sync_interval_seconds" != "0" ]]; then
   args+=(--sync-interval-seconds "$sync_interval_seconds")

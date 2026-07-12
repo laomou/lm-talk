@@ -88,9 +88,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let bind = optional_arg(&args, "--bind")?.unwrap_or("127.0.0.1:8787".into());
             let peer_id = optional_arg(&args, "--peer-id")?.unwrap_or("lm-node-dev".into());
             let state_file = optional_arg(&args, "--state-file")?;
-            let sync_peers = optional_arg(&args, "--sync-peer")?
+            let sync_peer_urls = optional_arg(&args, "--sync-peer")?
                 .map(|value| parse_csv(&value))
                 .unwrap_or_default();
+            let sync_peer_token = optional_arg(&args, "--sync-peer-token")?
+                .or_else(|| env::var("LM_NODE_SYNC_PEER_TOKEN").ok());
+            let sync_peers = sync_peer_urls
+                .into_iter()
+                .map(|url| SyncPeerConfig {
+                    url,
+                    token: sync_peer_token.clone(),
+                })
+                .collect::<Vec<_>>();
             let sync_interval_seconds = optional_arg(&args, "--sync-interval-seconds")?
                 .map(|value| value.parse::<u64>())
                 .transpose()?
@@ -165,6 +174,12 @@ struct ControlSecurityConfig {
     cors_allow_origins: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SyncPeerConfig {
+    url: String,
+    token: Option<String>,
+}
+
 impl ControlSecurityConfig {
     fn is_loopback_only(&self) -> bool {
         self.token.is_none()
@@ -207,7 +222,7 @@ fn serve_control(
     bind: &str,
     node: &mut NativeNode,
     state_file: Option<&str>,
-    sync_peers: Vec<String>,
+    sync_peers: Vec<SyncPeerConfig>,
     sync_interval_seconds: u64,
     security: ControlSecurityConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -220,7 +235,7 @@ fn serve_control(
     };
     println!("LM Talk control plane listening on http://{bind}");
     println!(
-        "endpoints: GET /health, POST /announce, GET /peers/closest, POST /mailbox/push, GET /mailbox/take, POST /mailbox/ack, POST /prekey/publish, GET /prekey/get, GET /sync/snapshot, POST /sync/import"
+        "endpoints: GET /health, POST /announce, GET /peers/closest, POST /mailbox/push, GET /mailbox/take, POST /mailbox/ack, POST /prekey/publish, GET /prekey/get, GET /sync/snapshot, GET /sync/status, POST /sync/import"
     );
     if security.token.is_some() {
         println!("control security: bearer token required");
@@ -236,7 +251,11 @@ fn serve_control(
     if !sync_peers.is_empty() && sync_interval_seconds > 0 {
         println!(
             "auto snapshot sync: every {sync_interval_seconds}s from {}",
-            sync_peers.join(",")
+            sync_peers
+                .iter()
+                .map(|peer| peer.url.as_str())
+                .collect::<Vec<_>>()
+                .join(",")
         );
     }
     loop {
@@ -275,23 +294,28 @@ fn serve_control(
     }
 }
 
-fn run_snapshot_sync(node: &mut NativeNode, peers: &[String]) {
+fn run_snapshot_sync(node: &mut NativeNode, peers: &[SyncPeerConfig]) {
     for peer in peers {
         match fetch_snapshot(peer) {
             Ok(snapshot) => {
                 let stats = node.merge_snapshot(snapshot);
+                node.sync_status.record_success(&peer.url, stats);
                 println!(
-                    "snapshot sync from {peer}: peers={} mailbox_deliveries={} prekey_bundles={}",
-                    stats.peers, stats.mailbox_deliveries, stats.prekey_bundles
+                    "snapshot sync from {}: peers={} mailbox_deliveries={} prekey_bundles={}",
+                    peer.url, stats.peers, stats.mailbox_deliveries, stats.prekey_bundles
                 );
             }
-            Err(err) => eprintln!("snapshot sync from {peer} failed: {err}"),
+            Err(err) => {
+                let error = err.to_string();
+                node.sync_status.record_failure(&peer.url, error.clone());
+                eprintln!("snapshot sync from {} failed: {error}", peer.url);
+            }
         }
     }
 }
 
-fn fetch_snapshot(peer: &str) -> Result<NodeStateSnapshot, Box<dyn std::error::Error>> {
-    let normalized = peer.trim().trim_end_matches('/');
+fn fetch_snapshot(peer: &SyncPeerConfig) -> Result<NodeStateSnapshot, Box<dyn std::error::Error>> {
+    let normalized = peer.url.trim().trim_end_matches('/');
     let without_scheme = normalized
         .strip_prefix("http://")
         .ok_or("only http:// sync peers are supported")?;
@@ -301,7 +325,14 @@ fn fetch_snapshot(peer: &str) -> Result<NodeStateSnapshot, Box<dyn std::error::E
         .unwrap_or((without_scheme, String::new()));
     let path = format!("{path_prefix}/sync/snapshot");
     let mut stream = TcpStream::connect(host_port)?;
-    let request = format!("GET {path} HTTP/1.1\r\nhost: {host_port}\r\nconnection: close\r\n\r\n");
+    let auth_header = peer
+        .token
+        .as_ref()
+        .map(|token| format!("authorization: Bearer {token}\r\n"))
+        .unwrap_or_default();
+    let request = format!(
+        "GET {path} HTTP/1.1\r\nhost: {host_port}\r\n{auth_header}connection: close\r\n\r\n"
+    );
     stream.write_all(request.as_bytes())?;
     let mut response = Vec::new();
     stream.read_to_end(&mut response)?;

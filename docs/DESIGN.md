@@ -1655,7 +1655,7 @@ MVP 不做：
 - Mailbox：`/mailbox/push`、`/mailbox/take`、`/mailbox/ack`。
 - PreKey：`/prekey/publish`、`/prekey/get`、`consume=true` 精确记录 one-time prekey 消费，并返回 remaining/low watermark；bundle 过期会清理，signed prekey 轮换会重置消费记录。
 - Snapshot：`/sync/snapshot`、`/sync/import`，可粗粒度同步 peers/mailbox/prekeys。
-- 自动 snapshot sync：`serve-control --sync-peer http://host:port --sync-interval-seconds N` 定时拉取并 merge peer snapshot。
+- 自动 snapshot sync：`serve-control --sync-peer http://host:port --sync-interval-seconds N` 定时拉取并 merge peer snapshot；`--sync-peer-token` 可拉取受 token 保护的 peer；`/sync/status` 暴露 attempts/successes/failures/last_success_at/last_error。
 - 控制面基础安全：未配置 token 时非 health API 仅允许 loopback；`--control-token` 要求 `Authorization: Bearer ...`；`--cors-allow-origin` 限制浏览器 Origin。
 - `serve-control --state-file` 可保存/恢复节点状态。
 - 节点 e2e：PreKey 同步 + Mailbox 携带 ratchet envelope + 接收方解密。
@@ -1666,7 +1666,7 @@ MVP 不做：
 - 真正 DHT 节点发现、查询、记录复制、过期清理。
 - 自动 peer snapshot sync 的配置文件、失败退避和状态指标；后续替换为 DHT replication。
 - WebRTC signaling、relay/TURN 替代能力。
-- 节点控制面 token 配置文件/轮换、TLS 部署说明、限流、配额、反滥用、日志和指标。
+- 节点控制面 token 配置文件/轮换、TLS 部署说明、限流、配额、反滥用、结构化日志和更完整指标。
 
 ---
 

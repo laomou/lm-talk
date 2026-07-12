@@ -11,7 +11,7 @@ use lm_core::{
     PublicPeerCapability, Result, UserId,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
 
 pub const KADEMLIA_ID_BYTES: usize = 32;
@@ -751,6 +751,70 @@ pub struct NativeNode {
     pub kademlia: KademliaRoutingTable,
     pub mailbox: MailboxStore,
     pub prekeys: PreKeyStore,
+    pub sync_status: NodeSyncStatus,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NodeSyncStatus {
+    pub peers: BTreeMap<String, NodeSyncPeerStatus>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NodeSyncPeerStatus {
+    pub url: String,
+    pub attempts: u64,
+    pub successes: u64,
+    pub failures: u64,
+    pub last_attempt_at: Option<u64>,
+    pub last_success_at: Option<u64>,
+    pub last_error_at: Option<u64>,
+    pub last_error: Option<String>,
+    pub last_imported_peers: usize,
+    pub last_imported_mailbox_deliveries: usize,
+    pub last_imported_prekey_bundles: usize,
+}
+
+impl NodeSyncStatus {
+    pub fn record_success(&mut self, url: &str, stats: NodeMergeStats) {
+        let now = current_unix_timestamp();
+        let entry = self.peer_entry(url);
+        entry.attempts = entry.attempts.saturating_add(1);
+        entry.successes = entry.successes.saturating_add(1);
+        entry.last_attempt_at = Some(now);
+        entry.last_success_at = Some(now);
+        entry.last_error = None;
+        entry.last_imported_peers = stats.peers;
+        entry.last_imported_mailbox_deliveries = stats.mailbox_deliveries;
+        entry.last_imported_prekey_bundles = stats.prekey_bundles;
+    }
+
+    pub fn record_failure(&mut self, url: &str, error: impl Into<String>) {
+        let now = current_unix_timestamp();
+        let entry = self.peer_entry(url);
+        entry.attempts = entry.attempts.saturating_add(1);
+        entry.failures = entry.failures.saturating_add(1);
+        entry.last_attempt_at = Some(now);
+        entry.last_error_at = Some(now);
+        entry.last_error = Some(error.into());
+    }
+
+    fn peer_entry(&mut self, url: &str) -> &mut NodeSyncPeerStatus {
+        self.peers
+            .entry(url.to_string())
+            .or_insert_with(|| NodeSyncPeerStatus {
+                url: url.to_string(),
+                attempts: 0,
+                successes: 0,
+                failures: 0,
+                last_attempt_at: None,
+                last_success_at: None,
+                last_error_at: None,
+                last_error: None,
+                last_imported_peers: 0,
+                last_imported_mailbox_deliveries: 0,
+                last_imported_prekey_bundles: 0,
+            })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -766,6 +830,8 @@ pub struct NodeStateSnapshot {
     pub prekey_bundles: Vec<PreKeyBundle>,
     #[serde(default)]
     pub consumed_one_time_prekeys: Vec<ConsumedOneTimePreKey>,
+    #[serde(default)]
+    pub sync_status: NodeSyncStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -790,6 +856,7 @@ impl NativeNode {
             kademlia: KademliaRoutingTable::new(local_id, DEFAULT_K_BUCKET_SIZE),
             mailbox: MailboxStore::default(),
             prekeys: PreKeyStore::default(),
+            sync_status: NodeSyncStatus::default(),
         }
     }
 
@@ -816,6 +883,7 @@ impl NativeNode {
                     })
                 })
                 .collect(),
+            sync_status: self.sync_status.clone(),
         }
     }
 
@@ -841,6 +909,7 @@ impl NativeNode {
         node.prekeys.restore_bundles(snapshot.prekey_bundles);
         node.prekeys
             .restore_consumed(snapshot.consumed_one_time_prekeys);
+        node.sync_status = snapshot.sync_status;
         node
     }
 
@@ -873,6 +942,9 @@ impl NativeNode {
         let prekey_bundles = self.prekeys.merge_bundles(snapshot.prekey_bundles);
         self.prekeys
             .merge_consumed(snapshot.consumed_one_time_prekeys);
+        for (url, status) in snapshot.sync_status.peers {
+            self.sync_status.peers.entry(url).or_insert(status);
+        }
         NodeMergeStats {
             peers,
             mailbox_deliveries,
@@ -999,6 +1071,7 @@ struct HealthResponse<'a> {
     prekeys: usize,
     mailbox_deliveries: usize,
     mailbox_bytes: usize,
+    sync: NodeSyncStatus,
 }
 
 #[derive(Debug, Serialize)]
@@ -1095,6 +1168,7 @@ impl NativeNode {
                     prekeys: self.prekeys.len(),
                     mailbox_deliveries: self.mailbox.total_pending(),
                     mailbox_bytes: self.mailbox.total_bytes(),
+                    sync: self.sync_status.clone(),
                 },
             ),
             ("POST", "/announce") => self.handle_control_announce(&request.body),
@@ -1105,12 +1179,13 @@ impl NativeNode {
             ("POST", "/prekey/publish") => self.handle_control_prekey_publish(&request.body),
             ("GET", "/prekey/get") => self.handle_control_prekey_get(&request.path),
             ("GET", "/sync/snapshot") => ControlResponse::json(200, &self.to_state_snapshot()),
+            ("GET", "/sync/status") => ControlResponse::json(200, &self.sync_status),
             ("POST", "/sync/import") => self.handle_control_sync_import(&request.body),
             (
                 _,
                 "/health" | "/announce" | "/peers/closest" | "/mailbox/push" | "/mailbox/take"
                 | "/mailbox/ack" | "/prekey/publish" | "/prekey/get" | "/sync/snapshot"
-                | "/sync/import",
+                | "/sync/status" | "/sync/import",
             ) => ControlResponse::text(405, "method not allowed"),
             _ => ControlResponse::text(404, "not found"),
         }
