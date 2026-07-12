@@ -149,10 +149,7 @@ fn decode_fixed_24(value: &str) -> Result<[u8; 24], JsValue> {
 }
 
 fn unix_now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+    lm_core::unix_now()
 }
 
 const WASM_IDENTITY_BACKUP_PREFIX: &str = "lm-identity-backup-v1:wasm-local:";

@@ -59,7 +59,12 @@ pub use storage::{MemoryStore, StoredMessage};
 
 #[cfg(target_arch = "wasm32")]
 pub fn unix_now() -> u64 {
-    0
+    let millis = js_sys::Date::now();
+    if millis.is_finite() && millis > 0.0 {
+        (millis / 1000.0) as u64
+    } else {
+        0
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
