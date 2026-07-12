@@ -8,7 +8,7 @@
     "dev": "npm run build:wasm && vite --host 0.0.0.0",
     "build": "npm run build:wasm && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "typecheck": "vue-tsc --noEmit",
+    "typecheck": "npm run build:wasm && vue-tsc --noEmit",
     "test:e2e": "playwright test"
   },
   "dependencies": {
