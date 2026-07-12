@@ -20,13 +20,13 @@
 
 - `lm_core`：身份/备份、Contact Card、好友请求/响应、DirectEnvelope、X3DH PreKey、Double Ratchet、群 Sender Key、群权限状态、文件分片加密包、本地安全策略、Outbox、MemoryStore、大小限制、测试向量。
 - `lm_wasm`：大部分 core 能力已导出，并有 smoke 测试。
-- `lm_node`：HTTP control plane、Public Peer announce、Kademlia ID/distance/closest scaffold、Mailbox push/take/ack、PreKey publish/get、one-time prekey 消费记录、snapshot sync/import、状态文件保存。
+- `lm_node`：HTTP control plane、Public Peer announce、Kademlia ID/distance/closest scaffold、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、one-time prekey 消费记录、snapshot sync/import、状态文件保存。
 - 测试：`scripts/test.sh all` 当前通过 Rust 测试、core/node e2e、HTTP control flow、WASM smoke、Web build/e2e。
 
 关键边界：
 
 - `lm_node` 仍是控制面 + snapshot sync scaffold，不是真正生产 DHT。
-- Mailbox/PreKey 可支撑 demo，但缺配额、认证、过期清理、自动同步和反滥用。
+- Mailbox/PreKey 可支撑 demo；Mailbox 已有基础 TTL/配额/message_id 去重，但仍缺正式持久化、认证、自动同步和更完整反滥用。
 - Core 协议对象已可测，但仍需属性测试、模糊测试、跨平台测试向量和安全审计。
 - 本地持久化仍偏 Web IndexedDB / MemoryStore；Native SQLite/SQLCipher 尚未实现。
 
@@ -840,9 +840,11 @@ MVP 群聊采用逐个加密。
    - 增加崩溃恢复测试：push 后崩溃、take 未 ack 后崩溃、ack 后崩溃。
 
 2. **Mailbox 生命周期**
-   - TTL 过期清理。
-   - per-user / per-node quota。
-   - delivery_id / message_id 去重。
+   - [x] TTL 过期清理（push/take/restore/merge 路径会清理过期 delivery）。
+   - [x] 基础 per-user / per-node quota（`max_mailbox_messages_per_user` / `max_mailbox_bytes`）。
+   - [x] 基础 message_id 去重；delivery_id 去重保留在 snapshot merge 路径。
+   - [ ] 持久化 quota/TTL/去重索引，增加崩溃恢复测试。
+   - [ ] 更细粒度反滥用：按 sender 限流、全局速率限制、异常 payload 统计。
    - `take` 不删除，只有处理成功后 `ack` 删除的语义已存在，需要持久化和重试测试。
 
 3. **PreKey 生命周期**

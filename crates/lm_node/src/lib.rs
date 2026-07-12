@@ -227,8 +227,14 @@ pub struct NodeConfig {
     pub capabilities: Vec<PublicPeerCapability>,
     pub max_mailbox_bytes: Option<u64>,
     pub max_message_ttl_seconds: Option<u64>,
+    #[serde(default = "default_max_mailbox_messages_per_user")]
+    pub max_mailbox_messages_per_user: Option<usize>,
     pub max_relay_bandwidth_kbps: Option<u64>,
     pub announce_ttl_seconds: u64,
+}
+
+fn default_max_mailbox_messages_per_user() -> Option<usize> {
+    Some(1000)
 }
 
 impl Default for NodeConfig {
@@ -239,6 +245,7 @@ impl Default for NodeConfig {
             capabilities: vec![PublicPeerCapability::Bootstrap, PublicPeerCapability::Dht],
             max_mailbox_bytes: Some(10 * 1024 * 1024),
             max_message_ttl_seconds: Some(24 * 3600),
+            max_mailbox_messages_per_user: default_max_mailbox_messages_per_user(),
             max_relay_bandwidth_kbps: Some(1024),
             announce_ttl_seconds: 24 * 3600,
         }
@@ -305,6 +312,7 @@ pub struct MailboxDelivery {
 #[derive(Debug, Clone, Default)]
 pub struct MailboxStore {
     deliveries: HashMap<UserId, Vec<MailboxDelivery>>,
+    message_ids: HashMap<UserId, Vec<Uuid>>,
 }
 
 impl MailboxStore {
@@ -313,15 +321,54 @@ impl MailboxStore {
         message: MailboxMessage,
         from_identity_public_key: &[u8; 32],
     ) -> Result<String> {
+        self.push_verified_with_limits(message, from_identity_public_key, None, None, None)
+    }
+
+    pub fn push_verified_with_limits(
+        &mut self,
+        message: MailboxMessage,
+        from_identity_public_key: &[u8; 32],
+        max_total_bytes: Option<u64>,
+        max_messages_per_user: Option<usize>,
+        max_message_ttl_seconds: Option<u64>,
+    ) -> Result<String> {
         message.verify(from_identity_public_key)?;
+        let now = current_unix_timestamp();
+        if message.expires_at <= now {
+            return Err(LmError::ExpiredObject);
+        }
+        if let Some(max_ttl) = max_message_ttl_seconds {
+            if message.expires_at.saturating_sub(now) > max_ttl {
+                return Err(LmError::PayloadTooLarge);
+            }
+        }
+        self.prune_expired(now);
+        if self.has_message_id(&message.to_user_id, message.message_id) {
+            return Err(LmError::DuplicateMessage);
+        }
+        let message_bytes = mailbox_delivery_size_bytes(&message);
+        if let Some(max_total_bytes) = max_total_bytes {
+            if self.total_bytes().saturating_add(message_bytes) > max_total_bytes as usize {
+                return Err(LmError::PayloadTooLarge);
+            }
+        }
+        if let Some(max_messages) = max_messages_per_user {
+            if self.pending_for(&message.to_user_id) >= max_messages {
+                return Err(LmError::PayloadTooLarge);
+            }
+        }
         let delivery_id = Uuid::new_v4().to_string();
+        self.message_ids
+            .entry(message.to_user_id.clone())
+            .or_default()
+            .push(message.message_id);
         self.deliveries
             .entry(message.to_user_id.clone())
             .or_default()
             .push(MailboxDelivery {
                 delivery_id: delivery_id.clone(),
                 message,
-                created_at: current_unix_timestamp(),
+                created_at: now,
                 delivered_at: None,
             });
         Ok(delivery_id)
@@ -331,6 +378,7 @@ impl MailboxStore {
     /// after successful local processing to avoid message loss.
     pub fn take_for(&mut self, user_id: &UserId) -> Vec<MailboxDelivery> {
         let now = current_unix_timestamp();
+        self.prune_expired(now);
         let Some(deliveries) = self.deliveries.get_mut(user_id) else {
             return Vec::new();
         };
@@ -349,12 +397,76 @@ impl MailboxStore {
         let removed = before.saturating_sub(deliveries.len());
         if deliveries.is_empty() {
             self.deliveries.remove(user_id);
+            self.message_ids.remove(user_id);
+        } else {
+            self.rebuild_message_ids_for(user_id);
         }
         removed
     }
 
     pub fn pending_for(&self, user_id: &UserId) -> usize {
         self.deliveries.get(user_id).map(Vec::len).unwrap_or(0)
+    }
+
+    pub fn total_pending(&self) -> usize {
+        self.deliveries.values().map(Vec::len).sum()
+    }
+
+    pub fn total_bytes(&self) -> usize {
+        self.deliveries
+            .values()
+            .flat_map(|deliveries| deliveries.iter())
+            .map(|delivery| mailbox_delivery_size_bytes(&delivery.message))
+            .sum()
+    }
+
+    pub fn prune_expired(&mut self, now: u64) -> usize {
+        let mut removed = 0;
+        let users: Vec<_> = self.deliveries.keys().cloned().collect();
+        for user_id in users {
+            let Some(deliveries) = self.deliveries.get_mut(&user_id) else {
+                continue;
+            };
+            let before = deliveries.len();
+            deliveries.retain(|delivery| delivery.message.expires_at > now);
+            removed += before.saturating_sub(deliveries.len());
+            if deliveries.is_empty() {
+                self.deliveries.remove(&user_id);
+                self.message_ids.remove(&user_id);
+            } else {
+                self.rebuild_message_ids_for(&user_id);
+            }
+        }
+        removed
+    }
+
+    fn has_message_id(&self, user_id: &UserId, message_id: Uuid) -> bool {
+        self.message_ids
+            .get(user_id)
+            .map(|ids| ids.contains(&message_id))
+            .unwrap_or(false)
+    }
+
+    fn rebuild_message_ids_for(&mut self, user_id: &UserId) {
+        let Some(deliveries) = self.deliveries.get(user_id) else {
+            self.message_ids.remove(user_id);
+            return;
+        };
+        self.message_ids.insert(
+            user_id.clone(),
+            deliveries
+                .iter()
+                .map(|delivery| delivery.message.message_id)
+                .collect(),
+        );
+    }
+
+    fn rebuild_message_ids(&mut self) {
+        self.message_ids.clear();
+        let users: Vec<_> = self.deliveries.keys().cloned().collect();
+        for user_id in users {
+            self.rebuild_message_ids_for(&user_id);
+        }
     }
 
     pub fn all_deliveries(&self) -> Vec<MailboxDelivery> {
@@ -379,6 +491,8 @@ impl MailboxStore {
                 .or_default()
                 .push(delivery);
         }
+        self.prune_expired(current_unix_timestamp());
+        self.rebuild_message_ids();
     }
 
     fn restore_messages(&mut self, messages: Vec<MailboxMessage>) {
@@ -395,11 +509,20 @@ impl MailboxStore {
                     delivered_at: None,
                 });
         }
+        self.prune_expired(current_unix_timestamp());
+        self.rebuild_message_ids();
     }
 
     fn merge_deliveries(&mut self, deliveries: Vec<MailboxDelivery>) -> usize {
+        self.prune_expired(current_unix_timestamp());
         let mut inserted = 0;
         for delivery in deliveries {
+            if delivery.message.expires_at <= current_unix_timestamp() {
+                continue;
+            }
+            if self.has_message_id(&delivery.message.to_user_id, delivery.message.message_id) {
+                continue;
+            }
             let list = self
                 .deliveries
                 .entry(delivery.message.to_user_id.clone())
@@ -410,11 +533,23 @@ impl MailboxStore {
             {
                 continue;
             }
+            self.message_ids
+                .entry(delivery.message.to_user_id.clone())
+                .or_default()
+                .push(delivery.message.message_id);
             list.push(delivery);
             inserted += 1;
         }
         inserted
     }
+}
+
+fn mailbox_delivery_size_bytes(message: &MailboxMessage) -> usize {
+    message.ciphertext.len()
+        + message.signature.len()
+        + message.from_user_id.as_str().len()
+        + message.to_user_id.as_str().len()
+        + std::mem::size_of::<MailboxMessage>()
 }
 
 #[derive(Debug, Clone, Default)]
@@ -765,6 +900,8 @@ struct HealthResponse<'a> {
     node_id: String,
     peers: usize,
     prekeys: usize,
+    mailbox_deliveries: usize,
+    mailbox_bytes: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -854,6 +991,8 @@ impl NativeNode {
                     node_id: self.kademlia.local_id().to_hex(),
                     peers: self.kademlia.len(),
                     prekeys: self.prekeys.len(),
+                    mailbox_deliveries: self.mailbox.total_pending(),
+                    mailbox_bytes: self.mailbox.total_bytes(),
                 },
             ),
             ("POST", "/announce") => self.handle_control_announce(&request.body),
@@ -946,7 +1085,13 @@ impl NativeNode {
             Ok(v) => v,
             Err(e) => return ControlResponse::text(400, e.to_string()),
         };
-        let delivery_id = match self.mailbox.push_verified(message.clone(), &public_key) {
+        let delivery_id = match self.mailbox.push_verified_with_limits(
+            message.clone(),
+            &public_key,
+            self.config.max_mailbox_bytes,
+            self.config.max_mailbox_messages_per_user,
+            self.config.max_message_ttl_seconds,
+        ) {
             Ok(delivery_id) => delivery_id,
             Err(e) => return ControlResponse::text(400, e.to_string()),
         };
@@ -1197,6 +1342,113 @@ mod tests {
     }
 
     #[test]
+    fn mailbox_store_rejects_duplicate_message_ids() {
+        let (alice, _) = Identity::create_with_passphrase("alice dup").unwrap();
+        let (bob, _) = Identity::create_with_passphrase("bob dup").unwrap();
+        let message = MailboxMessage::new(
+            &alice,
+            bob.user_id().clone(),
+            MailboxMessageKind::DirectEnvelope,
+            "ciphertext".into(),
+            3600,
+        )
+        .unwrap();
+        let mut mailbox = MailboxStore::default();
+        mailbox
+            .push_verified(message.clone(), &alice.identity_public_key())
+            .unwrap();
+        assert_eq!(
+            mailbox
+                .push_verified(message, &alice.identity_public_key())
+                .unwrap_err(),
+            LmError::DuplicateMessage
+        );
+    }
+
+    #[test]
+    fn mailbox_store_prunes_expired_deliveries() {
+        let (alice, _) = Identity::create_with_passphrase("alice prune").unwrap();
+        let (bob, _) = Identity::create_with_passphrase("bob prune").unwrap();
+        let message = MailboxMessage::new(
+            &alice,
+            bob.user_id().clone(),
+            MailboxMessageKind::DirectEnvelope,
+            "ciphertext".into(),
+            3600,
+        )
+        .unwrap();
+        let mut mailbox = MailboxStore::default();
+        mailbox
+            .push_verified(message, &alice.identity_public_key())
+            .unwrap();
+        assert_eq!(mailbox.pending_for(bob.user_id()), 1);
+        assert_eq!(mailbox.prune_expired(u64::MAX), 1);
+        assert_eq!(mailbox.pending_for(bob.user_id()), 0);
+    }
+
+    #[test]
+    fn mailbox_store_enforces_limits() {
+        let (alice, _) = Identity::create_with_passphrase("alice limits").unwrap();
+        let (bob, _) = Identity::create_with_passphrase("bob limits").unwrap();
+        let message = MailboxMessage::new(
+            &alice,
+            bob.user_id().clone(),
+            MailboxMessageKind::DirectEnvelope,
+            "ciphertext".into(),
+            3600,
+        )
+        .unwrap();
+        let mut mailbox = MailboxStore::default();
+        assert_eq!(
+            mailbox
+                .push_verified_with_limits(
+                    message.clone(),
+                    &alice.identity_public_key(),
+                    Some(1),
+                    None,
+                    None,
+                )
+                .unwrap_err(),
+            LmError::PayloadTooLarge
+        );
+        assert_eq!(
+            mailbox
+                .push_verified_with_limits(
+                    message.clone(),
+                    &alice.identity_public_key(),
+                    None,
+                    None,
+                    Some(1),
+                )
+                .unwrap_err(),
+            LmError::PayloadTooLarge
+        );
+        mailbox
+            .push_verified_with_limits(message, &alice.identity_public_key(), None, Some(1), None)
+            .unwrap();
+        let second = MailboxMessage::new(
+            &alice,
+            bob.user_id().clone(),
+            MailboxMessageKind::DirectEnvelope,
+            "ciphertext2".into(),
+            3600,
+        )
+        .unwrap();
+        assert_eq!(
+            mailbox
+                .push_verified_with_limits(
+                    second,
+                    &alice.identity_public_key(),
+                    None,
+                    Some(1),
+                    None,
+                )
+                .unwrap_err(),
+            LmError::PayloadTooLarge
+        );
+    }
+
+    #[test]
     fn kademlia_distance_orders_closest_peer() {
         let local = KademliaNodeId::from_bytes([0; KADEMLIA_ID_BYTES]);
         let close = KademliaNodeId::from_bytes([
@@ -1327,6 +1579,36 @@ mod tests {
             .to_string(),
         });
         assert_eq!(response.status, 200);
+        assert_eq!(node.mailbox.pending_for(bob.user_id()), 0);
+    }
+
+    #[test]
+    fn control_plane_mailbox_push_rejects_configured_limits() {
+        let (alice, _) = Identity::create_with_passphrase("alice control limit").unwrap();
+        let (bob, _) = Identity::create_with_passphrase("bob control limit").unwrap();
+        let mut node = NativeNode::new(NodeConfig {
+            max_mailbox_messages_per_user: Some(0),
+            ..Default::default()
+        });
+        let message = MailboxMessage::new(
+            &alice,
+            bob.user_id().clone(),
+            MailboxMessageKind::DirectEnvelope,
+            "ciphertext".into(),
+            3600,
+        )
+        .unwrap();
+        let response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/mailbox/push".into(),
+            body: serde_json::json!({
+                "message_text": message.to_export_text().unwrap(),
+                "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
+            })
+            .to_string(),
+        });
+        assert_eq!(response.status, 400);
+        assert!(response.body.contains("payload too large"));
         assert_eq!(node.mailbox.pending_for(bob.user_id()), 0);
     }
 
