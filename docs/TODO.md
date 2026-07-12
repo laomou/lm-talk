@@ -1,10 +1,10 @@
 # LM Talk 遗留事项 / TODO
 
 版本：v0.1  
-日期：2026-07-10  
-状态：草案
+日期：2026-07-12  
+状态：实现同步草案
 
-本文档记录 `DESIGN.md` 中尚未完全细化的设计决策、协议细节和实现前置任务。
+本文档记录 `docs/DESIGN.md` 中尚未完全细化的设计决策、协议细节和实现前置任务。
 
 优先级定义：
 
@@ -14,9 +14,27 @@
 
 ---
 
-## 当前未完成功能清单（2026-07-11 更新）
+## 当前实现状态快照（2026-07-12）
 
-> 先做正式功能页面；协议调试页和更细 E2E 测试后补。下面是从当前代码状态整理出的真实缺口。
+已完成或基本成型：
+
+- `lm_core`：身份/备份、Contact Card、好友请求/响应、DirectEnvelope、X3DH PreKey、Double Ratchet、群 Sender Key、群权限状态、文件分片加密包、本地安全策略、Outbox、MemoryStore、大小限制、测试向量。
+- `lm_wasm`：大部分 core 能力已导出，并有 smoke 测试。
+- `lm_node`：HTTP control plane、Public Peer announce、Kademlia ID/distance/closest scaffold、Mailbox push/take/ack、PreKey publish/get、one-time prekey 消费记录、snapshot sync/import、状态文件保存。
+- 测试：`scripts/test.sh all` 当前通过 Rust 测试、core/node e2e、HTTP control flow、WASM smoke、Web build/e2e。
+
+关键边界：
+
+- `lm_node` 仍是控制面 + snapshot sync scaffold，不是真正生产 DHT。
+- Mailbox/PreKey 可支撑 demo，但缺配额、认证、过期清理、自动同步和反滥用。
+- Core 协议对象已可测，但仍需属性测试、模糊测试、跨平台测试向量和安全审计。
+- 本地持久化仍偏 Web IndexedDB / MemoryStore；Native SQLite/SQLCipher 尚未实现。
+
+---
+
+## 当前未完成功能清单（2026-07-12 更新）
+
+> 当前 `lm_core` / `lm_wasm` / `lm_node` 已具备可测试 MVP scaffold；Web 产品化流程仍是最直接的用户可用性缺口。下面按当前代码状态整理真实缺口。
 
 ### P0：让 Web 页面像聊天软件一样可用
 
@@ -163,7 +181,7 @@ normalize_passphrase(input):
 
 ### 2. 身份备份包最终格式
 
-当前 `DESIGN.md` 只有 JSON 示例，需确定最终格式。
+当前 `docs/DESIGN.md` 只有 JSON 示例，需确定最终格式。
 
 待决策：
 
@@ -812,6 +830,69 @@ MVP 群聊采用逐个加密。
 
 ---
 
+## Native Node / 非 Web 后端 TODO
+
+### P0：节点 MVP 稳定化
+
+1. **正式持久化**
+   - 为 mailbox deliveries、prekey bundles、consumed one-time prekeys、public peers 增加 SQLite/SQLCipher 或等价存储。
+   - 保留 snapshot import/export 作为迁移和调试能力。
+   - 增加崩溃恢复测试：push 后崩溃、take 未 ack 后崩溃、ack 后崩溃。
+
+2. **Mailbox 生命周期**
+   - TTL 过期清理。
+   - per-user / per-node quota。
+   - delivery_id / message_id 去重。
+   - `take` 不删除，只有处理成功后 `ack` 删除的语义已存在，需要持久化和重试测试。
+
+3. **PreKey 生命周期**
+   - signed prekey 轮换。
+   - one-time prekey 低水位补货。
+   - bundle 过期。
+   - 后续升级为独立 signed one-time-prekey records，避免 bundle 级签名与消费记录耦合。
+
+4. **控制面安全**
+   - 本地开发模式和公网模式分离。
+   - CORS 白名单。
+   - 管理 API token 或本地 socket 限制。
+   - TLS/反向代理部署说明。
+
+### P1：节点自动同步与网络
+
+1. **自动 snapshot sync**
+   - 配置 peer control URL 列表。
+   - 定时拉取 `/sync/snapshot` 并 `/sync/import`。
+   - 合并 peers/mailbox/prekeys/consumed records 时保持幂等。
+
+2. **DHT scaffold 演进**
+   - 增加 find_node/find_value/store record 抽象。
+   - 为 Public Peer、PreKey record、Mailbox hint 定义 record key。
+   - 加记录 TTL、republish、closest-k replication。
+
+3. **节点可观测性**
+   - 结构化日志。
+   - health/status/stats。
+   - mailbox/prekey/peer 数量和过期清理指标。
+
+### P2：生产网络能力
+
+1. **真正 DHT / Kademlia**
+   - 节点发现。
+   - routing table refresh。
+   - record replication。
+   - Sybil/垃圾记录基础防护。
+
+2. **Relay / TURN 替代能力**
+   - 允许公网节点作为可选 relay/mailbox/bootstrap。
+   - Relay 不得成为明文可见或强中心依赖。
+
+3. **节点部署规范**
+   - systemd/container 示例。
+   - 数据备份/恢复。
+   - 升级兼容策略。
+
+---
+
 ## 测试计划 TODO
 
 ### 单元测试
@@ -889,7 +970,7 @@ MVP 群聊采用逐个加密。
 
 ## 建议拆分的后续规范文件
 
-当前 `DESIGN.md` 是总设计文档。后续建议拆分：
+当前 `docs/DESIGN.md` 是总设计文档。后续建议继续拆分：
 
 ```text
 docs/
@@ -914,14 +995,14 @@ docs/
 建议下一步优先完成：
 
 ```text
-1. 提示词 normalize 规则
-2. 身份备份包最终格式
-3. 本机 encrypted_identity_seed 登录方式
-4. MVP 消息加密握手细节
-5. WebRTC 手动 signaling 包格式
-6. Contact Card 更新策略
-7. IndexedDB 加密存储策略
-8. 协议错误码
-9. 测试向量格式
-10. 对象大小限制
+1. Web 正式网络设置区：lm_node URL、启停、连接状态、IndexedDB 持久化。
+2. PreKey 自动发布/拉取/补货：隐藏 JSON 调试细节，保留 private bundle 本地加密保存。
+3. 添加好友后自动 X3DH + Double Ratchet 建链，失败时回退复制粘贴流程。
+4. Mailbox 自动发送、收取、解密、ack、去重和失败重试。
+5. 本地数据应用层加密：消息明文、联系人备注、群名、outbox、ratchet session。
+6. Native node 正式持久化：SQLite/SQLCipher 或等价数据库，含过期清理和崩溃恢复测试。
+7. 节点自动同步：先做定时 snapshot sync，后续替换为 DHT replication。
+8. Outbox 调度器：指数退避、取消发送、过期、delivery status。
+9. 协议稳定化：错误码、对象大小限制、Contact Card 更新策略、PreKey 轮换策略。
+10. 安全测试增强：proptest/fuzz、跨平台测试向量、ratchet replay/window/skipped-key 不变量。
 ```

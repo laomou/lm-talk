@@ -1,8 +1,8 @@
 # LM Talk 去中心化聊天软件设计文档
 
 版本：v0.1  
-日期：2026-07-10  
-状态：草案
+日期：2026-07-12  
+状态：实现同步草案
 
 ---
 
@@ -137,6 +137,25 @@ Friend Request -> Friend Response
 │ WebRTC / DHT / Public Peer   │
 └──────────────────────────────┘
 ```
+
+### 3.1 当前实现状态快照（2026-07-12）
+
+当前仓库已经从纯设计推进到可测试 MVP scaffold。非 Web 部分状态如下：
+
+| 模块 | 当前状态 | 完整性判断 |
+|---|---|---|
+| `lm_core` | 已实现身份、备份、Contact Card、好友请求/响应、DirectEnvelope、X3DH PreKey、Double Ratchet 状态与 envelope、群 Sender Key、群权限状态、文件分片加密包、本地安全策略、Outbox、MemoryStore、大小限制、测试向量 | 核心协议层已具备 MVP 主干，约 75-85% MVP 完整；仍需生产级审计、持久化接口、属性/模糊测试、多设备完整流程 |
+| `lm_wasm` | 已暴露大部分 core API，覆盖身份、联系人、好友、消息、PreKey/X3DH、Ratchet、群、文件、Public Peer、Mailbox、Signaling | 绑定层覆盖较全，约 70-80% MVP 完整；仍需随 core API 稳定后整理命名、错误码和兼容策略 |
+| `lm_node` | 已实现控制面 HTTP scaffold、Public Peer announce、Kademlia ID/XOR distance/closest peers、Mailbox push/take/ack、PreKey publish/get、one-time prekey 消费记录、snapshot sync/import、状态文件保存 | 可支撑节点辅助 PreKey + Mailbox + 粗粒度同步 demo，约 45-60% MVP 完整；不是生产 DHT/relay 节点 |
+| CLI / 运维 | 已有 `announce`、`inspect-public`、`distance`、`run`、`serve-control` 等基础命令 | 调试可用；缺配置文件、认证、TLS、日志、指标、数据库、限流、后台任务 |
+| 测试 | `scripts/test.sh all` 覆盖 Rust fmt/test、core e2e、node e2e、HTTP control flow、WASM smoke、Web build/e2e | 基础回归较好；仍需 proptest/fuzz、跨实现向量、真实网络故障/压力测试 |
+
+重要边界：
+
+- 当前 `lm_node` 的 Kademlia 部分只有 ID、距离、bucket 与 closest 查询 scaffold；**尚未实现真正 DHT 网络查询、节点发现、记录复制和过期清理**。
+- Mailbox 当前是控制面队列语义：节点可保存密文并等待接收方 ack；尚未包含生产级配额、反滥用、认证、端到端投递回执和元数据保护。
+- PreKey 当前支持 bundle 发布、拉取和 one-time key 精确消费记录；后续应升级 signed per-one-time-prekey records、轮换和补货策略。
+- Core 中的加密协议对象和状态机已经可测试，但仍不能等同于经过第三方审计的生产安全协议。
 
 ---
 
@@ -1563,16 +1582,25 @@ MVP 不做：
 
 ### 21.1 MVP 0：Rust Core
 
-实现：
+当前已实现：
 
-- Identity create / restore
-- Identity backup package
-- UserID 生成
-- DeviceID 生成
-- Contact Card 导入导出
-- Friend Request / Response
-- 本地拉黑
-- 消息加解密
+- Identity create / restore、Identity backup package、UserID 生成、提示词 normalize。
+- DeviceID / DeviceCert / DeviceRevoke 基础对象。
+- Contact Card 导入导出、Friend Request / Response。
+- DirectEnvelope MVP 消息加解密。
+- X3DH PreKey Bundle、Signed PreKey、One-time PreKey、Initial Message、shared secret 派生。
+- Double Ratchet session state、message key、skipped key、DH step、`x3dh-double-ratchet-v1` envelope。
+- GroupInvite、GroupEvent、GroupPolicyState、Sender Key Distribution、Sender Envelope。
+- FileManifest、FileChunkEnvelope、文件 hash 校验。
+- LocalSafetyPolicy、本地拉黑/过滤、Outbox、MemoryStore、协议对象大小限制。
+- 固定测试向量和 core e2e secure flow。
+
+仍需补齐：
+
+- 生产级 Store trait + SQLite/SQLCipher 实现。
+- Ratchet replay/window/skipped-key 上限策略最终化。
+- 多设备同步、设备撤销事件自动分发。
+- 属性测试、模糊测试、外部安全审计。
 
 ---
 
@@ -1619,14 +1647,24 @@ MVP 不做：
 
 ### 21.5 MVP 4：Native Node
 
-实现：
+当前已实现：
 
-- SQLite / SQLCipher
-- mDNS
-- DHT
-- 自动 peer discovery
-- WebRTC signaling
-- 可选用户自建 relay / mailbox
+- `lm_node` 控制面 scaffold。
+- Public Peer announce 生成、验签、导入、closest 查询。
+- Kademlia NodeId、XOR distance、bucket、closest peer 排序。
+- Mailbox：`/mailbox/push`、`/mailbox/take`、`/mailbox/ack`。
+- PreKey：`/prekey/publish`、`/prekey/get`、`consume=true` 精确记录 one-time prekey 消费。
+- Snapshot：`/sync/snapshot`、`/sync/import`，可粗粒度同步 peers/mailbox/prekeys。
+- `serve-control --state-file` 可保存/恢复节点状态。
+- 节点 e2e：PreKey 同步 + Mailbox 携带 ratchet envelope + 接收方解密。
+
+仍需补齐：
+
+- SQLite / SQLCipher 或其他正式持久化数据库。
+- 真正 DHT 节点发现、查询、记录复制、过期清理。
+- 自动 peer snapshot sync，后续替换为 DHT replication。
+- WebRTC signaling、relay/TURN 替代能力。
+- 节点控制面认证、TLS/CORS 策略、限流、配额、反滥用、日志和指标。
 
 ---
 
@@ -1891,15 +1929,17 @@ Public Peer：
 
 ## 附录：当前端到端测试覆盖
 
-当前 `scripts/e2e.sh` 覆盖：
+当前 `scripts/test.sh all` / `scripts/test.sh e2e` 覆盖：
 
-- 身份、Contact Card、好友请求/确认。
-- X3DH PreKey 发起方/响应方派生同一 shared secret。
-- shared secret 初始化 Double Ratchet。
-- `x3dh-double-ratchet-v1` 双向消息加解密。
-- `lm_node` PreKey 发布/查询。
-- 节点 snapshot 同步。
-- mailbox 携带 ratchet envelope 并由接收方解密。
+- `cargo fmt --check`、workspace Rust 单元测试和 doc-test。
+- `lm_core` 身份、Contact Card、好友请求/确认、大小限制、测试向量、DirectEnvelope、X3DH、Double Ratchet、群 Sender Key、文件包、Outbox、MemoryStore。
+- core e2e：两用户好友流程、X3DH shared secret、Double Ratchet 双向消息。
+- `lm_node`：Public Peer announce、Kademlia closest、Mailbox push/take/ack、PreKey publish/get、snapshot roundtrip/import。
+- node e2e：节点 PreKey 同步 + Mailbox 携带 ratchet envelope + 接收方解密。
+- HTTP control flow：真实 `serve-control` 进程之间同步 PreKey/Mailbox。
+- `lm_wasm` smoke：身份、联系人、好友、消息、PreKey/X3DH、Ratchet、群、文件、Public Peer、Mailbox、Signaling。
+
+仍需补齐：proptest/fuzz、跨语言/跨平台测试向量、真实网络延迟/丢包/重连/压力测试、持久化崩溃恢复测试。
 
 
 ## 附录：群聊 Sender Key 实验路径

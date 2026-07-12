@@ -4,19 +4,21 @@ Vue + TypeScript + Rust WASM demo.
 
 ## Run
 
-From repository root:
+From repository root, development uses direct npm commands:
 
 ```bash
-./scripts/web-dev.sh
+export PATH="$PWD/.tools/node/bin:$PATH"
+cd apps/web
+npm run dev
 ```
 
-Build:
+Production build:
 
 ```bash
-./scripts/web-build.sh
+./scripts/build.sh web
 ```
 
-The scripts prepend the project-local Node.js binary:
+The project-local Node.js binary is installed under:
 
 ```text
 .tools/node/bin
