@@ -769,6 +769,10 @@ pub struct NodeSyncPeerStatus {
     pub last_success_at: Option<u64>,
     pub last_error_at: Option<u64>,
     pub last_error: Option<String>,
+    #[serde(default)]
+    pub next_attempt_at: Option<u64>,
+    #[serde(default)]
+    pub consecutive_failures: u32,
     pub last_imported_peers: usize,
     pub last_imported_mailbox_deliveries: usize,
     pub last_imported_prekey_bundles: usize,
@@ -783,6 +787,7 @@ impl NodeSyncStatus {
         entry.last_attempt_at = Some(now);
         entry.last_success_at = Some(now);
         entry.last_error = None;
+        entry.consecutive_failures = 0;
         entry.last_imported_peers = stats.peers;
         entry.last_imported_mailbox_deliveries = stats.mailbox_deliveries;
         entry.last_imported_prekey_bundles = stats.prekey_bundles;
@@ -796,6 +801,11 @@ impl NodeSyncStatus {
         entry.last_attempt_at = Some(now);
         entry.last_error_at = Some(now);
         entry.last_error = Some(error.into());
+        entry.consecutive_failures = entry.consecutive_failures.saturating_add(1);
+    }
+
+    pub fn record_next_attempt(&mut self, url: &str, next_attempt_at: u64) {
+        self.peer_entry(url).next_attempt_at = Some(next_attempt_at);
     }
 
     fn peer_entry(&mut self, url: &str) -> &mut NodeSyncPeerStatus {
@@ -810,6 +820,8 @@ impl NodeSyncStatus {
                 last_success_at: None,
                 last_error_at: None,
                 last_error: None,
+                next_attempt_at: None,
+                consecutive_failures: 0,
                 last_imported_peers: 0,
                 last_imported_mailbox_deliveries: 0,
                 last_imported_prekey_bundles: 0,

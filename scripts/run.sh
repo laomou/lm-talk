@@ -22,6 +22,7 @@ Node options:
   --sync-peer URL[,URL]   periodically import peer snapshots
   --sync-peer-token TOKEN Bearer token used when fetching sync peer snapshots
   --sync-interval-seconds N
+  --sync-max-backoff-seconds N maximum retry backoff after sync failures (default: 300)
 USAGE
 }
 
@@ -67,6 +68,7 @@ cors_allow_origin="${LM_NODE_CORS_ALLOW_ORIGIN:-}"
 sync_peer=""
 sync_peer_token="${LM_NODE_SYNC_PEER_TOKEN:-}"
 sync_interval_seconds="0"
+sync_max_backoff_seconds="300"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -81,6 +83,7 @@ while [[ $# -gt 0 ]]; do
     --sync-peer) sync_peer="${2:?--sync-peer requires URL[,URL]}"; shift 2 ;;
     --sync-peer-token) sync_peer_token="${2:?--sync-peer-token requires TOKEN}"; shift 2 ;;
     --sync-interval-seconds) sync_interval_seconds="${2:?--sync-interval-seconds requires N}"; shift 2 ;;
+    --sync-max-backoff-seconds) sync_max_backoff_seconds="${2:?--sync-max-backoff-seconds requires N}"; shift 2 ;;
     --debug|--release)
       echo "run.sh 是 PRD runtime，不接受 $1；固定 build --release 并执行 target/release/lm_node" >&2
       exit 2
@@ -104,7 +107,7 @@ if [[ -n "$cors_allow_origin" ]]; then
   echo "CORS allow origin：$cors_allow_origin"
 fi
 if [[ -n "$sync_peer" && "$sync_interval_seconds" != "0" ]]; then
-  echo "自动同步：$sync_peer every ${sync_interval_seconds}s"
+  echo "自动同步：$sync_peer every ${sync_interval_seconds}s, max backoff ${sync_max_backoff_seconds}s"
   if [[ -n "$sync_peer_token" ]]; then
     echo "同步认证：Bearer token enabled"
   fi
@@ -132,5 +135,6 @@ if [[ -n "$sync_peer_token" ]]; then
 fi
 if [[ "$sync_interval_seconds" != "0" ]]; then
   args+=(--sync-interval-seconds "$sync_interval_seconds")
+  args+=(--sync-max-backoff-seconds "$sync_max_backoff_seconds")
 fi
 exec "$ROOT/target/release/lm_node" "${args[@]}"

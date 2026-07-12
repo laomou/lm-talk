@@ -1655,7 +1655,7 @@ MVP 不做：
 - Mailbox：`/mailbox/push`、`/mailbox/take`、`/mailbox/ack`。
 - PreKey：`/prekey/publish`、`/prekey/get`、`consume=true` 精确记录 one-time prekey 消费，并返回 remaining/low watermark；bundle 过期会清理，signed prekey 轮换会重置消费记录。
 - Snapshot：`/sync/snapshot`、`/sync/import`，可粗粒度同步 peers/mailbox/prekeys。
-- 自动 snapshot sync：`serve-control --sync-peer http://host:port --sync-interval-seconds N` 定时拉取并 merge peer snapshot；`--sync-peer-token` 可拉取受 token 保护的 peer；`/sync/status` 暴露 attempts/successes/failures/last_success_at/last_error。
+- 自动 snapshot sync：`serve-control --sync-peer http://host:port --sync-interval-seconds N` 定时拉取并 merge peer snapshot；`--sync-peer-token` 可拉取受 token 保护的 peer；`--sync-max-backoff-seconds` 控制失败指数退避；`/sync/status` 暴露 attempts/successes/failures/last_success_at/last_error/next_attempt_at。
 - 控制面基础安全：未配置 token 时非 health API 仅允许 loopback；`--control-token` 要求 `Authorization: Bearer ...`；`--cors-allow-origin` 限制浏览器 Origin。
 - `serve-control --state-file` 可保存/恢复节点状态。
 - 节点 e2e：PreKey 同步 + Mailbox 携带 ratchet envelope + 接收方解密。

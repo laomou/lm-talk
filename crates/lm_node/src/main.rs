@@ -104,6 +104,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|value| value.parse::<u64>())
                 .transpose()?
                 .unwrap_or(0);
+            let sync_max_backoff_seconds = optional_arg(&args, "--sync-max-backoff-seconds")?
+                .map(|value| value.parse::<u64>())
+                .transpose()?
+                .unwrap_or(300);
             let token = optional_arg(&args, "--control-token")?
                 .or_else(|| env::var("LM_NODE_CONTROL_TOKEN").ok());
             let cors_allow_origins = optional_arg(&args, "--cors-allow-origin")?
@@ -133,6 +137,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 state_file.as_deref(),
                 sync_peers,
                 sync_interval_seconds,
+                sync_max_backoff_seconds,
                 security,
             )?;
         }
@@ -180,6 +185,13 @@ struct SyncPeerConfig {
     token: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+struct SyncPeerRuntime {
+    config: SyncPeerConfig,
+    next_attempt_at: Instant,
+    consecutive_failures: u32,
+}
+
 impl ControlSecurityConfig {
     fn is_loopback_only(&self) -> bool {
         self.token.is_none()
@@ -224,14 +236,22 @@ fn serve_control(
     state_file: Option<&str>,
     sync_peers: Vec<SyncPeerConfig>,
     sync_interval_seconds: u64,
+    sync_max_backoff_seconds: u64,
     security: ControlSecurityConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(bind)?;
     listener.set_nonblocking(true)?;
-    let mut next_sync = if sync_peers.is_empty() || sync_interval_seconds == 0 {
-        None
+    let mut sync_peers = if sync_interval_seconds == 0 {
+        Vec::new()
     } else {
-        Some(Instant::now())
+        sync_peers
+            .into_iter()
+            .map(|config| SyncPeerRuntime {
+                config,
+                next_attempt_at: Instant::now(),
+                consecutive_failures: 0,
+            })
+            .collect::<Vec<_>>()
     };
     println!("LM Talk control plane listening on http://{bind}");
     println!(
@@ -253,21 +273,25 @@ fn serve_control(
             "auto snapshot sync: every {sync_interval_seconds}s from {}",
             sync_peers
                 .iter()
-                .map(|peer| peer.url.as_str())
+                .map(|peer| peer.config.url.as_str())
                 .collect::<Vec<_>>()
                 .join(",")
         );
     }
     loop {
-        if let Some(deadline) = next_sync {
-            if Instant::now() >= deadline {
-                run_snapshot_sync(node, &sync_peers);
-                if let Some(path) = state_file {
-                    if let Err(err) = save_node_state(path, node) {
-                        eprintln!("state save error: {err}");
-                    }
+        let now = Instant::now();
+        let mut sync_ran = false;
+        for peer in &mut sync_peers {
+            if now >= peer.next_attempt_at {
+                run_snapshot_sync(node, peer, sync_interval_seconds, sync_max_backoff_seconds);
+                sync_ran = true;
+            }
+        }
+        if sync_ran {
+            if let Some(path) = state_file {
+                if let Err(err) = save_node_state(path, node) {
+                    eprintln!("state save error: {err}");
                 }
-                next_sync = Some(Instant::now() + Duration::from_secs(sync_interval_seconds));
             }
         }
         match listener.accept() {
@@ -294,24 +318,57 @@ fn serve_control(
     }
 }
 
-fn run_snapshot_sync(node: &mut NativeNode, peers: &[SyncPeerConfig]) {
-    for peer in peers {
-        match fetch_snapshot(peer) {
-            Ok(snapshot) => {
-                let stats = node.merge_snapshot(snapshot);
-                node.sync_status.record_success(&peer.url, stats);
-                println!(
-                    "snapshot sync from {}: peers={} mailbox_deliveries={} prekey_bundles={}",
-                    peer.url, stats.peers, stats.mailbox_deliveries, stats.prekey_bundles
-                );
-            }
-            Err(err) => {
-                let error = err.to_string();
-                node.sync_status.record_failure(&peer.url, error.clone());
-                eprintln!("snapshot sync from {} failed: {error}", peer.url);
-            }
+fn run_snapshot_sync(
+    node: &mut NativeNode,
+    peer: &mut SyncPeerRuntime,
+    base_interval_seconds: u64,
+    max_backoff_seconds: u64,
+) {
+    let delay_seconds;
+    match fetch_snapshot(&peer.config) {
+        Ok(snapshot) => {
+            let stats = node.merge_snapshot(snapshot);
+            node.sync_status.record_success(&peer.config.url, stats);
+            peer.consecutive_failures = 0;
+            delay_seconds = base_interval_seconds.max(1);
+            println!(
+                "snapshot sync from {}: peers={} mailbox_deliveries={} prekey_bundles={}",
+                peer.config.url, stats.peers, stats.mailbox_deliveries, stats.prekey_bundles
+            );
+        }
+        Err(err) => {
+            let error = err.to_string();
+            node.sync_status
+                .record_failure(&peer.config.url, error.clone());
+            peer.consecutive_failures = peer.consecutive_failures.saturating_add(1);
+            delay_seconds = sync_backoff_delay_seconds(
+                base_interval_seconds.max(1),
+                max_backoff_seconds.max(1),
+                peer.consecutive_failures,
+            );
+            eprintln!("snapshot sync from {} failed: {error}", peer.config.url);
         }
     }
+    peer.next_attempt_at = Instant::now() + Duration::from_secs(delay_seconds);
+    node.sync_status.record_next_attempt(
+        &peer.config.url,
+        current_unix_timestamp().saturating_add(delay_seconds),
+    );
+}
+
+fn sync_backoff_delay_seconds(base: u64, max: u64, consecutive_failures: u32) -> u64 {
+    if consecutive_failures == 0 {
+        return base.max(1).min(max.max(1));
+    }
+    let exponent = consecutive_failures.saturating_sub(1).min(20);
+    base.max(1).saturating_mul(1u64 << exponent).min(max.max(1))
+}
+
+fn current_unix_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 fn fetch_snapshot(peer: &SyncPeerConfig) -> Result<NodeStateSnapshot, Box<dyn std::error::Error>> {
@@ -523,4 +580,18 @@ inspect-public --text-file <file> --identity-public-key <base64>\n  \
 run [--peer-id <id>] [--addr <multiaddr>]\n  \
 serve-control [--bind <host:port>] [--peer-id <id>] [--state-file <file>] [--sync-peer <url,csv>] [--sync-interval-seconds <n>]\n"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sync_backoff_delay_seconds;
+
+    #[test]
+    fn sync_backoff_is_exponential_and_capped() {
+        assert_eq!(sync_backoff_delay_seconds(10, 300, 0), 10);
+        assert_eq!(sync_backoff_delay_seconds(10, 300, 1), 10);
+        assert_eq!(sync_backoff_delay_seconds(10, 300, 2), 20);
+        assert_eq!(sync_backoff_delay_seconds(10, 300, 3), 40);
+        assert_eq!(sync_backoff_delay_seconds(10, 30, 4), 30);
+    }
 }
