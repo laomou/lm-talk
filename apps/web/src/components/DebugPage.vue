@@ -1,17 +1,103 @@
 <script setup lang="ts">
-defineProps<{ ctx: any }>()
+import { ref } from 'vue'
+
+const props = defineProps<{ ctx: any }>()
+const diagnosticReport = ref('')
+
+async function runDiagnostics() {
+  const nav = navigator as Navigator & { serviceWorker?: ServiceWorkerContainer }
+  const registrations = nav.serviceWorker?.getRegistrations ? await nav.serviceWorker.getRegistrations().catch(() => []) : []
+  const cacheKeys = typeof caches !== 'undefined' ? await caches.keys().catch(() => []) : []
+  const report = {
+    time: new Date().toISOString(),
+    account: {
+      user_id: props.ctx.identity.value?.user_id ?? '',
+      display_name: props.ctx.displayName.value ?? '',
+    },
+    browser: {
+      secure_context: window.isSecureContext,
+      indexed_db: 'indexedDB' in window,
+      webcrypto: Boolean(globalThis.crypto?.subtle),
+      service_worker: 'serviceWorker' in navigator,
+      service_worker_registrations: registrations.length,
+      caches: cacheKeys,
+    },
+    sync: {
+      enabled: props.ctx.nodeEnabled.value,
+      services: props.ctx.nodeUrlList(),
+      status: props.ctx.nodeControlStatus.value,
+    },
+    local_counts: {
+      contacts: props.ctx.contacts.value.length,
+      groups: props.ctx.groups.value.length,
+      friend_requests: props.ctx.friendRequests.value.length,
+      group_invites: props.ctx.groupInvites.value.length,
+      outbox: props.ctx.outbox.value.length,
+      pending_outbox: props.ctx.outbox.value.filter((x: any) => x.status !== 'sent').length,
+      messages: props.ctx.messages.value.length,
+    },
+    recent_logs: props.ctx.log.value.slice(0, 12),
+  }
+  diagnosticReport.value = JSON.stringify(report, null, 2)
+}
 </script>
 
 <template>
     <section class="debug-page">
       <header class="debug-header">
         <div>
-          <h1>调试页面</h1>
-          <p class="hint">协议、节点、Mailbox、PreKey、双棘轮等开发排障工具。与日常聊天页面完全分开。</p>
+          <h1>诊断工具</h1>
+          <p class="hint">用于排查登录、同步、消息收发和本地数据问题。日常聊天不需要打开。</p>
         </div>
         <button @click="ctx.goChatPage">返回聊天</button>
       </header>
-      <div class="debug-grid">
+
+      <section class="diagnostic-overview">
+        <div class="diagnostic-card">
+          <span>当前账号</span>
+          <b>{{ ctx.displayName.value || '未命名' }}</b>
+          <small>{{ ctx.identity.value?.user_id }}</small>
+        </div>
+        <div class="diagnostic-card">
+          <span>消息同步</span>
+          <b>{{ ctx.nodeEnabled.value ? '已开启' : '未开启' }}</b>
+          <small>{{ ctx.nodeUrlList().length ? ctx.nodeUrlList().join('，') : '未配置同步服务' }}</small>
+        </div>
+        <div class="diagnostic-card">
+          <span>待发送</span>
+          <b>{{ ctx.outbox.value.filter((x: any) => x.status !== 'sent').length }}</b>
+          <small>总队列 {{ ctx.outbox.value.length }}</small>
+        </div>
+        <div class="diagnostic-card">
+          <span>新朋友</span>
+          <b>{{ ctx.friendRequests.value.length }}</b>
+          <small>群邀请 {{ ctx.groupInvites.value.length }}</small>
+        </div>
+      </section>
+
+      <section class="add-box diagnostic-actions">
+        <h3>一键诊断</h3>
+        <p class="hint">生成只包含状态摘要的诊断报告，不会导出提示词、身份私钥或消息明文。</p>
+        <div class="row compact">
+          <button @click="runDiagnostics">生成诊断报告</button>
+          <button class="secondary" :disabled="!diagnosticReport" @click="ctx.copyText(diagnosticReport, '诊断报告')">复制报告</button>
+          <button class="secondary" @click="ctx.syncNow">立即同步</button>
+        </div>
+        <textarea v-if="diagnosticReport" v-model="diagnosticReport" rows="10" readonly />
+      </section>
+
+      <section class="add-box">
+        <h3>最近记录</h3>
+        <div v-if="ctx.log.value.length" class="diagnostic-log">
+          <div v-for="line in ctx.log.value.slice(0, 8)" :key="line">{{ line }}</div>
+        </div>
+        <div v-else class="empty">暂无记录</div>
+      </section>
+
+      <details class="developer-tools">
+        <summary>开发协议工具</summary>
+        <p class="hint">以下工具用于协议开发和高级排障，可能包含敏感数据。请勿把身份备份、私钥状态或诊断内容发给不可信的人。</p>
+        <div class="debug-grid">
       <details class="add-box">
         <summary>X3DH / PreKey 调试（高级）</summary>
         <p class="hint">用于未来离线建链：发布 signed prekey + one-time prekeys，对方用它派生初始 shared secret，再初始化 Double Ratchet。Private Bundle 只能本地加密保存，不能发给别人。</p>
@@ -250,6 +336,7 @@ defineProps<{ ctx: any }>()
         <textarea v-model="ctx.nodeSyncSnapshotText.value" rows="5" placeholder="NodeStateSnapshot JSON" />
         <textarea v-model="ctx.nodeSyncStatusText.value" rows="4" placeholder="sync status" readonly />
       </details>
-      </div>
+        </div>
+      </details>
     </section>
 </template>
