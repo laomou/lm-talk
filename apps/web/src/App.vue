@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import LoginPage from './components/LoginPage.vue'
 import ChatPage from './components/ChatPage.vue'
-import DebugPage from './components/DebugPage.vue'
+import DiagnosticsPage from './components/DiagnosticsPage.vue'
 import ContactsPage from './components/ContactsPage.vue'
 import SettingsPage from './components/SettingsPage.vue'
 import QRCode from 'qrcode'
@@ -261,7 +261,7 @@ const qrRawText = ref('')
 const route = useRoute()
 const router = useRouter()
 const authMode = computed(() => route.path === '/register' ? 'register' : route.path === '/import' ? 'import' : 'login')
-const currentPage = computed(() => route.path === '/debug' ? 'debug' : route.path === '/contacts' ? 'contacts' : (route.path === '/me' || route.path === '/settings') ? 'settings' : 'chat')
+const currentPage = computed(() => route.path === '/diagnostics' ? 'diagnostics' : route.path === '/contacts' ? 'contacts' : (route.path === '/me' || route.path === '/settings') ? 'settings' : 'chat')
 type ToastKind = 'success' | 'error' | 'warning' | 'info'
 type ToastItem = { id: string; kind: ToastKind; text: string }
 type ConfirmDialogState = {
@@ -580,6 +580,7 @@ function userFacingError(e: unknown): string {
   if (raw.includes('backup user_id mismatch')) return '身份文本校验失败。'
   if (raw.includes('请粘贴身份文本')) return '请粘贴身份文本。'
   if (raw.includes('请输入提示词')) return '请输入提示词。'
+  if (raw.includes('Failed to fetch')) return '无法连接同步服务。请确认 lm_node 已启动；如果在 GitHub Pages 上连接 127.0.0.1 或局域网 IP，请确认 lm_node 已启动、地址可访问，并使用最新 lm_node（已支持浏览器 HTTPS 访问本机/局域网服务所需的权限头）。IPv6 地址请写成 http://[fd00::1234]:8787 这种带方括号的形式。'
   return raw.replace(/^Error:\s*/, '')
 }
 
@@ -659,7 +660,7 @@ async function localStorageCryptoKey(): Promise<CryptoKey | null> {
   if (!identity.value || !passphrase.value) return null
   const webCrypto = globalThis.crypto
   if (!webCrypto?.subtle) {
-    appendLog('⚠️ 当前页面没有 WebCrypto subtle，无法解密/加密本地敏感数据；请优先使用 http://127.0.0.1 或 https 访问')
+    appendLog(`⚠️ 当前页面没有 WebCrypto subtle，无法解密/加密本地敏感数据；当前地址：${window.location.protocol}//${window.location.host}。请使用 https 或 http://127.0.0.1 访问`)
     return null
   }
   const material = await webCrypto.subtle.importKey(
@@ -2648,7 +2649,7 @@ async function runAsync(label: string, fn: () => Promise<void>) {
     await fn()
     appendLog(`✅ ${label}`)
   } catch (e) {
-    appendLog(`❌ ${label}: ${String(e)}`)
+    appendLog(`❌ ${label}: ${userFacingError(e)}`)
   }
 }
 
@@ -3170,7 +3171,7 @@ async function nodeFetchJson(path: string, init?: RequestInit): Promise<any> {
       errors.push(`${url}: ${String(e).replace(/^Error:\s*/, '')}`)
     }
   }
-  throw new Error(`所有同步节点都不可用：${errors.join('；')}`)
+  throw new Error(`所有同步服务都不可用：${errors.join('；')}`)
 }
 
 async function checkNodeHealth() {
@@ -3657,8 +3658,9 @@ function goSettingsPage() {
   void router.push('/me')
 }
 
-function goDebugPage() {
-  void router.push('/debug')
+
+function goDiagnosticsPage() {
+  void router.push('/diagnostics')
 }
 
 function logout() {
@@ -3669,7 +3671,7 @@ function logout() {
   void router.push('/login')
 }
 const appContext = {
-  goChatPage, goChatHome, goContactsPage, goSettingsPage, goDebugPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, myContactCardText, backupText,
+  goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, myContactCardText, backupText,
   nodeControlUrl, nodeUrlList, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, createMyDeviceCert, myDeviceCertJson,
@@ -3747,7 +3749,7 @@ const appContext = {
     <ChatPage v-if="currentPage === 'chat'" :ctx="appContext" />
     <ContactsPage v-else-if="currentPage === 'contacts'" :ctx="appContext" />
     <SettingsPage v-else-if="currentPage === 'settings'" :ctx="appContext" />
-    <DebugPage v-else :ctx="appContext" />
+    <DiagnosticsPage v-else-if="currentPage === 'diagnostics'" :ctx="appContext" />
   </main>
 
 

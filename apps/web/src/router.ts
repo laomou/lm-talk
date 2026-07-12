@@ -22,7 +22,7 @@ export const router = createRouter({
     { path: '/contacts', component: { template: '<div />' } },
     { path: '/me', component: { template: '<div />' } },
     { path: '/settings', redirect: '/me' },
-    { path: '/debug', component: { template: '<div />' } },
+    { path: '/diagnostics', component: { template: '<div />' } },
     { path: '/:pathMatch(.*)*', redirect: '/login' },
   ],
 })
