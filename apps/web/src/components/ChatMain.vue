@@ -1,6 +1,19 @@
 <script setup lang="ts">
+import { nextTick, ref, watch } from 'vue'
+
 const props = defineProps<{ ctx: any }>()
 const contactName = (userId: string) => props.ctx.contacts.value.find((c: any) => c.user_id === userId)?.display_name || userId
+
+const messagesEl = ref<HTMLElement | null>(null)
+function scrollToBottom() {
+  const el = messagesEl.value
+  if (el) el.scrollTop = el.scrollHeight
+}
+watch(
+  () => [props.ctx.activeMessages.value.length, props.ctx.activePeerId?.value, props.ctx.activeGroupId?.value],
+  () => { void nextTick(scrollToBottom) },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -42,7 +55,7 @@ const contactName = (userId: string) => props.ctx.contacts.value.find((c: any) =
 
     </section>
 
-    <div class="messages clean-messages">
+    <div class="messages clean-messages" ref="messagesEl">
       <template v-if="ctx.activeContact.value || ctx.activeGroup.value">
         <div v-for="m in ctx.activeMessages.value" :key="m.id" class="bubble" :class="m.direction">
           <div class="text">{{ m.text }}</div>

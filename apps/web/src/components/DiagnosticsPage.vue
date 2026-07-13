@@ -44,54 +44,56 @@ async function runDiagnostics() {
 
 <template>
   <section class="debug-page">
-    <header class="debug-header">
-      <div>
-        <h1>诊断工具</h1>
-        <p class="hint">用于排查登录、同步、消息收发和本地数据问题。日常聊天不需要打开。</p>
-      </div>
-      <button @click="ctx.goChatPage">返回聊天</button>
-    </header>
+    <div class="debug-inner">
+      <header class="debug-header">
+        <div>
+          <h1>诊断工具</h1>
+          <p class="hint">用于排查登录、同步、消息收发和本地数据问题。日常聊天不需要打开。</p>
+        </div>
+        <button class="secondary" @click="ctx.goChatPage">返回聊天</button>
+      </header>
 
-    <section class="diagnostic-overview">
-      <div class="diagnostic-card">
-        <span>当前账号</span>
-        <b>{{ ctx.displayName.value || '未命名' }}</b>
-        <small>{{ ctx.identity.value?.user_id }}</small>
-      </div>
-      <div class="diagnostic-card">
-        <span>消息同步</span>
-        <b>{{ ctx.nodeEnabled.value ? '已开启' : '未开启' }}</b>
-        <small>{{ ctx.nodeUrlList().length ? ctx.nodeUrlList().join('，') : '未配置同步服务' }}</small>
-      </div>
-      <div class="diagnostic-card">
-        <span>待发送</span>
-        <b>{{ ctx.outbox.value.filter((x: any) => x.status !== 'sent').length }}</b>
-        <small>总队列 {{ ctx.outbox.value.length }}</small>
-      </div>
-      <div class="diagnostic-card">
-        <span>新朋友</span>
-        <b>{{ ctx.friendRequests.value.length }}</b>
-        <small>群邀请 {{ ctx.groupInvites.value.length }}</small>
-      </div>
-    </section>
+      <section class="diagnostic-overview">
+        <div class="diagnostic-card">
+          <span>当前账号</span>
+          <b>{{ ctx.displayName.value || '未命名' }}</b>
+          <small>{{ ctx.identity.value?.user_id }}</small>
+        </div>
+        <div class="diagnostic-card">
+          <span>消息同步</span>
+          <b>{{ ctx.nodeEnabled.value ? '已开启' : '未开启' }}</b>
+          <small>{{ ctx.nodeUrlList().length ? ctx.nodeUrlList().join('，') : '未配置同步服务' }}</small>
+        </div>
+        <div class="diagnostic-card">
+          <span>待发送</span>
+          <b>{{ ctx.outbox.value.filter((x: any) => x.status !== 'sent').length }}</b>
+          <small>总队列 {{ ctx.outbox.value.length }}</small>
+        </div>
+        <div class="diagnostic-card">
+          <span>新朋友</span>
+          <b>{{ ctx.friendRequests.value.length }}</b>
+          <small>群邀请 {{ ctx.groupInvites.value.length }}</small>
+        </div>
+      </section>
 
-    <section class="add-box diagnostic-actions">
-      <h3>一键诊断</h3>
-      <p class="hint">生成只包含状态摘要的诊断报告，不会导出提示词、身份私钥或消息明文。</p>
-      <div class="row compact">
-        <button @click="runDiagnostics">生成诊断报告</button>
-        <button class="secondary" :disabled="!diagnosticReport" @click="ctx.copyText(diagnosticReport, '诊断报告')">复制报告</button>
-        <button class="secondary" @click="ctx.syncNow">立即同步</button>
-      </div>
-      <textarea v-if="diagnosticReport" v-model="diagnosticReport" rows="10" readonly />
-    </section>
+      <section class="home-card">
+        <h3>一键诊断</h3>
+        <p class="hint">生成只包含状态摘要的诊断报告，不会导出提示词、身份私钥或消息明文。</p>
+        <div class="row compact">
+          <button @click="runDiagnostics">生成诊断报告</button>
+          <button class="secondary" :disabled="!diagnosticReport" @click="ctx.copyText(diagnosticReport, '诊断报告')">复制报告</button>
+          <button class="secondary" @click="ctx.syncNow">立即同步</button>
+        </div>
+        <textarea v-if="diagnosticReport" v-model="diagnosticReport" class="mono" rows="12" readonly />
+      </section>
 
-    <section class="add-box">
-      <h3>最近记录</h3>
-      <div v-if="ctx.log.value.length" class="diagnostic-log">
-        <div v-for="line in ctx.log.value.slice(0, 8)" :key="line">{{ line }}</div>
-      </div>
-      <div v-else class="empty">暂无记录</div>
-    </section>
+      <section class="home-card">
+        <h3>最近记录</h3>
+        <div v-if="ctx.log.value.length" class="diagnostic-log">
+          <div v-for="line in ctx.log.value.slice(0, 8)" :key="line">{{ line }}</div>
+        </div>
+        <div v-else class="empty">暂无记录</div>
+      </section>
+    </div>
   </section>
 </template>
