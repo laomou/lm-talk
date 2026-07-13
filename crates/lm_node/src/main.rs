@@ -114,6 +114,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let listen = optional_arg(&args, "--listen")?
                 .or_else(|| env::var("LM_NODE_LIBP2P_LISTEN").ok())
                 .unwrap_or("/ip4/0.0.0.0/tcp/4001".into());
+            let bootstrap_peers = optional_arg(&args, "--bootstrap-peer")?
+                .or_else(|| env::var("LM_NODE_LIBP2P_BOOTSTRAP_PEERS").ok())
+                .map(|value| parse_libp2p_bootstrap_peers(&value))
+                .transpose()?
+                .unwrap_or_default();
             let peer_id = optional_arg(&args, "--peer-id")?.unwrap_or("lm-node-dev".into());
             let state_file = optional_arg(&args, "--state-file")?;
             let state_db = optional_arg(&args, "--state-db")?;
@@ -139,6 +144,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             };
             serve_libp2p_dht(
                 &listen,
+                &bootstrap_peers,
                 &mut node,
                 state_file.as_deref(),
                 state_db.as_deref(),
@@ -466,6 +472,13 @@ struct Libp2pDhtTransport {
     timeout: Duration,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
+struct Libp2pBootstrapPeer {
+    peer_id: PeerId,
+    address: Multiaddr,
+}
+
 #[allow(dead_code)]
 impl Default for Libp2pDhtTransport {
     fn default() -> Self {
@@ -574,6 +587,7 @@ fn persist_libp2p_dht_state(
 #[allow(dead_code)]
 fn serve_libp2p_dht(
     listen: &str,
+    bootstrap_peers: &[Libp2pBootstrapPeer],
     node: &mut NativeNode,
     state_file: Option<&str>,
     state_db: Option<&str>,
@@ -586,6 +600,7 @@ fn serve_libp2p_dht(
         let mut swarm = libp2p_dht_swarm()?;
         let local_peer_id = *swarm.local_peer_id();
         swarm.listen_on(listen.parse::<Multiaddr>()?)?;
+        dial_libp2p_bootstrap_peers(&mut swarm, bootstrap_peers)?;
         println!("libp2p_dht_peer_id={local_peer_id}");
         loop {
             let event = swarm.select_next_some().await;
@@ -596,6 +611,43 @@ fn serve_libp2p_dht(
         #[allow(unreachable_code)]
         Ok::<(), Box<dyn std::error::Error>>(())
     })
+}
+
+#[allow(dead_code)]
+fn parse_libp2p_bootstrap_peers(
+    value: &str,
+) -> Result<Vec<Libp2pBootstrapPeer>, Box<dyn std::error::Error>> {
+    parse_csv(value)
+        .into_iter()
+        .map(|part| {
+            let (address, peer_id) = part
+                .rsplit_once('|')
+                .ok_or("libp2p bootstrap peers must use libp2p://<multiaddr>|<peer_id>")?;
+            Ok(Libp2pBootstrapPeer {
+                address: address
+                    .strip_prefix("libp2p://")
+                    .unwrap_or(address)
+                    .parse::<Multiaddr>()?,
+                peer_id: peer_id.parse::<PeerId>()?,
+            })
+        })
+        .collect()
+}
+
+#[allow(dead_code)]
+fn dial_libp2p_bootstrap_peers(
+    swarm: &mut libp2p::Swarm<Libp2pDhtBehaviour>,
+    peers: &[Libp2pBootstrapPeer],
+) -> Result<(), Box<dyn std::error::Error>> {
+    for peer in peers {
+        swarm.add_peer_address(peer.peer_id, peer.address.clone());
+        swarm.dial(peer.address.clone())?;
+        println!(
+            "libp2p_dht_bootstrap_peer={} {}",
+            peer.peer_id, peer.address
+        );
+    }
+    Ok(())
 }
 
 #[allow(dead_code)]
@@ -3323,7 +3375,7 @@ Commands:\n  \
 announce --backup-file <file> --passphrase <text> [--peer-id <id>] [--addr <multiaddr,csv>] [--cap <bootstrap,dht,relay,mailbox>]\n  \
 inspect-public --text-file <file> --identity-public-key <base64>\n  \
 run [--peer-id <id>] [--addr <multiaddr>]\n  \
-serve-dht-libp2p [--listen <multiaddr>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>]\n  \
+serve-dht-libp2p [--listen <multiaddr>] [--bootstrap-peer <libp2p://multiaddr|peer_id,csv>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>]\n  \
 serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>] [--sync-peer <url,csv>] [--sync-interval-seconds <n>] [--dht-transport <http-control|libp2p>] [--rate-limit-window-seconds <n>] [--rate-limit-max-requests <n>] [--log-format <text|json>] [--mailbox-global-rate-limit-window-seconds <n>] [--mailbox-global-rate-limit-max-messages <n>] [--mailbox-sender-rate-limit-window-seconds <n>] [--mailbox-sender-rate-limit-max-messages <n>]\n"
     );
 }
@@ -3335,10 +3387,10 @@ mod tests {
         DhtTransport, DhtTransportKind, LIBP2P_DHT_RPC_PROTOCOL, Libp2pDhtTransport, LogFormat,
         NodeMaintenanceStats, RateLimitConfig, RateLimiter, ServeControlConfigFile, StateDbStats,
         SyncPeerConfig, atomic_write_text, current_unix_timestamp, dht_find_value_with_transport,
-        handle_libp2p_dht_rpc_request, handle_libp2p_dht_server_event, libp2p_dht_rpc_behaviour,
-        libp2p_dht_swarm, load_node_state_db, parse_dht_transport_kind, parse_libp2p_dht_peer,
-        parse_log_format, read_secret_file, run_dht_replication,
-        run_dht_replication_with_transport, run_dht_routing_refresh,
+        dial_libp2p_bootstrap_peers, handle_libp2p_dht_rpc_request, handle_libp2p_dht_server_event,
+        libp2p_dht_rpc_behaviour, libp2p_dht_swarm, load_node_state_db, parse_dht_transport_kind,
+        parse_libp2p_bootstrap_peers, parse_libp2p_dht_peer, parse_log_format, read_secret_file,
+        run_dht_replication, run_dht_replication_with_transport, run_dht_routing_refresh,
         run_dht_routing_refresh_with_transport, save_node_state_db, send_dht_rpc,
         send_libp2p_dht_rpc_async, sync_backoff_delay_seconds,
     };
@@ -3783,6 +3835,95 @@ mod tests {
             let (parsed_peer_id, parsed_address) = parse_libp2p_dht_peer(&peer).unwrap();
             assert_eq!(parsed_peer_id, peer_id);
             assert_eq!(parsed_address, address);
+        });
+    }
+
+    #[test]
+    fn libp2p_bootstrap_peers_parse_multiaddr_and_peer_id() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let mut first = libp2p_dht_swarm().unwrap();
+            let mut second = libp2p_dht_swarm().unwrap();
+            let first_peer = *first.local_peer_id();
+            let second_peer = *second.local_peer_id();
+            first
+                .listen_on("/ip4/127.0.0.1/tcp/0".parse().unwrap())
+                .unwrap();
+            second
+                .listen_on("/ip4/127.0.0.1/tcp/0".parse().unwrap())
+                .unwrap();
+            let first_addr = loop {
+                if let SwarmEvent::NewListenAddr { address, .. } = first.select_next_some().await {
+                    break address;
+                }
+            };
+            let second_addr = loop {
+                if let SwarmEvent::NewListenAddr { address, .. } = second.select_next_some().await {
+                    break address;
+                }
+            };
+            let peers = parse_libp2p_bootstrap_peers(&format!(
+                "libp2p://{first_addr}|{first_peer},{second_addr}|{second_peer}"
+            ))
+            .unwrap();
+            assert_eq!(peers.len(), 2);
+            assert_eq!(peers[0].peer_id, first_peer);
+            assert_eq!(peers[0].address, first_addr);
+            assert_eq!(peers[1].peer_id, second_peer);
+            assert_eq!(peers[1].address, second_addr);
+            assert!(parse_libp2p_bootstrap_peers(&format!("{first_addr}")).is_err());
+        });
+    }
+
+    #[test]
+    fn libp2p_bootstrap_peers_are_dialed_for_discovery_seed() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let mut seed = libp2p_dht_swarm().unwrap();
+            let mut joining = libp2p_dht_swarm().unwrap();
+            let seed_peer = *seed.local_peer_id();
+            seed.listen_on("/ip4/127.0.0.1/tcp/0".parse().unwrap())
+                .unwrap();
+            let seed_addr = loop {
+                if let SwarmEvent::NewListenAddr { address, .. } = seed.select_next_some().await {
+                    break address;
+                }
+            };
+            dial_libp2p_bootstrap_peers(
+                &mut joining,
+                &[super::Libp2pBootstrapPeer {
+                    peer_id: seed_peer,
+                    address: seed_addr,
+                }],
+            )
+            .unwrap();
+            let connected = tokio::time::timeout(Duration::from_secs(10), async {
+                loop {
+                    futures::select! {
+                        event = seed.select_next_some() => {
+                            if let SwarmEvent::ConnectionEstablished { peer_id, .. } = event {
+                                break peer_id == *joining.local_peer_id();
+                            }
+                        }
+                        event = joining.select_next_some() => {
+                            if let SwarmEvent::ConnectionEstablished { peer_id, .. } = event {
+                                break peer_id == seed_peer;
+                            }
+                        }
+                    }
+                }
+            })
+            .await
+            .unwrap();
+            assert!(connected);
         });
     }
 
