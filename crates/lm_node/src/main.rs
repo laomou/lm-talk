@@ -28,8 +28,21 @@ type Libp2pDhtRpcBehaviour = request_response::json::Behaviour<DhtRpcRequest, Dh
 
 #[allow(dead_code)]
 #[derive(NetworkBehaviour)]
+#[behaviour(to_swarm = "Libp2pDhtEvent")]
 struct Libp2pDhtBehaviour {
     dht_rpc: Libp2pDhtRpcBehaviour,
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+enum Libp2pDhtEvent {
+    DhtRpc(request_response::Event<DhtRpcRequest, DhtRpcResponse>),
+}
+
+impl From<request_response::Event<DhtRpcRequest, DhtRpcResponse>> for Libp2pDhtEvent {
+    fn from(event: request_response::Event<DhtRpcRequest, DhtRpcResponse>) -> Self {
+        Self::DhtRpc(event)
+    }
 }
 
 fn main() {
@@ -3063,15 +3076,18 @@ serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--st
 mod tests {
     use super::{
         ControlLogger, ControlRuntimeStats, DhtReplicationRunStats, DhtRoutingRefreshRunStats,
-        DhtTransport, LIBP2P_DHT_RPC_PROTOCOL, LogFormat, NodeMaintenanceStats, RateLimitConfig,
-        RateLimiter, ServeControlConfigFile, StateDbStats, SyncPeerConfig, atomic_write_text,
-        current_unix_timestamp, dht_find_value_with_transport, handle_libp2p_dht_rpc_request,
-        libp2p_dht_rpc_behaviour, libp2p_dht_swarm, load_node_state_db, parse_log_format,
-        read_secret_file, run_dht_replication, run_dht_replication_with_transport,
-        run_dht_routing_refresh, run_dht_routing_refresh_with_transport, save_node_state_db,
-        send_dht_rpc, sync_backoff_delay_seconds,
+        DhtTransport, LIBP2P_DHT_RPC_PROTOCOL, Libp2pDhtEvent, LogFormat, NodeMaintenanceStats,
+        RateLimitConfig, RateLimiter, ServeControlConfigFile, StateDbStats, SyncPeerConfig,
+        atomic_write_text, current_unix_timestamp, dht_find_value_with_transport,
+        handle_libp2p_dht_rpc_request, libp2p_dht_rpc_behaviour, libp2p_dht_swarm,
+        load_node_state_db, parse_log_format, read_secret_file, run_dht_replication,
+        run_dht_replication_with_transport, run_dht_routing_refresh,
+        run_dht_routing_refresh_with_transport, save_node_state_db, send_dht_rpc,
+        sync_backoff_delay_seconds,
     };
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+    use futures::{FutureExt, StreamExt};
+    use libp2p::{request_response, swarm::SwarmEvent};
     use lm_core::{Identity, MailboxMessage, MailboxMessageKind, PreKeyBundle};
     use lm_node::{
         DhtRecord, DhtRecordKey, DhtRecordKind, DhtRpcRequest, DhtRpcResponse,
@@ -3080,6 +3096,7 @@ mod tests {
     use std::cell::RefCell;
     use std::io::{Read, Write};
     use std::net::TcpListener;
+    use std::time::Duration;
 
     #[derive(Default)]
     struct FakeDhtTransport {
@@ -3397,6 +3414,7 @@ mod tests {
     fn libp2p_dht_swarm_builds_with_tcp_transport() {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_io()
+            .enable_time()
             .build()
             .unwrap();
         runtime.block_on(async {
@@ -3439,6 +3457,93 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn libp2p_dht_rpc_roundtrips_find_value_between_local_swarms() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let mut server_swarm = libp2p_dht_swarm().unwrap();
+            let mut client_swarm = libp2p_dht_swarm().unwrap();
+            let server_peer = *server_swarm.local_peer_id();
+            server_swarm
+                .listen_on("/ip4/127.0.0.1/tcp/0".parse().unwrap())
+                .unwrap();
+
+            let listen_addr = loop {
+                if let SwarmEvent::NewListenAddr { address, .. } =
+                    server_swarm.select_next_some().await
+                {
+                    break address;
+                }
+            };
+
+            let key = DhtRecordKey::for_public_peer("libp2p-roundtrip");
+            let record = DhtRecord {
+                key,
+                kind: DhtRecordKind::PublicPeer,
+                value: "roundtrip-value".into(),
+                created_at: current_unix_timestamp(),
+                expires_at: current_unix_timestamp().saturating_add(60),
+                republish_at: current_unix_timestamp().saturating_add(30),
+            };
+            let mut server_node = NativeNode::new(NodeConfig::default());
+            assert!(server_node.dht_records.store(record.clone()));
+
+            client_swarm
+                .behaviour_mut()
+                .dht_rpc
+                .send_request_with_addresses(
+                    &server_peer,
+                    DhtRpcRequest::FindValue {
+                        request_id: "libp2p-find".into(),
+                        key,
+                        limit: 8,
+                    },
+                    vec![listen_addr],
+                );
+
+            let roundtrip = async {
+                loop {
+                futures::select! {
+                    event = server_swarm.select_next_some().fuse() => {
+                        if let SwarmEvent::Behaviour(Libp2pDhtEvent::DhtRpc(
+                            request_response::Event::Message { message, .. },
+                        )) = event
+                        {
+                            if let request_response::Message::Request { request, channel, .. } = message {
+                                let response = handle_libp2p_dht_rpc_request(&mut server_node, request);
+                                server_swarm.behaviour_mut().dht_rpc.send_response(channel, response).unwrap();
+                            }
+                        }
+                    }
+                    event = client_swarm.select_next_some().fuse() => {
+                        if let SwarmEvent::Behaviour(Libp2pDhtEvent::DhtRpc(
+                            request_response::Event::Message { message, .. },
+                        )) = event
+                        {
+                            if let request_response::Message::Response { response, .. } = message {
+                                match response {
+                                    DhtRpcResponse::Value { record: Some(found), .. } => {
+                                        assert_eq!(found.value, "roundtrip-value");
+                                        break;
+                                    }
+                                    other => panic!("unexpected response: {other:?}"),
+                                }
+                            }
+                        }
+                    }
+                }
+                }
+            };
+            tokio::time::timeout(Duration::from_secs(10), roundtrip)
+                .await
+                .unwrap();
+        });
     }
 
     #[test]
