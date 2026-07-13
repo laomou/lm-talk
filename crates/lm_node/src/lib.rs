@@ -294,6 +294,47 @@ impl DhtRecordStore {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DhtRpcRequest {
+    FindNode {
+        request_id: String,
+        target: KademliaNodeId,
+        limit: usize,
+    },
+    FindValue {
+        request_id: String,
+        key: DhtRecordKey,
+        limit: usize,
+    },
+    StoreRecord {
+        request_id: String,
+        record: DhtRecord,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DhtRpcResponse {
+    Nodes {
+        request_id: String,
+        nodes: Vec<RoutingPeer>,
+    },
+    Value {
+        request_id: String,
+        record: Option<DhtRecord>,
+        closer_records: Vec<DhtRecord>,
+        closer_nodes: Vec<RoutingPeer>,
+    },
+    StoreResult {
+        request_id: String,
+        stored: bool,
+        inserted: bool,
+    },
+    Error {
+        request_id: String,
+        message: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutingPeer {
     pub node_id: KademliaNodeId,
     pub announce: PublicPeerAnnounce,
@@ -1133,6 +1174,56 @@ impl NativeNode {
             mailbox_expired_deliveries: mailbox_removed,
             prekey_expired_bundles: prekey_removed,
             last_pruned_at: Some(now),
+        }
+    }
+
+    pub fn handle_dht_rpc(&mut self, request: DhtRpcRequest) -> DhtRpcResponse {
+        self.prune_expired_records();
+        match request {
+            DhtRpcRequest::FindNode {
+                request_id,
+                target,
+                limit,
+            } => DhtRpcResponse::Nodes {
+                request_id,
+                nodes: self.kademlia.closest(target, limit.clamp(1, 64)),
+            },
+            DhtRpcRequest::FindValue {
+                request_id,
+                key,
+                limit,
+            } => {
+                let record = self.dht_records.find_value(&key);
+                let closer_records = if record.is_none() {
+                    self.dht_records.closest_records(key, limit.clamp(1, 64))
+                } else {
+                    Vec::new()
+                };
+                let closer_nodes = if record.is_none() {
+                    self.kademlia.closest(key.to_node_id(), limit.clamp(1, 64))
+                } else {
+                    Vec::new()
+                };
+                DhtRpcResponse::Value {
+                    request_id,
+                    record,
+                    closer_records,
+                    closer_nodes,
+                }
+            }
+            DhtRpcRequest::StoreRecord { request_id, record } => {
+                let expired = record.is_expired_at(current_unix_timestamp());
+                let inserted = if expired {
+                    false
+                } else {
+                    self.dht_records.store(record)
+                };
+                DhtRpcResponse::StoreResult {
+                    request_id,
+                    stored: !expired,
+                    inserted,
+                }
+            }
         }
     }
 
@@ -2114,6 +2205,117 @@ mod tests {
         assert_eq!(closest, vec![record_a.clone()]);
         assert_eq!(store.prune_expired(now + 100), 2);
         assert!(store.is_empty());
+    }
+
+    #[test]
+    fn dht_rpc_store_find_value_and_find_node() {
+        let (identity, _) = Identity::create_with_passphrase("dht rpc peer").unwrap();
+        let announce = NodeConfig {
+            peer_id: "rpc-peer".into(),
+            ..Default::default()
+        }
+        .create_announce(&identity)
+        .unwrap();
+        let mut node = NativeNode::new(NodeConfig {
+            peer_id: "rpc-local".into(),
+            ..Default::default()
+        });
+        node.kademlia
+            .insert_verified(announce.clone(), &identity.identity_public_key())
+            .unwrap();
+        let key = DhtRecordKey::for_public_peer("rpc-record");
+        let record = DhtRecord {
+            key,
+            kind: DhtRecordKind::PublicPeer,
+            value: "rpc-value".into(),
+            created_at: current_unix_timestamp(),
+            expires_at: current_unix_timestamp().saturating_add(3600),
+            republish_at: current_unix_timestamp().saturating_add(1800),
+        };
+
+        let store = node.handle_dht_rpc(DhtRpcRequest::StoreRecord {
+            request_id: "store-1".into(),
+            record: record.clone(),
+        });
+        assert_eq!(
+            store,
+            DhtRpcResponse::StoreResult {
+                request_id: "store-1".into(),
+                stored: true,
+                inserted: true,
+            }
+        );
+        let found = node.handle_dht_rpc(DhtRpcRequest::FindValue {
+            request_id: "find-value-1".into(),
+            key,
+            limit: 8,
+        });
+        assert_eq!(
+            found,
+            DhtRpcResponse::Value {
+                request_id: "find-value-1".into(),
+                record: Some(record),
+                closer_records: Vec::new(),
+                closer_nodes: Vec::new(),
+            }
+        );
+        let missing = node.handle_dht_rpc(DhtRpcRequest::FindValue {
+            request_id: "find-value-2".into(),
+            key: DhtRecordKey::for_public_peer("missing"),
+            limit: 1,
+        });
+        match missing {
+            DhtRpcResponse::Value {
+                record,
+                closer_records,
+                closer_nodes,
+                ..
+            } => {
+                assert!(record.is_none());
+                assert_eq!(closer_records.len(), 1);
+                assert_eq!(closer_nodes.len(), 1);
+                assert_eq!(closer_nodes[0].announce.peer_id, "rpc-peer");
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+        let nodes = node.handle_dht_rpc(DhtRpcRequest::FindNode {
+            request_id: "find-node-1".into(),
+            target: KademliaNodeId::from_peer_id("rpc-peer"),
+            limit: 1,
+        });
+        match nodes {
+            DhtRpcResponse::Nodes { nodes, .. } => {
+                assert_eq!(nodes.len(), 1);
+                assert_eq!(nodes[0].announce.peer_id, "rpc-peer");
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dht_rpc_rejects_expired_store_record() {
+        let mut node = NativeNode::new(NodeConfig::default());
+        let record = DhtRecord {
+            key: DhtRecordKey::for_public_peer("expired-rpc"),
+            kind: DhtRecordKind::PublicPeer,
+            value: "expired".into(),
+            created_at: 1,
+            expires_at: 1,
+            republish_at: 1,
+        };
+        let response = node.handle_dht_rpc(DhtRpcRequest::StoreRecord {
+            request_id: "store-expired".into(),
+            record,
+        });
+        assert_eq!(
+            response,
+            DhtRpcResponse::StoreResult {
+                request_id: "store-expired".into(),
+                stored: false,
+                inserted: false,
+            }
+        );
+        assert!(node.dht_records.is_empty());
     }
 
     #[test]
