@@ -5,9 +5,10 @@ use lm_node::{
 };
 use serde::Deserialize;
 use std::{
+    collections::HashMap,
     env, fs,
     io::{Read, Write},
-    net::{TcpListener, TcpStream},
+    net::{IpAddr, TcpListener, TcpStream},
     process,
     time::{Duration, Instant},
 };
@@ -145,6 +146,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .transpose()?
                 .or(file_config.sync_max_backoff_seconds)
                 .unwrap_or(300);
+            let rate_limit_window_seconds = optional_arg(&args, "--rate-limit-window-seconds")?
+                .or_else(|| env::var("LM_NODE_RATE_LIMIT_WINDOW_SECONDS").ok())
+                .map(|value| value.parse::<u64>())
+                .transpose()?
+                .or(file_config.rate_limit_window_seconds)
+                .unwrap_or(60);
+            let rate_limit_max_requests = optional_arg(&args, "--rate-limit-max-requests")?
+                .or_else(|| env::var("LM_NODE_RATE_LIMIT_MAX_REQUESTS").ok())
+                .map(|value| value.parse::<u32>())
+                .transpose()?
+                .or(file_config.rate_limit_max_requests)
+                .unwrap_or(600);
             let control_token_direct = optional_arg(&args, "--control-token")?
                 .or_else(|| env::var("LM_NODE_CONTROL_TOKEN").ok())
                 .or(file_config.control_token);
@@ -185,6 +198,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 sync_interval_seconds,
                 sync_max_backoff_seconds,
                 security,
+                RateLimitConfig {
+                    window_seconds: rate_limit_window_seconds,
+                    max_requests: rate_limit_max_requests,
+                },
             )?;
         }
         "help" | "--help" | "-h" => print_help(),
@@ -263,6 +280,61 @@ struct SyncPeerRuntime {
     consecutive_failures: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RateLimitConfig {
+    window_seconds: u64,
+    max_requests: u32,
+}
+
+impl RateLimitConfig {
+    fn is_enabled(self) -> bool {
+        self.window_seconds > 0 && self.max_requests > 0
+    }
+}
+
+#[derive(Debug, Clone)]
+struct RateLimitEntry {
+    window_started_at: Instant,
+    count: u32,
+}
+
+#[derive(Debug, Default)]
+struct RateLimiter {
+    entries: HashMap<IpAddr, RateLimitEntry>,
+}
+
+impl RateLimiter {
+    fn check(&mut self, ip: IpAddr, now: Instant, config: RateLimitConfig) -> bool {
+        if !config.is_enabled() {
+            return true;
+        }
+        let window = Duration::from_secs(config.window_seconds);
+        let entry = self.entries.entry(ip).or_insert(RateLimitEntry {
+            window_started_at: now,
+            count: 0,
+        });
+        if now.duration_since(entry.window_started_at) >= window {
+            entry.window_started_at = now;
+            entry.count = 0;
+        }
+        if entry.count >= config.max_requests {
+            return false;
+        }
+        entry.count = entry.count.saturating_add(1);
+        true
+    }
+
+    fn prune(&mut self, now: Instant, config: RateLimitConfig) {
+        if !config.is_enabled() {
+            self.entries.clear();
+            return;
+        }
+        let ttl = Duration::from_secs(config.window_seconds.saturating_mul(2).max(1));
+        self.entries
+            .retain(|_, entry| now.duration_since(entry.window_started_at) < ttl);
+    }
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 struct ServeControlConfigFile {
     bind: Option<String>,
@@ -274,6 +346,8 @@ struct ServeControlConfigFile {
     sync_peers: Option<Vec<SyncPeerConfigFile>>,
     sync_interval_seconds: Option<u64>,
     sync_max_backoff_seconds: Option<u64>,
+    rate_limit_window_seconds: Option<u64>,
+    rate_limit_max_requests: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -336,9 +410,12 @@ fn serve_control(
     sync_interval_seconds: u64,
     sync_max_backoff_seconds: u64,
     security: ControlSecurityConfig,
+    rate_limit: RateLimitConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(bind)?;
     listener.set_nonblocking(true)?;
+    let mut rate_limiter = RateLimiter::default();
+    let mut last_rate_limit_prune = Instant::now();
     let mut sync_peers = if sync_interval_seconds == 0 {
         Vec::new()
     } else {
@@ -366,6 +443,14 @@ fn serve_control(
             security.cors_allow_origins.join(",")
         );
     }
+    if rate_limit.is_enabled() {
+        println!(
+            "control rate limit: {} requests / {}s per client IP",
+            rate_limit.max_requests, rate_limit.window_seconds
+        );
+    } else {
+        println!("control rate limit: disabled");
+    }
     if !sync_peers.is_empty() && sync_interval_seconds > 0 {
         println!(
             "auto snapshot sync: every {sync_interval_seconds}s from {}",
@@ -392,9 +477,15 @@ fn serve_control(
                 }
             }
         }
+        if now.duration_since(last_rate_limit_prune) >= Duration::from_secs(60) {
+            rate_limiter.prune(now, rate_limit);
+            last_rate_limit_prune = now;
+        }
         match listener.accept() {
             Ok((mut stream, _addr)) => {
-                if let Err(err) = handle_stream(&mut stream, node, &security) {
+                if let Err(err) =
+                    handle_stream(&mut stream, node, &security, &mut rate_limiter, rate_limit)
+                {
                     let body = format!("request error: {err}");
                     let response = format!(
                         "HTTP/1.1 400 Bad Request\r\ncontent-type: text/plain; charset=utf-8\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
@@ -506,12 +597,17 @@ fn handle_stream(
     stream: &mut TcpStream,
     node: &mut NativeNode,
     security: &ControlSecurityConfig,
+    rate_limiter: &mut RateLimiter,
+    rate_limit: RateLimitConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let peer_addr = stream.peer_addr().ok();
     let request = read_http_request(stream)?;
     let origin = request.header("origin").map(str::to_string);
     let response = if !security.allows_origin(origin.as_deref()) {
         ControlHttpResponse::text(403, "cors origin not allowed")
+    } else if !request_is_within_rate_limit(&request, peer_addr.as_ref(), rate_limiter, rate_limit)
+    {
+        ControlHttpResponse::text(429, "rate limit exceeded")
     } else if request.method == "OPTIONS" {
         ControlHttpResponse::from_control(node.handle_control_request(request))
     } else if !request_is_authorized(&request, security, peer_addr.as_ref()) {
@@ -522,6 +618,21 @@ fn handle_stream(
     let allow_origin = security.access_control_origin(origin.as_deref());
     stream.write_all(response.to_http_string(&allow_origin).as_bytes())?;
     Ok(())
+}
+
+fn request_is_within_rate_limit(
+    request: &ControlRequest,
+    peer_addr: Option<&std::net::SocketAddr>,
+    rate_limiter: &mut RateLimiter,
+    rate_limit: RateLimitConfig,
+) -> bool {
+    if request.method == "GET" && request.path.starts_with("/health") {
+        return true;
+    }
+    let Some(peer_addr) = peer_addr else {
+        return true;
+    };
+    rate_limiter.check(peer_addr.ip(), Instant::now(), rate_limit)
 }
 
 fn request_is_authorized(
@@ -650,6 +761,7 @@ impl ControlHttpResponse {
             403 => "Forbidden",
             404 => "Not Found",
             405 => "Method Not Allowed",
+            429 => "Too Many Requests",
             500 => "Internal Server Error",
             _ => "OK",
         };
@@ -676,15 +788,15 @@ Commands:\n  \
 announce --backup-file <file> --passphrase <text> [--peer-id <id>] [--addr <multiaddr,csv>] [--cap <bootstrap,dht,relay,mailbox>]\n  \
 inspect-public --text-file <file> --identity-public-key <base64>\n  \
 run [--peer-id <id>] [--addr <multiaddr>]\n  \
-serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--state-file <file>] [--sync-peer <url,csv>] [--sync-interval-seconds <n>]\n"
+serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--state-file <file>] [--sync-peer <url,csv>] [--sync-interval-seconds <n>] [--rate-limit-window-seconds <n>] [--rate-limit-max-requests <n>]\n"
     );
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        ServeControlConfigFile, current_unix_timestamp, read_secret_file,
-        sync_backoff_delay_seconds,
+        RateLimitConfig, RateLimiter, ServeControlConfigFile, current_unix_timestamp,
+        read_secret_file, sync_backoff_delay_seconds,
     };
 
     #[test]
@@ -694,6 +806,21 @@ mod tests {
         assert_eq!(sync_backoff_delay_seconds(10, 300, 2), 20);
         assert_eq!(sync_backoff_delay_seconds(10, 300, 3), 40);
         assert_eq!(sync_backoff_delay_seconds(10, 30, 4), 30);
+    }
+
+    #[test]
+    fn rate_limiter_enforces_window_and_resets() {
+        let mut limiter = RateLimiter::default();
+        let config = RateLimitConfig {
+            window_seconds: 10,
+            max_requests: 2,
+        };
+        let ip = "127.0.0.1".parse().unwrap();
+        let now = std::time::Instant::now();
+        assert!(limiter.check(ip, now, config));
+        assert!(limiter.check(ip, now, config));
+        assert!(!limiter.check(ip, now, config));
+        assert!(limiter.check(ip, now + std::time::Duration::from_secs(10), config));
     }
 
     #[test]
@@ -725,6 +852,8 @@ mod tests {
                 "cors_allow_origins": ["https://allowed.example"],
                 "sync_interval_seconds": 5,
                 "sync_max_backoff_seconds": 60,
+                "rate_limit_window_seconds": 30,
+                "rate_limit_max_requests": 120,
                 "sync_peers": [
                     { "url": "http://127.0.0.1:8787", "token": "peer-token", "token_file": "peer.secret" }
                 ]
@@ -741,6 +870,8 @@ mod tests {
         );
         assert_eq!(config.sync_interval_seconds, Some(5));
         assert_eq!(config.sync_max_backoff_seconds, Some(60));
+        assert_eq!(config.rate_limit_window_seconds, Some(30));
+        assert_eq!(config.rate_limit_max_requests, Some(120));
         let peer = &config.sync_peers.unwrap()[0];
         assert_eq!(peer.url, "http://127.0.0.1:8787");
         assert_eq!(peer.token.as_deref(), Some("peer-token"));

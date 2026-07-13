@@ -146,14 +146,14 @@ Friend Request -> Friend Response
 |---|---|---|
 | `lm_core` | 已实现身份、备份、Contact Card、好友请求/响应、DirectEnvelope、X3DH PreKey、Double Ratchet 状态与 envelope、群 Sender Key、群权限状态、文件分片加密包、本地安全策略、Outbox、MemoryStore、大小限制、测试向量 | 核心协议层已具备 MVP 主干，约 75-85% MVP 完整；仍需生产级审计、持久化接口、属性/模糊测试、多设备完整流程 |
 | `lm_wasm` | 已暴露大部分 core API，覆盖身份、联系人、好友、消息、PreKey/X3DH、Ratchet、群、文件、Public Peer、Mailbox、Signaling | 绑定层覆盖较全，约 70-80% MVP 完整；仍需随 core API 稳定后整理命名、错误码和兼容策略 |
-| `lm_node` | 已实现控制面 HTTP scaffold、Public Peer announce、Kademlia ID/XOR distance/closest peers、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、one-time prekey 消费记录、PreKey 过期清理/轮换重置/低水位提示、snapshot sync/import、serve-control 定时 snapshot sync、控制面 token/CORS 基础安全、状态文件保存 | 可支撑节点辅助 PreKey + Mailbox + 粗粒度同步 demo，约 60-64% MVP 完整；不是生产 DHT/relay 节点 |
-| CLI / 运维 | 已有 `announce`、`inspect-public`、`distance`、`run`、`serve-control`、`--config-file`、`--control-token`、`--control-token-file`、`--cors-allow-origin` 等基础命令 | 调试可用；缺配置 schema 文档、TLS 文档、日志、数据库、限流、后台任务 |
+| `lm_node` | 已实现控制面 HTTP scaffold、Public Peer announce、Kademlia ID/XOR distance/closest peers、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、one-time prekey 消费记录、PreKey 过期清理/轮换重置/低水位提示、snapshot sync/import、serve-control 定时 snapshot sync、控制面 token/CORS 基础安全、控制面 per-client IP 基础限流、状态文件保存 | 可支撑节点辅助 PreKey + Mailbox + 粗粒度同步 demo，约 62-66% MVP 完整；不是生产 DHT/relay 节点 |
+| CLI / 运维 | 已有 `announce`、`inspect-public`、`distance`、`run`、`serve-control`、`--config-file`、`--control-token`、`--control-token-file`、`--cors-allow-origin`、`--rate-limit-*` 等基础命令 | 调试和基础部署可用；缺配置 schema 文档、TLS 文档、日志、数据库、后台任务 |
 | 测试 | `scripts/test.sh all` 覆盖 Rust fmt/test、core e2e、node e2e、HTTP control flow、WASM smoke、Web build/e2e | 基础回归较好；仍需 proptest/fuzz、跨实现向量、真实网络故障/压力测试 |
 
 重要边界：
 
 - 当前 `lm_node` 的 Kademlia 部分只有 ID、距离、bucket 与 closest 查询 scaffold；**尚未实现真正 DHT 网络查询、节点发现、记录复制和过期清理**。
-- Mailbox 当前是控制面队列语义：节点可保存密文并等待接收方 ack；已有基础 TTL、配额和 message_id 去重，尚未包含生产级持久化、反滥用、认证、端到端投递回执和元数据保护。
+- Mailbox 当前是控制面队列语义：节点可保存密文并等待接收方 ack；已有基础 TTL、配额、message_id 去重和控制面 per-client IP 限流，尚未包含生产级持久化、按 sender 限流、端到端投递回执和元数据保护。
 - PreKey 当前支持 bundle 发布、拉取和 one-time key 精确消费记录；后续应升级 signed per-one-time-prekey records、轮换和补货策略。
 - Core 中的加密协议对象和状态机已经可测试，但仍不能等同于经过第三方审计的生产安全协议。
 
@@ -1656,7 +1656,7 @@ MVP 不做：
 - PreKey：`/prekey/publish`、`/prekey/get`、`consume=true` 精确记录 one-time prekey 消费，并返回 remaining/low watermark；bundle 过期会清理，signed prekey 轮换会重置消费记录。
 - Snapshot：`/sync/snapshot`、`/sync/import`，可粗粒度同步 peers/mailbox/prekeys。
 - 自动 snapshot sync：`serve-control --config-file node.json` 可加载 JSON 配置；control/sync token 支持 CLI、环境变量或 secret 文件；`--sync-peer http://host:port --sync-interval-seconds N` 定时拉取并 merge peer snapshot；`--sync-peer-token`/`--sync-peer-token-file` 可拉取受 token 保护的 peer；`--sync-max-backoff-seconds` 控制失败指数退避；`/sync/status` 暴露 attempts/successes/failures/last_success_at/last_error/next_attempt_at。
-- 控制面基础安全：未配置 token 时非 health API 仅允许 loopback；`--control-token` 要求 `Authorization: Bearer ...`；`--cors-allow-origin` 限制浏览器 Origin。
+- 控制面基础安全：未配置 token 时非 health API 仅允许 loopback；`--control-token` 要求 `Authorization: Bearer ...`；`--cors-allow-origin` 限制浏览器 Origin；`--rate-limit-window-seconds` / `--rate-limit-max-requests` 对非 health API 做 per-client IP 基础限流，超限返回 `429 Too Many Requests`。
 - `serve-control --state-file` 可保存/恢复节点状态。
 - 节点 e2e：PreKey 同步 + Mailbox 携带 ratchet envelope + 接收方解密。
 
@@ -1666,7 +1666,7 @@ MVP 不做：
 - 真正 DHT 节点发现、查询、记录复制、过期清理。
 - 自动 peer snapshot sync 的配置 schema 文档和状态指标细化；后续替换为 DHT replication。
 - WebRTC signaling、relay/TURN 替代能力。
-- 节点控制面 token 轮换、TLS 部署说明、限流、配额、反滥用、结构化日志和更完整指标。
+- 节点控制面 token 轮换、TLS 部署说明、按 sender/全局维度的更细粒度反滥用、结构化日志和更完整指标。
 
 ---
 
@@ -1938,7 +1938,7 @@ Public Peer：
 - core e2e：两用户好友流程、X3DH shared secret、Double Ratchet 双向消息。
 - `lm_node`：Public Peer announce、Kademlia closest、Mailbox push/take/ack、PreKey publish/get、snapshot roundtrip/import、serve-control 自动 snapshot sync。
 - node e2e：节点 PreKey 同步 + Mailbox 携带 ratchet envelope + 接收方解密。
-- HTTP control flow：真实 `serve-control` 进程之间同步 PreKey/Mailbox，并覆盖 config-file、token/CORS 基础安全。
+- HTTP control flow：真实 `serve-control` 进程之间同步 PreKey/Mailbox，并覆盖 config-file、token/CORS 基础安全和控制面基础限流。
 - `lm_wasm` smoke：身份、联系人、好友、消息、PreKey/X3DH、Ratchet、群、文件、Public Peer、Mailbox、Signaling。
 
 仍需补齐：proptest/fuzz、跨语言/跨平台测试向量、真实网络延迟/丢包/重连/压力测试、持久化崩溃恢复测试。

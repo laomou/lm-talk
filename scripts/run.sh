@@ -26,6 +26,8 @@ Node options:
   --sync-peer-token-file PATH read sync peer token from file
   --sync-interval-seconds N
   --sync-max-backoff-seconds N maximum retry backoff after sync failures (default: 300)
+  --rate-limit-window-seconds N per-client control API rate window (default: 60; 0 disables)
+  --rate-limit-max-requests N max non-health requests per client/window (default: 600; 0 disables)
 USAGE
 }
 
@@ -78,6 +80,8 @@ sync_peer_token="${LM_NODE_SYNC_PEER_TOKEN:-}"
 sync_peer_token_file="${LM_NODE_SYNC_PEER_TOKEN_FILE:-}"
 sync_interval_seconds="0"
 sync_max_backoff_seconds="300"
+rate_limit_window_seconds="${LM_NODE_RATE_LIMIT_WINDOW_SECONDS:-60}"
+rate_limit_max_requests="${LM_NODE_RATE_LIMIT_MAX_REQUESTS:-600}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -96,6 +100,8 @@ while [[ $# -gt 0 ]]; do
     --sync-peer-token-file) sync_peer_token_file="${2:?--sync-peer-token-file requires PATH}"; shift 2 ;;
     --sync-interval-seconds) sync_interval_seconds="${2:?--sync-interval-seconds requires N}"; shift 2 ;;
     --sync-max-backoff-seconds) sync_max_backoff_seconds="${2:?--sync-max-backoff-seconds requires N}"; shift 2 ;;
+    --rate-limit-window-seconds) rate_limit_window_seconds="${2:?--rate-limit-window-seconds requires N}"; shift 2 ;;
+    --rate-limit-max-requests) rate_limit_max_requests="${2:?--rate-limit-max-requests requires N}"; shift 2 ;;
     --debug|--release)
       echo "run.sh 是 PRD runtime，不接受 $1；固定 build --release 并执行 target/release/lm_node" >&2
       exit 2
@@ -126,6 +132,11 @@ else
 fi
 if [[ -n "$cors_allow_origin" ]]; then
   echo "CORS allow origin：$cors_allow_origin"
+fi
+if [[ "$rate_limit_window_seconds" != "0" && "$rate_limit_max_requests" != "0" ]]; then
+  echo "控制面限流：${rate_limit_max_requests} requests / ${rate_limit_window_seconds}s per client"
+else
+  echo "控制面限流：disabled"
 fi
 if [[ -n "$sync_peer" && "$sync_interval_seconds" != "0" ]]; then
   echo "自动同步：$sync_peer every ${sync_interval_seconds}s, max backoff ${sync_max_backoff_seconds}s"
@@ -176,4 +187,6 @@ if [[ "$sync_interval_seconds" != "0" ]]; then
   args+=(--sync-interval-seconds "$sync_interval_seconds")
   args+=(--sync-max-backoff-seconds "$sync_max_backoff_seconds")
 fi
+args+=(--rate-limit-window-seconds "$rate_limit_window_seconds")
+args+=(--rate-limit-max-requests "$rate_limit_max_requests")
 exec "$ROOT/target/release/lm_node" "${args[@]}"

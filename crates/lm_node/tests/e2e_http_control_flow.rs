@@ -295,6 +295,32 @@ fn real_http_control_plane_loads_config_file() {
 }
 
 #[test]
+fn real_http_control_plane_rate_limits_non_health_requests() {
+    let port = free_port();
+    let base = format!("127.0.0.1:{port}");
+    let _node = spawn_node_with_args(
+        &base,
+        "http-rate-limit-node",
+        &[
+            "--rate-limit-window-seconds",
+            "60",
+            "--rate-limit-max-requests",
+            "1",
+        ],
+    );
+    wait_for_health(&base);
+
+    // Health checks stay outside the limiter so supervisors can keep probing.
+    assert_eq!(http_request(&base, "GET", "/health", "").status, 200);
+    assert_eq!(http_request(&base, "GET", "/health", "").status, 200);
+
+    let first = http_request(&base, "GET", "/sync/status", "");
+    assert_eq!(first.status, 200, "{}", first.body);
+    let limited = http_request(&base, "GET", "/sync/status", "");
+    assert_eq!(limited.status, 429, "{}", limited.body);
+}
+
+#[test]
 fn real_http_control_plane_requires_token_and_enforces_cors() {
     let port = free_port();
     let base = format!("127.0.0.1:{port}");

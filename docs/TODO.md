@@ -20,13 +20,13 @@
 
 - `lm_core`：身份/备份、Contact Card、好友请求/响应、DirectEnvelope、X3DH PreKey、Double Ratchet、群 Sender Key、群权限状态、文件分片加密包、本地安全策略、Outbox、MemoryStore、大小限制、测试向量。
 - `lm_wasm`：大部分 core 能力已导出，并有 smoke 测试。
-- `lm_node`：HTTP control plane、Public Peer announce、Kademlia ID/distance/closest scaffold、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、one-time prekey 消费记录、PreKey 过期清理/轮换重置/低水位提示、snapshot sync/import、serve-control 定时 snapshot sync、控制面 token/CORS 基础安全、状态文件保存。
+- `lm_node`：HTTP control plane、Public Peer announce、Kademlia ID/distance/closest scaffold、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、one-time prekey 消费记录、PreKey 过期清理/轮换重置/低水位提示、snapshot sync/import、serve-control 定时 snapshot sync、控制面 token/CORS 基础安全、控制面 per-client IP 基础限流、状态文件保存。
 - 测试：`scripts/test.sh all` 当前通过 Rust 测试、core/node e2e、HTTP control flow、WASM smoke、Web build/e2e。
 
 关键边界：
 
 - `lm_node` 仍是控制面 + snapshot sync scaffold，不是真正生产 DHT。
-- Mailbox/PreKey 可支撑 demo；Mailbox 已有基础 TTL/配额/message_id 去重，但仍缺正式持久化、认证、自动同步和更完整反滥用。
+- Mailbox/PreKey 可支撑 demo；Mailbox 已有基础 TTL/配额/message_id 去重和控制面 per-client IP 限流，但仍缺正式持久化、按 sender/全局维度反滥用和完整投递回执。
 - Core 协议对象已可测，但仍需属性测试、模糊测试、跨平台测试向量和安全审计。
 - 本地持久化仍偏 Web IndexedDB / MemoryStore；Native SQLite/SQLCipher 尚未实现。
 
@@ -845,6 +845,7 @@ MVP 群聊采用逐个加密。
    - [x] 基础 per-user / per-node quota（`max_mailbox_messages_per_user` / `max_mailbox_bytes`）。
    - [x] 基础 message_id 去重；delivery_id 去重保留在 snapshot merge 路径。
    - [ ] 持久化 quota/TTL/去重索引，增加崩溃恢复测试。
+   - [x] 控制面基础 per-client IP 限流：`--rate-limit-window-seconds` / `--rate-limit-max-requests`，超限返回 `429`，`/health` 不计入限流。
    - [ ] 更细粒度反滥用：按 sender 限流、全局速率限制、异常 payload 统计。
    - `take` 不删除，只有处理成功后 `ack` 删除的语义已存在，需要持久化和重试测试。
 
@@ -861,6 +862,7 @@ MVP 群聊采用逐个加密。
    - [x] `--cors-allow-origin` / `LM_NODE_CORS_ALLOW_ORIGIN` 支持 CORS 白名单。
    - [x] token 可从配置文件、CLI 或环境变量加载。
    - [x] `--control-token-file` / `LM_NODE_CONTROL_TOKEN_FILE` 和 config `control_token_file` 支持从 secret 文件加载。
+   - [x] `--rate-limit-window-seconds` / `LM_NODE_RATE_LIMIT_WINDOW_SECONDS` / config `rate_limit_window_seconds` 与 `--rate-limit-max-requests` / `LM_NODE_RATE_LIMIT_MAX_REQUESTS` / config `rate_limit_max_requests` 支持基础限流。
    - [ ] token 轮换策略。
    - [ ] TLS/反向代理部署说明。
 
