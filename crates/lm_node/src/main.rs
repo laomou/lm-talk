@@ -298,6 +298,7 @@ struct DhtRoutingRefreshRunStats {
     successes: usize,
     failures: usize,
     nodes_returned: usize,
+    nodes_merged: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -352,6 +353,7 @@ struct ControlRuntimeStats {
     dht_routing_refresh_successes: u64,
     dht_routing_refresh_failures: u64,
     dht_routing_refresh_nodes_returned: u64,
+    dht_routing_refresh_nodes_merged: u64,
     last_dht_routing_refresh_at: Option<u64>,
     endpoints: HashMap<String, ControlEndpointStats>,
 }
@@ -395,6 +397,7 @@ impl ControlRuntimeStats {
             dht_routing_refresh_successes: 0,
             dht_routing_refresh_failures: 0,
             dht_routing_refresh_nodes_returned: 0,
+            dht_routing_refresh_nodes_merged: 0,
             last_dht_routing_refresh_at: None,
             endpoints: HashMap::new(),
         }
@@ -655,6 +658,21 @@ impl ControlRuntimeStats {
             "lm_node_dht_routing_refresh_nodes_returned_total",
             self.dht_routing_refresh_nodes_returned,
         );
+        push_metric_help(
+            &mut out,
+            "lm_node_dht_routing_refresh_nodes_merged_total",
+            "Trusted routing peers merged from DHT FindNode refresh responses.",
+        );
+        push_metric_type(
+            &mut out,
+            "lm_node_dht_routing_refresh_nodes_merged_total",
+            "counter",
+        );
+        push_metric_value(
+            &mut out,
+            "lm_node_dht_routing_refresh_nodes_merged_total",
+            self.dht_routing_refresh_nodes_merged,
+        );
         if let Some(last_dht_routing_refresh_at) = self.last_dht_routing_refresh_at {
             push_metric_help(
                 &mut out,
@@ -843,6 +861,9 @@ impl ControlRuntimeStats {
         self.dht_routing_refresh_nodes_returned = self
             .dht_routing_refresh_nodes_returned
             .saturating_add(stats.nodes_returned as u64);
+        self.dht_routing_refresh_nodes_merged = self
+            .dht_routing_refresh_nodes_merged
+            .saturating_add(stats.nodes_merged as u64);
         self.last_dht_routing_refresh_at = Some(finished_at);
     }
 
@@ -1223,12 +1244,13 @@ fn serve_control(
             runtime_stats.record_dht_routing_refresh_run(refresh, current_unix_timestamp());
             if refresh.attempts > 0 {
                 println!(
-                    "dht routing refresh: targets={} attempts={} successes={} failures={} nodes_returned={}",
+                    "dht routing refresh: targets={} attempts={} successes={} failures={} nodes_returned={} nodes_merged={}",
                     refresh.targets,
                     refresh.attempts,
                     refresh.successes,
                     refresh.failures,
-                    refresh.nodes_returned
+                    refresh.nodes_returned,
+                    refresh.nodes_merged
                 );
             }
             if let Some(path) = state_file {
@@ -1315,7 +1337,7 @@ fn run_dht_replication(
 }
 
 fn run_dht_routing_refresh(
-    node: &NativeNode,
+    node: &mut NativeNode,
     peers: &[SyncPeerConfig],
     limit: usize,
     max_targets: usize,
@@ -1345,6 +1367,8 @@ fn run_dht_routing_refresh(
                 Ok(DhtRpcResponse::Nodes { nodes, .. }) => {
                     stats.successes = stats.successes.saturating_add(1);
                     stats.nodes_returned = stats.nodes_returned.saturating_add(nodes.len());
+                    let merged = node.merge_trusted_routing_peers(nodes);
+                    stats.nodes_merged = stats.nodes_merged.saturating_add(merged);
                 }
                 Ok(response) => {
                     stats.failures = stats.failures.saturating_add(1);
@@ -1827,8 +1851,9 @@ mod tests {
     #[test]
     fn dht_routing_refresh_runner_sends_find_node_to_peers() {
         let (url, server) = spawn_dht_rpc_find_node_server(2);
-        let node = NativeNode::new(NodeConfig::default());
-        let stats = run_dht_routing_refresh(&node, &[SyncPeerConfig { url, token: None }], 8, 2);
+        let mut node = NativeNode::new(NodeConfig::default());
+        let stats =
+            run_dht_routing_refresh(&mut node, &[SyncPeerConfig { url, token: None }], 8, 2);
         assert_eq!(stats.targets, 2);
         assert_eq!(stats.attempts, 2);
         assert_eq!(stats.successes, 2);
@@ -1959,6 +1984,7 @@ mod tests {
                 successes: 5,
                 failures: 1,
                 nodes_returned: 7,
+                nodes_merged: 2,
             },
             789,
         );
@@ -1968,6 +1994,7 @@ mod tests {
         assert_eq!(stats.dht_routing_refresh_successes, 5);
         assert_eq!(stats.dht_routing_refresh_failures, 1);
         assert_eq!(stats.dht_routing_refresh_nodes_returned, 7);
+        assert_eq!(stats.dht_routing_refresh_nodes_merged, 2);
         assert_eq!(stats.last_dht_routing_refresh_at, Some(789));
         let health = stats.endpoints.get("GET /health").unwrap();
         assert_eq!(health.requests, 2);
@@ -2003,6 +2030,7 @@ mod tests {
             metrics.contains("lm_node_dht_routing_refresh_attempts_total{result=\"success\"} 5")
         );
         assert!(metrics.contains("lm_node_dht_routing_refresh_nodes_returned_total 7"));
+        assert!(metrics.contains("lm_node_dht_routing_refresh_nodes_merged_total 2"));
         assert!(metrics.contains("lm_node_dht_routing_refresh_last_run_at 789"));
         assert!(metrics.contains("lm_node_maintenance_prune_runs_total 2"));
         assert!(

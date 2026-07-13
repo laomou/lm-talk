@@ -575,6 +575,10 @@ impl RoutingTable {
         Ok(())
     }
 
+    fn insert_trusted_announce(&mut self, announce: PublicPeerAnnounce) {
+        self.peers.insert(announce.peer_id.clone(), announce);
+    }
+
     pub fn get(&self, peer_id: &str) -> Option<&PublicPeerAnnounce> {
         self.peers.get(peer_id)
     }
@@ -1237,6 +1241,28 @@ impl NativeNode {
             generated_at: current_unix_timestamp(),
             targets: self.kademlia.refresh_targets(),
         }
+    }
+
+    pub fn merge_trusted_routing_peers(&mut self, peers: Vec<RoutingPeer>) -> usize {
+        let now = current_unix_timestamp();
+        let mut inserted = 0usize;
+        for peer in peers {
+            if peer.announce.expires_at <= now {
+                continue;
+            }
+            let expected_node_id = KademliaNodeId::from_peer_id(&peer.announce.peer_id);
+            if peer.node_id != expected_node_id || expected_node_id == self.kademlia.local_id() {
+                continue;
+            }
+            self.routing_table
+                .insert_trusted_announce(peer.announce.clone());
+            let before = self.kademlia.len();
+            self.kademlia.insert_local_snapshot(peer.announce);
+            if self.kademlia.len() > before {
+                inserted = inserted.saturating_add(1);
+            }
+        }
+        inserted
     }
 
     pub fn handle_dht_rpc(&mut self, request: DhtRpcRequest) -> DhtRpcResponse {
@@ -2368,6 +2394,82 @@ mod tests {
             node.kademlia.local_id().bucket_index(&refresh.targets[255]),
             Some(255)
         );
+    }
+
+    #[test]
+    fn merge_trusted_routing_peers_accepts_valid_nonlocal_nodes() {
+        let (identity, _) = Identity::create_with_passphrase("trusted routing peer").unwrap();
+        let announce = NodeConfig {
+            peer_id: "trusted-routing-peer".into(),
+            ..Default::default()
+        }
+        .create_announce(&identity)
+        .unwrap();
+        let node_id = KademliaNodeId::from_peer_id(&announce.peer_id);
+        let peer = RoutingPeer {
+            node_id,
+            announce: announce.clone(),
+            last_seen_at: current_unix_timestamp(),
+        };
+        let mut node = NativeNode::new(NodeConfig {
+            peer_id: "trusted-routing-local".into(),
+            ..Default::default()
+        });
+
+        assert_eq!(node.merge_trusted_routing_peers(vec![peer]), 1);
+        assert_eq!(node.kademlia.len(), 1);
+        assert_eq!(
+            node.routing_table
+                .get("trusted-routing-peer")
+                .unwrap()
+                .peer_id,
+            "trusted-routing-peer"
+        );
+        assert_eq!(node.merge_trusted_routing_peers(Vec::new()), 0);
+    }
+
+    #[test]
+    fn merge_trusted_routing_peers_rejects_mismatched_expired_and_local_nodes() {
+        let (identity, _) = Identity::create_with_passphrase("bad trusted routing peer").unwrap();
+        let mut announce = NodeConfig {
+            peer_id: "bad-trusted-routing-peer".into(),
+            ..Default::default()
+        }
+        .create_announce(&identity)
+        .unwrap();
+        let valid_node_id = KademliaNodeId::from_peer_id(&announce.peer_id);
+        let mut node = NativeNode::new(NodeConfig {
+            peer_id: "bad-trusted-routing-local".into(),
+            ..Default::default()
+        });
+        let local_id = node.kademlia.local_id();
+
+        let mismatched = RoutingPeer {
+            node_id: KademliaNodeId::from_peer_id("different-peer"),
+            announce: announce.clone(),
+            last_seen_at: current_unix_timestamp(),
+        };
+        announce.expires_at = current_unix_timestamp().saturating_sub(1);
+        let expired = RoutingPeer {
+            node_id: valid_node_id,
+            announce: announce.clone(),
+            last_seen_at: current_unix_timestamp(),
+        };
+        let mut local_announce = announce.clone();
+        local_announce.peer_id = "bad-trusted-routing-local".into();
+        local_announce.expires_at = current_unix_timestamp().saturating_add(3600);
+        let local = RoutingPeer {
+            node_id: local_id,
+            announce: local_announce,
+            last_seen_at: current_unix_timestamp(),
+        };
+
+        assert_eq!(
+            node.merge_trusted_routing_peers(vec![mismatched, expired, local]),
+            0
+        );
+        assert!(node.kademlia.is_empty());
+        assert!(node.routing_table.is_empty());
     }
 
     #[test]
