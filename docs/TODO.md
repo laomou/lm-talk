@@ -906,6 +906,7 @@ MVP 群聊采用逐个加密。
    - [x] bounded `FindValue` lookup scaffold 可通过 transport 查询 peers，保存命中的 DHT record，并合并返回的 closer records 与 verified closer nodes。
    - [x] 增加 libp2p request-response 协议 scaffold：`/lm-talk/dht-rpc/1` 使用 JSON 编码承载现有 `DhtRpcRequest` / `DhtRpcResponse`。
    - [x] 增加 libp2p TCP/noise/yamux swarm scaffold，可挂载 DHT request-response behaviour 并监听本地地址。
+   - [x] libp2p inbound `DhtRpcRequest` 可复用 `NativeNode::handle_dht_rpc` 生成 response。
    - [ ] 接入真实传输层网络 find_node/find_value/store RPC。
    - [x] 已配置 control peers 支持按 `sync_peers[].peer_id` 匹配 closest-k target 执行 DHT `StoreRecord` replication；未配置 peer_id 时保持全量 control-peer 兼容行为。
    - [ ] 开放传输层 closest-k replication：接入真实网络 RPC、节点发现和端到端传输策略。

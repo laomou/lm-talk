@@ -1,4 +1,3 @@
-#[cfg(test)]
 use libp2p::{StreamProtocol, noise, request_response, swarm::NetworkBehaviour, tcp, yamux};
 use lm_core::PublicPeerAnnounce;
 use lm_node::{
@@ -21,13 +20,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[cfg(test)]
+#[allow(dead_code)]
 const LIBP2P_DHT_RPC_PROTOCOL: &str = "/lm-talk/dht-rpc/1";
 
-#[cfg(test)]
+#[allow(dead_code)]
 type Libp2pDhtRpcBehaviour = request_response::json::Behaviour<DhtRpcRequest, DhtRpcResponse>;
 
-#[cfg(test)]
+#[allow(dead_code)]
 #[derive(NetworkBehaviour)]
 struct Libp2pDhtBehaviour {
     dht_rpc: Libp2pDhtRpcBehaviour,
@@ -404,7 +403,7 @@ impl DhtTransport for HttpControlDhtTransport {
     }
 }
 
-#[cfg(test)]
+#[allow(dead_code)]
 fn libp2p_dht_rpc_behaviour() -> Libp2pDhtRpcBehaviour {
     request_response::json::Behaviour::new(
         [(
@@ -415,7 +414,7 @@ fn libp2p_dht_rpc_behaviour() -> Libp2pDhtRpcBehaviour {
     )
 }
 
-#[cfg(test)]
+#[allow(dead_code)]
 fn libp2p_dht_swarm() -> Result<libp2p::Swarm<Libp2pDhtBehaviour>, Box<dyn std::error::Error>> {
     Ok(libp2p::SwarmBuilder::with_new_identity()
         .with_tokio()
@@ -428,6 +427,31 @@ fn libp2p_dht_swarm() -> Result<libp2p::Swarm<Libp2pDhtBehaviour>, Box<dyn std::
             dht_rpc: libp2p_dht_rpc_behaviour(),
         })?
         .build())
+}
+
+#[allow(dead_code)]
+fn handle_libp2p_dht_rpc_request(node: &mut NativeNode, request: DhtRpcRequest) -> DhtRpcResponse {
+    node.handle_dht_rpc(request)
+}
+
+#[allow(dead_code)]
+fn handle_libp2p_dht_rpc_event(
+    node: &mut NativeNode,
+    behaviour: &mut Libp2pDhtRpcBehaviour,
+    event: request_response::Event<DhtRpcRequest, DhtRpcResponse>,
+) -> Option<DhtRpcResponse> {
+    if let request_response::Event::Message {
+        message: request_response::Message::Request {
+            request, channel, ..
+        },
+        ..
+    } = event
+    {
+        let response = handle_libp2p_dht_rpc_request(node, request);
+        let _ = behaviour.send_response(channel, response.clone());
+        return Some(response);
+    }
+    None
 }
 
 #[derive(Debug, Clone)]
@@ -3041,11 +3065,11 @@ mod tests {
         ControlLogger, ControlRuntimeStats, DhtReplicationRunStats, DhtRoutingRefreshRunStats,
         DhtTransport, LIBP2P_DHT_RPC_PROTOCOL, LogFormat, NodeMaintenanceStats, RateLimitConfig,
         RateLimiter, ServeControlConfigFile, StateDbStats, SyncPeerConfig, atomic_write_text,
-        current_unix_timestamp, dht_find_value_with_transport, libp2p_dht_rpc_behaviour,
-        libp2p_dht_swarm, load_node_state_db, parse_log_format, read_secret_file,
-        run_dht_replication, run_dht_replication_with_transport, run_dht_routing_refresh,
-        run_dht_routing_refresh_with_transport, save_node_state_db, send_dht_rpc,
-        sync_backoff_delay_seconds,
+        current_unix_timestamp, dht_find_value_with_transport, handle_libp2p_dht_rpc_request,
+        libp2p_dht_rpc_behaviour, libp2p_dht_swarm, load_node_state_db, parse_log_format,
+        read_secret_file, run_dht_replication, run_dht_replication_with_transport,
+        run_dht_routing_refresh, run_dht_routing_refresh_with_transport, save_node_state_db,
+        send_dht_rpc, sync_backoff_delay_seconds,
     };
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use lm_core::{Identity, MailboxMessage, MailboxMessageKind, PreKeyBundle};
@@ -3381,6 +3405,40 @@ mod tests {
                 .listen_on("/ip4/127.0.0.1/tcp/0".parse().unwrap())
                 .unwrap();
         });
+    }
+
+    #[test]
+    fn libp2p_dht_rpc_request_handler_uses_native_node_logic() {
+        let mut node = NativeNode::new(NodeConfig::default());
+        let record = DhtRecord::public_peer(
+            &NodeConfig {
+                peer_id: "libp2p-handler-peer".into(),
+                ..Default::default()
+            }
+            .create_announce(
+                &Identity::create_with_passphrase("libp2p handler")
+                    .unwrap()
+                    .0,
+            )
+            .unwrap(),
+            "value".into(),
+            60,
+        );
+        let response = handle_libp2p_dht_rpc_request(
+            &mut node,
+            DhtRpcRequest::StoreRecord {
+                request_id: "libp2p-store".into(),
+                record,
+            },
+        );
+        assert!(matches!(
+            response,
+            DhtRpcResponse::StoreResult {
+                stored: true,
+                inserted: true,
+                ..
+            }
+        ));
     }
 
     #[test]
