@@ -294,6 +294,25 @@ impl DhtRecordStore {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DhtRecordReplicationPlan {
+    pub record: DhtRecord,
+    pub target_nodes: Vec<RoutingPeer>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DhtReplicationPlan {
+    pub generated_at: u64,
+    pub replication_factor: usize,
+    pub records: Vec<DhtRecordReplicationPlan>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DhtRoutingRefreshPlan {
+    pub generated_at: u64,
+    pub targets: Vec<KademliaNodeId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DhtRpcRequest {
     FindNode {
         request_id: String,
@@ -431,6 +450,21 @@ impl KademliaRoutingTable {
         peers.sort_by_key(|peer| peer.node_id.xor_distance(&target));
         peers.truncate(limit);
         peers
+    }
+
+    pub fn refresh_targets(&self) -> Vec<KademliaNodeId> {
+        (0..KADEMLIA_ID_BYTES * 8)
+            .map(|bucket_index| self.refresh_target_for_bucket(bucket_index))
+            .collect()
+    }
+
+    pub fn refresh_target_for_bucket(&self, bucket_index: usize) -> KademliaNodeId {
+        let mut target = *self.local_id.as_bytes();
+        let index = bucket_index.min(KADEMLIA_ID_BYTES * 8 - 1);
+        let byte_index = index / 8;
+        let bit_index = index % 8;
+        target[byte_index] ^= 0x80 >> bit_index;
+        KademliaNodeId::from_bytes(target)
     }
 
     pub fn bucket_len(&self, bucket_index: usize) -> usize {
@@ -1174,6 +1208,34 @@ impl NativeNode {
             mailbox_expired_deliveries: mailbox_removed,
             prekey_expired_bundles: prekey_removed,
             last_pruned_at: Some(now),
+        }
+    }
+
+    pub fn plan_dht_replication(&mut self, replication_factor: usize) -> DhtReplicationPlan {
+        let now = current_unix_timestamp();
+        let replication_factor = replication_factor.clamp(1, 64);
+        let records = self
+            .dht_records
+            .due_for_republish(now)
+            .into_iter()
+            .map(|record| DhtRecordReplicationPlan {
+                target_nodes: self
+                    .kademlia
+                    .closest(record.key.to_node_id(), replication_factor),
+                record,
+            })
+            .collect();
+        DhtReplicationPlan {
+            generated_at: now,
+            replication_factor,
+            records,
+        }
+    }
+
+    pub fn plan_dht_routing_refresh(&self) -> DhtRoutingRefreshPlan {
+        DhtRoutingRefreshPlan {
+            generated_at: current_unix_timestamp(),
+            targets: self.kademlia.refresh_targets(),
         }
     }
 
@@ -2219,6 +2281,61 @@ mod tests {
         assert_eq!(closest, vec![record_a.clone()]);
         assert_eq!(store.prune_expired(now + 100), 2);
         assert!(store.is_empty());
+    }
+
+    #[test]
+    fn dht_replication_and_routing_refresh_plans_are_deterministic_scaffolds() {
+        let (alice, _) = Identity::create_with_passphrase("dht repl alice").unwrap();
+        let (bob, _) = Identity::create_with_passphrase("dht repl bob").unwrap();
+        let announce_a = NodeConfig {
+            peer_id: "repl-peer-a".into(),
+            ..Default::default()
+        }
+        .create_announce(&alice)
+        .unwrap();
+        let announce_b = NodeConfig {
+            peer_id: "repl-peer-b".into(),
+            ..Default::default()
+        }
+        .create_announce(&bob)
+        .unwrap();
+        let mut node = NativeNode::new(NodeConfig {
+            peer_id: "repl-local".into(),
+            ..Default::default()
+        });
+        node.kademlia
+            .insert_verified(announce_a, &alice.identity_public_key())
+            .unwrap();
+        node.kademlia
+            .insert_verified(announce_b, &bob.identity_public_key())
+            .unwrap();
+        let now = current_unix_timestamp();
+        let record = DhtRecord {
+            key: DhtRecordKey::for_public_peer("repl-record"),
+            kind: DhtRecordKind::PublicPeer,
+            value: "replicate-me".into(),
+            created_at: now,
+            expires_at: now + 120,
+            republish_at: now,
+        };
+        assert!(node.dht_records.store(record.clone()));
+
+        let plan = node.plan_dht_replication(1);
+        assert_eq!(plan.replication_factor, 1);
+        assert_eq!(plan.records.len(), 1);
+        assert_eq!(plan.records[0].record, record);
+        assert_eq!(plan.records[0].target_nodes.len(), 1);
+
+        let refresh = node.plan_dht_routing_refresh();
+        assert_eq!(refresh.targets.len(), KADEMLIA_ID_BYTES * 8);
+        assert_eq!(
+            node.kademlia.local_id().bucket_index(&refresh.targets[0]),
+            Some(0)
+        );
+        assert_eq!(
+            node.kademlia.local_id().bucket_index(&refresh.targets[255]),
+            Some(255)
+        );
     }
 
     #[test]
