@@ -1096,11 +1096,26 @@ async function syncNow() {
   }
 }
 
-function nodeUrlList(): string[] {
+type NodeEntry = { url: string; token: string }
+function nodeEntries(): NodeEntry[] {
   return nodeControlUrl.value
     .split(/[\n,]+/)
     .map((x) => x.trim())
     .filter(Boolean)
+    .map((raw) => {
+      // 每行：<url> 或 <url>|<令牌>（令牌对应节点的 --control-token）
+      const [url, token] = raw.split('|').map((s) => s.trim())
+      return { url, token: token || '' }
+    })
+    .filter((e) => e.url)
+}
+function nodeEntryLine(e: NodeEntry): string { return e.token ? `${e.url}|${e.token}` : e.url }
+function nodeUrlList(): string[] {
+  return nodeEntries().map((e) => e.url)
+}
+function nodeTokenFor(url: string): string {
+  const base = url.replace(/\/$/, '')
+  return nodeEntries().find((e) => e.url.replace(/\/$/, '') === base)?.token || ''
 }
 
 function primaryNodeUrl(): string {
@@ -1108,10 +1123,10 @@ function primaryNodeUrl(): string {
 }
 
 function saveNetworkSettings() {
-  const urls = nodeUrlList()
-  if (urls.length > 0) nodeControlUrl.value = urls.join('\n')
+  const entries = nodeEntries()
+  if (entries.length > 0) nodeControlUrl.value = entries.map(nodeEntryLine).join('\n')
   persist()
-  appendLog(`✅ 已保存消息同步设置：${nodeEnabled.value ? '启用' : '停用'} ${urls.length ? `${urls.length} 个节点` : '未填写节点'}`)
+  appendLog(`✅ 已保存消息同步设置：${nodeEnabled.value ? '启用' : '停用'} ${entries.length ? `${entries.length} 个节点` : '未填写节点'}`)
 }
 
 function toggleNodeEnabled() {
@@ -3141,10 +3156,12 @@ function nodeControlEndpoint(path: string, baseUrl = primaryNodeUrl()): string {
 }
 
 async function fetchNodeOnce(baseUrl: string, path: string, init?: RequestInit): Promise<any> {
+  const token = nodeTokenFor(baseUrl)
   const res = await fetch(nodeControlEndpoint(path, baseUrl), {
     ...init,
     headers: {
       'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
       ...(init?.headers ?? {}),
     },
   })
@@ -3156,19 +3173,21 @@ async function fetchNodeOnce(baseUrl: string, path: string, init?: RequestInit):
 }
 
 async function nodeFetchJson(path: string, init?: RequestInit): Promise<any> {
-  const urls = nodeUrlList()
-  if (urls.length === 0) throw new Error('请先填写同步节点')
+  const entries = nodeEntries()
+  if (entries.length === 0) throw new Error('请先填写同步节点')
   const errors: string[] = []
-  for (const url of urls) {
+  for (const entry of entries) {
     try {
-      const body = await fetchNodeOnce(url, path, init)
-      if (nodeControlUrl.value.trim().split(/[\n,]+/)[0]?.trim() !== url) {
-        nodeControlUrl.value = [url, ...urls.filter((x) => x !== url)].join('\n')
+      const body = await fetchNodeOnce(entry.url, path, init)
+      // 把可用节点移到最前，保留其令牌
+      const current = nodeEntries()
+      if (current[0]?.url !== entry.url) {
+        nodeControlUrl.value = [entry, ...current.filter((e) => e.url !== entry.url)].map(nodeEntryLine).join('\n')
         persist()
       }
       return body
     } catch (e) {
-      errors.push(`${url}: ${String(e).replace(/^Error:\s*/, '')}`)
+      errors.push(`${entry.url}: ${String(e).replace(/^Error:\s*/, '')}`)
     }
   }
   throw new Error(`所有同步服务都不可用：${errors.join('；')}`)
@@ -3176,8 +3195,19 @@ async function nodeFetchJson(path: string, init?: RequestInit): Promise<any> {
 
 async function checkNodeHealth() {
   await runAsync('检查 lm_node 控制面', async () => {
-    const body = await nodeFetchJson('/health')
-    nodeControlStatus.value = JSON.stringify(body, null, 2)
+    const health = await nodeFetchJson('/health')
+    // /health 免鉴权，会掩盖令牌问题。再探测一个需要鉴权的接口，避免误报"已连接"。
+    try {
+      await nodeFetchJson('/sync/status')
+      nodeControlStatus.value = `已连接（鉴权通过）\n${JSON.stringify(health, null, 2)}`
+    } catch (e) {
+      const msg = String(e)
+      if (/401|unauthorized/i.test(msg)) {
+        nodeControlStatus.value = `节点在线，但鉴权失败（401）。\n若节点启用了 --control-token，请在地址后追加 " | 令牌"（与节点令牌一致）。\n\n${msg}`
+      } else {
+        nodeControlStatus.value = `节点在线，但控制接口异常。\n\n${msg}`
+      }
+    }
   })
 }
 
