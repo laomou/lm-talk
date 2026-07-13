@@ -1,5 +1,7 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use lm_core::{Identity, MailboxMessage, MailboxMessageKind, PreKeyBundle};
+use lm_core::{
+    Identity, MailboxMessage, MailboxMessageKind, PreKeyBundle, SignedOneTimePreKeyRecord,
+};
 use lm_node::NodeStateSnapshot;
 use serde_json::json;
 use std::{
@@ -21,7 +23,7 @@ impl Drop for TestNodeProcess {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
-        let _ = std::fs::remove_file(&self.state_file);
+        cleanup_state_path(&self.state_file);
     }
 }
 
@@ -53,12 +55,19 @@ fn real_http_control_plane_syncs_prekeys_and_mailbox_between_nodes() {
     let (bob, _) = Identity::create_with_passphrase("http bob").unwrap();
 
     // Bob publishes a signed prekey bundle to node B over the real HTTP listener.
-    let (bob_bundle, _) = PreKeyBundle::new(&bob, 7, 2, 3600).unwrap();
+    let (bob_bundle, _, bob_signed_otks) =
+        PreKeyBundle::new_with_signed_one_time_prekey_records(&bob, 7, 2, 3600).unwrap();
     let publish = http_json(
         &base_b,
         "POST",
         "/prekey/publish",
-        json!({ "prekey_bundle_text": bob_bundle.to_export_text().unwrap() }),
+        json!({
+            "prekey_bundle_text": bob_bundle.to_export_text().unwrap(),
+            "signed_one_time_prekey_record_texts": bob_signed_otks
+                .iter()
+                .map(|record| record.to_export_text().unwrap())
+                .collect::<Vec<_>>(),
+        }),
     );
     assert_eq!(publish.status, 201, "{}", publish.body);
 
@@ -84,6 +93,13 @@ fn real_http_control_plane_syncs_prekeys_and_mailbox_between_nodes() {
     let get_body: serde_json::Value = serde_json::from_str(&get_prekey.body).unwrap();
     assert_eq!(get_body["found"], true);
     assert_eq!(get_body["selected_one_time_prekey_id"], 0);
+    let selected_record = SignedOneTimePreKeyRecord::from_export_text(
+        get_body["selected_signed_one_time_prekey_record_text"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(selected_record.key_id, 0);
     assert_eq!(get_body["consumed_one_time_prekey_ids"], json!([0]));
 
     // Alice stores an encrypted envelope placeholder in node A's mailbox for Bob.
@@ -347,6 +363,119 @@ fn real_http_control_plane_state_file_recovers_mailbox_push_take_and_ack() {
     assert_eq!(after_ack_body["messages"].as_array().unwrap().len(), 0);
     kill_child(&mut node.child);
     let _ = std::fs::remove_file(&state_file);
+}
+
+#[test]
+fn real_http_control_plane_state_db_recovers_mailbox_push_take_and_ack() {
+    let state_db = env::temp_dir().join(format!(
+        "lm-node-http-crash-recovery-{}-{}.sqlite3",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let (alice, _) = Identity::create_with_passphrase("http sqlite recovery alice").unwrap();
+    let (bob, _) = Identity::create_with_passphrase("http sqlite recovery bob").unwrap();
+    let mailbox = MailboxMessage::new(
+        &alice,
+        bob.user_id().clone(),
+        MailboxMessageKind::DirectEnvelope,
+        "recover-from-sqlite-after-restart".into(),
+        3600,
+    )
+    .unwrap();
+
+    // 空 state-db 首次启动时应采用 CLI/config 里的 peer_id，并在 push 后持久化 delivery。
+    let port_push = free_port();
+    let base_push = format!("127.0.0.1:{port_push}");
+    let mut node =
+        spawn_node_with_state_db(&base_push, "http-sqlite-recovery-node", &state_db, &[]);
+    wait_for_health(&base_push);
+    let health = http_request(&base_push, "GET", "/health", "");
+    assert_eq!(health.status, 200, "{}", health.body);
+    assert!(health.body.contains("http-sqlite-recovery-node"));
+    let push = http_json(
+        &base_push,
+        "POST",
+        "/mailbox/push",
+        json!({
+            "message_text": mailbox.to_export_text().unwrap(),
+            "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
+        }),
+    );
+    assert_eq!(push.status, 201, "{}", push.body);
+    kill_child(&mut node.child);
+
+    let port_take = free_port();
+    let base_take = format!("127.0.0.1:{port_take}");
+    let mut node =
+        spawn_node_with_state_db(&base_take, "http-sqlite-recovery-node", &state_db, &[]);
+    wait_for_health(&base_take);
+    let take = http_request(
+        &base_take,
+        "GET",
+        &format!("/mailbox/take?user_id={}", bob.user_id()),
+        "",
+    );
+    assert_eq!(take.status, 200, "{}", take.body);
+    let take_body: serde_json::Value = serde_json::from_str(&take.body).unwrap();
+    let messages = take_body["messages"].as_array().unwrap();
+    assert_eq!(messages.len(), 1);
+    assert_eq!(
+        messages[0]["message"]["ciphertext"].as_str().unwrap(),
+        "recover-from-sqlite-after-restart"
+    );
+    let delivery_id = messages[0]["delivery_id"].as_str().unwrap().to_string();
+    kill_child(&mut node.child);
+
+    // take 未 ack 后模拟崩溃：重启后仍可再次 take，避免消息丢失。
+    let port_retake = free_port();
+    let base_retake = format!("127.0.0.1:{port_retake}");
+    let mut node =
+        spawn_node_with_state_db(&base_retake, "http-sqlite-recovery-node", &state_db, &[]);
+    wait_for_health(&base_retake);
+    let retake = http_request(
+        &base_retake,
+        "GET",
+        &format!("/mailbox/take?user_id={}", bob.user_id()),
+        "",
+    );
+    assert_eq!(retake.status, 200, "{}", retake.body);
+    let retake_body: serde_json::Value = serde_json::from_str(&retake.body).unwrap();
+    assert_eq!(retake_body["messages"].as_array().unwrap().len(), 1);
+
+    let ack = http_json(
+        &base_retake,
+        "POST",
+        "/mailbox/ack",
+        json!({
+            "user_id": bob.user_id().to_string(),
+            "delivery_ids": [delivery_id],
+        }),
+    );
+    assert_eq!(ack.status, 200, "{}", ack.body);
+    let ack_body: serde_json::Value = serde_json::from_str(&ack.body).unwrap();
+    assert_eq!(ack_body["removed"], 1);
+    kill_child(&mut node.child);
+
+    // ack 后模拟崩溃：重启后 delivery 不再出现。
+    let port_after_ack = free_port();
+    let base_after_ack = format!("127.0.0.1:{port_after_ack}");
+    let mut node =
+        spawn_node_with_state_db(&base_after_ack, "http-sqlite-recovery-node", &state_db, &[]);
+    wait_for_health(&base_after_ack);
+    let after_ack = http_request(
+        &base_after_ack,
+        "GET",
+        &format!("/mailbox/take?user_id={}", bob.user_id()),
+        "",
+    );
+    assert_eq!(after_ack.status, 200, "{}", after_ack.body);
+    let after_ack_body: serde_json::Value = serde_json::from_str(&after_ack.body).unwrap();
+    assert_eq!(after_ack_body["messages"].as_array().unwrap().len(), 0);
+    kill_child(&mut node.child);
+    cleanup_state_path(&state_db);
 }
 
 #[test]
@@ -705,9 +834,49 @@ fn spawn_node_with_state_file(
     }
 }
 
+fn spawn_node_with_state_db(
+    bind: &str,
+    peer_id: &str,
+    state_db: &std::path::Path,
+    extra_args: &[&str],
+) -> TestNodeProcess {
+    let child = Command::new(lm_node_binary())
+        .args([
+            "serve-control",
+            "--bind",
+            bind,
+            "--peer-id",
+            peer_id,
+            "--state-db",
+        ])
+        .arg(state_db)
+        .args(extra_args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap_or_else(|err| panic!("failed to spawn lm_node serve-control: {err}"));
+    TestNodeProcess {
+        child,
+        state_file: state_db.to_path_buf(),
+    }
+}
+
 fn kill_child(child: &mut Child) {
     let _ = child.kill();
     let _ = child.wait();
+}
+
+fn cleanup_state_path(path: &std::path::Path) {
+    let _ = std::fs::remove_file(path);
+    let _ = std::fs::remove_file(path_with_suffix(path, "-wal"));
+    let _ = std::fs::remove_file(path_with_suffix(path, "-shm"));
+}
+
+fn path_with_suffix(path: &std::path::Path, suffix: &str) -> PathBuf {
+    let mut value = path.as_os_str().to_os_string();
+    value.push(suffix);
+    PathBuf::from(value)
 }
 
 fn lm_node_binary() -> PathBuf {

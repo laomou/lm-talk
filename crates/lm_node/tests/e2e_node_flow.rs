@@ -1,7 +1,8 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use lm_core::{
     Identity, MailboxMessage, MailboxMessageKind, PreKeyBundle, RatchetEnvelope, RatchetRole,
-    RatchetSessionState, x3dh_initiator_secret, x3dh_responder_secret,
+    RatchetSessionState, SignedOneTimePreKeyRecord,
+    x3dh_initiator_secret_with_one_time_prekey_record, x3dh_responder_secret,
 };
 use lm_node::{ControlRequest, NativeNode, NodeConfig, NodeStateSnapshot};
 
@@ -19,12 +20,19 @@ fn node_prekey_sync_mailbox_ratchet_e2e() {
     });
 
     // Bob publishes a prekey bundle to node B.
-    let (bob_prekey, bob_private) = PreKeyBundle::new(&bob, 5, 1, 3600).unwrap();
+    let (bob_prekey, bob_private, bob_signed_otks) =
+        PreKeyBundle::new_with_signed_one_time_prekey_records(&bob, 5, 1, 3600).unwrap();
     let publish = node_b.handle_control_request(ControlRequest {
         method: "POST".into(),
         path: "/prekey/publish".into(),
-        body: serde_json::json!({ "prekey_bundle_text": bob_prekey.to_export_text().unwrap() })
-            .to_string(),
+        body: serde_json::json!({
+            "prekey_bundle_text": bob_prekey.to_export_text().unwrap(),
+            "signed_one_time_prekey_record_texts": bob_signed_otks
+                .iter()
+                .map(|record| record.to_export_text().unwrap())
+                .collect::<Vec<_>>(),
+        })
+        .to_string(),
         headers: Vec::new(),
     });
     assert_eq!(publish.status, 201);
@@ -59,9 +67,20 @@ fn node_prekey_sync_mailbox_ratchet_e2e() {
     let get_body: serde_json::Value = serde_json::from_str(&get.body).unwrap();
     let fetched_prekey =
         PreKeyBundle::from_export_text(get_body["prekey_bundle_text"].as_str().unwrap()).unwrap();
+    let selected_record = SignedOneTimePreKeyRecord::from_export_text(
+        get_body["selected_signed_one_time_prekey_record_text"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
 
     // Alice and Bob establish ratchet states using the fetched prekey.
-    let x3dh = x3dh_initiator_secret(&alice, &fetched_prekey).unwrap();
+    let x3dh = x3dh_initiator_secret_with_one_time_prekey_record(
+        &alice,
+        &fetched_prekey,
+        Some(&selected_record),
+    )
+    .unwrap();
     let bob_shared = x3dh_responder_secret(&bob, &bob_private, &x3dh.initial_message).unwrap();
     assert_eq!(x3dh.shared_secret, BASE64.encode(bob_shared));
     let alice_dh = RatchetSessionState::generate_dh_keypair().unwrap();

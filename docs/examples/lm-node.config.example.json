@@ -1,7 +1,7 @@
 {
   "bind": "127.0.0.1:8787",
   "peer_id": "lm-node-prod-1",
-  "state_file": "var/lm-node-state.json",
+  "state_db": "var/lm-node-state.sqlite3",
   "control_token_file": "secrets/control.token",
   "cors_allow_origins": ["https://chat.example"],
   "sync_interval_seconds": 30,
@@ -11,9 +11,15 @@
   "dht_routing_refresh_max_targets": 8,
   "rate_limit_window_seconds": 60,
   "rate_limit_max_requests": 600,
+  "log_format": "json",
+  "mailbox_global_rate_limit_window_seconds": 60,
+  "mailbox_global_rate_limit_max_messages": 1000,
+  "mailbox_sender_rate_limit_window_seconds": 60,
+  "mailbox_sender_rate_limit_max_messages": 120,
   "sync_peers": [
     {
       "url": "http://127.0.0.1:8788",
+      "peer_id": "lm-node-prod-2",
       "token_file": "secrets/peer-8788.token"
     }
   ]

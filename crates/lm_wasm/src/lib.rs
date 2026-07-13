@@ -14,8 +14,9 @@ use lm_core::{
     Identity, IdentityBackupPackage, IdentitySeed, MailboxMessage, MailboxMessageKind,
     PeerAnnounce, PreKeyBundle, PreKeyPrivateBundle, PublicPeerAnnounce, PublicPeerCapability,
     RatchetDhKeyPair, RatchetEnvelope, RatchetHeader, RatchetRole, RatchetSessionState,
-    SignalAnswer, SignalOffer, TrustLevel, X3dhInitialMessage, x3dh_initiator_secret,
-    x3dh_initiator_secret_with_one_time_prekey_id, x3dh_responder_secret,
+    SignalAnswer, SignalOffer, SignedOneTimePreKeyRecord, TrustLevel, X3dhInitialMessage,
+    x3dh_initiator_secret, x3dh_initiator_secret_with_one_time_prekey_id,
+    x3dh_initiator_secret_with_one_time_prekey_record, x3dh_responder_secret,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -627,6 +628,7 @@ pub fn decrypt_text_message(
 struct PreKeyBundleOutput {
     prekey_bundle_text: String,
     private_bundle_json: String,
+    signed_one_time_prekey_record_texts: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -659,16 +661,22 @@ pub fn create_prekey_bundle(
 ) -> Result<String, JsValue> {
     ensure_js_len(backup_text, lm_core::limits::MAX_IDENTITY_BACKUP_TEXT_BYTES)?;
     let identity = restore_identity_any(backup_text, passphrase)?;
-    let (public, private) = PreKeyBundle::new(
-        &identity,
-        signed_prekey_id,
-        one_time_prekey_count,
-        ttl_seconds,
-    )
-    .map_err(to_js_error)?;
+    let (public, private, signed_one_time_prekey_records) =
+        PreKeyBundle::new_with_signed_one_time_prekey_records(
+            &identity,
+            signed_prekey_id,
+            one_time_prekey_count,
+            ttl_seconds,
+        )
+        .map_err(to_js_error)?;
+    let signed_one_time_prekey_record_texts = signed_one_time_prekey_records
+        .iter()
+        .map(|record| record.to_export_text().map_err(to_js_error))
+        .collect::<Result<Vec<_>, _>>()?;
     let out = PreKeyBundleOutput {
         prekey_bundle_text: public.to_export_text().map_err(to_js_error)?,
         private_bundle_json: to_json_string(&private)?,
+        signed_one_time_prekey_record_texts,
     };
     to_json_string(&out)
 }
@@ -729,6 +737,40 @@ pub fn create_x3dh_initial_message_with_one_time_prekey_id(
         PreKeyBundle::from_export_text(responder_prekey_bundle_text).map_err(to_js_error)?;
     let secret =
         x3dh_initiator_secret_with_one_time_prekey_id(&identity, &bundle, one_time_prekey_id)
+            .map_err(to_js_error)?;
+    let out = X3dhInitiatorOutput {
+        initial_message_json: to_json_string(&secret.initial_message)?,
+        shared_secret: secret.shared_secret,
+    };
+    to_json_string(&out)
+}
+
+#[wasm_bindgen]
+pub fn create_x3dh_initial_message_with_one_time_prekey_record(
+    backup_text: &str,
+    passphrase: &str,
+    responder_prekey_bundle_text: &str,
+    signed_one_time_prekey_record_text: Option<String>,
+) -> Result<String, JsValue> {
+    ensure_js_len(backup_text, lm_core::limits::MAX_IDENTITY_BACKUP_TEXT_BYTES)?;
+    ensure_js_len(
+        responder_prekey_bundle_text,
+        lm_core::limits::MAX_PREKEY_BUNDLE_TEXT_BYTES,
+    )?;
+    if let Some(text) = signed_one_time_prekey_record_text.as_deref() {
+        ensure_js_len(text, lm_core::limits::MAX_PREKEY_BUNDLE_TEXT_BYTES)?;
+    }
+    let identity = restore_identity_any(backup_text, passphrase)?;
+    let bundle =
+        PreKeyBundle::from_export_text(responder_prekey_bundle_text).map_err(to_js_error)?;
+    let record = signed_one_time_prekey_record_text
+        .as_deref()
+        .filter(|text| !text.trim().is_empty())
+        .map(|text| SignedOneTimePreKeyRecord::from_export_text(text.trim()))
+        .transpose()
+        .map_err(to_js_error)?;
+    let secret =
+        x3dh_initiator_secret_with_one_time_prekey_record(&identity, &bundle, record.as_ref())
             .map_err(to_js_error)?;
     let out = X3dhInitiatorOutput {
         initial_message_json: to_json_string(&secret.initial_message)?,
@@ -1914,11 +1956,24 @@ mod tests {
         let info: Value =
             serde_json::from_str(&inspect_prekey_bundle(prekey_text).unwrap()).unwrap();
         assert_eq!(info["signed_prekey_id"], 11);
-        assert_eq!(info["one_time_prekey_count"], 2);
+        assert_eq!(info["one_time_prekey_count"], 0);
+        let signed_otks = prekey["signed_one_time_prekey_record_texts"]
+            .as_array()
+            .unwrap();
+        assert_eq!(signed_otks.len(), 2);
         let init: Value = serde_json::from_str(
-            &create_x3dh_initial_message(alice_backup, "alice pass", prekey_text).unwrap(),
+            &create_x3dh_initial_message_with_one_time_prekey_record(
+                alice_backup,
+                "alice pass",
+                prekey_text,
+                Some(signed_otks[0].as_str().unwrap().to_string()),
+            )
+            .unwrap(),
         )
         .unwrap();
+        let initial_message: Value =
+            serde_json::from_str(init["initial_message_json"].as_str().unwrap()).unwrap();
+        assert_eq!(initial_message["one_time_prekey_id"], 0);
         let resp: Value = serde_json::from_str(
             &derive_x3dh_responder_secret(
                 bob_backup,

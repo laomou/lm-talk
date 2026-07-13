@@ -16,7 +16,8 @@ Node options:
   --ipv6                  bind [::]:8787
   --config-file PATH      JSON config for lm_node serve-control
   --bind HOST:PORT
-  --state-file PATH       default: ./lm-node-state.prd.json unless --config-file is used
+  --state-db PATH         default: ./lm-node-state.prd.sqlite3 unless --config-file is used
+  --state-file PATH       optional legacy JSON snapshot state file
   --peer-id ID            default: lm-node-prd
   --control-token TOKEN   require Authorization: Bearer TOKEN for non-health APIs
   --control-token-file PATH read control token from file
@@ -28,6 +29,7 @@ Node options:
   --sync-max-backoff-seconds N maximum retry backoff after sync failures (default: 300)
   --rate-limit-window-seconds N per-client control API rate window (default: 60; 0 disables)
   --rate-limit-max-requests N max non-health requests per client/window (default: 600; 0 disables)
+  --log-format text|json  stdout log format (default: text; env: LM_NODE_LOG_FORMAT)
 USAGE
 }
 
@@ -70,6 +72,8 @@ bind="0.0.0.0:8787"
 bind_set=0
 state_file="$ROOT/lm-node-state.prd.json"
 state_file_set=0
+state_db="$ROOT/lm-node-state.prd.sqlite3"
+state_db_set=0
 peer_id="lm-node-prd"
 peer_id_set=0
 control_token="${LM_NODE_CONTROL_TOKEN:-}"
@@ -82,6 +86,7 @@ sync_interval_seconds="0"
 sync_max_backoff_seconds="300"
 rate_limit_window_seconds="${LM_NODE_RATE_LIMIT_WINDOW_SECONDS:-60}"
 rate_limit_max_requests="${LM_NODE_RATE_LIMIT_MAX_REQUESTS:-600}"
+log_format="${LM_NODE_LOG_FORMAT:-text}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -90,6 +95,7 @@ while [[ $# -gt 0 ]]; do
     --lan) bind="0.0.0.0:8787"; bind_set=1; shift ;;
     --ipv6) bind="[::]:8787"; bind_set=1; shift ;;
     --bind) bind="${2:?--bind requires HOST:PORT}"; bind_set=1; shift 2 ;;
+    --state-db) state_db="${2:?--state-db requires PATH}"; state_db_set=1; shift 2 ;;
     --state-file) state_file="${2:?--state-file requires PATH}"; state_file_set=1; shift 2 ;;
     --peer-id) peer_id="${2:?--peer-id requires ID}"; peer_id_set=1; shift 2 ;;
     --control-token) control_token="${2:?--control-token requires TOKEN}"; shift 2 ;;
@@ -102,6 +108,7 @@ while [[ $# -gt 0 ]]; do
     --sync-max-backoff-seconds) sync_max_backoff_seconds="${2:?--sync-max-backoff-seconds requires N}"; shift 2 ;;
     --rate-limit-window-seconds) rate_limit_window_seconds="${2:?--rate-limit-window-seconds requires N}"; shift 2 ;;
     --rate-limit-max-requests) rate_limit_max_requests="${2:?--rate-limit-max-requests requires N}"; shift 2 ;;
+    --log-format) log_format="${2:?--log-format requires text|json}"; shift 2 ;;
     --debug|--release)
       echo "run.sh 是 PRD runtime，不接受 $1；固定 build --release 并执行 target/release/lm_node" >&2
       exit 2
@@ -112,6 +119,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 mkdir -p "$(dirname "$state_file")"
+mkdir -p "$(dirname "$state_db")"
 echo "启动 LM Talk 同步服务（PRD）"
 if [[ -n "$config_file" ]]; then
   echo "配置文件：$config_file"
@@ -122,8 +130,11 @@ fi
 if [[ -z "$config_file" || "$peer_id_set" == "1" ]]; then
   echo "Peer ID：$peer_id"
 fi
-if [[ -z "$config_file" || "$state_file_set" == "1" ]]; then
-  echo "状态文件：$state_file"
+if [[ -z "$config_file" || "$state_db_set" == "1" ]]; then
+  echo "状态数据库：$state_db"
+fi
+if [[ "$state_file_set" == "1" ]]; then
+  echo "兼容 JSON 状态文件：$state_file"
 fi
 if [[ -n "$control_token" || -n "$control_token_file" ]]; then
   echo "控制面认证：Bearer token enabled"
@@ -138,6 +149,7 @@ if [[ "$rate_limit_window_seconds" != "0" && "$rate_limit_max_requests" != "0" ]
 else
   echo "控制面限流：disabled"
 fi
+echo "日志格式：$log_format"
 if [[ -n "$sync_peer" && "$sync_interval_seconds" != "0" ]]; then
   echo "自动同步：$sync_peer every ${sync_interval_seconds}s, max backoff ${sync_max_backoff_seconds}s"
   if [[ -n "$sync_peer_token" || -n "$sync_peer_token_file" ]]; then
@@ -162,7 +174,10 @@ fi
 if [[ -z "$config_file" || "$peer_id_set" == "1" ]]; then
   args+=(--peer-id "$peer_id")
 fi
-if [[ -z "$config_file" || "$state_file_set" == "1" ]]; then
+if [[ -z "$config_file" || "$state_db_set" == "1" ]]; then
+  args+=(--state-db "$state_db")
+fi
+if [[ "$state_file_set" == "1" ]]; then
   args+=(--state-file "$state_file")
 fi
 if [[ -n "$control_token" ]]; then
@@ -189,4 +204,5 @@ if [[ "$sync_interval_seconds" != "0" ]]; then
 fi
 args+=(--rate-limit-window-seconds "$rate_limit_window_seconds")
 args+=(--rate-limit-max-requests "$rate_limit_max_requests")
+args+=(--log-format "$log_format")
 exec "$ROOT/target/release/lm_node" "${args[@]}"

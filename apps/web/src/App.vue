@@ -55,6 +55,7 @@ import init, {
   create_signal_answer,
   create_x3dh_initial_message,
   create_x3dh_initial_message_with_one_time_prekey_id,
+  create_x3dh_initial_message_with_one_time_prekey_record,
   derive_x3dh_responder_secret,
   inspect_signal_offer,
   inspect_signal_answer,
@@ -218,6 +219,9 @@ type PersistedState = {
   myContactCardText: string
   myDeviceCertJson?: string
   myDeviceId?: string
+  prekeyBundleText?: string
+  prekeyPrivateBundleJson?: string | EncryptedStringV1
+  prekeySignedOneTimeRecordTexts?: string[]
   safetyPolicy?: SafetyPolicy
   nodeControlUrl?: string
   nodeEnabled?: boolean
@@ -232,6 +236,9 @@ type PersistedMeta = {
   myContactCardText: string
   myDeviceCertJson?: string
   myDeviceId?: string
+  prekeyBundleText?: string
+  prekeyPrivateBundleJson?: string | EncryptedStringV1
+  prekeySignedOneTimeRecordTexts?: string[]
   safetyPolicy?: SafetyPolicy
   nodeControlUrl?: string
   nodeEnabled?: boolean
@@ -391,10 +398,12 @@ const prekeySignedId = ref(1)
 const prekeyOneTimeCount = ref(10)
 const prekeyBundleText = ref('')
 const prekeyPrivateBundleJson = ref('')
+const prekeySignedOneTimeRecordTexts = ref<string[]>([])
 const prekeyInfoText = ref('')
 const x3dhInitialMessageJson = ref('')
 const x3dhSharedSecretText = ref('')
 const selectedOneTimePreKeyId = ref<number | null>(null)
+const selectedSignedOneTimePreKeyRecordText = ref('')
 const secureSessionOfferText = ref('')
 const secureSessionResponseText = ref('')
 const incomingSecureSessionText = ref('')
@@ -805,6 +814,9 @@ function currentPersistedState(): PersistedState {
     myContactCardText: myContactCardText.value,
     myDeviceCertJson: myDeviceCertJson.value,
     myDeviceId: myDeviceId.value,
+    prekeyBundleText: prekeyBundleText.value,
+    prekeyPrivateBundleJson: prekeyPrivateBundleJson.value,
+    prekeySignedOneTimeRecordTexts: prekeySignedOneTimeRecordTexts.value,
     safetyPolicy: safetyPolicy.value,
     nodeControlUrl: nodeControlUrl.value,
     nodeEnabled: nodeEnabled.value,
@@ -821,6 +833,9 @@ function persistedMeta(): PersistedMeta {
     myContactCardText: myContactCardText.value,
     myDeviceCertJson: myDeviceCertJson.value,
     myDeviceId: myDeviceId.value,
+    prekeyBundleText: prekeyBundleText.value,
+    prekeyPrivateBundleJson: prekeyPrivateBundleJson.value,
+    prekeySignedOneTimeRecordTexts: prekeySignedOneTimeRecordTexts.value,
     safetyPolicy: safetyPolicy.value,
     nodeControlUrl: nodeControlUrl.value,
     nodeEnabled: nodeEnabled.value,
@@ -852,8 +867,10 @@ async function persistStateTables() {
   const storedMessages = await Promise.all(messages.value.map((m) => encryptMessageForStore(m, key)))
   const storedOutbox = await Promise.all(outbox.value.map((o) => encryptOutboxForStore(o, key)))
   const storedRatchets = await Promise.all(ratchetSessions.value.map((r) => encryptRatchetForStore(r, key)))
+  const meta = persistedMeta()
+  meta.prekeyPrivateBundleJson = await encryptLocalString(prekeyPrivateBundleJson.value, key)
   const prefix = ownerPrefix()
-  await idbTableReplaceByPrefix(TABLES.meta, prefix, [[ownerKey('main'), persistedMeta()]])
+  await idbTableReplaceByPrefix(TABLES.meta, prefix, [[ownerKey('main'), meta]])
   await idbTableReplaceByPrefix(TABLES.contacts, prefix, storedContacts.map((c) => [ownerKey(c.user_id), c]))
   await idbTableReplaceByPrefix(TABLES.friendRequests, prefix, friendRequests.value.map((r) => [ownerKey(r.request_id), r]))
   await idbTableReplaceByPrefix(TABLES.groups, prefix, storedGroups.map((g) => [ownerKey(g.group_id), g]))
@@ -896,6 +913,9 @@ async function writeStateToTables(state: PersistedState) {
   myContactCardText.value = state.myContactCardText ?? ''
   myDeviceCertJson.value = state.myDeviceCertJson ?? ''
   myDeviceId.value = state.myDeviceId ?? ''
+  prekeyBundleText.value = state.prekeyBundleText ?? ''
+  prekeyPrivateBundleJson.value = state.prekeyPrivateBundleJson ? await decryptLocalString(state.prekeyPrivateBundleJson, key) : ''
+  prekeySignedOneTimeRecordTexts.value = state.prekeySignedOneTimeRecordTexts ?? []
   safetyPolicy.value = { ...safetyPolicy.value, ...(state.safetyPolicy ?? {}) }
   nodeControlUrl.value = state.nodeControlUrl ?? nodeControlUrl.value
   nodeEnabled.value = state.nodeEnabled ?? false
@@ -914,6 +934,10 @@ async function loadStateFromTables(): Promise<boolean> {
   myContactCardText.value = meta.myContactCardText ?? ''
   myDeviceCertJson.value = meta.myDeviceCertJson ?? ''
   myDeviceId.value = meta.myDeviceId ?? ''
+  const key = await localStorageCryptoKey()
+  prekeyBundleText.value = meta.prekeyBundleText ?? ''
+  prekeyPrivateBundleJson.value = meta.prekeyPrivateBundleJson ? await decryptLocalString(meta.prekeyPrivateBundleJson, key) : ''
+  prekeySignedOneTimeRecordTexts.value = meta.prekeySignedOneTimeRecordTexts ?? []
   safetyPolicy.value = { ...safetyPolicy.value, ...(meta.safetyPolicy ?? {}) }
   nodeControlUrl.value = meta.nodeControlUrl ?? nodeControlUrl.value
   nodeEnabled.value = meta.nodeEnabled ?? false
@@ -921,7 +945,6 @@ async function loadStateFromTables(): Promise<boolean> {
   autoPublishPreKey.value = meta.autoPublishPreKey ?? true
   autoNodeSync.value = meta.autoNodeSync ?? false
   processedMailboxIds.value = meta.processedMailboxIds ?? []
-  const key = await localStorageCryptoKey()
   const prefix = ownerPrefix()
   contacts.value = await Promise.all((await idbTableGetAllByPrefix<any>(TABLES.contacts, prefix)).map((c: any) => decryptContactFromStore(c, key)))
   friendRequests.value = await idbTableGetAllByPrefix<FriendRequestItem>(TABLES.friendRequests, prefix)
@@ -981,6 +1004,11 @@ function resetAccountScopedState() {
   myContactCardText.value = ''
   myDeviceCertJson.value = ''
   myDeviceId.value = ''
+  prekeyBundleText.value = ''
+  prekeyPrivateBundleJson.value = ''
+  prekeySignedOneTimeRecordTexts.value = []
+  selectedSignedOneTimePreKeyRecordText.value = ''
+  selectedOneTimePreKeyId.value = null
   safetyPolicy.value = {
     enableTextFilter: true,
     textFilterLevel: 'Standard',
@@ -1018,6 +1046,11 @@ async function clearPersisted() {
   myContactCardText.value = ''
   myDeviceCertJson.value = ''
   myDeviceId.value = ''
+  prekeyBundleText.value = ''
+  prekeyPrivateBundleJson.value = ''
+  prekeySignedOneTimeRecordTexts.value = []
+  selectedSignedOneTimePreKeyRecordText.value = ''
+  selectedOneTimePreKeyId.value = null
   safetyPolicy.value = {
     enableTextFilter: true,
     textFilterLevel: 'Standard',
@@ -1268,12 +1301,20 @@ async function ensureRatchetSessionFromNode(contact: ContactItem): Promise<boole
   if (!body.found || !body.prekey_bundle_text) return false
   prekeyBundleText.value = body.prekey_bundle_text
   selectedOneTimePreKeyId.value = typeof body.selected_one_time_prekey_id === 'number' ? body.selected_one_time_prekey_id : null
-  const init = JSON.parse(create_x3dh_initial_message_with_one_time_prekey_id(
-    backupText.value,
-    passphrase.value,
-    body.prekey_bundle_text,
-    selectedOneTimePreKeyId.value ?? undefined,
-  )) as { initial_message_json: string; shared_secret: string }
+  selectedSignedOneTimePreKeyRecordText.value = typeof body.selected_signed_one_time_prekey_record_text === 'string' ? body.selected_signed_one_time_prekey_record_text : ''
+  const init = JSON.parse(selectedSignedOneTimePreKeyRecordText.value
+    ? create_x3dh_initial_message_with_one_time_prekey_record(
+      backupText.value,
+      passphrase.value,
+      body.prekey_bundle_text,
+      selectedSignedOneTimePreKeyRecordText.value,
+    )
+    : create_x3dh_initial_message_with_one_time_prekey_id(
+      backupText.value,
+      passphrase.value,
+      body.prekey_bundle_text,
+      selectedOneTimePreKeyId.value ?? undefined,
+    )) as { initial_message_json: string; shared_secret: string }
   const pair = JSON.parse(create_ratchet_dh_keypair()) as { private_key: string; public_key: string }
   const ratchetPair = JSON.parse(create_ratchet_session_from_shared_secret(
     identity.value!.user_id,
@@ -2790,6 +2831,7 @@ type SecureSessionOffer = {
   from_user_id: string
   to_user_id: string
   prekey_bundle_text: string
+  signed_one_time_prekey_record_texts?: string[]
   ratchet_dh_public_key: string
   created_at: number
 }
@@ -2821,6 +2863,7 @@ function createSecureSessionOfferText() {
       from_user_id: identity.value.user_id,
       to_user_id: activeContact.value.user_id,
       prekey_bundle_text: prekeyBundleText.value,
+      signed_one_time_prekey_record_texts: prekeySignedOneTimeRecordTexts.value,
       ratchet_dh_public_key: pair.public_key,
       created_at: Date.now(),
     }
@@ -2842,13 +2885,23 @@ function applySecureSessionOfferText() {
     activeGroupId.value = ''
 
     prekeyBundleText.value = offer.prekey_bundle_text
+    prekeySignedOneTimeRecordTexts.value = offer.signed_one_time_prekey_record_texts ?? []
     inspectPreKeyBundleText()
-    const init = JSON.parse(create_x3dh_initial_message_with_one_time_prekey_id(
-      backupText.value,
-      passphrase.value,
-      offer.prekey_bundle_text,
-      selectedOneTimePreKeyId.value ?? undefined,
-    )) as {
+    const signedRecord = prekeySignedOneTimeRecordTexts.value[0] || ''
+    selectedSignedOneTimePreKeyRecordText.value = signedRecord
+    const init = JSON.parse(signedRecord
+      ? create_x3dh_initial_message_with_one_time_prekey_record(
+        backupText.value,
+        passphrase.value,
+        offer.prekey_bundle_text,
+        signedRecord,
+      )
+      : create_x3dh_initial_message_with_one_time_prekey_id(
+        backupText.value,
+        passphrase.value,
+        offer.prekey_bundle_text,
+        selectedOneTimePreKeyId.value ?? undefined,
+      )) as {
       initial_message_json: string
       shared_secret: string
     }
@@ -2935,17 +2988,28 @@ function createMyPreKeyBundleText() {
       Number(prekeySignedId.value || 1),
       Number(prekeyOneTimeCount.value || 0),
       BigInt(7 * 24 * 3600),
-    )) as { prekey_bundle_text: string; private_bundle_json: string }
+    )) as {
+      prekey_bundle_text: string
+      private_bundle_json: string
+      signed_one_time_prekey_record_texts?: string[]
+    }
     prekeyBundleText.value = out.prekey_bundle_text
     prekeyPrivateBundleJson.value = JSON.stringify(JSON.parse(out.private_bundle_json), null, 2)
+    prekeySignedOneTimeRecordTexts.value = out.signed_one_time_prekey_record_texts ?? []
+    selectedSignedOneTimePreKeyRecordText.value = ''
+    selectedOneTimePreKeyId.value = null
     inspectPreKeyBundleText()
+    persist()
   })
 }
 
 function inspectPreKeyBundleText() {
   run('解析 PreKey Bundle', () => {
     if (!prekeyBundleText.value.trim()) throw new Error('请先生成或粘贴 PreKey Bundle')
-    prekeyInfoText.value = JSON.stringify(JSON.parse(inspect_prekey_bundle(prekeyBundleText.value)), null, 2)
+    const info = JSON.parse(inspect_prekey_bundle(prekeyBundleText.value))
+    info.signed_one_time_prekey_records = prekeySignedOneTimeRecordTexts.value.length
+    info.selected_signed_one_time_prekey_record = Boolean(selectedSignedOneTimePreKeyRecordText.value)
+    prekeyInfoText.value = JSON.stringify(info, null, 2)
   })
 }
 
@@ -2953,12 +3017,20 @@ function createX3dhInitialMessageText() {
   run('创建 X3DH 初始消息', () => {
     if (!backupText.value || !passphrase.value) throw new Error('需要身份备份包和提示词')
     if (!prekeyBundleText.value.trim()) throw new Error('请粘贴对方 PreKey Bundle')
-    const out = JSON.parse(create_x3dh_initial_message_with_one_time_prekey_id(
-      backupText.value,
-      passphrase.value,
-      prekeyBundleText.value,
-      selectedOneTimePreKeyId.value ?? undefined,
-    )) as {
+    const signedRecord = selectedSignedOneTimePreKeyRecordText.value || prekeySignedOneTimeRecordTexts.value[0] || ''
+    const out = JSON.parse(signedRecord
+      ? create_x3dh_initial_message_with_one_time_prekey_record(
+        backupText.value,
+        passphrase.value,
+        prekeyBundleText.value,
+        signedRecord,
+      )
+      : create_x3dh_initial_message_with_one_time_prekey_id(
+        backupText.value,
+        passphrase.value,
+        prekeyBundleText.value,
+        selectedOneTimePreKeyId.value ?? undefined,
+      )) as {
       initial_message_json: string
       shared_secret: string
     }
@@ -3270,7 +3342,10 @@ async function publishPreKeyToNode() {
     if (!prekeyBundleText.value.trim()) throw new Error('请先生成 PreKey Bundle')
     const body = await nodeFetchJson('/prekey/publish', {
       method: 'POST',
-      body: JSON.stringify({ prekey_bundle_text: prekeyBundleText.value }),
+      body: JSON.stringify({
+        prekey_bundle_text: prekeyBundleText.value,
+        signed_one_time_prekey_record_texts: prekeySignedOneTimeRecordTexts.value,
+      }),
     })
     nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
   })
@@ -3285,8 +3360,9 @@ async function fetchPreKeyFromNode() {
     if (body.found && body.prekey_bundle_text) {
       prekeyBundleText.value = body.prekey_bundle_text
       selectedOneTimePreKeyId.value = typeof body.selected_one_time_prekey_id === 'number' ? body.selected_one_time_prekey_id : null
+      selectedSignedOneTimePreKeyRecordText.value = typeof body.selected_signed_one_time_prekey_record_text === 'string' ? body.selected_signed_one_time_prekey_record_text : ''
       inspectPreKeyBundleText()
-      appendLog(`✅ 已拉取 PreKey Bundle${selectedOneTimePreKeyId.value !== null ? '，选中 one-time key ' + selectedOneTimePreKeyId.value : ''}`)
+      appendLog(`✅ 已拉取 PreKey Bundle${selectedOneTimePreKeyId.value !== null ? '，选中 one-time key ' + selectedOneTimePreKeyId.value : ''}${selectedSignedOneTimePreKeyRecordText.value ? '（signed record）' : ''}`)
     }
   })
 }
@@ -3300,8 +3376,9 @@ async function consumePreKeyFromNode() {
     if (body.found && body.prekey_bundle_text) {
       prekeyBundleText.value = body.prekey_bundle_text
       selectedOneTimePreKeyId.value = typeof body.selected_one_time_prekey_id === 'number' ? body.selected_one_time_prekey_id : null
+      selectedSignedOneTimePreKeyRecordText.value = typeof body.selected_signed_one_time_prekey_record_text === 'string' ? body.selected_signed_one_time_prekey_record_text : ''
       inspectPreKeyBundleText()
-      appendLog(`✅ 已领取 PreKey Bundle；节点端已标记 one-time key ${selectedOneTimePreKeyId.value ?? 'none'} 已消费`)
+      appendLog(`✅ 已领取 PreKey Bundle；节点端已标记 one-time key ${selectedOneTimePreKeyId.value ?? 'none'} 已消费${selectedSignedOneTimePreKeyRecordText.value ? '（signed record）' : ''}`)
     }
   })
 }
@@ -3311,7 +3388,7 @@ async function exportNodeSnapshot() {
   await runAsync('导出 lm_node 同步快照', async () => {
     const body = await nodeFetchJson('/sync/snapshot')
     nodeSyncSnapshotText.value = JSON.stringify(body, null, 2)
-    nodeSyncStatusText.value = `snapshot peers=${body.public_peers?.length ?? 0}, mailbox=${body.mailbox_deliveries?.length ?? 0}, prekeys=${body.prekey_bundles?.length ?? 0}`
+    nodeSyncStatusText.value = `snapshot peers=${body.public_peers?.length ?? 0}, mailbox=${body.mailbox_deliveries?.length ?? 0}, prekeys=${body.prekey_bundles?.length ?? 0}, signed_otpk=${body.signed_one_time_prekey_records?.length ?? 0}`
   })
 }
 
@@ -3722,8 +3799,8 @@ const appContext = {
   groupSenderDistributionFanoutJson, groupSenderDistributionFanoutItems, groupSenderEnvelopeText, groupSenderPlainText, groupRenameText, createRenameGroupEvent,
   groupEventText, applyGroupEventText, createGroupEventFanout, groupEventFanoutJson, groupEventFanoutItems, incomingGroupEventText,
   groupEventActorUserId, createAddMemberGroupEvent, createRemoveMemberGroupEvent, createPromoteAdminGroupEvent, createDemoteAdminGroupEvent, fanoutItems,
-  prekeySignedId, prekeyOneTimeCount, prekeyBundleText, prekeyPrivateBundleJson, prekeyInfoText, x3dhInitialMessageJson,
-  selectedOneTimePreKeyId, x3dhSharedSecretText, ratchetStateText, ratchetPeerStateText, ratchetLocalDhKeyPairJson, ratchetRemoteDhPublicKeyForInit,
+  prekeySignedId, prekeyOneTimeCount, prekeyBundleText, prekeyPrivateBundleJson, prekeySignedOneTimeRecordTexts, prekeyInfoText, x3dhInitialMessageJson,
+  selectedOneTimePreKeyId, selectedSignedOneTimePreKeyRecordText, x3dhSharedSecretText, ratchetStateText, ratchetPeerStateText, ratchetLocalDhKeyPairJson, ratchetRemoteDhPublicKeyForInit,
   ratchetInitRole, ratchetHeaderText, ratchetEnvelopeText, ratchetPlainText, ratchetKeyText, ratchetRemoteDhPublicKey,
   ratchetInfoText, safetyPolicy, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,

@@ -1,9 +1,12 @@
 use lm_core::PublicPeerAnnounce;
 use lm_node::{
-    ControlRequest, DhtRpcRequest, DhtRpcResponse, NativeNode, NodeConfig, NodeMaintenanceStats,
-    NodeStateSnapshot, decode_identity_public_key_base64, parse_capabilities_csv,
+    ConsumedOneTimePreKey, ControlRequest, DhtRecord, DhtRecordReplicationPlan, DhtRpcRequest,
+    DhtRpcResponse, MailboxDelivery, NativeNode, NodeConfig, NodeMaintenanceStats,
+    NodeStateSnapshot, NodeSyncStatus, decode_identity_public_key_base64, parse_capabilities_csv,
     restore_identity_from_backup_text,
 };
+use rusqlite::{Connection, OptionalExtension, params};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -103,6 +106,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .or(file_config.peer_id)
                 .unwrap_or("lm-node-dev".into());
             let state_file = optional_arg(&args, "--state-file")?.or(file_config.state_file);
+            let state_db = optional_arg(&args, "--state-db")?.or(file_config.state_db);
             let sync_peer_token_direct = optional_arg(&args, "--sync-peer-token")?
                 .or_else(|| env::var("LM_NODE_SYNC_PEER_TOKEN").ok());
             let sync_peer_token_from_file = optional_secret_file_arg(
@@ -122,6 +126,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 sync_peers.push(SyncPeerConfig {
                     url: peer.url,
                     token: choose_secret(peer.token, token_from_file),
+                    peer_id: peer.peer_id,
                 });
             }
             if let Some(sync_peer_urls) = optional_arg(&args, "--sync-peer")? {
@@ -130,6 +135,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .map(|url| SyncPeerConfig {
                         url,
                         token: sync_peer_token.clone(),
+                        peer_id: None,
                     })
                     .collect();
             } else if let Some(token) = sync_peer_token {
@@ -181,6 +187,36 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .transpose()?
                 .or(file_config.rate_limit_max_requests)
                 .unwrap_or(600);
+            let log_format = optional_arg(&args, "--log-format")?
+                .or_else(|| env::var("LM_NODE_LOG_FORMAT").ok())
+                .or(file_config.log_format)
+                .map(|value| parse_log_format(&value))
+                .transpose()?
+                .unwrap_or_default();
+            let mailbox_sender_rate_limit_window_seconds =
+                optional_arg(&args, "--mailbox-sender-rate-limit-window-seconds")?
+                    .or_else(|| env::var("LM_NODE_MAILBOX_SENDER_RATE_LIMIT_WINDOW_SECONDS").ok())
+                    .map(|value| value.parse::<u64>())
+                    .transpose()?
+                    .or(file_config.mailbox_sender_rate_limit_window_seconds);
+            let mailbox_sender_rate_limit_max_messages =
+                optional_arg(&args, "--mailbox-sender-rate-limit-max-messages")?
+                    .or_else(|| env::var("LM_NODE_MAILBOX_SENDER_RATE_LIMIT_MAX_MESSAGES").ok())
+                    .map(|value| value.parse::<u32>())
+                    .transpose()?
+                    .or(file_config.mailbox_sender_rate_limit_max_messages);
+            let mailbox_global_rate_limit_window_seconds =
+                optional_arg(&args, "--mailbox-global-rate-limit-window-seconds")?
+                    .or_else(|| env::var("LM_NODE_MAILBOX_GLOBAL_RATE_LIMIT_WINDOW_SECONDS").ok())
+                    .map(|value| value.parse::<u64>())
+                    .transpose()?
+                    .or(file_config.mailbox_global_rate_limit_window_seconds);
+            let mailbox_global_rate_limit_max_messages =
+                optional_arg(&args, "--mailbox-global-rate-limit-max-messages")?
+                    .or_else(|| env::var("LM_NODE_MAILBOX_GLOBAL_RATE_LIMIT_MAX_MESSAGES").ok())
+                    .map(|value| value.parse::<u32>())
+                    .transpose()?
+                    .or(file_config.mailbox_global_rate_limit_max_messages);
             let control_token_direct = optional_arg(&args, "--control-token")?
                 .or_else(|| env::var("LM_NODE_CONTROL_TOKEN").ok())
                 .or(file_config.control_token);
@@ -200,23 +236,51 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 token,
                 cors_allow_origins,
             };
-            let mut node = if let Some(path) = &state_file {
+            let mut node = if let Some(path) = &state_db {
+                load_node_state_db(path).unwrap_or_else(|_| {
+                    NativeNode::new(NodeConfig {
+                        peer_id: peer_id.clone(),
+                        mailbox_sender_rate_limit_window_seconds,
+                        mailbox_sender_rate_limit_max_messages,
+                        mailbox_global_rate_limit_window_seconds,
+                        mailbox_global_rate_limit_max_messages,
+                        ..Default::default()
+                    })
+                })
+            } else if let Some(path) = &state_file {
                 load_node_state(path).unwrap_or_else(|_| {
                     NativeNode::new(NodeConfig {
                         peer_id: peer_id.clone(),
+                        mailbox_sender_rate_limit_window_seconds,
+                        mailbox_sender_rate_limit_max_messages,
+                        mailbox_global_rate_limit_window_seconds,
+                        mailbox_global_rate_limit_max_messages,
                         ..Default::default()
                     })
                 })
             } else {
                 NativeNode::new(NodeConfig {
                     peer_id,
+                    mailbox_sender_rate_limit_window_seconds,
+                    mailbox_sender_rate_limit_max_messages,
+                    mailbox_global_rate_limit_window_seconds,
+                    mailbox_global_rate_limit_max_messages,
                     ..Default::default()
                 })
             };
+            node.config.mailbox_sender_rate_limit_window_seconds =
+                mailbox_sender_rate_limit_window_seconds;
+            node.config.mailbox_sender_rate_limit_max_messages =
+                mailbox_sender_rate_limit_max_messages;
+            node.config.mailbox_global_rate_limit_window_seconds =
+                mailbox_global_rate_limit_window_seconds;
+            node.config.mailbox_global_rate_limit_max_messages =
+                mailbox_global_rate_limit_max_messages;
             serve_control(
                 &bind,
                 &mut node,
                 state_file.as_deref(),
+                state_db.as_deref(),
                 sync_peers,
                 sync_interval_seconds,
                 sync_max_backoff_seconds,
@@ -230,6 +294,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     window_seconds: rate_limit_window_seconds,
                     max_requests: rate_limit_max_requests,
                 },
+                ControlLogger::new(log_format),
             )?;
         }
         "help" | "--help" | "-h" => print_help(),
@@ -299,6 +364,7 @@ struct ControlSecurityConfig {
 struct SyncPeerConfig {
     url: String,
     token: Option<String>,
+    peer_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -361,11 +427,96 @@ struct RateLimitEntry {
     count: u32,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum LogFormat {
+    #[default]
+    Text,
+    Json,
+}
+
+fn parse_log_format(value: &str) -> Result<LogFormat, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "" | "text" | "plain" => Ok(LogFormat::Text),
+        "json" | "structured" => Ok(LogFormat::Json),
+        other => Err(format!(
+            "invalid log format: {other}; expected text or json"
+        )),
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ControlLogger {
+    format: LogFormat,
+}
+
+impl ControlLogger {
+    fn new(format: LogFormat) -> Self {
+        Self { format }
+    }
+
+    fn info(&self, event: &str, message: impl Into<String>, fields: serde_json::Value) {
+        self.log("info", event, message.into(), fields);
+    }
+
+    fn warn(&self, event: &str, message: impl Into<String>, fields: serde_json::Value) {
+        self.log("warn", event, message.into(), fields);
+    }
+
+    fn error(&self, event: &str, message: impl Into<String>, fields: serde_json::Value) {
+        self.log("error", event, message.into(), fields);
+    }
+
+    fn log(&self, level: &str, event: &str, message: String, fields: serde_json::Value) {
+        println!("{}", self.render_line(level, event, message, fields));
+    }
+
+    fn render_line(
+        &self,
+        level: &str,
+        event: &str,
+        message: String,
+        fields: serde_json::Value,
+    ) -> String {
+        match self.format {
+            LogFormat::Text => {
+                if fields.is_null() {
+                    message
+                } else {
+                    format!("{message} {}", compact_json(&fields))
+                }
+            }
+            LogFormat::Json => {
+                let value = serde_json::json!({
+                    "ts": current_unix_timestamp(),
+                    "level": level,
+                    "event": event,
+                    "message": message,
+                    "fields": fields,
+                });
+                compact_json(&value)
+            }
+        }
+    }
+}
+
+fn compact_json(value: &serde_json::Value) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "{}".to_string())
+}
+
 #[derive(Debug, Serialize)]
 struct ControlStatsResponse<'a> {
     #[serde(flatten)]
     runtime: &'a ControlRuntimeStats,
     maintenance: NodeMaintenanceStats,
+    state_db: Option<StateDbStats>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct StateDbStats {
+    page_count: u64,
+    page_size_bytes: u64,
+    freelist_count: u64,
+    file_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -397,6 +548,15 @@ struct ControlRuntimeStats {
     dht_routing_refresh_nodes_returned: u64,
     dht_routing_refresh_nodes_merged: u64,
     last_dht_routing_refresh_at: Option<u64>,
+    sync_schedule_delay_micros_total: u128,
+    sync_schedule_delay_micros_max: u128,
+    last_sync_schedule_delay_micros: Option<u128>,
+    dht_replication_schedule_delay_micros_total: u128,
+    dht_replication_schedule_delay_micros_max: u128,
+    last_dht_replication_schedule_delay_micros: Option<u128>,
+    dht_routing_refresh_schedule_delay_micros_total: u128,
+    dht_routing_refresh_schedule_delay_micros_max: u128,
+    last_dht_routing_refresh_schedule_delay_micros: Option<u128>,
     endpoints: HashMap<String, ControlEndpointStats>,
 }
 
@@ -441,11 +601,24 @@ impl ControlRuntimeStats {
             dht_routing_refresh_nodes_returned: 0,
             dht_routing_refresh_nodes_merged: 0,
             last_dht_routing_refresh_at: None,
+            sync_schedule_delay_micros_total: 0,
+            sync_schedule_delay_micros_max: 0,
+            last_sync_schedule_delay_micros: None,
+            dht_replication_schedule_delay_micros_total: 0,
+            dht_replication_schedule_delay_micros_max: 0,
+            last_dht_replication_schedule_delay_micros: None,
+            dht_routing_refresh_schedule_delay_micros_total: 0,
+            dht_routing_refresh_schedule_delay_micros_max: 0,
+            last_dht_routing_refresh_schedule_delay_micros: None,
             endpoints: HashMap::new(),
         }
     }
 
-    fn to_openmetrics(&self, maintenance: &NodeMaintenanceStats) -> String {
+    fn to_openmetrics(
+        &self,
+        maintenance: &NodeMaintenanceStats,
+        state_db: Option<&StateDbStats>,
+    ) -> String {
         let mut out = String::new();
         push_metric_help(
             &mut out,
@@ -730,6 +903,105 @@ impl ControlRuntimeStats {
         }
         push_metric_help(
             &mut out,
+            "lm_node_background_schedule_delay_micros_total",
+            "Total scheduler delay in microseconds for background jobs.",
+        );
+        push_metric_type(
+            &mut out,
+            "lm_node_background_schedule_delay_micros_total",
+            "counter",
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_background_schedule_delay_micros_total",
+            "job",
+            "snapshot_sync",
+            self.sync_schedule_delay_micros_total,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_background_schedule_delay_micros_total",
+            "job",
+            "dht_replication",
+            self.dht_replication_schedule_delay_micros_total,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_background_schedule_delay_micros_total",
+            "job",
+            "dht_routing_refresh",
+            self.dht_routing_refresh_schedule_delay_micros_total,
+        );
+        push_metric_help(
+            &mut out,
+            "lm_node_background_schedule_delay_micros_max",
+            "Maximum scheduler delay in microseconds for background jobs.",
+        );
+        push_metric_type(
+            &mut out,
+            "lm_node_background_schedule_delay_micros_max",
+            "gauge",
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_background_schedule_delay_micros_max",
+            "job",
+            "snapshot_sync",
+            self.sync_schedule_delay_micros_max,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_background_schedule_delay_micros_max",
+            "job",
+            "dht_replication",
+            self.dht_replication_schedule_delay_micros_max,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_background_schedule_delay_micros_max",
+            "job",
+            "dht_routing_refresh",
+            self.dht_routing_refresh_schedule_delay_micros_max,
+        );
+        push_metric_help(
+            &mut out,
+            "lm_node_background_schedule_delay_micros_last",
+            "Last scheduler delay in microseconds for background jobs.",
+        );
+        push_metric_type(
+            &mut out,
+            "lm_node_background_schedule_delay_micros_last",
+            "gauge",
+        );
+        if let Some(value) = self.last_sync_schedule_delay_micros {
+            push_labeled_metric_value(
+                &mut out,
+                "lm_node_background_schedule_delay_micros_last",
+                "job",
+                "snapshot_sync",
+                value,
+            );
+        }
+        if let Some(value) = self.last_dht_replication_schedule_delay_micros {
+            push_labeled_metric_value(
+                &mut out,
+                "lm_node_background_schedule_delay_micros_last",
+                "job",
+                "dht_replication",
+                value,
+            );
+        }
+        if let Some(value) = self.last_dht_routing_refresh_schedule_delay_micros {
+            push_labeled_metric_value(
+                &mut out,
+                "lm_node_background_schedule_delay_micros_last",
+                "job",
+                "dht_routing_refresh",
+                value,
+            );
+        }
+        push_metric_help(
+            &mut out,
             "lm_node_maintenance_prune_runs_total",
             "Total node expired-record prune runs.",
         );
@@ -763,6 +1035,89 @@ impl ControlRuntimeStats {
             "prekey_bundle",
             maintenance.prekey_expired_bundles,
         );
+        push_metric_help(
+            &mut out,
+            "lm_node_mailbox_push_rejections_total",
+            "Rejected mailbox push attempts by reason.",
+        );
+        push_metric_type(&mut out, "lm_node_mailbox_push_rejections_total", "counter");
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_mailbox_push_rejections_total",
+            "reason",
+            "invalid_json",
+            maintenance.mailbox_push_rejects.invalid_json,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_mailbox_push_rejections_total",
+            "reason",
+            "invalid_message_format",
+            maintenance.mailbox_push_rejects.invalid_message_format,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_mailbox_push_rejections_total",
+            "reason",
+            "invalid_identity_public_key",
+            maintenance.mailbox_push_rejects.invalid_identity_public_key,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_mailbox_push_rejections_total",
+            "reason",
+            "invalid_signature",
+            maintenance.mailbox_push_rejects.invalid_signature,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_mailbox_push_rejections_total",
+            "reason",
+            "expired_object",
+            maintenance.mailbox_push_rejects.expired_object,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_mailbox_push_rejections_total",
+            "reason",
+            "duplicate_message",
+            maintenance.mailbox_push_rejects.duplicate_message,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_mailbox_push_rejections_total",
+            "reason",
+            "payload_too_large",
+            maintenance.mailbox_push_rejects.payload_too_large,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_mailbox_push_rejections_total",
+            "reason",
+            "global_rate_limited",
+            maintenance.mailbox_push_rejects.global_rate_limited,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_mailbox_push_rejections_total",
+            "reason",
+            "sender_rate_limited",
+            maintenance.mailbox_push_rejects.sender_rate_limited,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_mailbox_push_rejections_total",
+            "reason",
+            "other",
+            maintenance.mailbox_push_rejects.other,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_mailbox_push_rejections_total",
+            "reason",
+            "all",
+            maintenance.mailbox_push_rejects.total(),
+        );
         if let Some(last_pruned_at) = maintenance.last_pruned_at {
             push_metric_help(
                 &mut out,
@@ -775,6 +1130,46 @@ impl ControlRuntimeStats {
                 "lm_node_maintenance_last_pruned_at",
                 last_pruned_at,
             );
+        }
+        if let Some(state_db) = state_db {
+            push_metric_help(
+                &mut out,
+                "lm_node_state_db_pages",
+                "SQLite state database page counts.",
+            );
+            push_metric_type(&mut out, "lm_node_state_db_pages", "gauge");
+            push_labeled_metric_value(
+                &mut out,
+                "lm_node_state_db_pages",
+                "kind",
+                "total",
+                state_db.page_count,
+            );
+            push_labeled_metric_value(
+                &mut out,
+                "lm_node_state_db_pages",
+                "kind",
+                "free",
+                state_db.freelist_count,
+            );
+            push_metric_help(
+                &mut out,
+                "lm_node_state_db_page_size_bytes",
+                "SQLite state database page size in bytes.",
+            );
+            push_metric_type(&mut out, "lm_node_state_db_page_size_bytes", "gauge");
+            push_metric_value(
+                &mut out,
+                "lm_node_state_db_page_size_bytes",
+                state_db.page_size_bytes,
+            );
+            push_metric_help(
+                &mut out,
+                "lm_node_state_db_file_bytes",
+                "SQLite state database file size in bytes.",
+            );
+            push_metric_type(&mut out, "lm_node_state_db_file_bytes", "gauge");
+            push_metric_value(&mut out, "lm_node_state_db_file_bytes", state_db.file_bytes);
         }
         push_metric_help(
             &mut out,
@@ -907,6 +1302,35 @@ impl ControlRuntimeStats {
             .dht_routing_refresh_nodes_merged
             .saturating_add(stats.nodes_merged as u64);
         self.last_dht_routing_refresh_at = Some(finished_at);
+    }
+
+    fn record_sync_schedule_delay(&mut self, delay: Duration) {
+        let micros = delay.as_micros();
+        self.sync_schedule_delay_micros_total =
+            self.sync_schedule_delay_micros_total.saturating_add(micros);
+        self.sync_schedule_delay_micros_max = self.sync_schedule_delay_micros_max.max(micros);
+        self.last_sync_schedule_delay_micros = Some(micros);
+    }
+
+    fn record_dht_replication_schedule_delay(&mut self, delay: Duration) {
+        let micros = delay.as_micros();
+        self.dht_replication_schedule_delay_micros_total = self
+            .dht_replication_schedule_delay_micros_total
+            .saturating_add(micros);
+        self.dht_replication_schedule_delay_micros_max =
+            self.dht_replication_schedule_delay_micros_max.max(micros);
+        self.last_dht_replication_schedule_delay_micros = Some(micros);
+    }
+
+    fn record_dht_routing_refresh_schedule_delay(&mut self, delay: Duration) {
+        let micros = delay.as_micros();
+        self.dht_routing_refresh_schedule_delay_micros_total = self
+            .dht_routing_refresh_schedule_delay_micros_total
+            .saturating_add(micros);
+        self.dht_routing_refresh_schedule_delay_micros_max = self
+            .dht_routing_refresh_schedule_delay_micros_max
+            .max(micros);
+        self.last_dht_routing_refresh_schedule_delay_micros = Some(micros);
     }
 
     fn record_sync_snapshot_bytes(
@@ -1085,6 +1509,7 @@ struct ServeControlConfigFile {
     bind: Option<String>,
     peer_id: Option<String>,
     state_file: Option<String>,
+    state_db: Option<String>,
     control_token: Option<String>,
     control_token_file: Option<String>,
     cors_allow_origins: Option<Vec<String>>,
@@ -1096,11 +1521,17 @@ struct ServeControlConfigFile {
     dht_routing_refresh_max_targets: Option<usize>,
     rate_limit_window_seconds: Option<u64>,
     rate_limit_max_requests: Option<u32>,
+    log_format: Option<String>,
+    mailbox_sender_rate_limit_window_seconds: Option<u64>,
+    mailbox_sender_rate_limit_max_messages: Option<u32>,
+    mailbox_global_rate_limit_window_seconds: Option<u64>,
+    mailbox_global_rate_limit_max_messages: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 struct SyncPeerConfigFile {
     url: String,
+    peer_id: Option<String>,
     token: Option<String>,
     token_file: Option<String>,
 }
@@ -1148,6 +1579,282 @@ fn save_node_state(path: &str, node: &NativeNode) -> Result<(), Box<dyn std::err
     let text = serde_json::to_string_pretty(&node.to_state_snapshot())?;
     atomic_write_text(Path::new(path), &text)?;
     Ok(())
+}
+
+fn open_state_db(path: &str) -> Result<Connection, Box<dyn std::error::Error>> {
+    if let Some(parent) = Path::new(path)
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)?;
+    }
+    let conn = Connection::open(path)?;
+    init_state_db(&conn)?;
+    Ok(conn)
+}
+
+fn init_state_db(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
+    conn.execute_batch(
+        r#"
+        PRAGMA journal_mode = WAL;
+        PRAGMA synchronous = FULL;
+        CREATE TABLE IF NOT EXISTS meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS public_peers (
+            peer_id TEXT PRIMARY KEY,
+            announce_json TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS mailbox_deliveries (
+            delivery_id TEXT PRIMARY KEY,
+            to_user_id TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            expires_at INTEGER NOT NULL,
+            delivery_json TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_mailbox_deliveries_to_user
+            ON mailbox_deliveries(to_user_id);
+        CREATE INDEX IF NOT EXISTS idx_mailbox_deliveries_expires_at
+            ON mailbox_deliveries(expires_at);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_mailbox_deliveries_to_user_message_id
+            ON mailbox_deliveries(to_user_id, message_id);
+        CREATE TABLE IF NOT EXISTS prekey_bundles (
+            user_id TEXT PRIMARY KEY,
+            expires_at INTEGER NOT NULL,
+            signed_prekey_expires_at INTEGER NOT NULL,
+            bundle_json TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_prekey_bundles_expires_at
+            ON prekey_bundles(expires_at);
+        CREATE TABLE IF NOT EXISTS signed_one_time_prekey_records (
+            user_id TEXT NOT NULL,
+            signed_prekey_id INTEGER NOT NULL,
+            key_id INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            record_json TEXT NOT NULL,
+            PRIMARY KEY(user_id, signed_prekey_id, key_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_signed_one_time_prekey_records_expires_at
+            ON signed_one_time_prekey_records(expires_at);
+        CREATE TABLE IF NOT EXISTS consumed_one_time_prekeys (
+            user_id TEXT NOT NULL,
+            key_id INTEGER NOT NULL,
+            PRIMARY KEY(user_id, key_id)
+        );
+        CREATE TABLE IF NOT EXISTS dht_records (
+            record_key TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,
+            expires_at INTEGER NOT NULL,
+            republish_at INTEGER NOT NULL,
+            record_json TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_dht_records_expires_at
+            ON dht_records(expires_at);
+        "#,
+    )?;
+    Ok(())
+}
+
+fn load_node_state_db(path: &str) -> Result<NativeNode, Box<dyn std::error::Error>> {
+    let conn = open_state_db(path)?;
+    let version = db_get_json::<u16>(&conn, "version")?.unwrap_or(1);
+    let config = db_get_json::<NodeConfig>(&conn, "config")?
+        .ok_or_else(|| format!("state db has no saved config: {path}"))?;
+    let sync_status = db_get_json::<NodeSyncStatus>(&conn, "sync_status")?.unwrap_or_default();
+    let maintenance =
+        db_get_json::<NodeMaintenanceStats>(&conn, "maintenance")?.unwrap_or_default();
+    let public_peers = db_get_all_json(&conn, "SELECT announce_json FROM public_peers")?;
+    let mailbox_deliveries =
+        db_get_all_json::<MailboxDelivery>(&conn, "SELECT delivery_json FROM mailbox_deliveries")?;
+    let prekey_bundles = db_get_all_json(&conn, "SELECT bundle_json FROM prekey_bundles")?;
+    let signed_one_time_prekey_records = db_get_all_json(
+        &conn,
+        "SELECT record_json FROM signed_one_time_prekey_records",
+    )?;
+    let consumed_one_time_prekeys = db_get_consumed_prekeys(&conn)?;
+    let dht_records = db_get_all_json::<DhtRecord>(&conn, "SELECT record_json FROM dht_records")?;
+    Ok(NativeNode::from_state_snapshot(NodeStateSnapshot {
+        version,
+        config,
+        public_peers,
+        mailbox_deliveries,
+        mailbox_messages: Vec::new(),
+        prekey_bundles,
+        signed_one_time_prekey_records,
+        consumed_one_time_prekeys,
+        dht_records,
+        sync_status,
+        maintenance,
+    }))
+}
+
+fn save_node_state_db(path: &str, node: &NativeNode) -> Result<(), Box<dyn std::error::Error>> {
+    let mut conn = open_state_db(path)?;
+    let snapshot = node.to_state_snapshot();
+    let tx = conn.transaction()?;
+    db_set_json_tx(&tx, "version", &snapshot.version)?;
+    db_set_json_tx(&tx, "config", &snapshot.config)?;
+    db_set_json_tx(&tx, "sync_status", &snapshot.sync_status)?;
+    db_set_json_tx(&tx, "maintenance", &snapshot.maintenance)?;
+    tx.execute("DELETE FROM public_peers", [])?;
+    for peer in &snapshot.public_peers {
+        tx.execute(
+            "INSERT INTO public_peers(peer_id, announce_json) VALUES (?1, ?2)",
+            params![peer.peer_id, serde_json::to_string(peer)?],
+        )?;
+    }
+    tx.execute("DELETE FROM mailbox_deliveries", [])?;
+    for delivery in &snapshot.mailbox_deliveries {
+        tx.execute(
+            "INSERT INTO mailbox_deliveries(delivery_id, to_user_id, message_id, expires_at, delivery_json)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                delivery.delivery_id,
+                delivery.message.to_user_id.to_string(),
+                delivery.message.message_id.to_string(),
+                delivery.message.expires_at as i64,
+                serde_json::to_string(delivery)?,
+            ],
+        )?;
+    }
+    tx.execute("DELETE FROM prekey_bundles", [])?;
+    for bundle in &snapshot.prekey_bundles {
+        tx.execute(
+            "INSERT INTO prekey_bundles(user_id, expires_at, signed_prekey_expires_at, bundle_json)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                bundle.user_id.to_string(),
+                bundle.expires_at as i64,
+                bundle.signed_prekey_expires_at as i64,
+                serde_json::to_string(bundle)?,
+            ],
+        )?;
+    }
+    tx.execute("DELETE FROM signed_one_time_prekey_records", [])?;
+    for record in &snapshot.signed_one_time_prekey_records {
+        tx.execute(
+            "INSERT INTO signed_one_time_prekey_records(user_id, signed_prekey_id, key_id, expires_at, record_json)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                record.user_id.to_string(),
+                record.signed_prekey_id as i64,
+                record.key_id as i64,
+                record.expires_at as i64,
+                serde_json::to_string(record)?,
+            ],
+        )?;
+    }
+    tx.execute("DELETE FROM consumed_one_time_prekeys", [])?;
+    for item in &snapshot.consumed_one_time_prekeys {
+        tx.execute(
+            "INSERT INTO consumed_one_time_prekeys(user_id, key_id) VALUES (?1, ?2)",
+            params![item.user_id.to_string(), item.key_id as i64],
+        )?;
+    }
+    tx.execute("DELETE FROM dht_records", [])?;
+    for record in &snapshot.dht_records {
+        tx.execute(
+            "INSERT INTO dht_records(record_key, kind, expires_at, republish_at, record_json)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                record.key.to_hex(),
+                format!("{:?}", record.kind),
+                record.expires_at as i64,
+                record.republish_at as i64,
+                serde_json::to_string(record)?,
+            ],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+fn state_db_stats(path: &str) -> Result<StateDbStats, Box<dyn std::error::Error>> {
+    let conn = open_state_db(path)?;
+    let page_count: u64 =
+        conn.query_row("PRAGMA page_count", [], |row| row.get::<_, i64>(0))? as u64;
+    let page_size_bytes: u64 =
+        conn.query_row("PRAGMA page_size", [], |row| row.get::<_, i64>(0))? as u64;
+    let freelist_count: u64 =
+        conn.query_row("PRAGMA freelist_count", [], |row| row.get::<_, i64>(0))? as u64;
+    let file_bytes = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    Ok(StateDbStats {
+        page_count,
+        page_size_bytes,
+        freelist_count,
+        file_bytes,
+    })
+}
+
+fn state_db_stats_opt(path: Option<&str>) -> Option<StateDbStats> {
+    path.and_then(|path| state_db_stats(path).ok())
+}
+
+fn db_get_json<T: DeserializeOwned>(
+    conn: &Connection,
+    key: &str,
+) -> Result<Option<T>, Box<dyn std::error::Error>> {
+    let value: Option<String> = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = ?1",
+            params![key],
+            |row| row.get(0),
+        )
+        .optional()?;
+    value
+        .map(|value| serde_json::from_str(&value).map_err(Into::into))
+        .transpose()
+}
+
+fn db_set_json_tx<T: Serialize>(
+    tx: &rusqlite::Transaction<'_>,
+    key: &str,
+    value: &T,
+) -> Result<(), Box<dyn std::error::Error>> {
+    tx.execute(
+        "INSERT INTO meta(key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![key, serde_json::to_string(value)?],
+    )?;
+    Ok(())
+}
+
+fn db_get_all_json<T: DeserializeOwned>(
+    conn: &Connection,
+    sql: &str,
+) -> Result<Vec<T>, Box<dyn std::error::Error>> {
+    let mut stmt = conn.prepare(sql)?;
+    let values = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    values
+        .into_iter()
+        .map(|value| serde_json::from_str(&value).map_err(Into::into))
+        .collect()
+}
+
+fn db_get_consumed_prekeys(
+    conn: &Connection,
+) -> Result<Vec<ConsumedOneTimePreKey>, Box<dyn std::error::Error>> {
+    let mut stmt = conn.prepare(
+        "SELECT user_id, key_id FROM consumed_one_time_prekeys ORDER BY user_id, key_id",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            let user_id: String = row.get(0)?;
+            let key_id: i64 = row.get(1)?;
+            Ok((user_id, key_id))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    rows.into_iter()
+        .map(|(user_id, key_id)| {
+            Ok(ConsumedOneTimePreKey {
+                user_id: lm_core::UserId::from_raw(user_id)?,
+                key_id: key_id as u32,
+            })
+        })
+        .collect()
 }
 
 fn atomic_write_text(path: &Path, text: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -1204,12 +1911,14 @@ fn serve_control(
     bind: &str,
     node: &mut NativeNode,
     state_file: Option<&str>,
+    state_db: Option<&str>,
     sync_peers: Vec<SyncPeerConfig>,
     sync_interval_seconds: u64,
     sync_max_backoff_seconds: u64,
     dht_runner: DhtRunnerConfig,
     security: ControlSecurityConfig,
     rate_limit: RateLimitConfig,
+    logger: ControlLogger,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(bind)?;
     listener.set_nonblocking(true)?;
@@ -1228,51 +1937,142 @@ fn serve_control(
             })
             .collect::<Vec<_>>()
     };
-    println!("LM Talk control plane listening on http://{bind}");
-    println!(
-        "endpoints: GET /health, GET /control/stats, GET /control/metrics, POST /announce, GET /peers/closest, POST /mailbox/push, GET /mailbox/take, POST /mailbox/ack, POST /prekey/publish, GET /prekey/get, POST/GET /dht/record, GET /dht/closest, POST /dht/rpc, GET /dht/replication-plan, GET /dht/routing-refresh-plan, GET /sync/snapshot, GET /sync/status, POST /sync/import"
+    logger.info(
+        "control.start",
+        format!("LM Talk control plane listening on http://{bind}"),
+        serde_json::Value::Null,
+    );
+    logger.info(
+        "control.endpoints",
+        "endpoints: GET /health, GET /control/stats, GET /control/metrics, POST /announce, GET /peers/closest, POST /mailbox/push, GET /mailbox/take, POST /mailbox/ack, POST /prekey/publish, GET /prekey/get, GET /prekey/status, POST/GET /dht/record, GET /dht/closest, POST /dht/rpc, GET /dht/replication-plan, GET /dht/routing-refresh-plan, GET /sync/snapshot, GET /sync/status, POST /sync/import"
+            .to_string(),
+        serde_json::Value::Null,
     );
     if security.token.is_some() {
-        println!("control security: bearer token required");
+        logger.info(
+            "control.security",
+            "control security: bearer token required",
+            serde_json::json!({"auth": "bearer"}),
+        );
     } else {
-        println!("control security: no token configured; loopback clients only");
+        logger.warn(
+            "control.security",
+            "control security: no token configured; loopback clients only",
+            serde_json::json!({"auth": "loopback_only"}),
+        );
     }
     if !security.cors_allow_origins.is_empty() {
-        println!(
-            "CORS allow origins: {}",
-            security.cors_allow_origins.join(",")
+        logger.info(
+            "control.cors",
+            format!(
+                "CORS allow origins: {}",
+                security.cors_allow_origins.join(",")
+            ),
+            serde_json::json!({"origins": security.cors_allow_origins.clone()}),
         );
     }
     if rate_limit.is_enabled() {
-        println!(
-            "control rate limit: {} requests / {}s per client IP",
-            rate_limit.max_requests, rate_limit.window_seconds
+        logger.info(
+            "control.rate_limit",
+            format!(
+                "control rate limit: {} requests / {}s per client IP",
+                rate_limit.max_requests, rate_limit.window_seconds
+            ),
+            serde_json::json!({
+                "window_seconds": rate_limit.window_seconds,
+                "max_requests": rate_limit.max_requests,
+            }),
         );
     } else {
-        println!("control rate limit: disabled");
+        logger.info(
+            "control.rate_limit",
+            "control rate limit: disabled",
+            serde_json::json!({"enabled": false}),
+        );
+    }
+    if let Some(config) = node.config.mailbox_global_rate_limit() {
+        logger.info(
+            "mailbox.global_rate_limit",
+            format!(
+                "mailbox global rate limit: {} messages / {}s",
+                config.max_messages, config.window_seconds
+            ),
+            serde_json::json!({
+                "window_seconds": config.window_seconds,
+                "max_messages": config.max_messages,
+            }),
+        );
+    } else {
+        logger.info(
+            "mailbox.global_rate_limit",
+            "mailbox global rate limit: disabled",
+            serde_json::json!({"enabled": false}),
+        );
+    }
+    if let Some(config) = node.config.mailbox_sender_rate_limit() {
+        logger.info(
+            "mailbox.sender_rate_limit",
+            format!(
+                "mailbox sender rate limit: {} messages / {}s per sender",
+                config.max_messages, config.window_seconds
+            ),
+            serde_json::json!({
+                "window_seconds": config.window_seconds,
+                "max_messages": config.max_messages,
+            }),
+        );
+    } else {
+        logger.info(
+            "mailbox.sender_rate_limit",
+            "mailbox sender rate limit: disabled",
+            serde_json::json!({"enabled": false}),
+        );
     }
     if !sync_peers.is_empty() && sync_interval_seconds > 0 {
-        println!(
-            "auto snapshot sync: every {sync_interval_seconds}s from {}",
-            sync_peers
-                .iter()
-                .map(|peer| peer.config.url.as_str())
-                .collect::<Vec<_>>()
-                .join(",")
+        let peer_urls = sync_peers
+            .iter()
+            .map(|peer| peer.config.url.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
+        logger.info(
+            "sync.config",
+            format!("auto snapshot sync: every {sync_interval_seconds}s from {peer_urls}"),
+            serde_json::json!({
+                "interval_seconds": sync_interval_seconds,
+                "peers": sync_peers.iter().map(|peer| peer.config.url.as_str()).collect::<Vec<_>>(),
+            }),
         );
-        println!(
-            "dht runners: replication_factor={} routing_refresh_limit={} routing_refresh_max_targets={}",
-            dht_runner.replication_factor,
-            dht_runner.routing_refresh_limit,
-            dht_runner.routing_refresh_max_targets
+        logger.info(
+            "dht.config",
+            format!(
+                "dht runners: replication_factor={} routing_refresh_limit={} routing_refresh_max_targets={}",
+                dht_runner.replication_factor,
+                dht_runner.routing_refresh_limit,
+                dht_runner.routing_refresh_max_targets
+            ),
+            serde_json::json!({
+                "replication_factor": dht_runner.replication_factor,
+                "routing_refresh_limit": dht_runner.routing_refresh_limit,
+                "routing_refresh_max_targets": dht_runner.routing_refresh_max_targets,
+            }),
         );
     }
     loop {
         let now = Instant::now();
         let mut sync_ran = false;
+        let mut max_sync_schedule_delay = Duration::ZERO;
         for peer in &mut sync_peers {
             if now >= peer.next_attempt_at {
-                run_snapshot_sync(node, peer, sync_interval_seconds, sync_max_backoff_seconds);
+                let delay = now.duration_since(peer.next_attempt_at);
+                max_sync_schedule_delay = max_sync_schedule_delay.max(delay);
+                runtime_stats.record_sync_schedule_delay(delay);
+                run_snapshot_sync(
+                    node,
+                    peer,
+                    sync_interval_seconds,
+                    sync_max_backoff_seconds,
+                    &logger,
+                );
                 sync_ran = true;
             }
         }
@@ -1281,39 +2081,79 @@ fn serve_control(
                 .iter()
                 .map(|peer| peer.config.clone())
                 .collect::<Vec<_>>();
-            let replication =
-                run_dht_replication(node, &peer_configs, dht_runner.replication_factor);
+            runtime_stats.record_dht_replication_schedule_delay(max_sync_schedule_delay);
+            let replication = run_dht_replication_with_logger(
+                node,
+                &peer_configs,
+                dht_runner.replication_factor,
+                Some(&logger),
+            );
             runtime_stats.record_dht_replication_run(replication, current_unix_timestamp());
             if replication.attempts > 0 {
-                println!(
-                    "dht replication: records={} attempts={} successes={} failures={}",
-                    replication.records,
-                    replication.attempts,
-                    replication.successes,
-                    replication.failures
+                logger.info(
+                    "dht.replication.run",
+                    format!(
+                        "dht replication: records={} attempts={} successes={} failures={}",
+                        replication.records,
+                        replication.attempts,
+                        replication.successes,
+                        replication.failures
+                    ),
+                    serde_json::json!({
+                        "records": replication.records,
+                        "attempts": replication.attempts,
+                        "successes": replication.successes,
+                        "failures": replication.failures,
+                    }),
                 );
             }
-            let refresh = run_dht_routing_refresh(
+            runtime_stats.record_dht_routing_refresh_schedule_delay(max_sync_schedule_delay);
+            let refresh = run_dht_routing_refresh_with_logger(
                 node,
                 &peer_configs,
                 dht_runner.routing_refresh_limit,
                 dht_runner.routing_refresh_max_targets,
+                Some(&logger),
             );
             runtime_stats.record_dht_routing_refresh_run(refresh, current_unix_timestamp());
             if refresh.attempts > 0 {
-                println!(
-                    "dht routing refresh: targets={} attempts={} successes={} failures={} nodes_returned={} nodes_merged={}",
-                    refresh.targets,
-                    refresh.attempts,
-                    refresh.successes,
-                    refresh.failures,
-                    refresh.nodes_returned,
-                    refresh.nodes_merged
+                logger.info(
+                    "dht.routing_refresh.run",
+                    format!(
+                        "dht routing refresh: targets={} attempts={} successes={} failures={} nodes_returned={} nodes_merged={}",
+                        refresh.targets,
+                        refresh.attempts,
+                        refresh.successes,
+                        refresh.failures,
+                        refresh.nodes_returned,
+                        refresh.nodes_merged
+                    ),
+                    serde_json::json!({
+                        "targets": refresh.targets,
+                        "attempts": refresh.attempts,
+                        "successes": refresh.successes,
+                        "failures": refresh.failures,
+                        "nodes_returned": refresh.nodes_returned,
+                        "nodes_merged": refresh.nodes_merged,
+                    }),
                 );
             }
             if let Some(path) = state_file {
                 if let Err(err) = save_node_state(path, node) {
-                    eprintln!("state save error: {err}");
+                    logger.error(
+                        "state_file.save_error",
+                        format!("state save error: {err}"),
+                        serde_json::json!({"path": path, "error": err.to_string()}),
+                    );
+                }
+            }
+            if let Some(path) = state_db {
+                if let Err(err) = save_node_state_db(path, node) {
+                    logger.error(
+                        "state_db.save_error",
+                        format!("state db save error: {err}"),
+                        serde_json::json!({"path": path, "error": err.to_string()}),
+                    );
                 }
             }
         }
@@ -1330,9 +2170,16 @@ fn serve_control(
                     &mut rate_limiter,
                     rate_limit,
                     &mut runtime_stats,
+                    state_db,
+                    &logger,
                 ) {
                     runtime_stats.record_response("<bad-request>", 400, Duration::ZERO);
                     let body = format!("request error: {err}");
+                    logger.warn(
+                        "control.request_error",
+                        body.clone(),
+                        serde_json::json!({"error": err.to_string()}),
+                    );
                     let response = format!(
                         "HTTP/1.1 400 Bad Request\r\ncontent-type: text/plain; charset=utf-8\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
                         body.len(),
@@ -1341,22 +2188,49 @@ fn serve_control(
                     let _ = stream.write_all(response.as_bytes());
                 } else if let Some(path) = state_file {
                     if let Err(err) = save_node_state(path, node) {
-                        eprintln!("state save error: {err}");
+                        logger.error(
+                            "state_file.save_error",
+                            format!("state save error: {err}"),
+                            serde_json::json!({"path": path, "error": err.to_string()}),
+                        );
+                    }
+                }
+                if let Some(path) = state_db {
+                    if let Err(err) = save_node_state_db(path, node) {
+                        logger.error(
+                            "state_db.save_error",
+                            format!("state db save error: {err}"),
+                            serde_json::json!({"path": path, "error": err.to_string()}),
+                        );
                     }
                 }
             }
             Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
                 std::thread::sleep(Duration::from_millis(25));
             }
-            Err(err) => eprintln!("connection error: {err}"),
+            Err(err) => logger.error(
+                "control.connection_error",
+                format!("connection error: {err}"),
+                serde_json::json!({"error": err.to_string()}),
+            ),
         }
     }
 }
 
+#[cfg(test)]
 fn run_dht_replication(
     node: &mut NativeNode,
     peers: &[SyncPeerConfig],
     replication_factor: usize,
+) -> DhtReplicationRunStats {
+    run_dht_replication_with_logger(node, peers, replication_factor, None)
+}
+
+fn run_dht_replication_with_logger(
+    node: &mut NativeNode,
+    peers: &[SyncPeerConfig],
+    replication_factor: usize,
+    logger: Option<&ControlLogger>,
 ) -> DhtReplicationRunStats {
     if peers.is_empty() || replication_factor == 0 {
         return DhtReplicationRunStats::default();
@@ -1367,7 +2241,8 @@ fn run_dht_replication(
         ..Default::default()
     };
     for (record_index, planned) in plan.records.into_iter().enumerate() {
-        for peer in peers {
+        let selected_peers = replication_control_peers_for_plan(peers, &planned);
+        for peer in selected_peers {
             stats.attempts = stats.attempts.saturating_add(1);
             let request = DhtRpcRequest::StoreRecord {
                 request_id: format!(
@@ -1382,11 +2257,27 @@ fn run_dht_replication(
                 }
                 Ok(response) => {
                     stats.failures = stats.failures.saturating_add(1);
-                    eprintln!("dht replication to {} returned {response:?}", peer.url);
+                    log_warn_or_stderr(
+                        logger,
+                        "dht.replication.unexpected_response",
+                        format!("dht replication to {} returned {response:?}", peer.url),
+                        serde_json::json!({
+                            "peer": peer.url,
+                            "response": format!("{response:?}"),
+                        }),
+                    );
                 }
                 Err(err) => {
                     stats.failures = stats.failures.saturating_add(1);
-                    eprintln!("dht replication to {} failed: {err}", peer.url);
+                    log_error_or_stderr(
+                        logger,
+                        "dht.replication.error",
+                        format!("dht replication to {} failed: {err}", peer.url),
+                        serde_json::json!({
+                            "peer": peer.url,
+                            "error": err.to_string(),
+                        }),
+                    );
                 }
             }
         }
@@ -1394,11 +2285,45 @@ fn run_dht_replication(
     stats
 }
 
+fn replication_control_peers_for_plan<'a>(
+    peers: &'a [SyncPeerConfig],
+    planned: &DhtRecordReplicationPlan,
+) -> Vec<&'a SyncPeerConfig> {
+    if !peers.iter().any(|peer| peer.peer_id.is_some()) {
+        return peers.iter().collect();
+    }
+    let target_peer_ids = planned
+        .target_nodes
+        .iter()
+        .map(|peer| peer.announce.peer_id.as_str())
+        .collect::<Vec<_>>();
+    peers
+        .iter()
+        .filter(|peer| {
+            peer.peer_id
+                .as_deref()
+                .map(|peer_id| target_peer_ids.contains(&peer_id))
+                .unwrap_or(false)
+        })
+        .collect()
+}
+
+#[cfg(test)]
 fn run_dht_routing_refresh(
     node: &mut NativeNode,
     peers: &[SyncPeerConfig],
     limit: usize,
     max_targets: usize,
+) -> DhtRoutingRefreshRunStats {
+    run_dht_routing_refresh_with_logger(node, peers, limit, max_targets, None)
+}
+
+fn run_dht_routing_refresh_with_logger(
+    node: &mut NativeNode,
+    peers: &[SyncPeerConfig],
+    limit: usize,
+    max_targets: usize,
+    logger: Option<&ControlLogger>,
 ) -> DhtRoutingRefreshRunStats {
     if peers.is_empty() || max_targets == 0 {
         return DhtRoutingRefreshRunStats::default();
@@ -1425,19 +2350,35 @@ fn run_dht_routing_refresh(
                 Ok(DhtRpcResponse::Nodes { nodes, .. }) => {
                     stats.successes = stats.successes.saturating_add(1);
                     stats.nodes_returned = stats.nodes_returned.saturating_add(nodes.len());
-                    let merged = node.merge_trusted_routing_peers(nodes);
+                    let merged = node.merge_verified_routing_peers(nodes);
                     stats.nodes_merged = stats.nodes_merged.saturating_add(merged);
                 }
                 Ok(response) => {
                     stats.failures = stats.failures.saturating_add(1);
-                    eprintln!(
-                        "dht routing refresh from {} returned {response:?}",
-                        peer.url
+                    log_warn_or_stderr(
+                        logger,
+                        "dht.routing_refresh.unexpected_response",
+                        format!(
+                            "dht routing refresh from {} returned {response:?}",
+                            peer.url
+                        ),
+                        serde_json::json!({
+                            "peer": peer.url,
+                            "response": format!("{response:?}"),
+                        }),
                     );
                 }
                 Err(err) => {
                     stats.failures = stats.failures.saturating_add(1);
-                    eprintln!("dht routing refresh from {} failed: {err}", peer.url);
+                    log_error_or_stderr(
+                        logger,
+                        "dht.routing_refresh.error",
+                        format!("dht routing refresh from {} failed: {err}", peer.url),
+                        serde_json::json!({
+                            "peer": peer.url,
+                            "error": err.to_string(),
+                        }),
+                    );
                 }
             }
         }
@@ -1450,6 +2391,7 @@ fn run_snapshot_sync(
     peer: &mut SyncPeerRuntime,
     base_interval_seconds: u64,
     max_backoff_seconds: u64,
+    logger: &ControlLogger,
 ) {
     let delay_seconds;
     match fetch_snapshot(&peer.config) {
@@ -1458,9 +2400,24 @@ fn run_snapshot_sync(
             node.sync_status.record_success(&peer.config.url, stats);
             peer.consecutive_failures = 0;
             delay_seconds = base_interval_seconds.max(1);
-            println!(
-                "snapshot sync from {}: peers={} mailbox_deliveries={} prekey_bundles={}",
-                peer.config.url, stats.peers, stats.mailbox_deliveries, stats.prekey_bundles
+            logger.info(
+                "sync.snapshot.success",
+                format!(
+                    "snapshot sync from {}: peers={} mailbox_deliveries={} prekey_bundles={} signed_one_time_prekey_records={}",
+                    peer.config.url,
+                    stats.peers,
+                    stats.mailbox_deliveries,
+                    stats.prekey_bundles,
+                    stats.signed_one_time_prekey_records
+                ),
+                serde_json::json!({
+                    "peer": peer.config.url,
+                    "peers": stats.peers,
+                    "mailbox_deliveries": stats.mailbox_deliveries,
+                    "prekey_bundles": stats.prekey_bundles,
+                    "signed_one_time_prekey_records": stats.signed_one_time_prekey_records,
+                    "dht_records": stats.dht_records,
+                }),
             );
         }
         Err(err) => {
@@ -1473,7 +2430,11 @@ fn run_snapshot_sync(
                 max_backoff_seconds.max(1),
                 peer.consecutive_failures,
             );
-            eprintln!("snapshot sync from {} failed: {error}", peer.config.url);
+            logger.error(
+                "sync.snapshot.error",
+                format!("snapshot sync from {} failed: {error}", peer.config.url),
+                serde_json::json!({"peer": peer.config.url, "error": error}),
+            );
         }
     }
     peer.next_attempt_at = Instant::now() + Duration::from_secs(delay_seconds);
@@ -1481,6 +2442,32 @@ fn run_snapshot_sync(
         &peer.config.url,
         current_unix_timestamp().saturating_add(delay_seconds),
     );
+}
+
+fn log_warn_or_stderr(
+    logger: Option<&ControlLogger>,
+    event: &str,
+    message: String,
+    fields: serde_json::Value,
+) {
+    if let Some(logger) = logger {
+        logger.warn(event, message, fields);
+    } else {
+        eprintln!("{message}");
+    }
+}
+
+fn log_error_or_stderr(
+    logger: Option<&ControlLogger>,
+    event: &str,
+    message: String,
+    fields: serde_json::Value,
+) {
+    if let Some(logger) = logger {
+        logger.error(event, message, fields);
+    } else {
+        eprintln!("{message}");
+    }
 }
 
 fn sync_backoff_delay_seconds(base: u64, max: u64, consecutive_failures: u32) -> u64 {
@@ -1565,11 +2552,15 @@ fn handle_stream(
     rate_limiter: &mut RateLimiter,
     rate_limit: RateLimitConfig,
     runtime_stats: &mut ControlRuntimeStats,
+    state_db: Option<&str>,
+    logger: &ControlLogger,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let peer_addr = stream.peer_addr().ok();
     let request = read_http_request(stream)?;
     let started_at = Instant::now();
     let endpoint = control_endpoint_key(&request);
+    let method = request.method.clone();
+    let path = request.path.clone();
     let request_body_bytes = request.body.len();
     let origin = request.header("origin").map(str::to_string);
     let response = if !security.allows_origin(origin.as_deref()) {
@@ -1588,23 +2579,48 @@ fn handle_stream(
             &ControlStatsResponse {
                 runtime: runtime_stats,
                 maintenance: node.maintenance_stats().clone(),
+                state_db: state_db_stats_opt(state_db),
             },
         )
     } else if request.method == "GET" && request.path.starts_with("/control/metrics") {
         node.prune_expired_records();
         ControlHttpResponse::openmetrics(
             200,
-            &runtime_stats.to_openmetrics(node.maintenance_stats()),
+            &runtime_stats.to_openmetrics(
+                node.maintenance_stats(),
+                state_db_stats_opt(state_db).as_ref(),
+            ),
         )
     } else {
         ControlHttpResponse::from_control(node.handle_control_request(request))
     };
-    runtime_stats.record_response(&endpoint, response.status, started_at.elapsed());
+    let duration = started_at.elapsed();
+    runtime_stats.record_response(&endpoint, response.status, duration);
     runtime_stats.record_sync_snapshot_bytes(
         &endpoint,
         response.status,
         request_body_bytes,
         response.body.len(),
+    );
+    logger.info(
+        "control.request",
+        format!(
+            "control request: {} {} status={} duration_micros={}",
+            method,
+            path,
+            response.status,
+            duration.as_micros()
+        ),
+        serde_json::json!({
+            "method": method,
+            "path": path,
+            "endpoint": endpoint,
+            "status": response.status,
+            "duration_micros": duration.as_micros(),
+            "request_body_bytes": request_body_bytes,
+            "response_body_bytes": response.body.len(),
+            "remote_addr": peer_addr.map(|addr| addr.to_string()),
+        }),
     );
     let allow_origin = security.access_control_origin(origin.as_deref());
     stream.write_all(response.to_http_string(&allow_origin).as_bytes())?;
@@ -1807,21 +2823,23 @@ Commands:\n  \
 announce --backup-file <file> --passphrase <text> [--peer-id <id>] [--addr <multiaddr,csv>] [--cap <bootstrap,dht,relay,mailbox>]\n  \
 inspect-public --text-file <file> --identity-public-key <base64>\n  \
 run [--peer-id <id>] [--addr <multiaddr>]\n  \
-serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--state-file <file>] [--sync-peer <url,csv>] [--sync-interval-seconds <n>] [--rate-limit-window-seconds <n>] [--rate-limit-max-requests <n>]\n"
+serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>] [--sync-peer <url,csv>] [--sync-interval-seconds <n>] [--rate-limit-window-seconds <n>] [--rate-limit-max-requests <n>] [--log-format <text|json>] [--mailbox-global-rate-limit-window-seconds <n>] [--mailbox-global-rate-limit-max-messages <n>] [--mailbox-sender-rate-limit-window-seconds <n>] [--mailbox-sender-rate-limit-max-messages <n>]\n"
     );
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        ControlRuntimeStats, DhtReplicationRunStats, DhtRoutingRefreshRunStats,
-        NodeMaintenanceStats, RateLimitConfig, RateLimiter, ServeControlConfigFile, SyncPeerConfig,
-        atomic_write_text, current_unix_timestamp, read_secret_file, run_dht_replication,
-        run_dht_routing_refresh, send_dht_rpc, sync_backoff_delay_seconds,
+        ControlLogger, ControlRuntimeStats, DhtReplicationRunStats, DhtRoutingRefreshRunStats,
+        LogFormat, NodeMaintenanceStats, RateLimitConfig, RateLimiter, ServeControlConfigFile,
+        StateDbStats, SyncPeerConfig, atomic_write_text, current_unix_timestamp,
+        load_node_state_db, parse_log_format, read_secret_file, run_dht_replication,
+        run_dht_routing_refresh, save_node_state_db, send_dht_rpc, sync_backoff_delay_seconds,
     };
+    use lm_core::{Identity, MailboxMessage, MailboxMessageKind, PreKeyBundle};
     use lm_node::{
-        DhtRecord, DhtRecordKey, DhtRecordKind, DhtRpcRequest, DhtRpcResponse, NativeNode,
-        NodeConfig,
+        DhtRecord, DhtRecordKey, DhtRecordKind, DhtRpcRequest, DhtRpcResponse,
+        MailboxPushRejectStats, NativeNode, NodeConfig,
     };
     use std::io::{Read, Write};
     use std::net::TcpListener;
@@ -1898,7 +2916,62 @@ mod tests {
             republish_at: now,
         };
         assert!(node.dht_records.store(record));
-        let stats = run_dht_replication(&mut node, &[SyncPeerConfig { url, token: None }], 3);
+        let stats = run_dht_replication(
+            &mut node,
+            &[SyncPeerConfig {
+                url,
+                token: None,
+                peer_id: None,
+            }],
+            3,
+        );
+        assert_eq!(stats.records, 1);
+        assert_eq!(stats.attempts, 1);
+        assert_eq!(stats.successes, 1);
+        assert_eq!(stats.failures, 0);
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn dht_replication_runner_uses_closest_control_peer_when_peer_id_is_known() {
+        let (url, server) = spawn_dht_rpc_store_result_server(1);
+        let (identity, _) = Identity::create_with_passphrase("closest replication peer").unwrap();
+        let announce = NodeConfig {
+            peer_id: "closest-peer".into(),
+            ..Default::default()
+        }
+        .create_announce(&identity)
+        .unwrap();
+        let mut node = NativeNode::new(NodeConfig::default());
+        node.kademlia
+            .insert_verified(announce.clone(), &identity.identity_public_key())
+            .unwrap();
+        let now = current_unix_timestamp();
+        let record = DhtRecord {
+            key: DhtRecordKey::for_public_peer("closest-record"),
+            kind: DhtRecordKind::PublicPeer,
+            value: "value".into(),
+            created_at: now,
+            expires_at: now.saturating_add(60),
+            republish_at: now,
+        };
+        assert!(node.dht_records.store(record));
+        let stats = run_dht_replication(
+            &mut node,
+            &[
+                SyncPeerConfig {
+                    url,
+                    token: None,
+                    peer_id: Some(announce.peer_id),
+                },
+                SyncPeerConfig {
+                    url: "http://127.0.0.1:1".into(),
+                    token: None,
+                    peer_id: Some("not-a-target".into()),
+                },
+            ],
+            1,
+        );
         assert_eq!(stats.records, 1);
         assert_eq!(stats.attempts, 1);
         assert_eq!(stats.successes, 1);
@@ -1910,8 +2983,16 @@ mod tests {
     fn dht_routing_refresh_runner_sends_find_node_to_peers() {
         let (url, server) = spawn_dht_rpc_find_node_server(2);
         let mut node = NativeNode::new(NodeConfig::default());
-        let stats =
-            run_dht_routing_refresh(&mut node, &[SyncPeerConfig { url, token: None }], 8, 2);
+        let stats = run_dht_routing_refresh(
+            &mut node,
+            &[SyncPeerConfig {
+                url,
+                token: None,
+                peer_id: None,
+            }],
+            8,
+            2,
+        );
         assert_eq!(stats.targets, 2);
         assert_eq!(stats.attempts, 2);
         assert_eq!(stats.successes, 2);
@@ -1948,6 +3029,7 @@ mod tests {
         let peer = SyncPeerConfig {
             url: format!("http://{addr}"),
             token: Some("rpc-token".into()),
+            peer_id: None,
         };
         let record = lm_node::DhtRecord {
             key: DhtRecordKey::for_public_peer("rpc-client"),
@@ -1983,6 +3065,52 @@ mod tests {
         assert_eq!(sync_backoff_delay_seconds(10, 300, 2), 20);
         assert_eq!(sync_backoff_delay_seconds(10, 300, 3), 40);
         assert_eq!(sync_backoff_delay_seconds(10, 30, 4), 30);
+    }
+
+    #[test]
+    fn log_format_parses_text_and_json_aliases() {
+        assert_eq!(parse_log_format("text").unwrap(), LogFormat::Text);
+        assert_eq!(parse_log_format("plain").unwrap(), LogFormat::Text);
+        assert_eq!(parse_log_format("json").unwrap(), LogFormat::Json);
+        assert_eq!(parse_log_format("structured").unwrap(), LogFormat::Json);
+        assert!(parse_log_format("xml").is_err());
+    }
+
+    #[test]
+    fn control_logger_renders_structured_json_line() {
+        let logger = ControlLogger::new(LogFormat::Json);
+        let line = logger.render_line(
+            "info",
+            "control.request",
+            "control request: GET /health status=200 duration_micros=5".into(),
+            serde_json::json!({
+                "method": "GET",
+                "path": "/health",
+                "status": 200,
+                "duration_micros": 5,
+            }),
+        );
+        let value: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(value["level"], "info");
+        assert_eq!(value["event"], "control.request");
+        assert_eq!(value["fields"]["method"], "GET");
+        assert_eq!(value["fields"]["status"], 200);
+        assert!(value["ts"].as_u64().unwrap() > 0);
+    }
+
+    #[test]
+    fn control_logger_renders_text_line_with_compact_fields() {
+        let logger = ControlLogger::new(LogFormat::Text);
+        let line = logger.render_line(
+            "warn",
+            "control.security",
+            "control security: no token configured; loopback clients only".into(),
+            serde_json::json!({"auth": "loopback_only"}),
+        );
+        assert_eq!(
+            line,
+            "control security: no token configured; loopback clients only {\"auth\":\"loopback_only\"}"
+        );
     }
 
     #[test]
@@ -2054,6 +3182,15 @@ mod tests {
         assert_eq!(stats.dht_routing_refresh_nodes_returned, 7);
         assert_eq!(stats.dht_routing_refresh_nodes_merged, 2);
         assert_eq!(stats.last_dht_routing_refresh_at, Some(789));
+        stats.record_sync_schedule_delay(std::time::Duration::from_micros(11));
+        stats.record_dht_replication_schedule_delay(std::time::Duration::from_micros(22));
+        stats.record_dht_routing_refresh_schedule_delay(std::time::Duration::from_micros(33));
+        assert_eq!(stats.last_sync_schedule_delay_micros, Some(11));
+        assert_eq!(stats.last_dht_replication_schedule_delay_micros, Some(22));
+        assert_eq!(
+            stats.last_dht_routing_refresh_schedule_delay_micros,
+            Some(33)
+        );
         let health = stats.endpoints.get("GET /health").unwrap();
         assert_eq!(health.requests, 2);
         assert_eq!(health.responses_2xx, 2);
@@ -2063,12 +3200,25 @@ mod tests {
         let sync = stats.endpoints.get("GET /sync/status").unwrap();
         assert_eq!(sync.requests, 3);
         assert_eq!(sync.responses_4xx, 3);
-        let metrics = stats.to_openmetrics(&NodeMaintenanceStats {
-            prune_runs: 2,
-            mailbox_expired_deliveries: 3,
-            prekey_expired_bundles: 4,
-            last_pruned_at: Some(1234),
-        });
+        let metrics = stats.to_openmetrics(
+            &NodeMaintenanceStats {
+                prune_runs: 2,
+                mailbox_expired_deliveries: 3,
+                prekey_expired_bundles: 4,
+                mailbox_push_rejects: MailboxPushRejectStats {
+                    invalid_json: 2,
+                    sender_rate_limited: 1,
+                    ..Default::default()
+                },
+                last_pruned_at: Some(1234),
+            },
+            Some(&StateDbStats {
+                page_count: 10,
+                page_size_bytes: 4096,
+                freelist_count: 2,
+                file_bytes: 40960,
+            }),
+        );
         assert!(metrics.contains("# TYPE lm_node_control_requests_total counter"));
         assert!(metrics.contains("lm_node_control_requests_total 7"));
         assert!(
@@ -2090,11 +3240,35 @@ mod tests {
         assert!(metrics.contains("lm_node_dht_routing_refresh_nodes_returned_total 7"));
         assert!(metrics.contains("lm_node_dht_routing_refresh_nodes_merged_total 2"));
         assert!(metrics.contains("lm_node_dht_routing_refresh_last_run_at 789"));
+        assert!(
+            metrics.contains(
+                "lm_node_background_schedule_delay_micros_total{job=\"snapshot_sync\"} 11"
+            )
+        );
+        assert!(metrics.contains(
+            "lm_node_background_schedule_delay_micros_total{job=\"dht_replication\"} 22"
+        ));
+        assert!(metrics.contains(
+            "lm_node_background_schedule_delay_micros_last{job=\"dht_routing_refresh\"} 33"
+        ));
         assert!(metrics.contains("lm_node_maintenance_prune_runs_total 2"));
         assert!(
             metrics
                 .contains("lm_node_maintenance_expired_records_total{kind=\"mailbox_delivery\"} 3")
         );
+        assert!(
+            metrics.contains("lm_node_mailbox_push_rejections_total{reason=\"invalid_json\"} 2")
+        );
+        assert!(
+            metrics.contains(
+                "lm_node_mailbox_push_rejections_total{reason=\"sender_rate_limited\"} 1"
+            )
+        );
+        assert!(metrics.contains("lm_node_mailbox_push_rejections_total{reason=\"all\"} 3"));
+        assert!(metrics.contains("lm_node_state_db_pages{kind=\"total\"} 10"));
+        assert!(metrics.contains("lm_node_state_db_pages{kind=\"free\"} 2"));
+        assert!(metrics.contains("lm_node_state_db_page_size_bytes 4096"));
+        assert!(metrics.contains("lm_node_state_db_file_bytes 40960"));
         assert!(metrics.ends_with("# EOF\n"));
     }
 
@@ -2134,6 +3308,101 @@ mod tests {
     }
 
     #[test]
+    fn sqlite_state_roundtrip_persists_node_tables() {
+        let dir = std::env::temp_dir().join(format!(
+            "lm-node-sqlite-state-test-{}-{}",
+            std::process::id(),
+            current_unix_timestamp()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("state.sqlite3");
+        let (alice, _) = Identity::create_with_passphrase("sqlite alice").unwrap();
+        let (bob, _) = Identity::create_with_passphrase("sqlite bob").unwrap();
+        let mut node = NativeNode::new(NodeConfig {
+            peer_id: "sqlite-node".into(),
+            ..Default::default()
+        });
+        let announce = NodeConfig {
+            peer_id: "sqlite-peer".into(),
+            ..Default::default()
+        }
+        .create_announce(&alice)
+        .unwrap();
+        node.routing_table
+            .insert_verified(announce.clone(), &alice.identity_public_key())
+            .unwrap();
+        node.kademlia
+            .insert_verified(announce, &alice.identity_public_key())
+            .unwrap();
+        let message = MailboxMessage::new(
+            &alice,
+            bob.user_id().clone(),
+            MailboxMessageKind::DirectEnvelope,
+            "ciphertext".into(),
+            3600,
+        )
+        .unwrap();
+        node.mailbox
+            .push_verified(message, &alice.identity_public_key())
+            .unwrap();
+        let (bundle, _, records) =
+            PreKeyBundle::new_with_signed_one_time_prekey_records(&alice, 7, 2, 3600).unwrap();
+        node.prekeys
+            .publish_verified_with_signed_one_time_prekey_records(bundle, records)
+            .unwrap();
+        assert!(node.prekeys.take_for(alice.user_id(), true).is_some());
+        node.dht_records.store(DhtRecord::prekey(
+            alice.user_id(),
+            "prekey-record".into(),
+            3600,
+        ));
+        node.maintenance.mailbox_push_rejects.invalid_json = 3;
+
+        save_node_state_db(path.to_str().unwrap(), &node).unwrap();
+        let restored = load_node_state_db(path.to_str().unwrap()).unwrap();
+
+        assert_eq!(restored.config.peer_id, "sqlite-node");
+        assert_eq!(restored.routing_table.len(), 1);
+        assert_eq!(restored.mailbox.pending_for(bob.user_id()), 1);
+        assert_eq!(restored.prekeys.len(), 1);
+        assert_eq!(restored.prekeys.consumed_for(alice.user_id()), vec![0]);
+        assert_eq!(
+            restored
+                .prekeys
+                .signed_one_time_prekey_records_for(alice.user_id())
+                .len(),
+            2
+        );
+        assert_eq!(restored.dht_records.len(), 1);
+        assert_eq!(restored.maintenance.mailbox_push_rejects.invalid_json, 3);
+
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        let mailbox_rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM mailbox_deliveries", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let prekey_rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM prekey_bundles", [], |row| row.get(0))
+            .unwrap();
+        let signed_prekey_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM signed_one_time_prekey_records",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let peer_rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM public_peers", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(mailbox_rows, 1);
+        assert_eq!(prekey_rows, 1);
+        assert_eq!(signed_prekey_rows, 2);
+        assert_eq!(peer_rows, 1);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn secret_file_loader_trims_and_rejects_empty_files() {
         let path = std::env::temp_dir().join(format!(
             "lm-node-secret-test-{}-{}.txt",
@@ -2157,6 +3426,7 @@ mod tests {
                 "bind": "127.0.0.1:9999",
                 "peer_id": "cfg-node",
                 "state_file": "state.json",
+                "state_db": "state.sqlite3",
                 "control_token": "control",
                 "control_token_file": "control.secret",
                 "cors_allow_origins": ["https://allowed.example"],
@@ -2167,14 +3437,21 @@ mod tests {
                 "dht_routing_refresh_max_targets": 16,
                 "rate_limit_window_seconds": 30,
                 "rate_limit_max_requests": 120,
+                "log_format": "json",
+                "mailbox_sender_rate_limit_window_seconds": 60,
+                "mailbox_sender_rate_limit_max_messages": 20,
+                "mailbox_global_rate_limit_window_seconds": 60,
+                "mailbox_global_rate_limit_max_messages": 200,
                 "sync_peers": [
-                    { "url": "http://127.0.0.1:8787", "token": "peer-token", "token_file": "peer.secret" }
+                    { "url": "http://127.0.0.1:8787", "peer_id": "peer-8787", "token": "peer-token", "token_file": "peer.secret" },
+                    { "url": "http://127.0.0.1:8788", "peer_id": "peer-8788", "token_file": "peer-8788.secret" }
                 ]
             }"#,
         )
         .unwrap();
         assert_eq!(config.bind.as_deref(), Some("127.0.0.1:9999"));
         assert_eq!(config.peer_id.as_deref(), Some("cfg-node"));
+        assert_eq!(config.state_db.as_deref(), Some("state.sqlite3"));
         assert_eq!(config.control_token.as_deref(), Some("control"));
         assert_eq!(config.control_token_file.as_deref(), Some("control.secret"));
         assert_eq!(
@@ -2188,9 +3465,22 @@ mod tests {
         assert_eq!(config.dht_routing_refresh_max_targets, Some(16));
         assert_eq!(config.rate_limit_window_seconds, Some(30));
         assert_eq!(config.rate_limit_max_requests, Some(120));
-        let peer = &config.sync_peers.unwrap()[0];
+        assert_eq!(config.log_format.as_deref(), Some("json"));
+        assert_eq!(config.mailbox_sender_rate_limit_window_seconds, Some(60));
+        assert_eq!(config.mailbox_sender_rate_limit_max_messages, Some(20));
+        assert_eq!(config.mailbox_global_rate_limit_window_seconds, Some(60));
+        assert_eq!(config.mailbox_global_rate_limit_max_messages, Some(200));
+        let sync_peers = config.sync_peers.unwrap();
+        assert_eq!(sync_peers.len(), 2);
+        let peer = &sync_peers[0];
         assert_eq!(peer.url, "http://127.0.0.1:8787");
+        assert_eq!(peer.peer_id.as_deref(), Some("peer-8787"));
         assert_eq!(peer.token.as_deref(), Some("peer-token"));
         assert_eq!(peer.token_file.as_deref(), Some("peer.secret"));
+        let peer = &sync_peers[1];
+        assert_eq!(peer.url, "http://127.0.0.1:8788");
+        assert_eq!(peer.peer_id.as_deref(), Some("peer-8788"));
+        assert_eq!(peer.token, None);
+        assert_eq!(peer.token_file.as_deref(), Some("peer-8788.secret"));
     }
 }

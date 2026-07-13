@@ -8,7 +8,7 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use lm_core::{
     Identity, IdentityBackupPackage, LmError, MailboxMessage, PreKeyBundle, PublicPeerAnnounce,
-    PublicPeerCapability, Result, UserId,
+    PublicPeerCapability, Result, SignedOneTimePreKeyRecord, UserId,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -357,6 +357,8 @@ pub enum DhtRpcResponse {
 pub struct RoutingPeer {
     pub node_id: KademliaNodeId,
     pub announce: PublicPeerAnnounce,
+    #[serde(default)]
+    pub identity_public_key: Option<String>,
     pub last_seen_at: u64,
 }
 
@@ -396,6 +398,7 @@ impl KademliaRoutingTable {
         let bucket = &mut self.buckets[bucket_index];
         if let Some(existing) = bucket.iter_mut().find(|p| p.node_id == node_id) {
             existing.announce = announce;
+            existing.identity_public_key = Some(BASE64.encode(identity_public_key));
             existing.last_seen_at = current_unix_timestamp();
             return Ok(());
         }
@@ -405,6 +408,7 @@ impl KademliaRoutingTable {
         bucket.push(RoutingPeer {
             node_id,
             announce,
+            identity_public_key: Some(BASE64.encode(identity_public_key)),
             last_seen_at: current_unix_timestamp(),
         });
         Ok(())
@@ -421,6 +425,7 @@ impl KademliaRoutingTable {
         let bucket = &mut self.buckets[bucket_index];
         if let Some(existing) = bucket.iter_mut().find(|p| p.node_id == node_id) {
             existing.announce = announce;
+            existing.identity_public_key = None;
             existing.last_seen_at = current_unix_timestamp();
             return;
         }
@@ -430,6 +435,7 @@ impl KademliaRoutingTable {
         bucket.push(RoutingPeer {
             node_id,
             announce,
+            identity_public_key: None,
             last_seen_at: current_unix_timestamp(),
         });
     }
@@ -520,6 +526,14 @@ pub struct NodeConfig {
     pub max_message_ttl_seconds: Option<u64>,
     #[serde(default = "default_max_mailbox_messages_per_user")]
     pub max_mailbox_messages_per_user: Option<usize>,
+    #[serde(default)]
+    pub mailbox_sender_rate_limit_window_seconds: Option<u64>,
+    #[serde(default)]
+    pub mailbox_sender_rate_limit_max_messages: Option<u32>,
+    #[serde(default)]
+    pub mailbox_global_rate_limit_window_seconds: Option<u64>,
+    #[serde(default)]
+    pub mailbox_global_rate_limit_max_messages: Option<u32>,
     pub max_relay_bandwidth_kbps: Option<u64>,
     pub announce_ttl_seconds: u64,
 }
@@ -537,10 +551,20 @@ impl Default for NodeConfig {
             max_mailbox_bytes: Some(10 * 1024 * 1024),
             max_message_ttl_seconds: Some(24 * 3600),
             max_mailbox_messages_per_user: default_max_mailbox_messages_per_user(),
+            mailbox_sender_rate_limit_window_seconds: None,
+            mailbox_sender_rate_limit_max_messages: None,
+            mailbox_global_rate_limit_window_seconds: None,
+            mailbox_global_rate_limit_max_messages: None,
             max_relay_bandwidth_kbps: Some(1024),
             announce_ttl_seconds: 24 * 3600,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MailboxRateLimitConfig {
+    pub window_seconds: u64,
+    pub max_messages: u32,
 }
 
 impl NodeConfig {
@@ -556,6 +580,30 @@ impl NodeConfig {
             self.max_relay_bandwidth_kbps,
             self.announce_ttl_seconds,
         )
+    }
+
+    pub fn mailbox_sender_rate_limit(&self) -> Option<MailboxRateLimitConfig> {
+        let window_seconds = self.mailbox_sender_rate_limit_window_seconds?;
+        let max_messages = self.mailbox_sender_rate_limit_max_messages?;
+        if window_seconds == 0 || max_messages == 0 {
+            return None;
+        }
+        Some(MailboxRateLimitConfig {
+            window_seconds,
+            max_messages,
+        })
+    }
+
+    pub fn mailbox_global_rate_limit(&self) -> Option<MailboxRateLimitConfig> {
+        let window_seconds = self.mailbox_global_rate_limit_window_seconds?;
+        let max_messages = self.mailbox_global_rate_limit_max_messages?;
+        if window_seconds == 0 || max_messages == 0 {
+            return None;
+        }
+        Some(MailboxRateLimitConfig {
+            window_seconds,
+            max_messages,
+        })
     }
 }
 
@@ -847,15 +895,172 @@ fn mailbox_delivery_size_bytes(message: &MailboxMessage) -> usize {
         + std::mem::size_of::<MailboxMessage>()
 }
 
+#[derive(Debug, Clone)]
+struct MailboxSenderRateLimitEntry {
+    window_started_at: u64,
+    count: u32,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct MailboxSenderRateLimiter {
+    entries: HashMap<UserId, MailboxSenderRateLimitEntry>,
+}
+
+impl MailboxSenderRateLimiter {
+    pub fn allows(
+        &mut self,
+        user_id: &UserId,
+        now: u64,
+        config: Option<MailboxRateLimitConfig>,
+    ) -> bool {
+        let Some(config) = config else {
+            return true;
+        };
+        let entry = self
+            .entries
+            .entry(user_id.clone())
+            .or_insert(MailboxSenderRateLimitEntry {
+                window_started_at: now,
+                count: 0,
+            });
+        if now.saturating_sub(entry.window_started_at) >= config.window_seconds {
+            entry.window_started_at = now;
+            entry.count = 0;
+        }
+        if entry.count >= config.max_messages {
+            return false;
+        }
+        true
+    }
+
+    pub fn record(&mut self, user_id: &UserId, now: u64, config: Option<MailboxRateLimitConfig>) {
+        let Some(config) = config else {
+            return;
+        };
+        let entry = self
+            .entries
+            .entry(user_id.clone())
+            .or_insert(MailboxSenderRateLimitEntry {
+                window_started_at: now,
+                count: 0,
+            });
+        if now.saturating_sub(entry.window_started_at) >= config.window_seconds {
+            entry.window_started_at = now;
+            entry.count = 0;
+        }
+        entry.count = entry.count.saturating_add(1);
+    }
+
+    pub fn check(
+        &mut self,
+        user_id: &UserId,
+        now: u64,
+        config: Option<MailboxRateLimitConfig>,
+    ) -> bool {
+        if !self.allows(user_id, now, config) {
+            return false;
+        }
+        self.record(user_id, now, config);
+        true
+    }
+
+    pub fn prune(&mut self, now: u64, config: Option<MailboxRateLimitConfig>) {
+        let Some(config) = config else {
+            self.entries.clear();
+            return;
+        };
+        let ttl = config.window_seconds.saturating_mul(2).max(1);
+        self.entries
+            .retain(|_, entry| now.saturating_sub(entry.window_started_at) < ttl);
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct MailboxGlobalRateLimiter {
+    window_started_at: Option<u64>,
+    count: u32,
+}
+
+impl MailboxGlobalRateLimiter {
+    pub fn allows(&mut self, now: u64, config: Option<MailboxRateLimitConfig>) -> bool {
+        let Some(config) = config else {
+            return true;
+        };
+        self.rotate_if_needed(now, config.window_seconds);
+        self.count < config.max_messages
+    }
+
+    pub fn record(&mut self, now: u64, config: Option<MailboxRateLimitConfig>) {
+        let Some(config) = config else {
+            return;
+        };
+        self.rotate_if_needed(now, config.window_seconds);
+        self.count = self.count.saturating_add(1);
+    }
+
+    pub fn check(&mut self, now: u64, config: Option<MailboxRateLimitConfig>) -> bool {
+        if !self.allows(now, config) {
+            return false;
+        }
+        self.record(now, config);
+        true
+    }
+
+    pub fn prune(&mut self, now: u64, config: Option<MailboxRateLimitConfig>) {
+        let Some(config) = config else {
+            self.window_started_at = None;
+            self.count = 0;
+            return;
+        };
+        if let Some(started_at) = self.window_started_at {
+            let ttl = config.window_seconds.saturating_mul(2).max(1);
+            if now.saturating_sub(started_at) >= ttl {
+                self.window_started_at = None;
+                self.count = 0;
+            }
+        }
+    }
+
+    fn rotate_if_needed(&mut self, now: u64, window_seconds: u64) {
+        match self.window_started_at {
+            Some(started_at) if now.saturating_sub(started_at) < window_seconds => {}
+            _ => {
+                self.window_started_at = Some(now);
+                self.count = 0;
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct PreKeyStore {
     bundles: HashMap<UserId, PreKeyBundle>,
+    signed_one_time_prekey_records: HashMap<UserId, Vec<SignedOneTimePreKeyRecord>>,
     consumed_one_time_prekeys: HashMap<UserId, Vec<u32>>,
 }
 
 impl PreKeyStore {
     pub fn publish_verified(&mut self, bundle: PreKeyBundle) -> Result<()> {
+        self.publish_verified_with_signed_one_time_prekey_records(bundle, Vec::new())
+    }
+
+    pub fn publish_verified_with_signed_one_time_prekey_records(
+        &mut self,
+        bundle: PreKeyBundle,
+        signed_one_time_prekey_records: Vec<SignedOneTimePreKeyRecord>,
+    ) -> Result<()> {
         bundle.verify()?;
+        for record in &signed_one_time_prekey_records {
+            record.verify_for_bundle(&bundle)?;
+        }
         let user_id = bundle.user_id.clone();
         let reset_consumed = self
             .bundles
@@ -865,9 +1070,14 @@ impl PreKeyStore {
         self.bundles.insert(user_id.clone(), bundle);
         if reset_consumed {
             self.consumed_one_time_prekeys.remove(&user_id);
-        } else {
-            self.prune_consumed_for(&user_id);
+            self.signed_one_time_prekey_records.remove(&user_id);
         }
+        self.merge_verified_signed_one_time_prekey_records_for(
+            &user_id,
+            signed_one_time_prekey_records,
+        );
+        self.prune_signed_one_time_prekey_records_for(&user_id);
+        self.prune_consumed_for(&user_id);
         Ok(())
     }
 
@@ -881,7 +1091,8 @@ impl PreKeyStore {
     }
 
     pub fn take_for(&mut self, user_id: &UserId, consume: bool) -> Option<PreKeyBundle> {
-        let (bundle, _) = self.take_for_with_selected_one_time_prekey(user_id, consume)?;
+        let (bundle, _, _) =
+            self.take_for_with_selected_one_time_prekey_material(user_id, consume)?;
         Some(bundle)
     }
 
@@ -890,25 +1101,69 @@ impl PreKeyStore {
         user_id: &UserId,
         consume: bool,
     ) -> Option<(PreKeyBundle, Option<u32>)> {
+        let (bundle, selected_id, _) =
+            self.take_for_with_selected_one_time_prekey_material(user_id, consume)?;
+        Some((bundle, selected_id))
+    }
+
+    pub fn take_for_with_selected_one_time_prekey_record(
+        &mut self,
+        user_id: &UserId,
+        consume: bool,
+    ) -> Option<(PreKeyBundle, Option<SignedOneTimePreKeyRecord>)> {
+        let (bundle, _, selected_record) =
+            self.take_for_with_selected_one_time_prekey_material(user_id, consume)?;
+        Some((bundle, selected_record))
+    }
+
+    pub fn take_for_with_selected_one_time_prekey_material(
+        &mut self,
+        user_id: &UserId,
+        consume: bool,
+    ) -> Option<(PreKeyBundle, Option<u32>, Option<SignedOneTimePreKeyRecord>)> {
         self.prune_expired(current_unix_timestamp());
         let bundle = self.bundles.get(user_id).cloned()?;
         let consumed = self
             .consumed_one_time_prekeys
             .entry(user_id.clone())
             .or_default();
-        let selected = bundle
-            .one_time_prekeys
-            .iter()
-            .map(|key| key.key_id)
-            .find(|id| !consumed.contains(id));
+        let selected_record =
+            self.signed_one_time_prekey_records
+                .get(user_id)
+                .and_then(|records| {
+                    records
+                        .iter()
+                        .filter(|record| record.signed_prekey_id == bundle.signed_prekey_id)
+                        .find(|record| !consumed.contains(&record.key_id))
+                        .cloned()
+                });
+        let selected_id = selected_record
+            .as_ref()
+            .map(|record| record.key_id)
+            .or_else(|| {
+                if self
+                    .signed_one_time_prekey_records
+                    .get(user_id)
+                    .map(|records| !records.is_empty())
+                    .unwrap_or(false)
+                {
+                    None
+                } else {
+                    bundle
+                        .one_time_prekeys
+                        .iter()
+                        .map(|key| key.key_id)
+                        .find(|id| !consumed.contains(id))
+                }
+            });
         if consume {
-            if let Some(id) = selected {
+            if let Some(id) = selected_id {
                 consumed.push(id);
                 consumed.sort_unstable();
                 consumed.dedup();
             }
         }
-        Some((bundle, selected))
+        Some((bundle, selected_id, selected_record))
     }
 
     pub fn consumed_for(&self, user_id: &UserId) -> Vec<u32> {
@@ -918,9 +1173,31 @@ impl PreKeyStore {
             .unwrap_or_default()
     }
 
+    pub fn signed_one_time_prekey_records_for(
+        &self,
+        user_id: &UserId,
+    ) -> Vec<SignedOneTimePreKeyRecord> {
+        self.signed_one_time_prekey_records
+            .get(user_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
     pub fn remaining_one_time_prekeys_for(&self, user_id: &UserId) -> Option<usize> {
         let bundle = self.bundles.get(user_id)?;
         let consumed = self.consumed_one_time_prekeys.get(user_id);
+        if let Some(records) = self.signed_one_time_prekey_records.get(user_id) {
+            let count = records
+                .iter()
+                .filter(|record| record.signed_prekey_id == bundle.signed_prekey_id)
+                .filter(|record| {
+                    !consumed
+                        .map(|ids| ids.contains(&record.key_id))
+                        .unwrap_or(false)
+                })
+                .count();
+            return Some(count);
+        }
         Some(
             bundle
                 .one_time_prekeys
@@ -932,6 +1209,19 @@ impl PreKeyStore {
                 })
                 .count(),
         )
+    }
+
+    pub fn published_one_time_prekeys_for(&self, user_id: &UserId) -> Option<usize> {
+        let bundle = self.bundles.get(user_id)?;
+        if let Some(records) = self.signed_one_time_prekey_records.get(user_id) {
+            return Some(
+                records
+                    .iter()
+                    .filter(|record| record.signed_prekey_id == bundle.signed_prekey_id)
+                    .count(),
+            );
+        }
+        Some(bundle.one_time_prekeys.len())
     }
 
     pub fn prune_expired(&mut self, now: u64) -> usize {
@@ -946,21 +1236,95 @@ impl PreKeyStore {
         let removed = expired.len();
         for user_id in expired {
             self.bundles.remove(&user_id);
+            self.signed_one_time_prekey_records.remove(&user_id);
             self.consumed_one_time_prekeys.remove(&user_id);
+        }
+        let users: Vec<_> = self
+            .signed_one_time_prekey_records
+            .keys()
+            .cloned()
+            .collect();
+        for user_id in users {
+            if let Some(records) = self.signed_one_time_prekey_records.get_mut(&user_id) {
+                records.retain(|record| record.expires_at > now);
+                if records.is_empty() {
+                    self.signed_one_time_prekey_records.remove(&user_id);
+                }
+            }
+            self.prune_consumed_for(&user_id);
         }
         removed
     }
 
-    fn prune_consumed_for(&mut self, user_id: &UserId) {
+    fn merge_verified_signed_one_time_prekey_records_for(
+        &mut self,
+        user_id: &UserId,
+        records: Vec<SignedOneTimePreKeyRecord>,
+    ) -> usize {
+        if records.is_empty() {
+            return 0;
+        }
+        let list = self
+            .signed_one_time_prekey_records
+            .entry(user_id.clone())
+            .or_default();
+        let mut inserted = 0usize;
+        for record in records {
+            if let Some(existing) = list.iter_mut().find(|existing| {
+                existing.signed_prekey_id == record.signed_prekey_id
+                    && existing.key_id == record.key_id
+            }) {
+                *existing = record;
+            } else {
+                list.push(record);
+                inserted = inserted.saturating_add(1);
+            }
+        }
+        list.sort_by_key(|record| (record.signed_prekey_id, record.key_id));
+        inserted
+    }
+
+    fn prune_signed_one_time_prekey_records_for(&mut self, user_id: &UserId) {
         let Some(bundle) = self.bundles.get(user_id) else {
+            self.signed_one_time_prekey_records.remove(user_id);
+            return;
+        };
+        let Some(records) = self.signed_one_time_prekey_records.get_mut(user_id) else {
+            return;
+        };
+        records.retain(|record| record.verify_for_bundle(bundle).is_ok());
+        records.sort_by_key(|record| (record.signed_prekey_id, record.key_id));
+        records.dedup_by_key(|record| (record.signed_prekey_id, record.key_id));
+        if records.is_empty() {
+            self.signed_one_time_prekey_records.remove(user_id);
+        }
+    }
+
+    fn valid_one_time_key_ids_for(&self, user_id: &UserId) -> Option<Vec<u32>> {
+        let bundle = self.bundles.get(user_id)?;
+        if let Some(records) = self.signed_one_time_prekey_records.get(user_id) {
+            return Some(
+                records
+                    .iter()
+                    .filter(|record| record.signed_prekey_id == bundle.signed_prekey_id)
+                    .map(|record| record.key_id)
+                    .collect(),
+            );
+        }
+        Some(
+            bundle
+                .one_time_prekeys
+                .iter()
+                .map(|key| key.key_id)
+                .collect(),
+        )
+    }
+
+    fn prune_consumed_for(&mut self, user_id: &UserId) {
+        let Some(valid_ids) = self.valid_one_time_key_ids_for(user_id) else {
             self.consumed_one_time_prekeys.remove(user_id);
             return;
         };
-        let valid_ids: Vec<_> = bundle
-            .one_time_prekeys
-            .iter()
-            .map(|key| key.key_id)
-            .collect();
         if let Some(consumed) = self.consumed_one_time_prekeys.get_mut(user_id) {
             consumed.retain(|id| valid_ids.contains(id));
             consumed.sort_unstable();
@@ -983,14 +1347,27 @@ impl PreKeyStore {
         self.bundles.values().cloned().collect()
     }
 
+    pub fn all_signed_one_time_prekey_records(&self) -> Vec<SignedOneTimePreKeyRecord> {
+        self.signed_one_time_prekey_records
+            .values()
+            .flat_map(|records| records.iter().cloned())
+            .collect()
+    }
+
     fn restore_bundles(&mut self, bundles: Vec<PreKeyBundle>) {
         self.bundles.clear();
+        self.signed_one_time_prekey_records.clear();
         for bundle in bundles {
             if bundle.verify().is_ok() {
                 self.bundles.insert(bundle.user_id.clone(), bundle);
             }
         }
         self.prune_expired(current_unix_timestamp());
+    }
+
+    fn restore_signed_one_time_prekey_records(&mut self, records: Vec<SignedOneTimePreKeyRecord>) {
+        self.signed_one_time_prekey_records.clear();
+        self.merge_signed_one_time_prekey_records(records);
     }
 
     fn merge_bundles(&mut self, bundles: Vec<PreKeyBundle>) -> usize {
@@ -1009,12 +1386,40 @@ impl PreKeyStore {
             self.bundles.insert(user_id.clone(), bundle);
             if reset_consumed {
                 self.consumed_one_time_prekeys.remove(&user_id);
-            } else {
-                self.prune_consumed_for(&user_id);
+                self.signed_one_time_prekey_records.remove(&user_id);
             }
+            self.prune_signed_one_time_prekey_records_for(&user_id);
+            self.prune_consumed_for(&user_id);
             if is_new {
                 inserted += 1;
             }
+        }
+        inserted
+    }
+
+    fn merge_signed_one_time_prekey_records(
+        &mut self,
+        records: Vec<SignedOneTimePreKeyRecord>,
+    ) -> usize {
+        let mut grouped: HashMap<UserId, Vec<SignedOneTimePreKeyRecord>> = HashMap::new();
+        for record in records {
+            let Some(bundle) = self.bundles.get(&record.user_id) else {
+                continue;
+            };
+            if record.verify_for_bundle(bundle).is_err() {
+                continue;
+            }
+            grouped
+                .entry(record.user_id.clone())
+                .or_default()
+                .push(record);
+        }
+        let mut inserted = 0usize;
+        for (user_id, records) in grouped {
+            inserted = inserted.saturating_add(
+                self.merge_verified_signed_one_time_prekey_records_for(&user_id, records),
+            );
+            self.prune_consumed_for(&user_id);
         }
         inserted
     }
@@ -1045,6 +1450,8 @@ pub struct NativeNode {
     pub routing_table: RoutingTable,
     pub kademlia: KademliaRoutingTable,
     pub mailbox: MailboxStore,
+    pub mailbox_global_rate_limiter: MailboxGlobalRateLimiter,
+    pub mailbox_sender_rate_limiter: MailboxSenderRateLimiter,
     pub prekeys: PreKeyStore,
     pub dht_records: DhtRecordStore,
     pub sync_status: NodeSyncStatus,
@@ -1056,7 +1463,64 @@ pub struct NodeMaintenanceStats {
     pub prune_runs: u64,
     pub mailbox_expired_deliveries: u64,
     pub prekey_expired_bundles: u64,
+    #[serde(default)]
+    pub mailbox_push_rejects: MailboxPushRejectStats,
     pub last_pruned_at: Option<u64>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MailboxPushRejectStats {
+    pub invalid_json: u64,
+    pub invalid_message_format: u64,
+    pub invalid_identity_public_key: u64,
+    pub invalid_signature: u64,
+    pub expired_object: u64,
+    pub duplicate_message: u64,
+    pub payload_too_large: u64,
+    pub global_rate_limited: u64,
+    pub sender_rate_limited: u64,
+    pub other: u64,
+}
+
+impl MailboxPushRejectStats {
+    pub fn total(&self) -> u64 {
+        self.invalid_json
+            .saturating_add(self.invalid_message_format)
+            .saturating_add(self.invalid_identity_public_key)
+            .saturating_add(self.invalid_signature)
+            .saturating_add(self.expired_object)
+            .saturating_add(self.duplicate_message)
+            .saturating_add(self.payload_too_large)
+            .saturating_add(self.global_rate_limited)
+            .saturating_add(self.sender_rate_limited)
+            .saturating_add(self.other)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MailboxPushRejectReason {
+    InvalidJson,
+    InvalidMessageFormat,
+    InvalidIdentityPublicKey,
+    InvalidSignature,
+    ExpiredObject,
+    DuplicateMessage,
+    PayloadTooLarge,
+    GlobalRateLimited,
+    SenderRateLimited,
+    Other,
+}
+
+impl From<LmError> for MailboxPushRejectReason {
+    fn from(value: LmError) -> Self {
+        match value {
+            LmError::InvalidSignature | LmError::InvalidUserId => Self::InvalidSignature,
+            LmError::ExpiredObject => Self::ExpiredObject,
+            LmError::DuplicateMessage => Self::DuplicateMessage,
+            LmError::PayloadTooLarge => Self::PayloadTooLarge,
+            _ => Self::Other,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1081,6 +1545,8 @@ pub struct NodeSyncPeerStatus {
     pub last_imported_peers: usize,
     pub last_imported_mailbox_deliveries: usize,
     pub last_imported_prekey_bundles: usize,
+    #[serde(default)]
+    pub last_imported_signed_one_time_prekey_records: usize,
 }
 
 impl NodeSyncStatus {
@@ -1096,6 +1562,7 @@ impl NodeSyncStatus {
         entry.last_imported_peers = stats.peers;
         entry.last_imported_mailbox_deliveries = stats.mailbox_deliveries;
         entry.last_imported_prekey_bundles = stats.prekey_bundles;
+        entry.last_imported_signed_one_time_prekey_records = stats.signed_one_time_prekey_records;
     }
 
     pub fn record_failure(&mut self, url: &str, error: impl Into<String>) {
@@ -1130,6 +1597,7 @@ impl NodeSyncStatus {
                 last_imported_peers: 0,
                 last_imported_mailbox_deliveries: 0,
                 last_imported_prekey_bundles: 0,
+                last_imported_signed_one_time_prekey_records: 0,
             })
     }
 }
@@ -1145,6 +1613,8 @@ pub struct NodeStateSnapshot {
     pub mailbox_messages: Vec<MailboxMessage>,
     #[serde(default)]
     pub prekey_bundles: Vec<PreKeyBundle>,
+    #[serde(default)]
+    pub signed_one_time_prekey_records: Vec<SignedOneTimePreKeyRecord>,
     #[serde(default)]
     pub consumed_one_time_prekeys: Vec<ConsumedOneTimePreKey>,
     #[serde(default)]
@@ -1166,6 +1636,7 @@ pub struct NodeMergeStats {
     pub peers: usize,
     pub mailbox_deliveries: usize,
     pub prekey_bundles: usize,
+    pub signed_one_time_prekey_records: usize,
     pub dht_records: usize,
 }
 
@@ -1177,6 +1648,8 @@ impl NativeNode {
             routing_table: RoutingTable::default(),
             kademlia: KademliaRoutingTable::new(local_id, DEFAULT_K_BUCKET_SIZE),
             mailbox: MailboxStore::default(),
+            mailbox_global_rate_limiter: MailboxGlobalRateLimiter::default(),
+            mailbox_sender_rate_limiter: MailboxSenderRateLimiter::default(),
             prekeys: PreKeyStore::default(),
             dht_records: DhtRecordStore::default(),
             sync_status: NodeSyncStatus::default(),
@@ -1197,6 +1670,10 @@ impl NativeNode {
         let mailbox_removed = self.mailbox.prune_expired(now) as u64;
         let prekey_removed = self.prekeys.prune_expired(now) as u64;
         self.dht_records.prune_expired(now);
+        self.mailbox_global_rate_limiter
+            .prune(now, self.config.mailbox_global_rate_limit());
+        self.mailbox_sender_rate_limiter
+            .prune(now, self.config.mailbox_sender_rate_limit());
         self.maintenance.prune_runs = self.maintenance.prune_runs.saturating_add(1);
         self.maintenance.mailbox_expired_deliveries = self
             .maintenance
@@ -1211,7 +1688,43 @@ impl NativeNode {
             prune_runs: 1,
             mailbox_expired_deliveries: mailbox_removed,
             prekey_expired_bundles: prekey_removed,
+            mailbox_push_rejects: MailboxPushRejectStats::default(),
             last_pruned_at: Some(now),
+        }
+    }
+
+    fn record_mailbox_push_reject(&mut self, reason: MailboxPushRejectReason) {
+        let stats = &mut self.maintenance.mailbox_push_rejects;
+        match reason {
+            MailboxPushRejectReason::InvalidJson => {
+                stats.invalid_json = stats.invalid_json.saturating_add(1)
+            }
+            MailboxPushRejectReason::InvalidMessageFormat => {
+                stats.invalid_message_format = stats.invalid_message_format.saturating_add(1)
+            }
+            MailboxPushRejectReason::InvalidIdentityPublicKey => {
+                stats.invalid_identity_public_key =
+                    stats.invalid_identity_public_key.saturating_add(1)
+            }
+            MailboxPushRejectReason::InvalidSignature => {
+                stats.invalid_signature = stats.invalid_signature.saturating_add(1)
+            }
+            MailboxPushRejectReason::ExpiredObject => {
+                stats.expired_object = stats.expired_object.saturating_add(1)
+            }
+            MailboxPushRejectReason::DuplicateMessage => {
+                stats.duplicate_message = stats.duplicate_message.saturating_add(1)
+            }
+            MailboxPushRejectReason::PayloadTooLarge => {
+                stats.payload_too_large = stats.payload_too_large.saturating_add(1)
+            }
+            MailboxPushRejectReason::GlobalRateLimited => {
+                stats.global_rate_limited = stats.global_rate_limited.saturating_add(1)
+            }
+            MailboxPushRejectReason::SenderRateLimited => {
+                stats.sender_rate_limited = stats.sender_rate_limited.saturating_add(1)
+            }
+            MailboxPushRejectReason::Other => stats.other = stats.other.saturating_add(1),
         }
     }
 
@@ -1254,11 +1767,56 @@ impl NativeNode {
             if peer.node_id != expected_node_id || expected_node_id == self.kademlia.local_id() {
                 continue;
             }
+            if let Some(identity_public_key) = &peer.identity_public_key {
+                let Ok(public_key) = decode_identity_public_key_base64(identity_public_key) else {
+                    continue;
+                };
+                if peer.announce.verify(&public_key).is_err() {
+                    continue;
+                }
+            }
             self.routing_table
                 .insert_trusted_announce(peer.announce.clone());
             let before = self.kademlia.len();
             self.kademlia.insert_local_snapshot(peer.announce);
             if self.kademlia.len() > before {
+                inserted = inserted.saturating_add(1);
+            }
+        }
+        inserted
+    }
+
+    pub fn merge_verified_routing_peers(&mut self, peers: Vec<RoutingPeer>) -> usize {
+        let now = current_unix_timestamp();
+        let mut inserted = 0usize;
+        for peer in peers {
+            if peer.announce.expires_at <= now {
+                continue;
+            }
+            let expected_node_id = KademliaNodeId::from_peer_id(&peer.announce.peer_id);
+            if peer.node_id != expected_node_id || expected_node_id == self.kademlia.local_id() {
+                continue;
+            }
+            let Some(identity_public_key) = &peer.identity_public_key else {
+                continue;
+            };
+            let Ok(public_key) = decode_identity_public_key_base64(identity_public_key) else {
+                continue;
+            };
+            if self
+                .routing_table
+                .insert_verified(peer.announce.clone(), &public_key)
+                .is_err()
+            {
+                continue;
+            }
+            let before = self.kademlia.len();
+            if self
+                .kademlia
+                .insert_verified(peer.announce, &public_key)
+                .is_ok()
+                && self.kademlia.len() > before
+            {
                 inserted = inserted.saturating_add(1);
             }
         }
@@ -1323,6 +1881,7 @@ impl NativeNode {
             mailbox_deliveries: self.mailbox.all_deliveries(),
             mailbox_messages: Vec::new(),
             prekey_bundles: self.prekeys.all_bundles(),
+            signed_one_time_prekey_records: self.prekeys.all_signed_one_time_prekey_records(),
             consumed_one_time_prekeys: self
                 .prekeys
                 .consumed_one_time_prekeys
@@ -1361,6 +1920,8 @@ impl NativeNode {
         }
         node.prekeys.restore_bundles(snapshot.prekey_bundles);
         node.prekeys
+            .restore_signed_one_time_prekey_records(snapshot.signed_one_time_prekey_records);
+        node.prekeys
             .restore_consumed(snapshot.consumed_one_time_prekeys);
         node.dht_records.restore_records(snapshot.dht_records);
         node.sync_status = snapshot.sync_status;
@@ -1395,6 +1956,9 @@ impl NativeNode {
             self.mailbox.merge_deliveries(snapshot.mailbox_deliveries)
         };
         let prekey_bundles = self.prekeys.merge_bundles(snapshot.prekey_bundles);
+        let signed_one_time_prekey_records = self
+            .prekeys
+            .merge_signed_one_time_prekey_records(snapshot.signed_one_time_prekey_records);
         self.prekeys
             .merge_consumed(snapshot.consumed_one_time_prekeys);
         let dht_records = self.dht_records.merge_records(snapshot.dht_records);
@@ -1405,6 +1969,7 @@ impl NativeNode {
             peers,
             mailbox_deliveries,
             prekey_bundles,
+            signed_one_time_prekey_records,
             dht_records,
         }
     }
@@ -1577,6 +2142,8 @@ struct MailboxAckResponse {
 #[derive(Debug, Deserialize)]
 struct PublishPreKeyRequest {
     prekey_bundle_text: String,
+    #[serde(default)]
+    signed_one_time_prekey_record_texts: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1585,8 +2152,12 @@ struct PublishPreKeyResponse {
     user_id: String,
     prekey_bundles: usize,
     one_time_prekeys: usize,
+    signed_one_time_prekey_records: usize,
     remaining_one_time_prekeys: usize,
     low_one_time_prekeys: bool,
+    replenishment_required: bool,
+    replenishment_actor: &'static str,
+    node_generates_user_keys: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -1595,9 +2166,35 @@ struct GetPreKeyResponse {
     found: bool,
     prekey_bundle_text: Option<String>,
     selected_one_time_prekey_id: Option<u32>,
+    selected_signed_one_time_prekey_record_text: Option<String>,
     consumed_one_time_prekey_ids: Vec<u32>,
     remaining_one_time_prekeys: Option<usize>,
+    signed_one_time_prekey_records: Option<usize>,
     low_one_time_prekeys: bool,
+    replenishment_required: bool,
+    replenishment_actor: &'static str,
+    node_generates_user_keys: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct PreKeyStatusResponse {
+    user_id: String,
+    found: bool,
+    consumed_one_time_prekey_ids: Vec<u32>,
+    remaining_one_time_prekeys: Option<usize>,
+    signed_one_time_prekey_records: Option<usize>,
+    low_one_time_prekeys: bool,
+    replenishment_required: bool,
+    replenishment_actor: &'static str,
+    node_generates_user_keys: bool,
+}
+
+fn prekey_low_one_time_prekeys(remaining: Option<usize>) -> bool {
+    remaining.map(|value| value <= 1).unwrap_or(false)
+}
+
+fn prekey_replenishment_required(remaining: Option<usize>) -> bool {
+    remaining.map(|value| value <= 1).unwrap_or(true)
 }
 
 #[derive(Debug, Deserialize)]
@@ -1642,6 +2239,7 @@ struct ImportSnapshotResponse {
     peers: usize,
     mailbox_deliveries: usize,
     prekey_bundles: usize,
+    signed_one_time_prekey_records: usize,
     dht_records: usize,
 }
 
@@ -1672,6 +2270,7 @@ impl NativeNode {
             ("POST", "/mailbox/ack") => self.handle_control_mailbox_ack(&request.body),
             ("POST", "/prekey/publish") => self.handle_control_prekey_publish(&request.body),
             ("GET", "/prekey/get") => self.handle_control_prekey_get(&request.path),
+            ("GET", "/prekey/status") => self.handle_control_prekey_status(&request.path),
             ("POST", "/dht/record") => self.handle_control_dht_record_store(&request.body),
             ("GET", "/dht/record") => self.handle_control_dht_record_get(&request.path),
             ("GET", "/dht/closest") => self.handle_control_dht_closest(&request.path),
@@ -1693,6 +2292,7 @@ impl NativeNode {
                 | "/mailbox/ack"
                 | "/prekey/publish"
                 | "/prekey/get"
+                | "/prekey/status"
                 | "/dht/record"
                 | "/dht/closest"
                 | "/dht/rpc"
@@ -1767,16 +2367,46 @@ impl NativeNode {
     fn handle_control_mailbox_push(&mut self, body: &str) -> ControlResponse {
         let req: PushMailboxRequest = match serde_json::from_str(body) {
             Ok(v) => v,
-            Err(e) => return ControlResponse::text(400, format!("invalid json: {e}")),
+            Err(e) => {
+                self.record_mailbox_push_reject(MailboxPushRejectReason::InvalidJson);
+                return ControlResponse::text(400, format!("invalid json: {e}"));
+            }
         };
         let message = match MailboxMessage::from_export_text(req.message_text.trim()) {
             Ok(v) => v,
-            Err(e) => return ControlResponse::text(400, e.to_string()),
+            Err(e) => {
+                self.record_mailbox_push_reject(MailboxPushRejectReason::InvalidMessageFormat);
+                return ControlResponse::text(400, e.to_string());
+            }
         };
         let public_key = match decode_identity_public_key_base64(&req.from_identity_public_key) {
             Ok(v) => v,
-            Err(e) => return ControlResponse::text(400, e.to_string()),
+            Err(e) => {
+                self.record_mailbox_push_reject(MailboxPushRejectReason::InvalidIdentityPublicKey);
+                return ControlResponse::text(400, e.to_string());
+            }
         };
+        if let Err(e) = message.verify(&public_key) {
+            self.record_mailbox_push_reject(MailboxPushRejectReason::from(e.clone()));
+            return ControlResponse::text(400, e.to_string());
+        }
+        let now = current_unix_timestamp();
+        let global_rate_limit = self.config.mailbox_global_rate_limit();
+        let sender_rate_limit = self.config.mailbox_sender_rate_limit();
+        if !self
+            .mailbox_global_rate_limiter
+            .allows(now, global_rate_limit)
+        {
+            self.record_mailbox_push_reject(MailboxPushRejectReason::GlobalRateLimited);
+            return ControlResponse::text(429, "mailbox global rate limit exceeded");
+        }
+        if !self
+            .mailbox_sender_rate_limiter
+            .allows(&message.from_user_id, now, sender_rate_limit)
+        {
+            self.record_mailbox_push_reject(MailboxPushRejectReason::SenderRateLimited);
+            return ControlResponse::text(429, "mailbox sender rate limit exceeded");
+        }
         let delivery_id = match self.mailbox.push_verified_with_limits(
             message.clone(),
             &public_key,
@@ -1785,8 +2415,15 @@ impl NativeNode {
             self.config.max_message_ttl_seconds,
         ) {
             Ok(delivery_id) => delivery_id,
-            Err(e) => return ControlResponse::text(400, e.to_string()),
+            Err(e) => {
+                self.record_mailbox_push_reject(MailboxPushRejectReason::from(e.clone()));
+                return ControlResponse::text(400, e.to_string());
+            }
         };
+        self.mailbox_global_rate_limiter
+            .record(now, global_rate_limit);
+        self.mailbox_sender_rate_limiter
+            .record(&message.from_user_id, now, sender_rate_limit);
         ControlResponse::json(
             201,
             &MailboxPushResponse {
@@ -1846,15 +2483,41 @@ impl NativeNode {
             Ok(v) => v,
             Err(e) => return ControlResponse::text(400, e.to_string()),
         };
+        let signed_one_time_prekey_records = match req
+            .signed_one_time_prekey_record_texts
+            .iter()
+            .map(|text| SignedOneTimePreKeyRecord::from_export_text(text.trim()))
+            .collect::<Result<Vec<_>>>()
+        {
+            Ok(v) => v,
+            Err(e) => return ControlResponse::text(400, e.to_string()),
+        };
         let user_id = bundle.user_id.clone();
-        let one_time_prekeys = bundle.one_time_prekeys.len();
-        if let Err(e) = self.prekeys.publish_verified(bundle) {
+        let one_time_prekeys = if signed_one_time_prekey_records.is_empty() {
+            bundle.one_time_prekeys.len()
+        } else {
+            signed_one_time_prekey_records.len()
+        };
+        if let Err(e) = self
+            .prekeys
+            .publish_verified_with_signed_one_time_prekey_records(
+                bundle,
+                signed_one_time_prekey_records,
+            )
+        {
             return ControlResponse::text(400, e.to_string());
         }
+        let signed_one_time_prekey_records = self
+            .prekeys
+            .signed_one_time_prekey_records_for(&user_id)
+            .len();
         let remaining = self
             .prekeys
             .remaining_one_time_prekeys_for(&user_id)
             .unwrap_or(0);
+        let remaining_status = Some(remaining);
+        let low_one_time_prekeys = prekey_low_one_time_prekeys(remaining_status);
+        let replenishment_required = prekey_replenishment_required(remaining_status);
         ControlResponse::json(
             201,
             &PublishPreKeyResponse {
@@ -1862,8 +2525,12 @@ impl NativeNode {
                 user_id: user_id.to_string(),
                 prekey_bundles: self.prekeys.len(),
                 one_time_prekeys,
+                signed_one_time_prekey_records,
                 remaining_one_time_prekeys: remaining,
-                low_one_time_prekeys: remaining <= 1,
+                low_one_time_prekeys,
+                replenishment_required,
+                replenishment_actor: "client",
+                node_generates_user_keys: false,
             },
         )
     }
@@ -1883,15 +2550,28 @@ impl NativeNode {
             .unwrap_or(false);
         let selected = self
             .prekeys
-            .take_for_with_selected_one_time_prekey(&user_id, consume);
-        let (bundle_text, selected_one_time_prekey_id) = match selected {
-            Some((bundle, selected_id)) => match bundle.to_export_text() {
-                Ok(text) => (Some(text), selected_id),
-                Err(e) => return ControlResponse::text(400, e.to_string()),
-            },
-            None => (None, None),
+            .take_for_with_selected_one_time_prekey_material(&user_id, consume);
+        let (bundle_text, selected_one_time_prekey_id, selected_record_text) = match selected {
+            Some((bundle, selected_id, selected_record)) => {
+                let bundle_text = match bundle.to_export_text() {
+                    Ok(text) => Some(text),
+                    Err(e) => return ControlResponse::text(400, e.to_string()),
+                };
+                let selected_record_text = match selected_record {
+                    Some(record) => match record.to_export_text() {
+                        Ok(text) => Some(text),
+                        Err(e) => return ControlResponse::text(400, e.to_string()),
+                    },
+                    None => None,
+                };
+                (bundle_text, selected_id, selected_record_text)
+            }
+            None => (None, None, None),
         };
         let remaining = self.prekeys.remaining_one_time_prekeys_for(&user_id);
+        let signed_one_time_prekey_records = self.prekeys.published_one_time_prekeys_for(&user_id);
+        let low_one_time_prekeys = prekey_low_one_time_prekeys(remaining);
+        let replenishment_required = prekey_replenishment_required(remaining);
         ControlResponse::json(
             200,
             &GetPreKeyResponse {
@@ -1899,9 +2579,44 @@ impl NativeNode {
                 found: bundle_text.is_some(),
                 prekey_bundle_text: bundle_text,
                 selected_one_time_prekey_id,
+                selected_signed_one_time_prekey_record_text: selected_record_text,
                 consumed_one_time_prekey_ids: self.prekeys.consumed_for(&user_id),
                 remaining_one_time_prekeys: remaining,
-                low_one_time_prekeys: remaining.map(|value| value <= 1).unwrap_or(false),
+                signed_one_time_prekey_records,
+                low_one_time_prekeys,
+                replenishment_required,
+                replenishment_actor: "client",
+                node_generates_user_keys: false,
+            },
+        )
+    }
+
+    fn handle_control_prekey_status(&mut self, path: &str) -> ControlResponse {
+        let query = query_params(path);
+        let Some(user_id) = query.get("user_id") else {
+            return ControlResponse::text(400, "missing user_id");
+        };
+        let user_id = match UserId::from_raw(user_id.to_string()) {
+            Ok(v) => v,
+            Err(e) => return ControlResponse::text(400, e.to_string()),
+        };
+        self.prekeys.prune_expired(current_unix_timestamp());
+        let remaining = self.prekeys.remaining_one_time_prekeys_for(&user_id);
+        let signed_one_time_prekey_records = self.prekeys.published_one_time_prekeys_for(&user_id);
+        let low_one_time_prekeys = prekey_low_one_time_prekeys(remaining);
+        let replenishment_required = prekey_replenishment_required(remaining);
+        ControlResponse::json(
+            200,
+            &PreKeyStatusResponse {
+                user_id: user_id.to_string(),
+                found: remaining.is_some(),
+                consumed_one_time_prekey_ids: self.prekeys.consumed_for(&user_id),
+                remaining_one_time_prekeys: remaining,
+                signed_one_time_prekey_records,
+                low_one_time_prekeys,
+                replenishment_required,
+                replenishment_actor: "client",
+                node_generates_user_keys: false,
             },
         )
     }
@@ -2004,6 +2719,7 @@ impl NativeNode {
                 peers: stats.peers,
                 mailbox_deliveries: stats.mailbox_deliveries,
                 prekey_bundles: stats.prekey_bundles,
+                signed_one_time_prekey_records: stats.signed_one_time_prekey_records,
                 dht_records: stats.dht_records,
             },
         )
@@ -2280,6 +2996,40 @@ mod tests {
     }
 
     #[test]
+    fn mailbox_sender_rate_limiter_enforces_window_when_enabled() {
+        let (alice, _) = Identity::create_with_passphrase("alice sender limit").unwrap();
+        let mut limiter = MailboxSenderRateLimiter::default();
+        let config = Some(MailboxRateLimitConfig {
+            window_seconds: 10,
+            max_messages: 2,
+        });
+        assert!(limiter.check(alice.user_id(), 100, config));
+        assert!(limiter.check(alice.user_id(), 100, config));
+        assert!(!limiter.check(alice.user_id(), 100, config));
+        assert!(limiter.check(alice.user_id(), 110, config));
+        limiter.prune(131, config);
+        assert!(limiter.is_empty());
+        assert!(limiter.check(alice.user_id(), 200, None));
+    }
+
+    #[test]
+    fn mailbox_global_rate_limiter_enforces_window_when_enabled() {
+        let mut limiter = MailboxGlobalRateLimiter::default();
+        let config = Some(MailboxRateLimitConfig {
+            window_seconds: 10,
+            max_messages: 2,
+        });
+        assert!(limiter.check(100, config));
+        assert!(limiter.check(100, config));
+        assert!(!limiter.check(100, config));
+        assert!(limiter.check(110, config));
+        limiter.prune(131, config);
+        assert_eq!(limiter.window_started_at, None);
+        assert_eq!(limiter.count, 0);
+        assert!(limiter.check(200, None));
+    }
+
+    #[test]
     fn dht_record_keys_are_namespaced_and_deterministic() {
         let (identity, _) = Identity::create_with_passphrase("dht key user").unwrap();
         let peer_key_a = DhtRecordKey::for_public_peer("peer-a");
@@ -2409,6 +3159,7 @@ mod tests {
         let peer = RoutingPeer {
             node_id,
             announce: announce.clone(),
+            identity_public_key: None,
             last_seen_at: current_unix_timestamp(),
         };
         let mut node = NativeNode::new(NodeConfig {
@@ -2426,6 +3177,49 @@ mod tests {
             "trusted-routing-peer"
         );
         assert_eq!(node.merge_trusted_routing_peers(Vec::new()), 0);
+    }
+
+    #[test]
+    fn merge_verified_routing_peers_requires_identity_public_key_and_signature() {
+        let (identity, _) = Identity::create_with_passphrase("verified routing peer").unwrap();
+        let (other, _) = Identity::create_with_passphrase("wrong verified routing key").unwrap();
+        let announce = NodeConfig {
+            peer_id: "verified-routing-peer".into(),
+            ..Default::default()
+        }
+        .create_announce(&identity)
+        .unwrap();
+        let node_id = KademliaNodeId::from_peer_id(&announce.peer_id);
+        let base_peer = RoutingPeer {
+            node_id,
+            announce: announce.clone(),
+            identity_public_key: Some(BASE64.encode(identity.identity_public_key())),
+            last_seen_at: current_unix_timestamp(),
+        };
+        let mut node = NativeNode::new(NodeConfig {
+            peer_id: "verified-routing-local".into(),
+            ..Default::default()
+        });
+
+        let mut missing_key = base_peer.clone();
+        missing_key.identity_public_key = None;
+        let mut wrong_key = base_peer.clone();
+        wrong_key.identity_public_key = Some(BASE64.encode(other.identity_public_key()));
+        assert_eq!(
+            node.merge_verified_routing_peers(vec![missing_key, wrong_key]),
+            0
+        );
+        assert!(node.kademlia.is_empty());
+
+        assert_eq!(node.merge_verified_routing_peers(vec![base_peer]), 1);
+        assert_eq!(node.kademlia.len(), 1);
+        let returned = node
+            .kademlia
+            .closest(KademliaNodeId::from_peer_id("anything"), 1);
+        assert_eq!(
+            returned[0].identity_public_key.as_deref(),
+            Some(BASE64.encode(identity.identity_public_key()).as_str())
+        );
     }
 
     #[test]
@@ -2447,12 +3241,14 @@ mod tests {
         let mismatched = RoutingPeer {
             node_id: KademliaNodeId::from_peer_id("different-peer"),
             announce: announce.clone(),
+            identity_public_key: None,
             last_seen_at: current_unix_timestamp(),
         };
         announce.expires_at = current_unix_timestamp().saturating_sub(1);
         let expired = RoutingPeer {
             node_id: valid_node_id,
             announce: announce.clone(),
+            identity_public_key: None,
             last_seen_at: current_unix_timestamp(),
         };
         let mut local_announce = announce.clone();
@@ -2461,6 +3257,7 @@ mod tests {
         let local = RoutingPeer {
             node_id: local_id,
             announce: local_announce,
+            identity_public_key: None,
             last_seen_at: current_unix_timestamp(),
         };
 
@@ -2975,6 +3772,109 @@ mod tests {
         assert_eq!(response.status, 400);
         assert!(response.body.contains("payload too large"));
         assert_eq!(node.mailbox.pending_for(bob.user_id()), 0);
+        assert_eq!(node.maintenance.mailbox_push_rejects.payload_too_large, 1);
+    }
+
+    #[test]
+    fn control_plane_mailbox_push_rate_limits_by_sender_when_configured() {
+        let (alice, _) = Identity::create_with_passphrase("alice sender control limit").unwrap();
+        let (bob, _) = Identity::create_with_passphrase("bob sender control limit").unwrap();
+        let mut node = NativeNode::new(NodeConfig {
+            mailbox_sender_rate_limit_window_seconds: Some(60),
+            mailbox_sender_rate_limit_max_messages: Some(1),
+            ..Default::default()
+        });
+        for expected_status in [201, 429] {
+            let message = MailboxMessage::new(
+                &alice,
+                bob.user_id().clone(),
+                MailboxMessageKind::DirectEnvelope,
+                "ciphertext".into(),
+                3600,
+            )
+            .unwrap();
+            let response = node.handle_control_request(ControlRequest {
+                method: "POST".into(),
+                path: "/mailbox/push".into(),
+                body: serde_json::json!({
+                    "message_text": message.to_export_text().unwrap(),
+                    "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
+                })
+                .to_string(),
+                headers: Vec::new(),
+            });
+            assert_eq!(response.status, expected_status, "{}", response.body);
+        }
+        assert_eq!(node.mailbox.pending_for(bob.user_id()), 1);
+        assert_eq!(node.maintenance.mailbox_push_rejects.sender_rate_limited, 1);
+    }
+
+    #[test]
+    fn control_plane_mailbox_push_rate_limits_globally_when_configured() {
+        let (alice, _) = Identity::create_with_passphrase("alice global control limit").unwrap();
+        let (bob, _) = Identity::create_with_passphrase("bob global control limit").unwrap();
+        let (carol, _) = Identity::create_with_passphrase("carol global control limit").unwrap();
+        let mut node = NativeNode::new(NodeConfig {
+            mailbox_global_rate_limit_window_seconds: Some(60),
+            mailbox_global_rate_limit_max_messages: Some(1),
+            ..Default::default()
+        });
+        for (sender, expected_status) in [(&alice, 201), (&carol, 429)] {
+            let message = MailboxMessage::new(
+                sender,
+                bob.user_id().clone(),
+                MailboxMessageKind::DirectEnvelope,
+                "ciphertext".into(),
+                3600,
+            )
+            .unwrap();
+            let response = node.handle_control_request(ControlRequest {
+                method: "POST".into(),
+                path: "/mailbox/push".into(),
+                body: serde_json::json!({
+                    "message_text": message.to_export_text().unwrap(),
+                    "from_identity_public_key": BASE64.encode(sender.identity_public_key()),
+                })
+                .to_string(),
+                headers: Vec::new(),
+            });
+            assert_eq!(response.status, expected_status, "{}", response.body);
+        }
+        assert_eq!(node.mailbox.pending_for(bob.user_id()), 1);
+        assert_eq!(node.maintenance.mailbox_push_rejects.global_rate_limited, 1);
+    }
+
+    #[test]
+    fn control_plane_mailbox_push_records_invalid_payload_stats() {
+        let mut node = NativeNode::new(NodeConfig::default());
+        let response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/mailbox/push".into(),
+            body: "{not-json".into(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 400);
+        assert_eq!(node.maintenance.mailbox_push_rejects.invalid_json, 1);
+
+        let response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/mailbox/push".into(),
+            body: serde_json::json!({
+                "message_text": "not-a-mailbox-message",
+                "from_identity_public_key": "not-base64"
+            })
+            .to_string(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 400);
+        assert_eq!(
+            node.maintenance.mailbox_push_rejects.invalid_message_format,
+            1
+        );
+        assert_eq!(node.maintenance.mailbox_push_rejects.total(), 2);
+
+        let restored = NativeNode::from_state_snapshot(node.to_state_snapshot());
+        assert_eq!(restored.maintenance.mailbox_push_rejects.total(), 2);
     }
 
     #[test]
@@ -3048,14 +3948,24 @@ mod tests {
     fn prekey_snapshot_roundtrip() {
         let (alice, _) = Identity::create_with_passphrase("alice prekey snapshot").unwrap();
         let mut node = NativeNode::new(NodeConfig::default());
-        let (bundle, _) = PreKeyBundle::new(&alice, 1, 1, 3600).unwrap();
-        node.prekeys.publish_verified(bundle).unwrap();
+        let (bundle, _, records) =
+            PreKeyBundle::new_with_signed_one_time_prekey_records(&alice, 1, 1, 3600).unwrap();
+        node.prekeys
+            .publish_verified_with_signed_one_time_prekey_records(bundle, records)
+            .unwrap();
         let restored = NativeNode::from_state_snapshot(node.to_state_snapshot());
         assert!(
             restored
                 .prekeys
                 .get_for_unchecked(alice.user_id())
                 .is_some()
+        );
+        assert_eq!(
+            restored
+                .prekeys
+                .signed_one_time_prekey_records_for(alice.user_id())
+                .len(),
+            1
         );
     }
 
@@ -3124,6 +4034,32 @@ mod tests {
     }
 
     #[test]
+    fn prekey_store_prefers_independent_signed_one_time_records() {
+        let (alice, _) = Identity::create_with_passphrase("alice signed consume").unwrap();
+        let mut store = PreKeyStore::default();
+        let (bundle, _, records) =
+            PreKeyBundle::new_with_signed_one_time_prekey_records(&alice, 1, 2, 3600).unwrap();
+        store
+            .publish_verified_with_signed_one_time_prekey_records(bundle, records)
+            .unwrap();
+
+        let (_, first) = store
+            .take_for_with_selected_one_time_prekey_record(alice.user_id(), true)
+            .unwrap();
+        let (_, second) = store
+            .take_for_with_selected_one_time_prekey_record(alice.user_id(), true)
+            .unwrap();
+
+        assert_eq!(first.as_ref().map(|record| record.key_id), Some(0));
+        assert_eq!(second.as_ref().map(|record| record.key_id), Some(1));
+        assert_eq!(store.consumed_for(alice.user_id()), vec![0, 1]);
+        assert_eq!(
+            store.remaining_one_time_prekeys_for(alice.user_id()),
+            Some(0)
+        );
+    }
+
+    #[test]
     fn prekey_rotation_resets_consumed_one_time_keys() {
         let (alice, _) = Identity::create_with_passphrase("alice prekey rotate").unwrap();
         let mut store = PreKeyStore::default();
@@ -3178,6 +4114,9 @@ mod tests {
         assert_eq!(publish_body["one_time_prekeys"], 2);
         assert_eq!(publish_body["remaining_one_time_prekeys"], 2);
         assert_eq!(publish_body["low_one_time_prekeys"], false);
+        assert_eq!(publish_body["replenishment_required"], false);
+        assert_eq!(publish_body["replenishment_actor"], "client");
+        assert_eq!(publish_body["node_generates_user_keys"], false);
 
         let response = node.handle_control_request(ControlRequest {
             method: "GET".into(),
@@ -3190,6 +4129,99 @@ mod tests {
         assert_eq!(body["selected_one_time_prekey_id"], 0);
         assert_eq!(body["remaining_one_time_prekeys"], 1);
         assert_eq!(body["low_one_time_prekeys"], true);
+        assert_eq!(body["replenishment_required"], true);
+        assert_eq!(body["replenishment_actor"], "client");
+        assert_eq!(body["node_generates_user_keys"], false);
+
+        let status = node.handle_control_request(ControlRequest {
+            method: "GET".into(),
+            path: format!("/prekey/status?user_id={}", alice.user_id()),
+            body: String::new(),
+            headers: Vec::new(),
+        });
+        assert_eq!(status.status, 200);
+        let status_body: serde_json::Value = serde_json::from_str(&status.body).unwrap();
+        assert_eq!(status_body["found"], true);
+        assert_eq!(status_body["remaining_one_time_prekeys"], 1);
+        assert_eq!(status_body["low_one_time_prekeys"], true);
+        assert_eq!(status_body["replenishment_required"], true);
+        assert_eq!(status_body["replenishment_actor"], "client");
+        assert_eq!(status_body["node_generates_user_keys"], false);
+
+        let (missing, _) = Identity::create_with_passphrase("missing prekey status").unwrap();
+        let missing_status = node.handle_control_request(ControlRequest {
+            method: "GET".into(),
+            path: format!("/prekey/status?user_id={}", missing.user_id()),
+            body: String::new(),
+            headers: Vec::new(),
+        });
+        assert_eq!(missing_status.status, 200);
+        let missing_body: serde_json::Value = serde_json::from_str(&missing_status.body).unwrap();
+        assert_eq!(missing_body["found"], false);
+        assert_eq!(
+            missing_body["remaining_one_time_prekeys"],
+            serde_json::Value::Null
+        );
+        assert_eq!(missing_body["low_one_time_prekeys"], false);
+        assert_eq!(missing_body["replenishment_required"], true);
+        assert_eq!(missing_body["replenishment_actor"], "client");
+        assert_eq!(missing_body["node_generates_user_keys"], false);
+    }
+
+    #[test]
+    fn control_plane_prekey_publish_and_get_signed_one_time_records() {
+        let (alice, _) = Identity::create_with_passphrase("alice prekey signed records").unwrap();
+        let mut node = NativeNode::new(NodeConfig::default());
+        let (bundle, _, records) =
+            PreKeyBundle::new_with_signed_one_time_prekey_records(&alice, 3, 2, 3600).unwrap();
+        let record_texts = records
+            .iter()
+            .map(|record| record.to_export_text().unwrap())
+            .collect::<Vec<_>>();
+
+        let publish_response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/prekey/publish".into(),
+            body: serde_json::json!({
+                "prekey_bundle_text": bundle.to_export_text().unwrap(),
+                "signed_one_time_prekey_record_texts": record_texts,
+            })
+            .to_string(),
+            headers: Vec::new(),
+        });
+        assert_eq!(publish_response.status, 201, "{}", publish_response.body);
+        let publish_body: serde_json::Value = serde_json::from_str(&publish_response.body).unwrap();
+        assert_eq!(publish_body["one_time_prekeys"], 2);
+        assert_eq!(publish_body["signed_one_time_prekey_records"], 2);
+        assert_eq!(publish_body["remaining_one_time_prekeys"], 2);
+
+        let get_response = node.handle_control_request(ControlRequest {
+            method: "GET".into(),
+            path: format!("/prekey/get?user_id={}&consume=true", alice.user_id()),
+            body: String::new(),
+            headers: Vec::new(),
+        });
+        assert_eq!(get_response.status, 200, "{}", get_response.body);
+        let body: serde_json::Value = serde_json::from_str(&get_response.body).unwrap();
+        assert_eq!(body["selected_one_time_prekey_id"], 0);
+        assert!(
+            body["selected_signed_one_time_prekey_record_text"]
+                .as_str()
+                .unwrap()
+                .starts_with(lm_core::prekey::SIGNED_ONE_TIME_PREKEY_RECORD_PREFIX)
+        );
+        assert_eq!(body["remaining_one_time_prekeys"], 1);
+        assert_eq!(body["signed_one_time_prekey_records"], 2);
+
+        let restored = NativeNode::from_state_snapshot(node.to_state_snapshot());
+        assert_eq!(
+            restored
+                .prekeys
+                .signed_one_time_prekey_records_for(alice.user_id())
+                .len(),
+            2
+        );
+        assert_eq!(restored.prekeys.consumed_for(alice.user_id()), vec![0]);
     }
 
     #[test]

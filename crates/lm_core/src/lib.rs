@@ -47,9 +47,10 @@ pub use outbox::{Outbox, OutboxItem, OutboxStatus};
 pub use passphrase::normalize_passphrase;
 pub use policy::{BlockEntry, FilterAction, FilterLevel, LocalSafetyPolicy, StrangerMessagePolicy};
 pub use prekey::{
-    OneTimePreKey, OneTimePreKeyPrivate, PreKeyBundle, PreKeyPrivateBundle, X3dhInitialMessage,
-    X3dhInitiatorSecret, x3dh_initiator_secret, x3dh_initiator_secret_with_one_time_prekey_id,
-    x3dh_responder_secret,
+    OneTimePreKey, OneTimePreKeyPrivate, PreKeyBundle, PreKeyPrivateBundle,
+    SignedOneTimePreKeyRecord, X3dhInitialMessage, X3dhInitiatorSecret, x3dh_initiator_secret,
+    x3dh_initiator_secret_with_one_time_prekey_id,
+    x3dh_initiator_secret_with_one_time_prekey_record, x3dh_responder_secret,
 };
 pub use ratchet::{
     RatchetDhKeyPair, RatchetHeader, RatchetMessageKey, RatchetRole, RatchetSessionState,
