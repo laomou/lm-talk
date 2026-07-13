@@ -888,6 +888,7 @@ MVP 群聊采用逐个加密。
    - [x] 控制面提供 `POST /dht/record`、`GET /dht/record`、`GET /dht/closest`，snapshot 保存/合并 DHT records。
    - [x] 定义 `DhtRpcRequest` / `DhtRpcResponse` 并提供本地 `FindNode` / `FindValue` / `StoreRecord` handler scaffold。
    - [x] 控制面 `POST /dht/rpc` 可执行 DHT RPC 消息，作为传输层接入前的兼容入口。
+   - [x] HTTP control-plane DHT RPC client helper 可向远端 `/dht/rpc` 发送 RPC JSON，并复用 peer bearer token。
    - [x] 生成 due-for-republish records 的 closest-k replication plan。
    - [x] 生成 256 个 Kademlia bucket routing refresh target plan。
    - [x] 控制面提供 `GET /dht/replication-plan` 与 `GET /dht/routing-refresh-plan`。

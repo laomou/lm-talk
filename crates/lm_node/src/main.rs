@@ -1,7 +1,8 @@
 use lm_core::PublicPeerAnnounce;
 use lm_node::{
-    ControlRequest, NativeNode, NodeConfig, NodeMaintenanceStats, NodeStateSnapshot,
-    decode_identity_public_key_base64, parse_capabilities_csv, restore_identity_from_backup_text,
+    ControlRequest, DhtRpcRequest, DhtRpcResponse, NativeNode, NodeConfig, NodeMaintenanceStats,
+    NodeStateSnapshot, decode_identity_public_key_base64, parse_capabilities_csv,
+    restore_identity_from_backup_text,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -1059,24 +1060,52 @@ fn current_unix_timestamp() -> u64 {
         .unwrap_or(0)
 }
 
+#[allow(dead_code)]
+fn send_dht_rpc(
+    peer: &SyncPeerConfig,
+    request: &DhtRpcRequest,
+) -> Result<DhtRpcResponse, Box<dyn std::error::Error>> {
+    let body = serde_json::json!({ "request": request }).to_string();
+    let response = http_control_request(peer, "POST", "/dht/rpc", &body)?;
+    Ok(serde_json::from_str(&response)?)
+}
+
 fn fetch_snapshot(peer: &SyncPeerConfig) -> Result<NodeStateSnapshot, Box<dyn std::error::Error>> {
+    let body = http_control_request(peer, "GET", "/sync/snapshot", "")?;
+    Ok(serde_json::from_str(&body)?)
+}
+
+fn http_control_request(
+    peer: &SyncPeerConfig,
+    method: &str,
+    path: &str,
+    body: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
     let normalized = peer.url.trim().trim_end_matches('/');
     let without_scheme = normalized
         .strip_prefix("http://")
-        .ok_or("only http:// sync peers are supported")?;
+        .ok_or("only http:// control peers are supported")?;
     let (host_port, path_prefix) = without_scheme
         .split_once('/')
         .map(|(host, path)| (host, format!("/{path}")))
         .unwrap_or((without_scheme, String::new()));
-    let path = format!("{path_prefix}/sync/snapshot");
+    let path = format!("{path_prefix}{path}");
     let mut stream = TcpStream::connect(host_port)?;
     let auth_header = peer
         .token
         .as_ref()
         .map(|token| format!("authorization: Bearer {token}\r\n"))
         .unwrap_or_default();
+    let content_headers = if body.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "content-type: application/json\r\ncontent-length: {}\r\n",
+            body.len()
+        )
+    };
     let request = format!(
-        "GET {path} HTTP/1.1\r\nhost: {host_port}\r\n{auth_header}connection: close\r\n\r\n"
+        "{method} {path} HTTP/1.1\r\nhost: {host_port}\r\n{auth_header}{content_headers}connection: close\r\n\r\n{body}"
     );
     stream.write_all(request.as_bytes())?;
     let mut response = Vec::new();
@@ -1086,10 +1115,10 @@ fn fetch_snapshot(peer: &SyncPeerConfig) -> Result<NodeStateSnapshot, Box<dyn st
         .split_once("\r\n\r\n")
         .ok_or("invalid http response")?;
     let status_line = headers.lines().next().ok_or("missing status line")?;
-    if !status_line.contains(" 200 ") {
-        return Err(format!("sync peer returned {status_line}").into());
+    if !status_line.contains(" 200 ") && !status_line.contains(" 201 ") {
+        return Err(format!("control peer returned {status_line}").into());
     }
-    Ok(serde_json::from_str(body)?)
+    Ok(body.to_string())
 }
 
 fn handle_stream(
@@ -1349,9 +1378,68 @@ serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--st
 mod tests {
     use super::{
         ControlRuntimeStats, NodeMaintenanceStats, RateLimitConfig, RateLimiter,
-        ServeControlConfigFile, atomic_write_text, current_unix_timestamp, read_secret_file,
-        sync_backoff_delay_seconds,
+        ServeControlConfigFile, SyncPeerConfig, atomic_write_text, current_unix_timestamp,
+        read_secret_file, send_dht_rpc, sync_backoff_delay_seconds,
     };
+    use lm_node::{DhtRecordKey, DhtRecordKind, DhtRpcRequest, DhtRpcResponse};
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    #[test]
+    fn dht_rpc_http_client_posts_json_and_auth() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut raw = [0u8; 4096];
+            let len = stream.read(&mut raw).unwrap();
+            let request = String::from_utf8_lossy(&raw[..len]);
+            assert!(request.starts_with("POST /dht/rpc HTTP/1.1"));
+            assert!(request.contains("authorization: Bearer rpc-token"));
+            assert!(request.contains("StoreRecord"));
+            let body = serde_json::to_string(&DhtRpcResponse::StoreResult {
+                request_id: "rpc-1".into(),
+                stored: true,
+                inserted: true,
+            })
+            .unwrap();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+        let peer = SyncPeerConfig {
+            url: format!("http://{addr}"),
+            token: Some("rpc-token".into()),
+        };
+        let record = lm_node::DhtRecord {
+            key: DhtRecordKey::for_public_peer("rpc-client"),
+            kind: DhtRecordKind::PublicPeer,
+            value: "value".into(),
+            created_at: current_unix_timestamp(),
+            expires_at: current_unix_timestamp().saturating_add(60),
+            republish_at: current_unix_timestamp().saturating_add(30),
+        };
+        let response = send_dht_rpc(
+            &peer,
+            &DhtRpcRequest::StoreRecord {
+                request_id: "rpc-1".into(),
+                record,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            response,
+            DhtRpcResponse::StoreResult {
+                request_id: "rpc-1".into(),
+                stored: true,
+                inserted: true,
+            }
+        );
+        server.join().unwrap();
+    }
 
     #[test]
     fn sync_backoff_is_exponential_and_capped() {
