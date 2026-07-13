@@ -3,7 +3,7 @@ use lm_node::{
     ControlRequest, NativeNode, NodeConfig, NodeStateSnapshot, decode_identity_public_key_base64,
     parse_capabilities_csv, restore_identity_from_backup_text,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     env, fs,
@@ -300,6 +300,52 @@ struct RateLimitEntry {
     count: u32,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct ControlRuntimeStats {
+    started_at: u64,
+    requests_total: u64,
+    responses_2xx: u64,
+    responses_4xx: u64,
+    responses_5xx: u64,
+    cors_rejected: u64,
+    unauthorized: u64,
+    rate_limited: u64,
+    bad_requests: u64,
+}
+
+impl ControlRuntimeStats {
+    fn new(started_at: u64) -> Self {
+        Self {
+            started_at,
+            requests_total: 0,
+            responses_2xx: 0,
+            responses_4xx: 0,
+            responses_5xx: 0,
+            cors_rejected: 0,
+            unauthorized: 0,
+            rate_limited: 0,
+            bad_requests: 0,
+        }
+    }
+
+    fn record_response(&mut self, status: u16) {
+        self.requests_total = self.requests_total.saturating_add(1);
+        match status {
+            200..=299 => self.responses_2xx = self.responses_2xx.saturating_add(1),
+            400..=499 => self.responses_4xx = self.responses_4xx.saturating_add(1),
+            500..=599 => self.responses_5xx = self.responses_5xx.saturating_add(1),
+            _ => {}
+        }
+        match status {
+            400 => self.bad_requests = self.bad_requests.saturating_add(1),
+            401 => self.unauthorized = self.unauthorized.saturating_add(1),
+            403 => self.cors_rejected = self.cors_rejected.saturating_add(1),
+            429 => self.rate_limited = self.rate_limited.saturating_add(1),
+            _ => {}
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 struct RateLimiter {
     entries: HashMap<IpAddr, RateLimitEntry>,
@@ -467,6 +513,7 @@ fn serve_control(
     let listener = TcpListener::bind(bind)?;
     listener.set_nonblocking(true)?;
     let mut rate_limiter = RateLimiter::default();
+    let mut runtime_stats = ControlRuntimeStats::new(current_unix_timestamp());
     let mut last_rate_limit_prune = Instant::now();
     let mut sync_peers = if sync_interval_seconds == 0 {
         Vec::new()
@@ -482,7 +529,7 @@ fn serve_control(
     };
     println!("LM Talk control plane listening on http://{bind}");
     println!(
-        "endpoints: GET /health, POST /announce, GET /peers/closest, POST /mailbox/push, GET /mailbox/take, POST /mailbox/ack, POST /prekey/publish, GET /prekey/get, GET /sync/snapshot, GET /sync/status, POST /sync/import"
+        "endpoints: GET /health, GET /control/stats, POST /announce, GET /peers/closest, POST /mailbox/push, GET /mailbox/take, POST /mailbox/ack, POST /prekey/publish, GET /prekey/get, GET /sync/snapshot, GET /sync/status, POST /sync/import"
     );
     if security.token.is_some() {
         println!("control security: bearer token required");
@@ -535,9 +582,15 @@ fn serve_control(
         }
         match listener.accept() {
             Ok((mut stream, _addr)) => {
-                if let Err(err) =
-                    handle_stream(&mut stream, node, &security, &mut rate_limiter, rate_limit)
-                {
+                if let Err(err) = handle_stream(
+                    &mut stream,
+                    node,
+                    &security,
+                    &mut rate_limiter,
+                    rate_limit,
+                    &mut runtime_stats,
+                ) {
+                    runtime_stats.record_response(400);
                     let body = format!("request error: {err}");
                     let response = format!(
                         "HTTP/1.1 400 Bad Request\r\ncontent-type: text/plain; charset=utf-8\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
@@ -651,6 +704,7 @@ fn handle_stream(
     security: &ControlSecurityConfig,
     rate_limiter: &mut RateLimiter,
     rate_limit: RateLimitConfig,
+    runtime_stats: &mut ControlRuntimeStats,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let peer_addr = stream.peer_addr().ok();
     let request = read_http_request(stream)?;
@@ -664,9 +718,12 @@ fn handle_stream(
         ControlHttpResponse::from_control(node.handle_control_request(request))
     } else if !request_is_authorized(&request, security, peer_addr.as_ref()) {
         ControlHttpResponse::text(401, "unauthorized")
+    } else if request.method == "GET" && request.path.starts_with("/control/stats") {
+        ControlHttpResponse::json(200, runtime_stats)
     } else {
         ControlHttpResponse::from_control(node.handle_control_request(request))
     };
+    runtime_stats.record_response(response.status);
     let allow_origin = security.access_control_origin(origin.as_deref());
     stream.write_all(response.to_http_string(&allow_origin).as_bytes())?;
     Ok(())
@@ -788,6 +845,17 @@ struct ControlHttpResponse {
 }
 
 impl ControlHttpResponse {
+    fn json<T: Serialize>(status: u16, value: &T) -> Self {
+        match serde_json::to_string_pretty(value) {
+            Ok(body) => Self {
+                status,
+                content_type: "application/json; charset=utf-8".to_string(),
+                body,
+            },
+            Err(err) => Self::text(500, format!("serialization error: {err}")),
+        }
+    }
+
     fn from_control(response: lm_node::ControlResponse) -> Self {
         Self {
             status: response.status,
@@ -847,8 +915,8 @@ serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--st
 #[cfg(test)]
 mod tests {
     use super::{
-        RateLimitConfig, RateLimiter, ServeControlConfigFile, atomic_write_text,
-        current_unix_timestamp, read_secret_file, sync_backoff_delay_seconds,
+        ControlRuntimeStats, RateLimitConfig, RateLimiter, ServeControlConfigFile,
+        atomic_write_text, current_unix_timestamp, read_secret_file, sync_backoff_delay_seconds,
     };
 
     #[test]
@@ -858,6 +926,28 @@ mod tests {
         assert_eq!(sync_backoff_delay_seconds(10, 300, 2), 20);
         assert_eq!(sync_backoff_delay_seconds(10, 300, 3), 40);
         assert_eq!(sync_backoff_delay_seconds(10, 30, 4), 30);
+    }
+
+    #[test]
+    fn control_runtime_stats_counts_status_classes_and_security_events() {
+        let mut stats = ControlRuntimeStats::new(123);
+        stats.record_response(200);
+        stats.record_response(201);
+        stats.record_response(400);
+        stats.record_response(401);
+        stats.record_response(403);
+        stats.record_response(429);
+        stats.record_response(500);
+
+        assert_eq!(stats.started_at, 123);
+        assert_eq!(stats.requests_total, 7);
+        assert_eq!(stats.responses_2xx, 2);
+        assert_eq!(stats.responses_4xx, 4);
+        assert_eq!(stats.responses_5xx, 1);
+        assert_eq!(stats.bad_requests, 1);
+        assert_eq!(stats.unauthorized, 1);
+        assert_eq!(stats.cors_rejected, 1);
+        assert_eq!(stats.rate_limited, 1);
     }
 
     #[test]

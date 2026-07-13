@@ -321,6 +321,85 @@ fn real_http_control_plane_rate_limits_non_health_requests() {
 }
 
 #[test]
+fn real_http_control_plane_exposes_runtime_stats() {
+    let port = free_port();
+    let base = format!("127.0.0.1:{port}");
+    let _node = spawn_node_with_args(
+        &base,
+        "http-stats-node",
+        &[
+            "--control-token",
+            "stats-secret",
+            "--cors-allow-origin",
+            "https://allowed.example",
+        ],
+    );
+    wait_for_health(&base);
+
+    let baseline = http_request_with_headers(
+        &base,
+        "GET",
+        "/control/stats",
+        "",
+        &[("authorization", "Bearer stats-secret")],
+    );
+    assert_eq!(baseline.status, 200, "{}", baseline.body);
+    let baseline: serde_json::Value = serde_json::from_str(&baseline.body).unwrap();
+    let baseline_requests = baseline["requests_total"].as_u64().unwrap();
+    let baseline_2xx = baseline["responses_2xx"].as_u64().unwrap();
+    let baseline_4xx = baseline["responses_4xx"].as_u64().unwrap();
+    let baseline_unauthorized = baseline["unauthorized"].as_u64().unwrap();
+    let baseline_cors_rejected = baseline["cors_rejected"].as_u64().unwrap();
+
+    let unauthorized = http_request(&base, "GET", "/sync/status", "");
+    assert_eq!(unauthorized.status, 401);
+    let forbidden_origin = http_request_with_headers(
+        &base,
+        "GET",
+        "/sync/status",
+        "",
+        &[
+            ("authorization", "Bearer stats-secret"),
+            ("origin", "https://evil.example"),
+        ],
+    );
+    assert_eq!(forbidden_origin.status, 403);
+    let ok = http_request_with_headers(
+        &base,
+        "GET",
+        "/sync/status",
+        "",
+        &[("authorization", "Bearer stats-secret")],
+    );
+    assert_eq!(ok.status, 200, "{}", ok.body);
+
+    let stats = http_request_with_headers(
+        &base,
+        "GET",
+        "/control/stats",
+        "",
+        &[("authorization", "Bearer stats-secret")],
+    );
+    assert_eq!(stats.status, 200, "{}", stats.body);
+    let body: serde_json::Value = serde_json::from_str(&stats.body).unwrap();
+    assert!(body["started_at"].as_u64().unwrap() > 0);
+    assert_eq!(
+        body["requests_total"].as_u64().unwrap(),
+        baseline_requests + 4
+    );
+    assert_eq!(body["responses_2xx"].as_u64().unwrap(), baseline_2xx + 2);
+    assert_eq!(body["responses_4xx"].as_u64().unwrap(), baseline_4xx + 2);
+    assert_eq!(
+        body["unauthorized"].as_u64().unwrap(),
+        baseline_unauthorized + 1
+    );
+    assert_eq!(
+        body["cors_rejected"].as_u64().unwrap(),
+        baseline_cors_rejected + 1
+    );
+}
+
+#[test]
 fn real_http_control_plane_requires_token_and_enforces_cors() {
     let port = free_port();
     let base = format!("127.0.0.1:{port}");
