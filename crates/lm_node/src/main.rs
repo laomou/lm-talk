@@ -110,6 +110,40 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             println!("k_bucket_size={}", lm_node::DEFAULT_K_BUCKET_SIZE);
             println!("status=transport-not-yet-enabled");
         }
+        "serve-dht-libp2p" => {
+            let listen = optional_arg(&args, "--listen")?
+                .or_else(|| env::var("LM_NODE_LIBP2P_LISTEN").ok())
+                .unwrap_or("/ip4/0.0.0.0/tcp/4001".into());
+            let peer_id = optional_arg(&args, "--peer-id")?.unwrap_or("lm-node-dev".into());
+            let state_file = optional_arg(&args, "--state-file")?;
+            let state_db = optional_arg(&args, "--state-db")?;
+            let mut node = if let Some(path) = &state_db {
+                load_node_state_db(path).unwrap_or_else(|_| {
+                    NativeNode::new(NodeConfig {
+                        peer_id: peer_id.clone(),
+                        ..Default::default()
+                    })
+                })
+            } else if let Some(path) = &state_file {
+                load_node_state(path).unwrap_or_else(|_| {
+                    NativeNode::new(NodeConfig {
+                        peer_id: peer_id.clone(),
+                        ..Default::default()
+                    })
+                })
+            } else {
+                NativeNode::new(NodeConfig {
+                    peer_id,
+                    ..Default::default()
+                })
+            };
+            serve_libp2p_dht(
+                &listen,
+                &mut node,
+                state_file.as_deref(),
+                state_db.as_deref(),
+            )?;
+        }
         "distance" => {
             let a = required_arg(&args, "--a")?;
             let b = required_arg(&args, "--b")?;
@@ -502,6 +536,66 @@ fn handle_libp2p_dht_rpc_event(
         return Some(response);
     }
     None
+}
+
+#[allow(dead_code)]
+fn handle_libp2p_dht_server_event(
+    node: &mut NativeNode,
+    swarm: &mut libp2p::Swarm<Libp2pDhtBehaviour>,
+    event: libp2p::swarm::SwarmEvent<Libp2pDhtEvent>,
+) -> Option<DhtRpcResponse> {
+    match event {
+        libp2p::swarm::SwarmEvent::NewListenAddr { address, .. } => {
+            println!("libp2p_dht_listen={address}");
+            None
+        }
+        libp2p::swarm::SwarmEvent::Behaviour(Libp2pDhtEvent::DhtRpc(event)) => {
+            handle_libp2p_dht_rpc_event(node, &mut swarm.behaviour_mut().dht_rpc, event)
+        }
+        _ => None,
+    }
+}
+
+#[allow(dead_code)]
+fn persist_libp2p_dht_state(
+    node: &NativeNode,
+    state_file: Option<&str>,
+    state_db: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(path) = state_db {
+        save_node_state_db(path, node)?;
+    }
+    if let Some(path) = state_file {
+        save_node_state(path, node)?;
+    }
+    Ok(())
+}
+
+#[allow(dead_code)]
+fn serve_libp2p_dht(
+    listen: &str,
+    node: &mut NativeNode,
+    state_file: Option<&str>,
+    state_db: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .enable_time()
+        .build()?;
+    runtime.block_on(async {
+        let mut swarm = libp2p_dht_swarm()?;
+        let local_peer_id = *swarm.local_peer_id();
+        swarm.listen_on(listen.parse::<Multiaddr>()?)?;
+        println!("libp2p_dht_peer_id={local_peer_id}");
+        loop {
+            let event = swarm.select_next_some().await;
+            if handle_libp2p_dht_server_event(node, &mut swarm, event).is_some() {
+                persist_libp2p_dht_state(node, state_file, state_db)?;
+            }
+        }
+        #[allow(unreachable_code)]
+        Ok::<(), Box<dyn std::error::Error>>(())
+    })
 }
 
 #[allow(dead_code)]
@@ -3229,6 +3323,7 @@ Commands:\n  \
 announce --backup-file <file> --passphrase <text> [--peer-id <id>] [--addr <multiaddr,csv>] [--cap <bootstrap,dht,relay,mailbox>]\n  \
 inspect-public --text-file <file> --identity-public-key <base64>\n  \
 run [--peer-id <id>] [--addr <multiaddr>]\n  \
+serve-dht-libp2p [--listen <multiaddr>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>]\n  \
 serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>] [--sync-peer <url,csv>] [--sync-interval-seconds <n>] [--dht-transport <http-control|libp2p>] [--rate-limit-window-seconds <n>] [--rate-limit-max-requests <n>] [--log-format <text|json>] [--mailbox-global-rate-limit-window-seconds <n>] [--mailbox-global-rate-limit-max-messages <n>] [--mailbox-sender-rate-limit-window-seconds <n>] [--mailbox-sender-rate-limit-max-messages <n>]\n"
     );
 }
@@ -3237,19 +3332,19 @@ serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--st
 mod tests {
     use super::{
         ControlLogger, ControlRuntimeStats, DhtReplicationRunStats, DhtRoutingRefreshRunStats,
-        DhtTransport, DhtTransportKind, LIBP2P_DHT_RPC_PROTOCOL, Libp2pDhtEvent,
-        Libp2pDhtTransport, LogFormat, NodeMaintenanceStats, RateLimitConfig, RateLimiter,
-        ServeControlConfigFile, StateDbStats, SyncPeerConfig, atomic_write_text,
-        current_unix_timestamp, dht_find_value_with_transport, handle_libp2p_dht_rpc_request,
-        libp2p_dht_rpc_behaviour, libp2p_dht_swarm, load_node_state_db, parse_dht_transport_kind,
-        parse_libp2p_dht_peer, parse_log_format, read_secret_file, run_dht_replication,
+        DhtTransport, DhtTransportKind, LIBP2P_DHT_RPC_PROTOCOL, Libp2pDhtTransport, LogFormat,
+        NodeMaintenanceStats, RateLimitConfig, RateLimiter, ServeControlConfigFile, StateDbStats,
+        SyncPeerConfig, atomic_write_text, current_unix_timestamp, dht_find_value_with_transport,
+        handle_libp2p_dht_rpc_request, handle_libp2p_dht_server_event, libp2p_dht_rpc_behaviour,
+        libp2p_dht_swarm, load_node_state_db, parse_dht_transport_kind, parse_libp2p_dht_peer,
+        parse_log_format, read_secret_file, run_dht_replication,
         run_dht_replication_with_transport, run_dht_routing_refresh,
         run_dht_routing_refresh_with_transport, save_node_state_db, send_dht_rpc,
         send_libp2p_dht_rpc_async, sync_backoff_delay_seconds,
     };
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use futures::StreamExt;
-    use libp2p::{request_response, swarm::SwarmEvent};
+    use libp2p::swarm::SwarmEvent;
     use lm_core::{Identity, MailboxMessage, MailboxMessageKind, PreKeyBundle};
     use lm_node::{
         DhtRecord, DhtRecordKey, DhtRecordKind, DhtRpcRequest, DhtRpcResponse,
@@ -3303,22 +3398,9 @@ mod tests {
             send_libp2p_dht_rpc_async(server_peer, listen_addr, request, Duration::from_secs(10));
         let server = async {
             loop {
-                if let SwarmEvent::Behaviour(Libp2pDhtEvent::DhtRpc(
-                    request_response::Event::Message { message, .. },
-                )) = server_swarm.select_next_some().await
-                {
-                    if let request_response::Message::Request {
-                        request, channel, ..
-                    } = message
-                    {
-                        let response = handle_libp2p_dht_rpc_request(server_node, request);
-                        server_swarm
-                            .behaviour_mut()
-                            .dht_rpc
-                            .send_response(channel, response)
-                            .unwrap();
-                        break;
-                    }
+                let event = server_swarm.select_next_some().await;
+                if handle_libp2p_dht_server_event(server_node, &mut server_swarm, event).is_some() {
+                    break;
                 }
             }
         };
@@ -3362,22 +3444,8 @@ mod tests {
                 if let Ok(response) = rx.try_recv() {
                     return response.expect("libp2p DHT transport request should complete");
                 }
-                if let SwarmEvent::Behaviour(Libp2pDhtEvent::DhtRpc(
-                    request_response::Event::Message { message, .. },
-                )) = server_swarm.select_next_some().await
-                {
-                    if let request_response::Message::Request {
-                        request, channel, ..
-                    } = message
-                    {
-                        let response = handle_libp2p_dht_rpc_request(server_node, request);
-                        server_swarm
-                            .behaviour_mut()
-                            .dht_rpc
-                            .send_response(channel, response)
-                            .unwrap();
-                    }
-                }
+                let event = server_swarm.select_next_some().await;
+                let _ = handle_libp2p_dht_server_event(server_node, &mut server_swarm, event);
             }
         })
         .await
