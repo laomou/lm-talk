@@ -91,6 +91,182 @@ impl PartialOrd for KademliaDistance {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct DhtRecordKey([u8; KADEMLIA_ID_BYTES]);
+
+impl DhtRecordKey {
+    pub fn from_bytes(bytes: [u8; KADEMLIA_ID_BYTES]) -> Self {
+        Self(bytes)
+    }
+
+    pub fn for_public_peer(peer_id: &str) -> Self {
+        Self::derive("public-peer", peer_id.as_bytes())
+    }
+
+    pub fn for_prekey(user_id: &UserId) -> Self {
+        Self::derive("prekey", user_id.as_str().as_bytes())
+    }
+
+    pub fn for_mailbox_hint(user_id: &UserId) -> Self {
+        Self::derive("mailbox-hint", user_id.as_str().as_bytes())
+    }
+
+    fn derive(namespace: &str, value: &[u8]) -> Self {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"lm-talk:dht-record:v1:");
+        hasher.update(namespace.as_bytes());
+        hasher.update(b":");
+        hasher.update(value);
+        Self(*hasher.finalize().as_bytes())
+    }
+
+    pub fn as_bytes(&self) -> &[u8; KADEMLIA_ID_BYTES] {
+        &self.0
+    }
+
+    pub fn to_node_id(&self) -> KademliaNodeId {
+        KademliaNodeId::from_bytes(self.0)
+    }
+
+    pub fn to_hex(&self) -> String {
+        bytes_to_hex(&self.0)
+    }
+}
+
+impl std::fmt::Display for DhtRecordKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.to_hex())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum DhtRecordKind {
+    PublicPeer,
+    PreKey,
+    MailboxHint,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DhtRecord {
+    pub key: DhtRecordKey,
+    pub kind: DhtRecordKind,
+    pub value: String,
+    pub created_at: u64,
+    pub expires_at: u64,
+    pub republish_at: u64,
+}
+
+impl DhtRecord {
+    pub fn new(
+        key: DhtRecordKey,
+        kind: DhtRecordKind,
+        value: String,
+        ttl_seconds: u64,
+        republish_after_seconds: u64,
+    ) -> Self {
+        let now = current_unix_timestamp();
+        Self {
+            key,
+            kind,
+            value,
+            created_at: now,
+            expires_at: now.saturating_add(ttl_seconds),
+            republish_at: now.saturating_add(republish_after_seconds.min(ttl_seconds)),
+        }
+    }
+
+    pub fn public_peer(peer: &PublicPeerAnnounce, value: String, ttl_seconds: u64) -> Self {
+        Self::new(
+            DhtRecordKey::for_public_peer(&peer.peer_id),
+            DhtRecordKind::PublicPeer,
+            value,
+            ttl_seconds,
+            ttl_seconds / 2,
+        )
+    }
+
+    pub fn prekey(user_id: &UserId, value: String, ttl_seconds: u64) -> Self {
+        Self::new(
+            DhtRecordKey::for_prekey(user_id),
+            DhtRecordKind::PreKey,
+            value,
+            ttl_seconds,
+            ttl_seconds / 2,
+        )
+    }
+
+    pub fn mailbox_hint(user_id: &UserId, value: String, ttl_seconds: u64) -> Self {
+        Self::new(
+            DhtRecordKey::for_mailbox_hint(user_id),
+            DhtRecordKind::MailboxHint,
+            value,
+            ttl_seconds,
+            ttl_seconds / 2,
+        )
+    }
+
+    pub fn is_expired_at(&self, now: u64) -> bool {
+        self.expires_at <= now
+    }
+
+    pub fn should_republish_at(&self, now: u64) -> bool {
+        now >= self.republish_at && !self.is_expired_at(now)
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DhtRecordStore {
+    records: HashMap<DhtRecordKey, DhtRecord>,
+}
+
+impl DhtRecordStore {
+    pub fn store(&mut self, record: DhtRecord) -> bool {
+        if record.is_expired_at(current_unix_timestamp()) {
+            return false;
+        }
+        let is_new = !self.records.contains_key(&record.key);
+        self.records.insert(record.key, record);
+        is_new
+    }
+
+    pub fn find_value(&mut self, key: &DhtRecordKey) -> Option<DhtRecord> {
+        self.prune_expired(current_unix_timestamp());
+        self.records.get(key).cloned()
+    }
+
+    pub fn closest_records(&mut self, target: DhtRecordKey, limit: usize) -> Vec<DhtRecord> {
+        self.prune_expired(current_unix_timestamp());
+        let target = target.to_node_id();
+        let mut records = self.records.values().cloned().collect::<Vec<_>>();
+        records.sort_by_key(|record| record.key.to_node_id().xor_distance(&target));
+        records.truncate(limit);
+        records
+    }
+
+    pub fn due_for_republish(&mut self, now: u64) -> Vec<DhtRecord> {
+        self.prune_expired(now);
+        self.records
+            .values()
+            .filter(|record| record.should_republish_at(now))
+            .cloned()
+            .collect()
+    }
+
+    pub fn prune_expired(&mut self, now: u64) -> usize {
+        let before = self.records.len();
+        self.records.retain(|_, record| !record.is_expired_at(now));
+        before.saturating_sub(self.records.len())
+    }
+
+    pub fn len(&self) -> usize {
+        self.records.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.records.is_empty()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutingPeer {
     pub node_id: KademliaNodeId,
@@ -1731,6 +1907,94 @@ mod tests {
                 .unwrap_err(),
             LmError::PayloadTooLarge
         );
+    }
+
+    #[test]
+    fn dht_record_keys_are_namespaced_and_deterministic() {
+        let (identity, _) = Identity::create_with_passphrase("dht key user").unwrap();
+        let peer_key_a = DhtRecordKey::for_public_peer("peer-a");
+        let peer_key_a_again = DhtRecordKey::for_public_peer("peer-a");
+        let prekey_key = DhtRecordKey::for_prekey(identity.user_id());
+        let mailbox_key = DhtRecordKey::for_mailbox_hint(identity.user_id());
+
+        assert_eq!(peer_key_a, peer_key_a_again);
+        assert_ne!(peer_key_a, prekey_key);
+        assert_ne!(prekey_key, mailbox_key);
+        assert_eq!(peer_key_a.to_hex().len(), KADEMLIA_ID_BYTES * 2);
+        assert_eq!(peer_key_a.to_node_id().as_bytes(), peer_key_a.as_bytes());
+    }
+
+    #[test]
+    fn dht_record_store_finds_closest_republishes_and_prunes() {
+        let now = current_unix_timestamp();
+        let key_a = DhtRecordKey::for_public_peer("peer-a");
+        let key_b = DhtRecordKey::for_public_peer("peer-b");
+        let key_c = DhtRecordKey::for_public_peer("peer-c");
+        let record_a = DhtRecord {
+            key: key_a,
+            kind: DhtRecordKind::PublicPeer,
+            value: "peer-a-ann".into(),
+            created_at: now,
+            expires_at: now + 100,
+            republish_at: now + 10,
+        };
+        let record_b = DhtRecord {
+            key: key_b,
+            kind: DhtRecordKind::PublicPeer,
+            value: "peer-b-ann".into(),
+            created_at: now,
+            expires_at: now + 100,
+            republish_at: now + 50,
+        };
+        let expired = DhtRecord {
+            key: key_c,
+            kind: DhtRecordKind::PublicPeer,
+            value: "expired".into(),
+            created_at: now.saturating_sub(20),
+            expires_at: now.saturating_sub(1),
+            republish_at: now.saturating_sub(10),
+        };
+        let mut store = DhtRecordStore::default();
+
+        assert!(store.store(record_a.clone()));
+        assert!(store.store(record_b.clone()));
+        assert!(!store.store(record_a.clone()));
+        assert!(!store.store(expired));
+        assert_eq!(store.len(), 2);
+        assert_eq!(store.find_value(&key_a).unwrap().value, "peer-a-ann");
+
+        let due = store.due_for_republish(now + 10);
+        assert_eq!(due, vec![record_a.clone()]);
+        let closest = store.closest_records(key_a, 1);
+        assert_eq!(closest, vec![record_a.clone()]);
+        assert_eq!(store.prune_expired(now + 100), 2);
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn dht_record_factories_set_kind_key_ttl_and_republish() {
+        let (identity, _) = Identity::create_with_passphrase("dht factory user").unwrap();
+        let announce = NodeConfig::default().create_announce(&identity).unwrap();
+        let before = current_unix_timestamp();
+
+        let peer = DhtRecord::public_peer(&announce, "announce-text".into(), 60);
+        let prekey = DhtRecord::prekey(identity.user_id(), "prekey-text".into(), 60);
+        let mailbox = DhtRecord::mailbox_hint(identity.user_id(), "http://node/mailbox".into(), 60);
+
+        assert_eq!(peer.kind, DhtRecordKind::PublicPeer);
+        assert_eq!(peer.key, DhtRecordKey::for_public_peer(&announce.peer_id));
+        assert_eq!(prekey.kind, DhtRecordKind::PreKey);
+        assert_eq!(prekey.key, DhtRecordKey::for_prekey(identity.user_id()));
+        assert_eq!(mailbox.kind, DhtRecordKind::MailboxHint);
+        assert_eq!(
+            mailbox.key,
+            DhtRecordKey::for_mailbox_hint(identity.user_id())
+        );
+        assert!(peer.created_at >= before);
+        assert_eq!(peer.expires_at.saturating_sub(peer.created_at), 60);
+        assert_eq!(peer.republish_at.saturating_sub(peer.created_at), 30);
+        assert!(peer.should_republish_at(peer.republish_at));
+        assert!(!peer.should_republish_at(peer.expires_at));
     }
 
     #[test]

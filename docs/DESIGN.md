@@ -146,13 +146,13 @@ Friend Request -> Friend Response
 |---|---|---|
 | `lm_core` | 已实现身份、备份、Contact Card、好友请求/响应、DirectEnvelope、X3DH PreKey、Double Ratchet 状态与 envelope、群 Sender Key、群权限状态、文件分片加密包、本地安全策略、Outbox、MemoryStore、大小限制、测试向量 | 核心协议层已具备 MVP 主干，约 75-85% MVP 完整；仍需生产级审计、持久化接口、属性/模糊测试、多设备完整流程 |
 | `lm_wasm` | 已暴露大部分 core API，覆盖身份、联系人、好友、消息、PreKey/X3DH、Ratchet、群、文件、Public Peer、Mailbox、Signaling | 绑定层覆盖较全，约 70-80% MVP 完整；仍需随 core API 稳定后整理命名、错误码和兼容策略 |
-| `lm_node` | 已实现控制面 HTTP scaffold、Public Peer announce、Kademlia ID/XOR distance/closest peers、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、one-time prekey 消费记录、PreKey 过期清理/轮换重置/低水位提示、snapshot sync/import、serve-control 定时 snapshot sync、控制面 token/CORS 基础安全、控制面 per-client IP 基础限流、`/control/stats` JSON 运行指标、`/control/metrics` OpenMetrics 文本导出、过期清理维护统计、状态文件原子保存 | 可支撑节点辅助 PreKey + Mailbox + 粗粒度同步 demo，约 66-70% MVP 完整；不是生产 DHT/relay 节点 |
+| `lm_node` | 已实现控制面 HTTP scaffold、Public Peer announce、Kademlia ID/XOR distance/closest peers、DHT record key/value scaffold、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、one-time prekey 消费记录、PreKey 过期清理/轮换重置/低水位提示、snapshot sync/import、serve-control 定时 snapshot sync、控制面 token/CORS 基础安全、控制面 per-client IP 基础限流、`/control/stats` JSON 运行指标、`/control/metrics` OpenMetrics 文本导出、过期清理维护统计、状态文件原子保存 | 可支撑节点辅助 PreKey + Mailbox + 粗粒度同步 demo，约 67-71% MVP 完整；不是生产 DHT/relay 节点 |
 | CLI / 运维 | 已有 `announce`、`inspect-public`、`distance`、`run`、`serve-control`、`--config-file`、`--control-token`、`--control-token-file`、`--cors-allow-origin`、`--rate-limit-*` 等基础命令 | 调试和基础部署可用；缺配置 schema 文档、TLS 文档、日志、数据库、后台任务 |
 | 测试 | `scripts/test.sh all` 覆盖 Rust fmt/test、core e2e、node e2e、HTTP control flow、WASM smoke、Web build/e2e | 基础回归较好；仍需 proptest/fuzz、跨实现向量、真实网络故障/压力测试 |
 
 重要边界：
 
-- 当前 `lm_node` 的 Kademlia 部分只有 ID、距离、bucket 与 closest 查询 scaffold；**尚未实现真正 DHT 网络查询、节点发现、记录复制和过期清理**。
+- 当前 `lm_node` 的 Kademlia 部分已有 ID、距离、bucket、closest 查询和 record key/value scaffold；**尚未实现真正 DHT 网络查询、节点发现、跨节点记录复制和 routing table refresh**。
 - Mailbox 当前是控制面队列语义：节点可保存密文并等待接收方 ack；已有基础 TTL、配额、message_id 去重和控制面 per-client IP 限流，尚未包含生产级持久化、按 sender 限流、端到端投递回执和元数据保护。
 - PreKey 当前支持 bundle 发布、拉取和 one-time key 精确消费记录；后续应升级 signed per-one-time-prekey records、轮换和补货策略。
 - Core 中的加密协议对象和状态机已经可测试，但仍不能等同于经过第三方审计的生产安全协议。
@@ -1651,7 +1651,7 @@ MVP 不做：
 
 - `lm_node` 控制面 scaffold。
 - Public Peer announce 生成、验签、导入、closest 查询。
-- Kademlia NodeId、XOR distance、bucket、closest peer 排序。
+- Kademlia NodeId、XOR distance、bucket、closest peer 排序；DHT record key/value scaffold 已覆盖 Public Peer、PreKey、Mailbox hint 三类记录 key，带 TTL、republish_at、closest record 查询和过期清理。
 - Mailbox：`/mailbox/push`、`/mailbox/take`、`/mailbox/ack`。
 - PreKey：`/prekey/publish`、`/prekey/get`、`consume=true` 精确记录 one-time prekey 消费，并返回 remaining/low watermark；bundle 过期会清理，signed prekey 轮换会重置消费记录。
 - Snapshot：`/sync/snapshot`、`/sync/import`，可粗粒度同步 peers/mailbox/prekeys。
@@ -1663,7 +1663,7 @@ MVP 不做：
 仍需补齐：
 
 - SQLite / SQLCipher 或其他正式持久化数据库；当前 state-file 只提供原子替换式 JSON snapshot 持久化。
-- 真正 DHT 节点发现、查询、记录复制、过期清理。
+- 真正 DHT 节点发现、网络查询、跨节点记录复制和 routing table refresh。
 - 自动 peer snapshot sync 的配置 schema 文档和状态指标细化；后续替换为 DHT replication。
 - WebRTC signaling、relay/TURN 替代能力。
 - 节点控制面 token 轮换、TLS 部署说明、按 sender/全局维度的更细粒度反滥用、结构化日志和更完整指标。
