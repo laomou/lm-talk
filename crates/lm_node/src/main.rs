@@ -283,6 +283,14 @@ struct SyncPeerRuntime {
     consecutive_failures: u32,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct DhtReplicationRunStats {
+    records: usize,
+    attempts: usize,
+    successes: usize,
+    failures: usize,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RateLimitConfig {
     window_seconds: u64,
@@ -965,6 +973,20 @@ fn serve_control(
             }
         }
         if sync_ran {
+            let peer_configs = sync_peers
+                .iter()
+                .map(|peer| peer.config.clone())
+                .collect::<Vec<_>>();
+            let replication = run_dht_replication(node, &peer_configs, 3);
+            if replication.attempts > 0 {
+                println!(
+                    "dht replication: records={} attempts={} successes={} failures={}",
+                    replication.records,
+                    replication.attempts,
+                    replication.successes,
+                    replication.failures
+                );
+            }
             if let Some(path) = state_file {
                 if let Err(err) = save_node_state(path, node) {
                     eprintln!("state save error: {err}");
@@ -1005,6 +1027,47 @@ fn serve_control(
             Err(err) => eprintln!("connection error: {err}"),
         }
     }
+}
+
+fn run_dht_replication(
+    node: &mut NativeNode,
+    peers: &[SyncPeerConfig],
+    replication_factor: usize,
+) -> DhtReplicationRunStats {
+    if peers.is_empty() {
+        return DhtReplicationRunStats::default();
+    }
+    let plan = node.plan_dht_replication(replication_factor);
+    let mut stats = DhtReplicationRunStats {
+        records: plan.records.len(),
+        ..Default::default()
+    };
+    for (record_index, planned) in plan.records.into_iter().enumerate() {
+        for peer in peers {
+            stats.attempts = stats.attempts.saturating_add(1);
+            let request = DhtRpcRequest::StoreRecord {
+                request_id: format!(
+                    "replicate-{}-{}-{}",
+                    planned.record.key, plan.generated_at, record_index
+                ),
+                record: planned.record.clone(),
+            };
+            match send_dht_rpc(peer, &request) {
+                Ok(DhtRpcResponse::StoreResult { stored: true, .. }) => {
+                    stats.successes = stats.successes.saturating_add(1);
+                }
+                Ok(response) => {
+                    stats.failures = stats.failures.saturating_add(1);
+                    eprintln!("dht replication to {} returned {response:?}", peer.url);
+                }
+                Err(err) => {
+                    stats.failures = stats.failures.saturating_add(1);
+                    eprintln!("dht replication to {} failed: {err}", peer.url);
+                }
+            }
+        }
+    }
+    stats
 }
 
 fn run_snapshot_sync(
@@ -1060,7 +1123,6 @@ fn current_unix_timestamp() -> u64 {
         .unwrap_or(0)
 }
 
-#[allow(dead_code)]
 fn send_dht_rpc(
     peer: &SyncPeerConfig,
     request: &DhtRpcRequest,
@@ -1379,11 +1441,66 @@ mod tests {
     use super::{
         ControlRuntimeStats, NodeMaintenanceStats, RateLimitConfig, RateLimiter,
         ServeControlConfigFile, SyncPeerConfig, atomic_write_text, current_unix_timestamp,
-        read_secret_file, send_dht_rpc, sync_backoff_delay_seconds,
+        read_secret_file, run_dht_replication, send_dht_rpc, sync_backoff_delay_seconds,
     };
-    use lm_node::{DhtRecordKey, DhtRecordKind, DhtRpcRequest, DhtRpcResponse};
+    use lm_node::{
+        DhtRecord, DhtRecordKey, DhtRecordKind, DhtRpcRequest, DhtRpcResponse, NativeNode,
+        NodeConfig,
+    };
     use std::io::{Read, Write};
     use std::net::TcpListener;
+
+    fn spawn_dht_rpc_store_result_server(
+        expected_requests: usize,
+    ) -> (String, std::thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            for _ in 0..expected_requests {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut raw = [0u8; 4096];
+                let len = stream.read(&mut raw).unwrap();
+                let request = String::from_utf8_lossy(&raw[..len]);
+                assert!(request.starts_with("POST /dht/rpc HTTP/1.1"));
+                assert!(request.contains("StoreRecord"));
+                let body = serde_json::to_string(&DhtRpcResponse::StoreResult {
+                    request_id: "rpc-1".into(),
+                    stored: true,
+                    inserted: true,
+                })
+                .unwrap();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+        (format!("http://{addr}"), server)
+    }
+
+    #[test]
+    fn dht_replication_runner_sends_due_records_to_peers() {
+        let (url, server) = spawn_dht_rpc_store_result_server(1);
+        let mut node = NativeNode::new(NodeConfig::default());
+        let now = current_unix_timestamp();
+        let record = DhtRecord {
+            key: DhtRecordKey::for_public_peer("replication-runner"),
+            kind: DhtRecordKind::PublicPeer,
+            value: "replicate-over-http".into(),
+            created_at: now,
+            expires_at: now + 120,
+            republish_at: now,
+        };
+        assert!(node.dht_records.store(record));
+        let stats = run_dht_replication(&mut node, &[SyncPeerConfig { url, token: None }], 3);
+        assert_eq!(stats.records, 1);
+        assert_eq!(stats.attempts, 1);
+        assert_eq!(stats.successes, 1);
+        assert_eq!(stats.failures, 0);
+        server.join().unwrap();
+    }
 
     #[test]
     fn dht_rpc_http_client_posts_json_and_auth() {
