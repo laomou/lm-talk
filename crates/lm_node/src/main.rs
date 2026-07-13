@@ -204,6 +204,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .transpose()?
                     .or(file_config.dht_routing_refresh_max_targets)
                     .unwrap_or(default_dht.routing_refresh_max_targets);
+            let dht_transport = optional_arg(&args, "--dht-transport")?
+                .or_else(|| env::var("LM_NODE_DHT_TRANSPORT").ok())
+                .or(file_config.dht_transport)
+                .map(|value| parse_dht_transport_kind(&value))
+                .transpose()?
+                .unwrap_or(default_dht.transport);
             let rate_limit_window_seconds = optional_arg(&args, "--rate-limit-window-seconds")?
                 .or_else(|| env::var("LM_NODE_RATE_LIMIT_WINDOW_SECONDS").ok())
                 .map(|value| value.parse::<u64>())
@@ -317,6 +323,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     replication_factor: dht_replication_factor,
                     routing_refresh_limit: dht_routing_refresh_limit,
                     routing_refresh_max_targets: dht_routing_refresh_max_targets,
+                    transport: dht_transport,
                 },
                 security,
                 RateLimitConfig {
@@ -577,6 +584,7 @@ struct DhtRunnerConfig {
     replication_factor: usize,
     routing_refresh_limit: usize,
     routing_refresh_max_targets: usize,
+    transport: DhtTransportKind,
 }
 
 impl Default for DhtRunnerConfig {
@@ -585,7 +593,33 @@ impl Default for DhtRunnerConfig {
             replication_factor: 3,
             routing_refresh_limit: 8,
             routing_refresh_max_targets: 8,
+            transport: DhtTransportKind::HttpControl,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DhtTransportKind {
+    HttpControl,
+    Libp2p,
+}
+
+impl DhtTransportKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::HttpControl => "http-control",
+            Self::Libp2p => "libp2p",
+        }
+    }
+}
+
+fn parse_dht_transport_kind(value: &str) -> Result<DhtTransportKind, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "http" | "http-control" | "control" => Ok(DhtTransportKind::HttpControl),
+        "libp2p" => Ok(DhtTransportKind::Libp2p),
+        other => Err(format!(
+            "unsupported dht transport {other:?}; expected http-control or libp2p"
+        )),
     }
 }
 
@@ -1729,6 +1763,7 @@ struct ServeControlConfigFile {
     dht_replication_factor: Option<usize>,
     dht_routing_refresh_limit: Option<usize>,
     dht_routing_refresh_max_targets: Option<usize>,
+    dht_transport: Option<String>,
     rate_limit_window_seconds: Option<u64>,
     rate_limit_max_requests: Option<u32>,
     log_format: Option<String>,
@@ -2293,15 +2328,17 @@ fn serve_control(
         logger.info(
             "dht.config",
             format!(
-                "dht runners: replication_factor={} routing_refresh_limit={} routing_refresh_max_targets={}",
+                "dht runners: replication_factor={} routing_refresh_limit={} routing_refresh_max_targets={} transport={}",
                 dht_runner.replication_factor,
                 dht_runner.routing_refresh_limit,
-                dht_runner.routing_refresh_max_targets
+                dht_runner.routing_refresh_max_targets,
+                dht_runner.transport.as_str()
             ),
             serde_json::json!({
                 "replication_factor": dht_runner.replication_factor,
                 "routing_refresh_limit": dht_runner.routing_refresh_limit,
                 "routing_refresh_max_targets": dht_runner.routing_refresh_max_targets,
+                "transport": dht_runner.transport.as_str(),
             }),
         );
     }
@@ -2330,12 +2367,8 @@ fn serve_control(
                 .map(|peer| peer.config.clone())
                 .collect::<Vec<_>>();
             runtime_stats.record_dht_replication_schedule_delay(max_sync_schedule_delay);
-            let replication = run_dht_replication_with_logger(
-                node,
-                &peer_configs,
-                dht_runner.replication_factor,
-                Some(&logger),
-            );
+            let replication =
+                run_dht_replication_with_logger(node, &peer_configs, dht_runner, Some(&logger));
             runtime_stats.record_dht_replication_run(replication, current_unix_timestamp());
             if replication.attempts > 0 {
                 logger.info(
@@ -2356,13 +2389,8 @@ fn serve_control(
                 );
             }
             runtime_stats.record_dht_routing_refresh_schedule_delay(max_sync_schedule_delay);
-            let refresh = run_dht_routing_refresh_with_logger(
-                node,
-                &peer_configs,
-                dht_runner.routing_refresh_limit,
-                dht_runner.routing_refresh_max_targets,
-                Some(&logger),
-            );
+            let refresh =
+                run_dht_routing_refresh_with_logger(node, &peer_configs, dht_runner, Some(&logger));
             runtime_stats.record_dht_routing_refresh_run(refresh, current_unix_timestamp());
             if refresh.attempts > 0 {
                 logger.info(
@@ -2471,22 +2499,39 @@ fn run_dht_replication(
     peers: &[SyncPeerConfig],
     replication_factor: usize,
 ) -> DhtReplicationRunStats {
-    run_dht_replication_with_logger(node, peers, replication_factor, None)
+    run_dht_replication_with_logger(
+        node,
+        peers,
+        DhtRunnerConfig {
+            replication_factor,
+            ..Default::default()
+        },
+        None,
+    )
 }
 
 fn run_dht_replication_with_logger(
     node: &mut NativeNode,
     peers: &[SyncPeerConfig],
-    replication_factor: usize,
+    config: DhtRunnerConfig,
     logger: Option<&ControlLogger>,
 ) -> DhtReplicationRunStats {
-    run_dht_replication_with_transport(
-        node,
-        peers,
-        replication_factor,
-        logger,
-        &HttpControlDhtTransport,
-    )
+    match config.transport {
+        DhtTransportKind::HttpControl => run_dht_replication_with_transport(
+            node,
+            peers,
+            config.replication_factor,
+            logger,
+            &HttpControlDhtTransport,
+        ),
+        DhtTransportKind::Libp2p => run_dht_replication_with_transport(
+            node,
+            peers,
+            config.replication_factor,
+            logger,
+            &Libp2pDhtTransport::default(),
+        ),
+    }
 }
 
 fn run_dht_replication_with_transport(
@@ -2579,24 +2624,42 @@ fn run_dht_routing_refresh(
     limit: usize,
     max_targets: usize,
 ) -> DhtRoutingRefreshRunStats {
-    run_dht_routing_refresh_with_logger(node, peers, limit, max_targets, None)
+    run_dht_routing_refresh_with_logger(
+        node,
+        peers,
+        DhtRunnerConfig {
+            routing_refresh_limit: limit,
+            routing_refresh_max_targets: max_targets,
+            ..Default::default()
+        },
+        None,
+    )
 }
 
 fn run_dht_routing_refresh_with_logger(
     node: &mut NativeNode,
     peers: &[SyncPeerConfig],
-    limit: usize,
-    max_targets: usize,
+    config: DhtRunnerConfig,
     logger: Option<&ControlLogger>,
 ) -> DhtRoutingRefreshRunStats {
-    run_dht_routing_refresh_with_transport(
-        node,
-        peers,
-        limit,
-        max_targets,
-        logger,
-        &HttpControlDhtTransport,
-    )
+    match config.transport {
+        DhtTransportKind::HttpControl => run_dht_routing_refresh_with_transport(
+            node,
+            peers,
+            config.routing_refresh_limit,
+            config.routing_refresh_max_targets,
+            logger,
+            &HttpControlDhtTransport,
+        ),
+        DhtTransportKind::Libp2p => run_dht_routing_refresh_with_transport(
+            node,
+            peers,
+            config.routing_refresh_limit,
+            config.routing_refresh_max_targets,
+            logger,
+            &Libp2pDhtTransport::default(),
+        ),
+    }
 }
 
 fn run_dht_routing_refresh_with_transport(
@@ -3166,7 +3229,7 @@ Commands:\n  \
 announce --backup-file <file> --passphrase <text> [--peer-id <id>] [--addr <multiaddr,csv>] [--cap <bootstrap,dht,relay,mailbox>]\n  \
 inspect-public --text-file <file> --identity-public-key <base64>\n  \
 run [--peer-id <id>] [--addr <multiaddr>]\n  \
-serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>] [--sync-peer <url,csv>] [--sync-interval-seconds <n>] [--rate-limit-window-seconds <n>] [--rate-limit-max-requests <n>] [--log-format <text|json>] [--mailbox-global-rate-limit-window-seconds <n>] [--mailbox-global-rate-limit-max-messages <n>] [--mailbox-sender-rate-limit-window-seconds <n>] [--mailbox-sender-rate-limit-max-messages <n>]\n"
+serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>] [--sync-peer <url,csv>] [--sync-interval-seconds <n>] [--dht-transport <http-control|libp2p>] [--rate-limit-window-seconds <n>] [--rate-limit-max-requests <n>] [--log-format <text|json>] [--mailbox-global-rate-limit-window-seconds <n>] [--mailbox-global-rate-limit-max-messages <n>] [--mailbox-sender-rate-limit-window-seconds <n>] [--mailbox-sender-rate-limit-max-messages <n>]\n"
     );
 }
 
@@ -3174,12 +3237,13 @@ serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--st
 mod tests {
     use super::{
         ControlLogger, ControlRuntimeStats, DhtReplicationRunStats, DhtRoutingRefreshRunStats,
-        DhtTransport, LIBP2P_DHT_RPC_PROTOCOL, Libp2pDhtEvent, Libp2pDhtTransport, LogFormat,
-        NodeMaintenanceStats, RateLimitConfig, RateLimiter, ServeControlConfigFile, StateDbStats,
-        SyncPeerConfig, atomic_write_text, current_unix_timestamp, dht_find_value_with_transport,
-        handle_libp2p_dht_rpc_request, libp2p_dht_rpc_behaviour, libp2p_dht_swarm,
-        load_node_state_db, parse_libp2p_dht_peer, parse_log_format, read_secret_file,
-        run_dht_replication, run_dht_replication_with_transport, run_dht_routing_refresh,
+        DhtTransport, DhtTransportKind, LIBP2P_DHT_RPC_PROTOCOL, Libp2pDhtEvent,
+        Libp2pDhtTransport, LogFormat, NodeMaintenanceStats, RateLimitConfig, RateLimiter,
+        ServeControlConfigFile, StateDbStats, SyncPeerConfig, atomic_write_text,
+        current_unix_timestamp, dht_find_value_with_transport, handle_libp2p_dht_rpc_request,
+        libp2p_dht_rpc_behaviour, libp2p_dht_swarm, load_node_state_db, parse_dht_transport_kind,
+        parse_libp2p_dht_peer, parse_log_format, read_secret_file, run_dht_replication,
+        run_dht_replication_with_transport, run_dht_routing_refresh,
         run_dht_routing_refresh_with_transport, save_node_state_db, send_dht_rpc,
         send_libp2p_dht_rpc_async, sync_backoff_delay_seconds,
     };
@@ -3883,6 +3947,23 @@ mod tests {
     }
 
     #[test]
+    fn dht_transport_kind_parses_supported_aliases() {
+        assert_eq!(
+            parse_dht_transport_kind("http-control").unwrap(),
+            DhtTransportKind::HttpControl
+        );
+        assert_eq!(
+            parse_dht_transport_kind("control").unwrap(),
+            DhtTransportKind::HttpControl
+        );
+        assert_eq!(
+            parse_dht_transport_kind("libp2p").unwrap(),
+            DhtTransportKind::Libp2p
+        );
+        assert!(parse_dht_transport_kind("tcp").is_err());
+    }
+
+    #[test]
     fn control_logger_renders_structured_json_line() {
         let logger = ControlLogger::new(LogFormat::Json);
         let line = logger.render_line(
@@ -4261,6 +4342,7 @@ mod tests {
                 "dht_replication_factor": 5,
                 "dht_routing_refresh_limit": 12,
                 "dht_routing_refresh_max_targets": 16,
+                "dht_transport": "libp2p",
                 "rate_limit_window_seconds": 30,
                 "rate_limit_max_requests": 120,
                 "log_format": "json",
@@ -4289,6 +4371,7 @@ mod tests {
         assert_eq!(config.dht_replication_factor, Some(5));
         assert_eq!(config.dht_routing_refresh_limit, Some(12));
         assert_eq!(config.dht_routing_refresh_max_targets, Some(16));
+        assert_eq!(config.dht_transport.as_deref(), Some("libp2p"));
         assert_eq!(config.rate_limit_window_seconds, Some(30));
         assert_eq!(config.rate_limit_max_requests, Some(120));
         assert_eq!(config.log_format.as_deref(), Some("json"));

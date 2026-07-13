@@ -909,7 +909,8 @@ MVP 群聊采用逐个加密。
    - [x] libp2p inbound `DhtRpcRequest` 可复用 `NativeNode::handle_dht_rpc` 生成 response。
    - [x] 本地双 libp2p swarm 可通过 request-response 完成 `FindNode` / `FindValue` / `StoreRecord` roundtrip，并复用现有 DHT record/routing 逻辑。
    - [x] 增加 `Libp2pDhtTransport` helper，可通过 `libp2p://<multiaddr>` + `peer_id` 发送真实 request-response `FindNode` / `FindValue` / `StoreRecord` RPC。
-   - [ ] 将 libp2p DHT transport 接入可配置运行路径：常驻监听、peer discovery、runner 选择 HTTP/libp2p transport。
+   - [x] serve-control DHT runner 可通过 config/CLI/env 选择 `http-control` 或 `libp2p` transport。
+   - [ ] 将 libp2p DHT transport 接入常驻监听与 peer discovery 运行路径。
    - [x] 已配置 control peers 支持按 `sync_peers[].peer_id` 匹配 closest-k target 执行 DHT `StoreRecord` replication；未配置 peer_id 时保持全量 control-peer 兼容行为。
    - [ ] 开放传输层 closest-k replication：接入真实网络 RPC、节点发现和端到端传输策略。
 
