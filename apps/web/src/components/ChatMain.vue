@@ -1,8 +1,37 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 const props = defineProps<{ ctx: any }>()
 const contactName = (userId: string) => props.ctx.contacts.value.find((c: any) => c.user_id === userId)?.display_name || userId
+
+function hmTime(ts: number) {
+  return new Date(ts).toTimeString().slice(0, 5)
+}
+function dayLabel(ts: number) {
+  const d = new Date(ts)
+  const now = new Date()
+  if (d.toDateString() === now.toDateString()) return '今天'
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+  if (d.toDateString() === yesterday.toDateString()) return '昨天'
+  if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}月${d.getDate()}日`
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
+}
+
+// 把消息序列展开成「日期分割线 + 气泡」的渲染项
+const thread = computed(() => {
+  const out: any[] = []
+  let lastDay = ''
+  for (const m of props.ctx.activeMessages.value) {
+    const day = new Date(m.created_at).toDateString()
+    if (day !== lastDay) {
+      out.push({ kind: 'sep', id: `sep-${day}-${m.id}`, label: dayLabel(m.created_at) })
+      lastDay = day
+    }
+    out.push({ kind: 'msg', id: m.id, m })
+  }
+  return out
+})
 
 const messagesEl = ref<HTMLElement | null>(null)
 function scrollToBottom() {
@@ -64,11 +93,14 @@ function onComposerKeydown(e: KeyboardEvent) {
 
     <div class="messages clean-messages" ref="messagesEl">
       <template v-if="ctx.activeContact.value || ctx.activeGroup.value">
-        <div v-for="m in ctx.activeMessages.value" :key="m.id" class="bubble" :class="m.direction">
-          <small v-if="ctx.activeGroup.value && m.direction !== 'out'" class="bubble-sender">{{ contactName(m.peer_user_id) }}</small>
-          <div class="text">{{ m.text }}</div>
-          <small class="bubble-meta">{{ ctx.formatTime(m.created_at) }} · {{ ctx.statusLabel(m.status) }}</small>
-        </div>
+        <template v-for="item in thread" :key="item.id">
+          <div v-if="item.kind === 'sep'" class="day-sep"><span>{{ item.label }}</span></div>
+          <div v-else class="bubble" :class="item.m.direction">
+            <small v-if="ctx.activeGroup.value && item.m.direction !== 'out'" class="bubble-sender">{{ contactName(item.m.peer_user_id) }}</small>
+            <div class="text">{{ item.m.text }}</div>
+            <small class="bubble-meta">{{ hmTime(item.m.created_at) }} · {{ ctx.statusLabel(item.m.status) }}</small>
+          </div>
+        </template>
         <div v-if="ctx.activeMessages.value.length === 0" class="empty center">还没有消息</div>
       </template>
 
