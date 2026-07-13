@@ -243,6 +243,113 @@ fn real_http_control_plane_auto_snapshot_sync_imports_mailbox() {
 }
 
 #[test]
+fn real_http_control_plane_state_file_recovers_mailbox_push_take_and_ack() {
+    let state_file = env::temp_dir().join(format!(
+        "lm-node-http-crash-recovery-{}-{}.json",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let (alice, _) = Identity::create_with_passphrase("http recovery alice").unwrap();
+    let (bob, _) = Identity::create_with_passphrase("http recovery bob").unwrap();
+    let mailbox = MailboxMessage::new(
+        &alice,
+        bob.user_id().clone(),
+        MailboxMessageKind::DirectEnvelope,
+        "recover-after-restart".into(),
+        3600,
+    )
+    .unwrap();
+
+    // push 后模拟进程崩溃：state-file 已保存，重启后 delivery 仍可读取。
+    let port_push = free_port();
+    let base_push = format!("127.0.0.1:{port_push}");
+    let mut node = spawn_node_with_state_file(&base_push, "http-recovery-node", &state_file, &[]);
+    wait_for_health(&base_push);
+    let push = http_json(
+        &base_push,
+        "POST",
+        "/mailbox/push",
+        json!({
+            "message_text": mailbox.to_export_text().unwrap(),
+            "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
+        }),
+    );
+    assert_eq!(push.status, 201, "{}", push.body);
+    kill_child(&mut node.child);
+
+    let port_take = free_port();
+    let base_take = format!("127.0.0.1:{port_take}");
+    let mut node = spawn_node_with_state_file(&base_take, "http-recovery-node", &state_file, &[]);
+    wait_for_health(&base_take);
+    let take = http_request(
+        &base_take,
+        "GET",
+        &format!("/mailbox/take?user_id={}", bob.user_id()),
+        "",
+    );
+    assert_eq!(take.status, 200, "{}", take.body);
+    let take_body: serde_json::Value = serde_json::from_str(&take.body).unwrap();
+    let messages = take_body["messages"].as_array().unwrap();
+    assert_eq!(messages.len(), 1);
+    assert_eq!(
+        messages[0]["message"]["ciphertext"].as_str().unwrap(),
+        "recover-after-restart"
+    );
+    let delivery_id = messages[0]["delivery_id"].as_str().unwrap().to_string();
+    kill_child(&mut node.child);
+
+    // take 未 ack 后模拟崩溃：重启后仍可再次 take，避免消息丢失。
+    let port_retake = free_port();
+    let base_retake = format!("127.0.0.1:{port_retake}");
+    let mut node = spawn_node_with_state_file(&base_retake, "http-recovery-node", &state_file, &[]);
+    wait_for_health(&base_retake);
+    let retake = http_request(
+        &base_retake,
+        "GET",
+        &format!("/mailbox/take?user_id={}", bob.user_id()),
+        "",
+    );
+    assert_eq!(retake.status, 200, "{}", retake.body);
+    let retake_body: serde_json::Value = serde_json::from_str(&retake.body).unwrap();
+    assert_eq!(retake_body["messages"].as_array().unwrap().len(), 1);
+
+    let ack = http_json(
+        &base_retake,
+        "POST",
+        "/mailbox/ack",
+        json!({
+            "user_id": bob.user_id().to_string(),
+            "delivery_ids": [delivery_id],
+        }),
+    );
+    assert_eq!(ack.status, 200, "{}", ack.body);
+    let ack_body: serde_json::Value = serde_json::from_str(&ack.body).unwrap();
+    assert_eq!(ack_body["removed"], 1);
+    kill_child(&mut node.child);
+
+    // ack 后模拟崩溃：重启后 delivery 不再出现。
+    let port_after_ack = free_port();
+    let base_after_ack = format!("127.0.0.1:{port_after_ack}");
+    let mut node =
+        spawn_node_with_state_file(&base_after_ack, "http-recovery-node", &state_file, &[]);
+    wait_for_health(&base_after_ack);
+    let after_ack = http_request(
+        &base_after_ack,
+        "GET",
+        &format!("/mailbox/take?user_id={}", bob.user_id()),
+        "",
+    );
+    assert_eq!(after_ack.status, 200, "{}", after_ack.body);
+    let after_ack_body: serde_json::Value = serde_json::from_str(&after_ack.body).unwrap();
+    assert_eq!(after_ack_body["messages"].as_array().unwrap().len(), 0);
+    kill_child(&mut node.child);
+    let _ = std::fs::remove_file(&state_file);
+}
+
+#[test]
 fn real_http_control_plane_loads_config_file() {
     let port = free_port();
     let base = format!("127.0.0.1:{port}");
@@ -568,6 +675,39 @@ fn spawn_node_with_args(bind: &str, peer_id: &str, extra_args: &[&str]) -> TestN
         .spawn()
         .unwrap_or_else(|err| panic!("failed to spawn lm_node serve-control: {err}"));
     TestNodeProcess { child, state_file }
+}
+
+fn spawn_node_with_state_file(
+    bind: &str,
+    peer_id: &str,
+    state_file: &std::path::Path,
+    extra_args: &[&str],
+) -> TestNodeProcess {
+    let child = Command::new(lm_node_binary())
+        .args([
+            "serve-control",
+            "--bind",
+            bind,
+            "--peer-id",
+            peer_id,
+            "--state-file",
+        ])
+        .arg(state_file)
+        .args(extra_args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap_or_else(|err| panic!("failed to spawn lm_node serve-control: {err}"));
+    TestNodeProcess {
+        child,
+        state_file: state_file.to_path_buf(),
+    }
+}
+
+fn kill_child(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 fn lm_node_binary() -> PathBuf {

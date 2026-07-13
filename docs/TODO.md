@@ -838,14 +838,15 @@ MVP 群聊采用逐个加密。
 1. **正式持久化**
    - [x] `serve-control --state-file` 采用同目录临时文件 + fsync + rename 的原子保存，避免普通写入在崩溃时截断主状态文件。
    - [ ] 为 mailbox deliveries、prekey bundles、consumed one-time prekeys、public peers 增加 SQLite/SQLCipher 或等价存储。
-   - [ ] 保留 snapshot import/export 作为迁移和调试能力。
-   - [ ] 增加崩溃恢复测试：push 后崩溃、take 未 ack 后崩溃、ack 后崩溃。
+   - [x] 保留 snapshot import/export 作为迁移和调试能力。
+   - [x] 增加 state-file 崩溃恢复测试：push 后崩溃、take 未 ack 后崩溃、ack 后崩溃。
 
 2. **Mailbox 生命周期**
    - [x] TTL 过期清理（push/take/restore/merge 路径会清理过期 delivery）。
    - [x] 基础 per-user / per-node quota（`max_mailbox_messages_per_user` / `max_mailbox_bytes`）。
    - [x] 基础 message_id 去重；delivery_id 去重保留在 snapshot merge 路径。
-   - [ ] 持久化 quota/TTL/去重索引，增加崩溃恢复测试。
+   - [ ] 持久化 quota/TTL/去重索引到正式数据库。
+   - [x] state-file crash recovery 覆盖 mailbox push 后崩溃、take 未 ack 后崩溃、ack 后崩溃。
    - [x] 控制面基础 per-client IP 限流：`--rate-limit-window-seconds` / `--rate-limit-max-requests`，超限返回 `429`，`/health` 不计入限流。
    - [ ] 更细粒度反滥用：按 sender 限流、全局速率限制、异常 payload 统计。
    - `take` 不删除，只有处理成功后 `ack` 删除的语义已存在，需要持久化和重试测试。
