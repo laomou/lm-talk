@@ -20,7 +20,7 @@
 
 - `lm_core`：身份/备份、Contact Card、好友请求/响应、DirectEnvelope、X3DH PreKey、Double Ratchet、群 Sender Key、群权限状态、文件分片加密包、本地安全策略、Outbox、MemoryStore、大小限制、测试向量。
 - `lm_wasm`：大部分 core 能力已导出，并有 smoke 测试。
-- `lm_node`：HTTP control plane、Public Peer announce、Kademlia ID/distance/closest scaffold、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、one-time prekey 消费记录、PreKey 过期清理/轮换重置/低水位提示、snapshot sync/import、serve-control 定时 snapshot sync、控制面 token/CORS 基础安全、控制面 per-client IP 基础限流、状态文件保存。
+- `lm_node`：HTTP control plane、Public Peer announce、Kademlia ID/distance/closest scaffold、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、one-time prekey 消费记录、PreKey 过期清理/轮换重置/低水位提示、snapshot sync/import、serve-control 定时 snapshot sync、控制面 token/CORS 基础安全、控制面 per-client IP 基础限流、状态文件原子保存。
 - 测试：`scripts/test.sh all` 当前通过 Rust 测试、core/node e2e、HTTP control flow、WASM smoke、Web build/e2e。
 
 关键边界：
@@ -836,9 +836,10 @@ MVP 群聊采用逐个加密。
 ### P0：节点 MVP 稳定化
 
 1. **正式持久化**
-   - 为 mailbox deliveries、prekey bundles、consumed one-time prekeys、public peers 增加 SQLite/SQLCipher 或等价存储。
-   - 保留 snapshot import/export 作为迁移和调试能力。
-   - 增加崩溃恢复测试：push 后崩溃、take 未 ack 后崩溃、ack 后崩溃。
+   - [x] `serve-control --state-file` 采用同目录临时文件 + fsync + rename 的原子保存，避免普通写入在崩溃时截断主状态文件。
+   - [ ] 为 mailbox deliveries、prekey bundles、consumed one-time prekeys、public peers 增加 SQLite/SQLCipher 或等价存储。
+   - [ ] 保留 snapshot import/export 作为迁移和调试能力。
+   - [ ] 增加崩溃恢复测试：push 后崩溃、take 未 ack 后崩溃、ack 后崩溃。
 
 2. **Mailbox 生命周期**
    - [x] TTL 过期清理（push/take/restore/merge 路径会清理过期 delivery）。

@@ -7,8 +7,10 @@ use serde::Deserialize;
 use std::{
     collections::HashMap,
     env, fs,
+    fs::File,
     io::{Read, Write},
     net::{IpAddr, TcpListener, TcpStream},
+    path::{Path, PathBuf},
     process,
     time::{Duration, Instant},
 };
@@ -398,8 +400,58 @@ fn load_node_state(path: &str) -> Result<NativeNode, Box<dyn std::error::Error>>
 
 fn save_node_state(path: &str, node: &NativeNode) -> Result<(), Box<dyn std::error::Error>> {
     let text = serde_json::to_string_pretty(&node.to_state_snapshot())?;
-    fs::write(path, text)?;
+    atomic_write_text(Path::new(path), &text)?;
     Ok(())
+}
+
+fn atomic_write_text(path: &Path, text: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)?;
+    }
+    let tmp_path = atomic_temp_path(path);
+    {
+        let mut file = File::create(&tmp_path)?;
+        file.write_all(text.as_bytes())?;
+        file.write_all(b"\n")?;
+        file.sync_all()?;
+    }
+    fs::rename(&tmp_path, path)?;
+    sync_parent_dir(path);
+    Ok(())
+}
+
+fn atomic_temp_path(path: &Path) -> PathBuf {
+    let mut file_name = path
+        .file_name()
+        .map(|name| name.to_os_string())
+        .unwrap_or_else(|| "lm-node-state".into());
+    file_name.push(format!(
+        ".tmp.{}.{}",
+        process::id(),
+        current_unix_timestamp()
+    ));
+    path.with_file_name(file_name)
+}
+
+fn sync_parent_dir(path: &Path) {
+    #[cfg(unix)]
+    {
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            if let Ok(dir) = File::open(parent) {
+                let _ = dir.sync_all();
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
 }
 
 fn serve_control(
@@ -795,8 +847,8 @@ serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--st
 #[cfg(test)]
 mod tests {
     use super::{
-        RateLimitConfig, RateLimiter, ServeControlConfigFile, current_unix_timestamp,
-        read_secret_file, sync_backoff_delay_seconds,
+        RateLimitConfig, RateLimiter, ServeControlConfigFile, atomic_write_text,
+        current_unix_timestamp, read_secret_file, sync_backoff_delay_seconds,
     };
 
     #[test]
@@ -821,6 +873,26 @@ mod tests {
         assert!(limiter.check(ip, now, config));
         assert!(!limiter.check(ip, now, config));
         assert!(limiter.check(ip, now + std::time::Duration::from_secs(10), config));
+    }
+
+    #[test]
+    fn atomic_write_text_replaces_existing_file_and_cleans_temp() {
+        let dir = std::env::temp_dir().join(format!(
+            "lm-node-atomic-save-test-{}-{}",
+            std::process::id(),
+            current_unix_timestamp()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("state.json");
+        std::fs::write(&path, "old").unwrap();
+
+        atomic_write_text(&path, "new-state").unwrap();
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new-state\n");
+        let leftovers = std::fs::read_dir(&dir).unwrap().count();
+        assert_eq!(leftovers, 1);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
     }
 
     #[test]
