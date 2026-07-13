@@ -149,6 +149,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .transpose()?
                 .or(file_config.sync_max_backoff_seconds)
                 .unwrap_or(300);
+            let default_dht = DhtRunnerConfig::default();
+            let dht_replication_factor = optional_arg(&args, "--dht-replication-factor")?
+                .or_else(|| env::var("LM_NODE_DHT_REPLICATION_FACTOR").ok())
+                .map(|value| value.parse::<usize>())
+                .transpose()?
+                .or(file_config.dht_replication_factor)
+                .unwrap_or(default_dht.replication_factor);
+            let dht_routing_refresh_limit = optional_arg(&args, "--dht-routing-refresh-limit")?
+                .or_else(|| env::var("LM_NODE_DHT_ROUTING_REFRESH_LIMIT").ok())
+                .map(|value| value.parse::<usize>())
+                .transpose()?
+                .or(file_config.dht_routing_refresh_limit)
+                .unwrap_or(default_dht.routing_refresh_limit);
+            let dht_routing_refresh_max_targets =
+                optional_arg(&args, "--dht-routing-refresh-max-targets")?
+                    .or_else(|| env::var("LM_NODE_DHT_ROUTING_REFRESH_MAX_TARGETS").ok())
+                    .map(|value| value.parse::<usize>())
+                    .transpose()?
+                    .or(file_config.dht_routing_refresh_max_targets)
+                    .unwrap_or(default_dht.routing_refresh_max_targets);
             let rate_limit_window_seconds = optional_arg(&args, "--rate-limit-window-seconds")?
                 .or_else(|| env::var("LM_NODE_RATE_LIMIT_WINDOW_SECONDS").ok())
                 .map(|value| value.parse::<u64>())
@@ -200,6 +220,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 sync_peers,
                 sync_interval_seconds,
                 sync_max_backoff_seconds,
+                DhtRunnerConfig {
+                    replication_factor: dht_replication_factor,
+                    routing_refresh_limit: dht_routing_refresh_limit,
+                    routing_refresh_max_targets: dht_routing_refresh_max_targets,
+                },
                 security,
                 RateLimitConfig {
                     window_seconds: rate_limit_window_seconds,
@@ -281,6 +306,23 @@ struct SyncPeerRuntime {
     config: SyncPeerConfig,
     next_attempt_at: Instant,
     consecutive_failures: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DhtRunnerConfig {
+    replication_factor: usize,
+    routing_refresh_limit: usize,
+    routing_refresh_max_targets: usize,
+}
+
+impl Default for DhtRunnerConfig {
+    fn default() -> Self {
+        Self {
+            replication_factor: 3,
+            routing_refresh_limit: 8,
+            routing_refresh_max_targets: 8,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
@@ -1049,6 +1091,9 @@ struct ServeControlConfigFile {
     sync_peers: Option<Vec<SyncPeerConfigFile>>,
     sync_interval_seconds: Option<u64>,
     sync_max_backoff_seconds: Option<u64>,
+    dht_replication_factor: Option<usize>,
+    dht_routing_refresh_limit: Option<usize>,
+    dht_routing_refresh_max_targets: Option<usize>,
     rate_limit_window_seconds: Option<u64>,
     rate_limit_max_requests: Option<u32>,
 }
@@ -1162,6 +1207,7 @@ fn serve_control(
     sync_peers: Vec<SyncPeerConfig>,
     sync_interval_seconds: u64,
     sync_max_backoff_seconds: u64,
+    dht_runner: DhtRunnerConfig,
     security: ControlSecurityConfig,
     rate_limit: RateLimitConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -1214,6 +1260,12 @@ fn serve_control(
                 .collect::<Vec<_>>()
                 .join(",")
         );
+        println!(
+            "dht runners: replication_factor={} routing_refresh_limit={} routing_refresh_max_targets={}",
+            dht_runner.replication_factor,
+            dht_runner.routing_refresh_limit,
+            dht_runner.routing_refresh_max_targets
+        );
     }
     loop {
         let now = Instant::now();
@@ -1229,7 +1281,8 @@ fn serve_control(
                 .iter()
                 .map(|peer| peer.config.clone())
                 .collect::<Vec<_>>();
-            let replication = run_dht_replication(node, &peer_configs, 3);
+            let replication =
+                run_dht_replication(node, &peer_configs, dht_runner.replication_factor);
             runtime_stats.record_dht_replication_run(replication, current_unix_timestamp());
             if replication.attempts > 0 {
                 println!(
@@ -1240,7 +1293,12 @@ fn serve_control(
                     replication.failures
                 );
             }
-            let refresh = run_dht_routing_refresh(node, &peer_configs, 8, 8);
+            let refresh = run_dht_routing_refresh(
+                node,
+                &peer_configs,
+                dht_runner.routing_refresh_limit,
+                dht_runner.routing_refresh_max_targets,
+            );
             runtime_stats.record_dht_routing_refresh_run(refresh, current_unix_timestamp());
             if refresh.attempts > 0 {
                 println!(
@@ -1300,7 +1358,7 @@ fn run_dht_replication(
     peers: &[SyncPeerConfig],
     replication_factor: usize,
 ) -> DhtReplicationRunStats {
-    if peers.is_empty() {
+    if peers.is_empty() || replication_factor == 0 {
         return DhtReplicationRunStats::default();
     }
     let plan = node.plan_dht_replication(replication_factor);
@@ -1361,7 +1419,7 @@ fn run_dht_routing_refresh(
             let request = DhtRpcRequest::FindNode {
                 request_id: format!("refresh-{}-{}-{}", target, plan.generated_at, target_index),
                 target,
-                limit,
+                limit: limit.clamp(1, 64),
             };
             match send_dht_rpc(peer, &request) {
                 Ok(DhtRpcResponse::Nodes { nodes, .. }) => {
@@ -2104,6 +2162,9 @@ mod tests {
                 "cors_allow_origins": ["https://allowed.example"],
                 "sync_interval_seconds": 5,
                 "sync_max_backoff_seconds": 60,
+                "dht_replication_factor": 5,
+                "dht_routing_refresh_limit": 12,
+                "dht_routing_refresh_max_targets": 16,
                 "rate_limit_window_seconds": 30,
                 "rate_limit_max_requests": 120,
                 "sync_peers": [
@@ -2122,6 +2183,9 @@ mod tests {
         );
         assert_eq!(config.sync_interval_seconds, Some(5));
         assert_eq!(config.sync_max_backoff_seconds, Some(60));
+        assert_eq!(config.dht_replication_factor, Some(5));
+        assert_eq!(config.dht_routing_refresh_limit, Some(12));
+        assert_eq!(config.dht_routing_refresh_max_targets, Some(16));
         assert_eq!(config.rate_limit_window_seconds, Some(30));
         assert_eq!(config.rate_limit_max_requests, Some(120));
         let peer = &config.sync_peers.unwrap()[0];

@@ -879,7 +879,7 @@ MVP 群聊采用逐个加密。
    - [x] 同步失败指数退避：`--sync-max-backoff-seconds`。
    - [x] `serve-control --config-file` / `LM_NODE_CONFIG_FILE` 支持 JSON 配置文件。
    - [x] 敏感字段拆分：control/sync token 可通过环境变量或 secret 文件加载。
-   - [ ] 配置文件 schema 文档。
+   - [x] 配置文件 schema 文档：`docs/NODE_CONFIG.md` 与 `docs/examples/lm-node.config.example.json`。
 
 2. **DHT scaffold 演进**
    - [x] 增加本地 `DhtRecordStore` scaffold：`store` / `find_value` / `closest_records` / `due_for_republish` / `prune_expired`。
@@ -893,6 +893,7 @@ MVP 群聊采用逐个加密。
    - [x] `/control/stats` 与 `/control/metrics` 暴露 DHT replication runner 的 runs、records、attempts、successes、failures 和 last run 时间。
    - [x] serve-control 同步周期后可执行 bounded control-peer `FindNode` routing refresh runner scaffold，并统计返回节点数量。
    - [x] routing refresh runner 可合并来自已配置 control peers 的可信返回节点：过滤过期、node_id/peer_id 不匹配和本机节点，并写入 routing table。
+   - [x] DHT runner 参数可通过 config/CLI/env 配置：replication factor、FindNode limit、每轮 refresh target 上限。
    - [x] 生成 due-for-republish records 的 closest-k replication plan。
    - [x] 生成 256 个 Kademlia bucket routing refresh target plan。
    - [x] 控制面提供 `GET /dht/replication-plan` 与 `GET /dht/routing-refresh-plan`。

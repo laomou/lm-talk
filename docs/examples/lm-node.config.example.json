@@ -1,0 +1,20 @@
+{
+  "bind": "127.0.0.1:8787",
+  "peer_id": "lm-node-prod-1",
+  "state_file": "var/lm-node-state.json",
+  "control_token_file": "secrets/control.token",
+  "cors_allow_origins": ["https://chat.example"],
+  "sync_interval_seconds": 30,
+  "sync_max_backoff_seconds": 300,
+  "dht_replication_factor": 3,
+  "dht_routing_refresh_limit": 8,
+  "dht_routing_refresh_max_targets": 8,
+  "rate_limit_window_seconds": 60,
+  "rate_limit_max_requests": 600,
+  "sync_peers": [
+    {
+      "url": "http://127.0.0.1:8788",
+      "token_file": "secrets/peer-8788.token"
+    }
+  ]
+}
