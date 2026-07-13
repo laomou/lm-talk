@@ -13,7 +13,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     env, fs,
     fs::File,
     io::{Read, Write},
@@ -555,6 +555,7 @@ fn handle_libp2p_dht_rpc_event(
 fn handle_libp2p_dht_server_event(
     node: &mut NativeNode,
     swarm: &mut libp2p::Swarm<Libp2pDhtBehaviour>,
+    pending_discovery: &mut HashSet<request_response::OutboundRequestId>,
     event: libp2p::swarm::SwarmEvent<Libp2pDhtEvent>,
 ) -> Option<DhtRpcResponse> {
     match event {
@@ -562,7 +563,36 @@ fn handle_libp2p_dht_server_event(
             println!("libp2p_dht_listen={address}");
             None
         }
+        libp2p::swarm::SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+            let request_id = swarm.behaviour_mut().dht_rpc.send_request(
+                &peer_id,
+                DhtRpcRequest::FindNode {
+                    request_id: format!("bootstrap-discovery-{}", current_unix_timestamp()),
+                    target: node.kademlia.local_id(),
+                    limit: 8,
+                },
+            );
+            pending_discovery.insert(request_id);
+            println!("libp2p_dht_connected={peer_id}");
+            None
+        }
         libp2p::swarm::SwarmEvent::Behaviour(Libp2pDhtEvent::DhtRpc(event)) => {
+            if let request_response::Event::Message {
+                message:
+                    request_response::Message::Response {
+                        request_id,
+                        response: DhtRpcResponse::Nodes { nodes, .. },
+                    },
+                ..
+            } = &event
+            {
+                if pending_discovery.remove(request_id) {
+                    let returned = nodes.len();
+                    let merged = node.merge_verified_routing_peers(nodes.clone());
+                    println!("libp2p_dht_discovery_nodes={returned} merged={merged}");
+                    return None;
+                }
+            }
             handle_libp2p_dht_rpc_event(node, &mut swarm.behaviour_mut().dht_rpc, event)
         }
         _ => None,
@@ -601,10 +631,13 @@ fn serve_libp2p_dht(
         let local_peer_id = *swarm.local_peer_id();
         swarm.listen_on(listen.parse::<Multiaddr>()?)?;
         dial_libp2p_bootstrap_peers(&mut swarm, bootstrap_peers)?;
+        let mut pending_discovery = HashSet::new();
         println!("libp2p_dht_peer_id={local_peer_id}");
         loop {
             let event = swarm.select_next_some().await;
-            if handle_libp2p_dht_server_event(node, &mut swarm, event).is_some() {
+            if handle_libp2p_dht_server_event(node, &mut swarm, &mut pending_discovery, event)
+                .is_some()
+            {
                 persist_libp2p_dht_state(node, state_file, state_db)?;
             }
         }
@@ -3403,6 +3436,7 @@ mod tests {
         MailboxPushRejectStats, NativeNode, NodeConfig,
     };
     use std::cell::RefCell;
+    use std::collections::HashSet;
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::time::Duration;
@@ -3449,9 +3483,17 @@ mod tests {
         let client_request =
             send_libp2p_dht_rpc_async(server_peer, listen_addr, request, Duration::from_secs(10));
         let server = async {
+            let mut pending_discovery = HashSet::new();
             loop {
                 let event = server_swarm.select_next_some().await;
-                if handle_libp2p_dht_server_event(server_node, &mut server_swarm, event).is_some() {
+                if handle_libp2p_dht_server_event(
+                    server_node,
+                    &mut server_swarm,
+                    &mut pending_discovery,
+                    event,
+                )
+                .is_some()
+                {
                     break;
                 }
             }
@@ -3492,12 +3534,18 @@ mod tests {
             tx.send(response).unwrap();
         });
         tokio::time::timeout(Duration::from_secs(10), async {
+            let mut pending_discovery = HashSet::new();
             loop {
                 if let Ok(response) = rx.try_recv() {
                     return response.expect("libp2p DHT transport request should complete");
                 }
                 let event = server_swarm.select_next_some().await;
-                let _ = handle_libp2p_dht_server_event(server_node, &mut server_swarm, event);
+                let _ = handle_libp2p_dht_server_event(
+                    server_node,
+                    &mut server_swarm,
+                    &mut pending_discovery,
+                    event,
+                );
             }
         })
         .await
@@ -3924,6 +3972,92 @@ mod tests {
             .await
             .unwrap();
             assert!(connected);
+        });
+    }
+
+    #[test]
+    fn libp2p_discovery_merges_nodes_from_bootstrap_find_node() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let mut seed_swarm = libp2p_dht_swarm().unwrap();
+            let mut joining_swarm = libp2p_dht_swarm().unwrap();
+            let seed_peer = *seed_swarm.local_peer_id();
+            seed_swarm
+                .listen_on("/ip4/127.0.0.1/tcp/0".parse().unwrap())
+                .unwrap();
+            let seed_addr = loop {
+                if let SwarmEvent::NewListenAddr { address, .. } =
+                    seed_swarm.select_next_some().await
+                {
+                    break address;
+                }
+            };
+
+            let (discovered_identity, _) =
+                Identity::create_with_passphrase("libp2p discovered routing peer").unwrap();
+            let discovered_announce = NodeConfig {
+                peer_id: "libp2p-discovered-peer".into(),
+                ..Default::default()
+            }
+            .create_announce(&discovered_identity)
+            .unwrap();
+            let mut seed_node = NativeNode::new(NodeConfig::default());
+            seed_node
+                .kademlia
+                .insert_verified(
+                    discovered_announce.clone(),
+                    &discovered_identity.identity_public_key(),
+                )
+                .unwrap();
+            let mut joining_node = NativeNode::new(NodeConfig::default());
+            dial_libp2p_bootstrap_peers(
+                &mut joining_swarm,
+                &[super::Libp2pBootstrapPeer {
+                    peer_id: seed_peer,
+                    address: seed_addr,
+                }],
+            )
+            .unwrap();
+
+            let mut seed_pending = HashSet::new();
+            let mut joining_pending = HashSet::new();
+            tokio::time::timeout(Duration::from_secs(10), async {
+                loop {
+                    futures::select! {
+                        event = seed_swarm.select_next_some() => {
+                            let _ = handle_libp2p_dht_server_event(
+                                &mut seed_node,
+                                &mut seed_swarm,
+                                &mut seed_pending,
+                                event,
+                            );
+                        }
+                        event = joining_swarm.select_next_some() => {
+                            let _ = handle_libp2p_dht_server_event(
+                                &mut joining_node,
+                                &mut joining_swarm,
+                                &mut joining_pending,
+                                event,
+                            );
+                        }
+                    }
+                    if joining_node.kademlia.len() == 1 {
+                        break;
+                    }
+                }
+            })
+            .await
+            .unwrap();
+            let closest = joining_node.kademlia.closest(
+                lm_node::KademliaNodeId::from_peer_id(&discovered_announce.peer_id),
+                1,
+            );
+            assert_eq!(closest.len(), 1);
+            assert_eq!(closest[0].announce.peer_id, "libp2p-discovered-peer");
         });
     }
 

@@ -912,7 +912,7 @@ MVP 群聊采用逐个加密。
    - [x] serve-control DHT runner 可通过 config/CLI/env 选择 `http-control` 或 `libp2p` transport。
    - [x] 增加 `serve-dht-libp2p` 常驻监听入口，可处理 inbound DHT request-response RPC 并持久化 state。
    - [x] `serve-dht-libp2p` 支持配置 bootstrap peers，启动时拨号已知 libp2p DHT 节点作为 discovery seed。
-   - [ ] 将 libp2p DHT transport 接入自动 peer discovery / routing table 运行路径。
+   - [x] libp2p DHT listener 连接 bootstrap peer 后会自动发送 `FindNode` discovery，并合并返回的 verified routing peers。
    - [x] 已配置 control peers 支持按 `sync_peers[].peer_id` 匹配 closest-k target 执行 DHT `StoreRecord` replication；未配置 peer_id 时保持全量 control-peer 兼容行为。
    - [ ] 开放传输层 closest-k replication：接入真实网络 RPC、节点发现和端到端传输策略。
 
