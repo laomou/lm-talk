@@ -890,6 +890,7 @@ MVP 群聊采用逐个加密。
    - [x] 控制面 `POST /dht/rpc` 可执行 DHT RPC 消息，作为传输层接入前的兼容入口。
    - [x] HTTP control-plane DHT RPC client helper 可向远端 `/dht/rpc` 发送 RPC JSON，并复用 peer bearer token。
    - [x] serve-control 同步周期后可对 due-for-republish records 向已配置 control peers 执行 `StoreRecord` replication scaffold。
+   - [x] `/control/stats` 与 `/control/metrics` 暴露 DHT replication runner 的 runs、records、attempts、successes、failures 和 last run 时间。
    - [x] 生成 due-for-republish records 的 closest-k replication plan。
    - [x] 生成 256 个 Kademlia bucket routing refresh target plan。
    - [x] 控制面提供 `GET /dht/replication-plan` 与 `GET /dht/routing-refresh-plan`。
@@ -905,7 +906,8 @@ MVP 群聊采用逐个加密。
    - [x] `/control/metrics` 导出 OpenMetrics 文本格式，覆盖控制面全局与 endpoint 指标。
    - [x] `/control/stats` / `/control/metrics` 暴露 snapshot import/export 次数与字节数。
    - [x] `/health` / `/control/stats` / `/control/metrics` 暴露过期清理运行次数、mailbox 过期 delivery 数和 prekey 过期 bundle 数。
-   - [ ] 更完整 stats：后台任务调度延迟、持久化数据库页/空间指标。
+   - [x] `/control/stats` / `/control/metrics` 暴露 DHT control-peer replication runner 运行、records、attempts、success/failure 和 last run 时间。
+   - [ ] 更完整 stats：后台任务调度延迟、routing refresh runner、持久化数据库页/空间指标。
 
 ### P2：生产网络能力
 

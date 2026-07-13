@@ -283,7 +283,7 @@ struct SyncPeerRuntime {
     consecutive_failures: u32,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 struct DhtReplicationRunStats {
     records: usize,
     attempts: usize,
@@ -331,6 +331,12 @@ struct ControlRuntimeStats {
     sync_snapshot_export_bytes: u64,
     sync_snapshot_imports: u64,
     sync_snapshot_import_bytes: u64,
+    dht_replication_runs: u64,
+    dht_replication_records: u64,
+    dht_replication_attempts: u64,
+    dht_replication_successes: u64,
+    dht_replication_failures: u64,
+    last_dht_replication_at: Option<u64>,
     endpoints: HashMap<String, ControlEndpointStats>,
 }
 
@@ -361,6 +367,12 @@ impl ControlRuntimeStats {
             sync_snapshot_export_bytes: 0,
             sync_snapshot_imports: 0,
             sync_snapshot_import_bytes: 0,
+            dht_replication_runs: 0,
+            dht_replication_records: 0,
+            dht_replication_attempts: 0,
+            dht_replication_successes: 0,
+            dht_replication_failures: 0,
+            last_dht_replication_at: None,
             endpoints: HashMap::new(),
         }
     }
@@ -478,6 +490,72 @@ impl ControlRuntimeStats {
             "import",
             self.sync_snapshot_import_bytes,
         );
+        push_metric_help(
+            &mut out,
+            "lm_node_dht_replication_runs_total",
+            "Total DHT control-peer replication runner executions.",
+        );
+        push_metric_type(&mut out, "lm_node_dht_replication_runs_total", "counter");
+        push_metric_value(
+            &mut out,
+            "lm_node_dht_replication_runs_total",
+            self.dht_replication_runs,
+        );
+        push_metric_help(
+            &mut out,
+            "lm_node_dht_replication_records_total",
+            "DHT records included in replication runner plans.",
+        );
+        push_metric_type(&mut out, "lm_node_dht_replication_records_total", "counter");
+        push_metric_value(
+            &mut out,
+            "lm_node_dht_replication_records_total",
+            self.dht_replication_records,
+        );
+        push_metric_help(
+            &mut out,
+            "lm_node_dht_replication_attempts_total",
+            "DHT StoreRecord replication attempts by result.",
+        );
+        push_metric_type(
+            &mut out,
+            "lm_node_dht_replication_attempts_total",
+            "counter",
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_dht_replication_attempts_total",
+            "result",
+            "success",
+            self.dht_replication_successes,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_dht_replication_attempts_total",
+            "result",
+            "failure",
+            self.dht_replication_failures,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_dht_replication_attempts_total",
+            "result",
+            "all",
+            self.dht_replication_attempts,
+        );
+        if let Some(last_dht_replication_at) = self.last_dht_replication_at {
+            push_metric_help(
+                &mut out,
+                "lm_node_dht_replication_last_run_at",
+                "Unix timestamp of the last DHT replication runner execution.",
+            );
+            push_metric_type(&mut out, "lm_node_dht_replication_last_run_at", "gauge");
+            push_metric_value(
+                &mut out,
+                "lm_node_dht_replication_last_run_at",
+                last_dht_replication_at,
+            );
+        }
         push_metric_help(
             &mut out,
             "lm_node_maintenance_prune_runs_total",
@@ -613,6 +691,23 @@ impl ControlRuntimeStats {
         }
         out.push_str("# EOF\n");
         out
+    }
+
+    fn record_dht_replication_run(&mut self, stats: DhtReplicationRunStats, finished_at: u64) {
+        self.dht_replication_runs = self.dht_replication_runs.saturating_add(1);
+        self.dht_replication_records = self
+            .dht_replication_records
+            .saturating_add(stats.records as u64);
+        self.dht_replication_attempts = self
+            .dht_replication_attempts
+            .saturating_add(stats.attempts as u64);
+        self.dht_replication_successes = self
+            .dht_replication_successes
+            .saturating_add(stats.successes as u64);
+        self.dht_replication_failures = self
+            .dht_replication_failures
+            .saturating_add(stats.failures as u64);
+        self.last_dht_replication_at = Some(finished_at);
     }
 
     fn record_sync_snapshot_bytes(
@@ -978,6 +1073,7 @@ fn serve_control(
                 .map(|peer| peer.config.clone())
                 .collect::<Vec<_>>();
             let replication = run_dht_replication(node, &peer_configs, 3);
+            runtime_stats.record_dht_replication_run(replication, current_unix_timestamp());
             if replication.attempts > 0 {
                 println!(
                     "dht replication: records={} attempts={} successes={} failures={}",
@@ -1439,9 +1535,10 @@ serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--st
 #[cfg(test)]
 mod tests {
     use super::{
-        ControlRuntimeStats, NodeMaintenanceStats, RateLimitConfig, RateLimiter,
-        ServeControlConfigFile, SyncPeerConfig, atomic_write_text, current_unix_timestamp,
-        read_secret_file, run_dht_replication, send_dht_rpc, sync_backoff_delay_seconds,
+        ControlRuntimeStats, DhtReplicationRunStats, NodeMaintenanceStats, RateLimitConfig,
+        RateLimiter, ServeControlConfigFile, SyncPeerConfig, atomic_write_text,
+        current_unix_timestamp, read_secret_file, run_dht_replication, send_dht_rpc,
+        sync_backoff_delay_seconds,
     };
     use lm_node::{
         DhtRecord, DhtRecordKey, DhtRecordKind, DhtRpcRequest, DhtRpcResponse, NativeNode,
@@ -1602,6 +1699,21 @@ mod tests {
         assert_eq!(stats.sync_snapshot_export_bytes, 321);
         assert_eq!(stats.sync_snapshot_imports, 1);
         assert_eq!(stats.sync_snapshot_import_bytes, 123);
+        stats.record_dht_replication_run(
+            DhtReplicationRunStats {
+                records: 2,
+                attempts: 4,
+                successes: 3,
+                failures: 1,
+            },
+            456,
+        );
+        assert_eq!(stats.dht_replication_runs, 1);
+        assert_eq!(stats.dht_replication_records, 2);
+        assert_eq!(stats.dht_replication_attempts, 4);
+        assert_eq!(stats.dht_replication_successes, 3);
+        assert_eq!(stats.dht_replication_failures, 1);
+        assert_eq!(stats.last_dht_replication_at, Some(456));
         let health = stats.endpoints.get("GET /health").unwrap();
         assert_eq!(health.requests, 2);
         assert_eq!(health.responses_2xx, 2);
@@ -1625,6 +1737,11 @@ mod tests {
         assert!(metrics.contains(
             "lm_node_control_endpoint_requests_total{endpoint=\"GET /sync/status\",class=\"4xx\"} 3"
         ));
+        assert!(metrics.contains("lm_node_dht_replication_runs_total 1"));
+        assert!(metrics.contains("lm_node_dht_replication_records_total 2"));
+        assert!(metrics.contains("lm_node_dht_replication_attempts_total{result=\"success\"} 3"));
+        assert!(metrics.contains("lm_node_dht_replication_attempts_total{result=\"failure\"} 1"));
+        assert!(metrics.contains("lm_node_dht_replication_last_run_at 456"));
         assert!(metrics.contains("lm_node_maintenance_prune_runs_total 2"));
         assert!(
             metrics
