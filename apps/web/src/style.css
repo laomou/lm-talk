@@ -121,8 +121,7 @@ textarea:focus {
 
 /* Monospace only where content is machine text */
 .mono,
-.backup-text,
-.identity-import-box textarea { font-family: var(--font-mono); font-size: 12.5px; }
+.backup-text { font-family: var(--font-mono); font-size: 12.5px; }
 
 /* ---- Buttons ------------------------------------------------------------ */
 button {
@@ -264,8 +263,6 @@ button.secondary.danger:hover { background: var(--c-danger-soft); border-color: 
   font-size: 18px; line-height: 1; border: 0;
 }
 .identity-delete:hover { background: var(--c-danger-soft); color: var(--c-danger); }
-.identity-import-box { margin: var(--sp-3) 0; padding: var(--sp-3); background: var(--c-surface); border: 1px solid var(--c-line); border-radius: var(--r-md); }
-.identity-import-box small { display: block; margin-top: var(--sp-2); }
 
 .registered-result {
   background: var(--c-primary-soft);
@@ -319,10 +316,6 @@ button.secondary.danger:hover { background: var(--c-danger-soft); border-color: 
   display: flex;
   flex-direction: column;
 }
-.sidebar-profile { flex: 0 0 auto; padding: var(--sp-4); background: var(--c-surface); border-bottom: 1px solid var(--c-line); }
-.sidebar-profile h2 { line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sidebar-profile small { display: block; margin-top: var(--sp-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
 .conversation-list { flex: 1 1 auto; overflow: auto; padding: var(--sp-2) 0; }
 .conversation-list h3 {
   padding: var(--sp-2) var(--sp-4);
@@ -419,7 +412,9 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 }
 .bubble.out { align-self: flex-end; background: var(--c-bubble-out); }
 .bubble .text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; }
+.bubble-sender { display: block; margin: 0 0 3px; color: var(--c-primary-ink); font-size: 11px; font-weight: 600; }
 .bubble small { display: block; margin-top: var(--sp-1); color: var(--c-ink-3); font-size: 11px; }
+.bubble small.bubble-sender { margin-top: 0; }
 .bubble.out small { color: rgba(0, 0, 0, .45); }
 
 .composer {
@@ -534,13 +529,9 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 .sync-pill { font-size: 12px; font-weight: 600; color: var(--c-ink-3); background: var(--c-surface-2); border: 1px solid var(--c-line); border-radius: var(--r-pill); padding: 3px 10px; }
 .sync-pill.on { color: var(--c-primary-ink); background: var(--c-primary-soft); border-color: transparent; }
 .sync-card small { display: block; margin-top: var(--sp-2); color: var(--c-ink-3); line-height: 1.5; }
-.sync-status,
-.sync-log { margin-top: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface-2); display: grid; gap: var(--sp-1); }
-.sync-status b,
-.sync-log b { font-size: 13px; color: var(--c-ink-2); }
+.sync-status { margin-top: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface-2); display: grid; gap: var(--sp-1); }
+.sync-status b { font-size: 13px; color: var(--c-ink-2); }
 .sync-status small { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--c-ink-3); max-height: 120px; overflow: auto; }
-.sync-log-lines { display: grid; gap: var(--sp-1); }
-.sync-log-lines small { color: var(--c-ink-3); overflow-wrap: anywhere; font-family: var(--font-mono); font-size: 11.5px; }
 
 /* ---- Diagnostics -------------------------------------------------------- */
 .debug-page { height: 100%; overflow: auto; padding: var(--sp-6); background: var(--c-canvas); }
@@ -614,9 +605,6 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 .hint { color: var(--c-ink-3); font-size: 13px; }
 .warning { background: var(--c-warn-bg); border: 1px solid var(--c-warn-line); border-radius: var(--r-md); padding: var(--sp-3); color: var(--c-warn-ink); }
 .log { margin-top: var(--sp-4); font-family: var(--font-mono); font-size: 12px; color: var(--c-ink-2); }
-
-.fanout-list { margin-top: var(--sp-3); display: grid; gap: var(--sp-2); }
-.fanout-item { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); border: 1px solid var(--c-line); border-radius: var(--r-md); padding: var(--sp-2); background: var(--c-surface-2); }
 
 /* ---- Responsive --------------------------------------------------------- */
 @media (max-width: 850px) {

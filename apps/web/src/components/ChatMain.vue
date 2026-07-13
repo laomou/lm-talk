@@ -14,6 +14,13 @@ watch(
   () => { void nextTick(scrollToBottom) },
   { immediate: true },
 )
+
+// Enter 发送，Shift+Enter 换行；输入法组词中的 Enter 不触发发送
+function onComposerKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return
+  e.preventDefault()
+  props.ctx.sendMessage()
+}
 </script>
 
 <template>
@@ -58,9 +65,9 @@ watch(
     <div class="messages clean-messages" ref="messagesEl">
       <template v-if="ctx.activeContact.value || ctx.activeGroup.value">
         <div v-for="m in ctx.activeMessages.value" :key="m.id" class="bubble" :class="m.direction">
+          <small v-if="ctx.activeGroup.value && m.direction !== 'out'" class="bubble-sender">{{ contactName(m.peer_user_id) }}</small>
           <div class="text">{{ m.text }}</div>
-          <small>{{ m.direction === 'out' ? '我' : contactName(m.peer_user_id) }} · {{ ctx.formatTime(m.created_at) }} · {{ ctx.statusLabel(m.status) }}</small>
-
+          <small class="bubble-meta">{{ ctx.formatTime(m.created_at) }} · {{ ctx.statusLabel(m.status) }}</small>
         </div>
         <div v-if="ctx.activeMessages.value.length === 0" class="empty center">还没有消息</div>
       </template>
@@ -71,9 +78,8 @@ watch(
     </div>
 
     <footer class="composer clean-composer" v-if="ctx.activeGroup.value || (ctx.activeContact.value && ctx.activeContact.value.state === 'Friend')">
-      <textarea v-model="ctx.composerText.value" rows="3" placeholder="输入消息" />
+      <textarea v-model="ctx.composerText.value" rows="3" placeholder="输入消息，Enter 发送 / Shift+Enter 换行" @keydown="onComposerKeydown" />
       <button @click="ctx.sendMessage">发送</button>
-
     </footer>
   </section>
 </template>
