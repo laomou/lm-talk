@@ -432,6 +432,18 @@ struct DhtRoutingRefreshRunStats {
     nodes_merged: usize,
 }
 
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+struct DhtFindValueRunStats {
+    attempts: usize,
+    successes: usize,
+    failures: usize,
+    found_records: usize,
+    closer_records: usize,
+    closer_nodes_returned: usize,
+    closer_nodes_merged: usize,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RateLimitConfig {
     window_seconds: u64,
@@ -2483,6 +2495,51 @@ fn run_dht_routing_refresh_with_transport(
 
 #[cfg(test)]
 fn dht_find_value_with_transport(
+    node: &mut NativeNode,
+    peers: &[SyncPeerConfig],
+    key: lm_node::DhtRecordKey,
+    limit: usize,
+    max_peers: usize,
+    transport: &dyn DhtTransport,
+) -> DhtFindValueRunStats {
+    if peers.is_empty() || max_peers == 0 {
+        return DhtFindValueRunStats::default();
+    }
+    let mut stats = DhtFindValueRunStats::default();
+    for peer in peers.iter().take(max_peers) {
+        stats.attempts = stats.attempts.saturating_add(1);
+        match send_dht_find_value(peer, key, limit, transport) {
+            Ok(DhtRpcResponse::Value {
+                record,
+                closer_records,
+                closer_nodes,
+                ..
+            }) => {
+                stats.successes = stats.successes.saturating_add(1);
+                if let Some(record) = record {
+                    if node.dht_records.store(record) {
+                        stats.found_records = stats.found_records.saturating_add(1);
+                    }
+                }
+                stats.closer_records = stats
+                    .closer_records
+                    .saturating_add(node.dht_records.merge_records(closer_records));
+                stats.closer_nodes_returned = stats
+                    .closer_nodes_returned
+                    .saturating_add(closer_nodes.len());
+                let merged = node.merge_verified_routing_peers(closer_nodes);
+                stats.closer_nodes_merged = stats.closer_nodes_merged.saturating_add(merged);
+            }
+            Ok(_) | Err(_) => {
+                stats.failures = stats.failures.saturating_add(1);
+            }
+        }
+    }
+    stats
+}
+
+#[cfg(test)]
+fn send_dht_find_value(
     peer: &SyncPeerConfig,
     key: lm_node::DhtRecordKey,
     limit: usize,
@@ -3141,16 +3198,47 @@ mod tests {
 
     #[test]
     fn dht_runners_use_transport_abstraction() {
+        let (closer_identity, _) =
+            Identity::create_with_passphrase("transport closer peer").unwrap();
+        let closer_announce = NodeConfig {
+            peer_id: "transport-closer".into(),
+            ..Default::default()
+        }
+        .create_announce(&closer_identity)
+        .unwrap();
         let mut node = NativeNode::new(NodeConfig::default());
         let now = current_unix_timestamp();
-        assert!(node.dht_records.store(DhtRecord {
+        let record = DhtRecord {
             key: DhtRecordKey::for_public_peer("transport-record"),
             kind: DhtRecordKind::PublicPeer,
             value: "value".into(),
             created_at: now,
             expires_at: now.saturating_add(60),
             republish_at: now,
-        }));
+        };
+        assert!(node.dht_records.store(record.clone()));
+        let found_record = DhtRecord {
+            key: DhtRecordKey::for_public_peer("transport-found"),
+            kind: DhtRecordKind::PublicPeer,
+            value: "found".into(),
+            created_at: now,
+            expires_at: now.saturating_add(60),
+            republish_at: now.saturating_add(30),
+        };
+        let closer_record = DhtRecord {
+            key: DhtRecordKey::for_public_peer("transport-closer-record"),
+            kind: DhtRecordKind::PublicPeer,
+            value: "closer".into(),
+            created_at: now,
+            expires_at: now.saturating_add(60),
+            republish_at: now.saturating_add(30),
+        };
+        let closer_peer = lm_node::RoutingPeer {
+            node_id: lm_node::KademliaNodeId::from_peer_id(&closer_announce.peer_id),
+            announce: closer_announce,
+            identity_public_key: Some(BASE64.encode(closer_identity.identity_public_key())),
+            last_seen_at: now,
+        };
         let peer = SyncPeerConfig {
             url: "transport://peer-a".into(),
             token: None,
@@ -3164,9 +3252,9 @@ mod tests {
                 },
                 DhtRpcResponse::Value {
                     request_id: "fake-find-value".into(),
-                    record: None,
-                    closer_records: Vec::new(),
-                    closer_nodes: Vec::new(),
+                    record: Some(found_record.clone()),
+                    closer_records: vec![closer_record.clone()],
+                    closer_nodes: vec![closer_peer],
                 },
                 DhtRpcResponse::StoreResult {
                     request_id: "fake-store".into(),
@@ -3188,13 +3276,34 @@ mod tests {
         assert_eq!(replication.successes, 1);
 
         let find_value = dht_find_value_with_transport(
-            &peer,
-            DhtRecordKey::for_public_peer("transport-record"),
+            &mut node,
+            std::slice::from_ref(&peer),
+            DhtRecordKey::for_public_peer("transport-found"),
             8,
+            1,
             &transport,
-        )
-        .unwrap();
-        assert!(matches!(find_value, DhtRpcResponse::Value { .. }));
+        );
+        assert_eq!(find_value.attempts, 1);
+        assert_eq!(find_value.successes, 1);
+        assert_eq!(find_value.found_records, 1);
+        assert_eq!(find_value.closer_records, 1);
+        assert_eq!(find_value.closer_nodes_returned, 1);
+        assert_eq!(find_value.closer_nodes_merged, 1);
+        assert_eq!(
+            node.dht_records
+                .find_value(&DhtRecordKey::for_public_peer("transport-found"))
+                .unwrap()
+                .value,
+            "found"
+        );
+        assert_eq!(
+            node.dht_records
+                .find_value(&DhtRecordKey::for_public_peer("transport-closer-record"))
+                .unwrap()
+                .value,
+            "closer"
+        );
+        assert_eq!(node.kademlia.len(), 1);
 
         let refresh = run_dht_routing_refresh_with_transport(
             &mut node,
