@@ -413,6 +413,34 @@ fn real_http_control_plane_exposes_runtime_stats() {
             .unwrap(),
         baseline_stats_endpoint + 1
     );
+
+    let metrics = http_request_with_headers(
+        &base,
+        "GET",
+        "/control/metrics",
+        "",
+        &[("authorization", "Bearer stats-secret")],
+    );
+    assert_eq!(metrics.status, 200, "{}", metrics.body);
+    assert!(
+        metrics
+            .body
+            .contains("# TYPE lm_node_control_requests_total counter")
+    );
+    assert!(
+        metrics
+            .body
+            .contains("lm_node_control_security_events_total{event=\"unauthorized\"}")
+    );
+    assert!(metrics.body.contains(
+        "lm_node_control_endpoint_requests_total{endpoint=\"GET /sync/status\",class=\"4xx\"}"
+    ));
+    assert!(
+        metrics.body.contains(
+            "lm_node_control_endpoint_duration_micros_total{endpoint=\"GET /sync/status\"}"
+        )
+    );
+    assert!(metrics.body.ends_with("# EOF\n"));
 }
 
 #[test]

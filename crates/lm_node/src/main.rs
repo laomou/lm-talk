@@ -341,6 +341,164 @@ impl ControlRuntimeStats {
         }
     }
 
+    fn to_openmetrics(&self) -> String {
+        let mut out = String::new();
+        push_metric_help(
+            &mut out,
+            "lm_node_control_started_at",
+            "Unix timestamp when the control runtime started.",
+        );
+        push_metric_type(&mut out, "lm_node_control_started_at", "gauge");
+        push_metric_value(&mut out, "lm_node_control_started_at", self.started_at);
+        push_metric_help(
+            &mut out,
+            "lm_node_control_requests_total",
+            "Total control HTTP responses by status class and security outcome.",
+        );
+        push_metric_type(&mut out, "lm_node_control_requests_total", "counter");
+        push_metric_value(
+            &mut out,
+            "lm_node_control_requests_total",
+            self.requests_total,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_control_responses_total",
+            "class",
+            "2xx",
+            self.responses_2xx,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_control_responses_total",
+            "class",
+            "4xx",
+            self.responses_4xx,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_control_responses_total",
+            "class",
+            "5xx",
+            self.responses_5xx,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_control_security_events_total",
+            "event",
+            "bad_request",
+            self.bad_requests,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_control_security_events_total",
+            "event",
+            "unauthorized",
+            self.unauthorized,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_control_security_events_total",
+            "event",
+            "cors_rejected",
+            self.cors_rejected,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_control_security_events_total",
+            "event",
+            "rate_limited",
+            self.rate_limited,
+        );
+        push_metric_help(
+            &mut out,
+            "lm_node_control_endpoint_requests_total",
+            "Control HTTP responses by endpoint and status class.",
+        );
+        push_metric_type(
+            &mut out,
+            "lm_node_control_endpoint_requests_total",
+            "counter",
+        );
+        push_metric_help(
+            &mut out,
+            "lm_node_control_endpoint_duration_micros_total",
+            "Total control HTTP handler duration in microseconds by endpoint.",
+        );
+        push_metric_type(
+            &mut out,
+            "lm_node_control_endpoint_duration_micros_total",
+            "counter",
+        );
+        push_metric_help(
+            &mut out,
+            "lm_node_control_endpoint_duration_micros_max",
+            "Maximum observed control HTTP handler duration in microseconds by endpoint.",
+        );
+        push_metric_type(
+            &mut out,
+            "lm_node_control_endpoint_duration_micros_max",
+            "gauge",
+        );
+        let mut endpoints = self.endpoints.iter().collect::<Vec<_>>();
+        endpoints.sort_by(|(left, _), (right, _)| left.cmp(right));
+        for (endpoint, stats) in endpoints {
+            push_endpoint_metric_value(
+                &mut out,
+                "lm_node_control_endpoint_requests_total",
+                endpoint,
+                "all",
+                stats.requests,
+            );
+            push_endpoint_metric_value(
+                &mut out,
+                "lm_node_control_endpoint_requests_total",
+                endpoint,
+                "2xx",
+                stats.responses_2xx,
+            );
+            push_endpoint_metric_value(
+                &mut out,
+                "lm_node_control_endpoint_requests_total",
+                endpoint,
+                "4xx",
+                stats.responses_4xx,
+            );
+            push_endpoint_metric_value(
+                &mut out,
+                "lm_node_control_endpoint_requests_total",
+                endpoint,
+                "5xx",
+                stats.responses_5xx,
+            );
+            push_labeled_metric_value(
+                &mut out,
+                "lm_node_control_endpoint_duration_micros_total",
+                "endpoint",
+                endpoint,
+                stats.total_duration_micros,
+            );
+            push_labeled_metric_value(
+                &mut out,
+                "lm_node_control_endpoint_duration_micros_max",
+                "endpoint",
+                endpoint,
+                stats.max_duration_micros,
+            );
+            if let Some(status) = stats.last_status {
+                push_labeled_metric_value(
+                    &mut out,
+                    "lm_node_control_endpoint_last_status",
+                    "endpoint",
+                    endpoint,
+                    status,
+                );
+            }
+        }
+        out.push_str("# EOF\n");
+        out
+    }
+
     fn record_response(&mut self, endpoint: &str, status: u16, duration: Duration) {
         self.requests_total = self.requests_total.saturating_add(1);
         match status {
@@ -361,6 +519,75 @@ impl ControlRuntimeStats {
             .or_default()
             .record(status, duration);
     }
+}
+
+fn push_metric_help(out: &mut String, name: &str, help: &str) {
+    out.push_str("# HELP ");
+    out.push_str(name);
+    out.push(' ');
+    out.push_str(help);
+    out.push('\n');
+}
+
+fn push_metric_type(out: &mut String, name: &str, kind: &str) {
+    out.push_str("# TYPE ");
+    out.push_str(name);
+    out.push(' ');
+    out.push_str(kind);
+    out.push('\n');
+}
+
+fn push_metric_value(out: &mut String, name: &str, value: impl std::fmt::Display) {
+    out.push_str(name);
+    out.push(' ');
+    out.push_str(&value.to_string());
+    out.push('\n');
+}
+
+fn push_labeled_metric_value(
+    out: &mut String,
+    name: &str,
+    label_name: &str,
+    label_value: &str,
+    value: impl std::fmt::Display,
+) {
+    out.push_str(name);
+    out.push('{');
+    out.push_str(label_name);
+    out.push_str("=\"");
+    out.push_str(&escape_openmetrics_label(label_value));
+    out.push_str("\"} ");
+    out.push_str(&value.to_string());
+    out.push('\n');
+}
+
+fn push_endpoint_metric_value(
+    out: &mut String,
+    name: &str,
+    endpoint: &str,
+    class: &str,
+    value: impl std::fmt::Display,
+) {
+    out.push_str(name);
+    out.push_str("{endpoint=\"");
+    out.push_str(&escape_openmetrics_label(endpoint));
+    out.push_str("\",class=\"");
+    out.push_str(&escape_openmetrics_label(class));
+    out.push_str("\"} ");
+    out.push_str(&value.to_string());
+    out.push('\n');
+}
+
+fn escape_openmetrics_label(value: &str) -> String {
+    value
+        .chars()
+        .flat_map(|ch| match ch {
+            '\\' => "\\\\".chars().collect::<Vec<_>>(),
+            '\n' => "\\n".chars().collect::<Vec<_>>(),
+            '"' => "\\\"".chars().collect::<Vec<_>>(),
+            _ => vec![ch],
+        })
+        .collect()
 }
 
 impl ControlEndpointStats {
@@ -562,7 +789,7 @@ fn serve_control(
     };
     println!("LM Talk control plane listening on http://{bind}");
     println!(
-        "endpoints: GET /health, GET /control/stats, POST /announce, GET /peers/closest, POST /mailbox/push, GET /mailbox/take, POST /mailbox/ack, POST /prekey/publish, GET /prekey/get, GET /sync/snapshot, GET /sync/status, POST /sync/import"
+        "endpoints: GET /health, GET /control/stats, GET /control/metrics, POST /announce, GET /peers/closest, POST /mailbox/push, GET /mailbox/take, POST /mailbox/ack, POST /prekey/publish, GET /prekey/get, GET /sync/snapshot, GET /sync/status, POST /sync/import"
     );
     if security.token.is_some() {
         println!("control security: bearer token required");
@@ -755,6 +982,8 @@ fn handle_stream(
         ControlHttpResponse::text(401, "unauthorized")
     } else if request.method == "GET" && request.path.starts_with("/control/stats") {
         ControlHttpResponse::json(200, runtime_stats)
+    } else if request.method == "GET" && request.path.starts_with("/control/metrics") {
+        ControlHttpResponse::openmetrics(200, &runtime_stats.to_openmetrics())
     } else {
         ControlHttpResponse::from_control(node.handle_control_request(request))
     };
@@ -900,6 +1129,14 @@ impl ControlHttpResponse {
         }
     }
 
+    fn openmetrics(status: u16, body: impl Into<String>) -> Self {
+        Self {
+            status,
+            content_type: "application/openmetrics-text; version=1.0.0; charset=utf-8".to_string(),
+            body: body.into(),
+        }
+    }
+
     fn from_control(response: lm_node::ControlResponse) -> Self {
         Self {
             status: response.status,
@@ -1009,6 +1246,16 @@ mod tests {
         let sync = stats.endpoints.get("GET /sync/status").unwrap();
         assert_eq!(sync.requests, 3);
         assert_eq!(sync.responses_4xx, 3);
+        let metrics = stats.to_openmetrics();
+        assert!(metrics.contains("# TYPE lm_node_control_requests_total counter"));
+        assert!(metrics.contains("lm_node_control_requests_total 7"));
+        assert!(
+            metrics.contains("lm_node_control_security_events_total{event=\"rate_limited\"} 1")
+        );
+        assert!(metrics.contains(
+            "lm_node_control_endpoint_requests_total{endpoint=\"GET /sync/status\",class=\"4xx\"} 3"
+        ));
+        assert!(metrics.ends_with("# EOF\n"));
     }
 
     #[test]
