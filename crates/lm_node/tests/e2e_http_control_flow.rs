@@ -350,6 +350,9 @@ fn real_http_control_plane_exposes_runtime_stats() {
     let baseline_4xx = baseline["responses_4xx"].as_u64().unwrap();
     let baseline_unauthorized = baseline["unauthorized"].as_u64().unwrap();
     let baseline_cors_rejected = baseline["cors_rejected"].as_u64().unwrap();
+    let baseline_stats_endpoint = baseline["endpoints"]["GET /control/stats"]["requests"]
+        .as_u64()
+        .unwrap_or(0);
 
     let unauthorized = http_request(&base, "GET", "/sync/status", "");
     assert_eq!(unauthorized.status, 401);
@@ -396,6 +399,19 @@ fn real_http_control_plane_exposes_runtime_stats() {
     assert_eq!(
         body["cors_rejected"].as_u64().unwrap(),
         baseline_cors_rejected + 1
+    );
+    let sync_endpoint = &body["endpoints"]["GET /sync/status"];
+    assert_eq!(sync_endpoint["requests"].as_u64().unwrap(), 3);
+    assert_eq!(sync_endpoint["responses_2xx"].as_u64().unwrap(), 1);
+    assert_eq!(sync_endpoint["responses_4xx"].as_u64().unwrap(), 2);
+    assert!(sync_endpoint["total_duration_micros"].as_u64().is_some());
+    assert!(sync_endpoint["max_duration_micros"].as_u64().is_some());
+    assert_eq!(sync_endpoint["last_status"].as_u64().unwrap(), 200);
+    assert_eq!(
+        body["endpoints"]["GET /control/stats"]["requests"]
+            .as_u64()
+            .unwrap(),
+        baseline_stats_endpoint + 1
     );
 }
 

@@ -311,6 +311,18 @@ struct ControlRuntimeStats {
     unauthorized: u64,
     rate_limited: u64,
     bad_requests: u64,
+    endpoints: HashMap<String, ControlEndpointStats>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+struct ControlEndpointStats {
+    requests: u64,
+    responses_2xx: u64,
+    responses_4xx: u64,
+    responses_5xx: u64,
+    total_duration_micros: u128,
+    max_duration_micros: u128,
+    last_status: Option<u16>,
 }
 
 impl ControlRuntimeStats {
@@ -325,10 +337,11 @@ impl ControlRuntimeStats {
             unauthorized: 0,
             rate_limited: 0,
             bad_requests: 0,
+            endpoints: HashMap::new(),
         }
     }
 
-    fn record_response(&mut self, status: u16) {
+    fn record_response(&mut self, endpoint: &str, status: u16, duration: Duration) {
         self.requests_total = self.requests_total.saturating_add(1);
         match status {
             200..=299 => self.responses_2xx = self.responses_2xx.saturating_add(1),
@@ -343,6 +356,26 @@ impl ControlRuntimeStats {
             429 => self.rate_limited = self.rate_limited.saturating_add(1),
             _ => {}
         }
+        self.endpoints
+            .entry(endpoint.to_string())
+            .or_default()
+            .record(status, duration);
+    }
+}
+
+impl ControlEndpointStats {
+    fn record(&mut self, status: u16, duration: Duration) {
+        self.requests = self.requests.saturating_add(1);
+        match status {
+            200..=299 => self.responses_2xx = self.responses_2xx.saturating_add(1),
+            400..=499 => self.responses_4xx = self.responses_4xx.saturating_add(1),
+            500..=599 => self.responses_5xx = self.responses_5xx.saturating_add(1),
+            _ => {}
+        }
+        let micros = duration.as_micros();
+        self.total_duration_micros = self.total_duration_micros.saturating_add(micros);
+        self.max_duration_micros = self.max_duration_micros.max(micros);
+        self.last_status = Some(status);
     }
 }
 
@@ -590,7 +623,7 @@ fn serve_control(
                     rate_limit,
                     &mut runtime_stats,
                 ) {
-                    runtime_stats.record_response(400);
+                    runtime_stats.record_response("<bad-request>", 400, Duration::ZERO);
                     let body = format!("request error: {err}");
                     let response = format!(
                         "HTTP/1.1 400 Bad Request\r\ncontent-type: text/plain; charset=utf-8\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
@@ -708,6 +741,8 @@ fn handle_stream(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let peer_addr = stream.peer_addr().ok();
     let request = read_http_request(stream)?;
+    let started_at = Instant::now();
+    let endpoint = control_endpoint_key(&request);
     let origin = request.header("origin").map(str::to_string);
     let response = if !security.allows_origin(origin.as_deref()) {
         ControlHttpResponse::text(403, "cors origin not allowed")
@@ -723,10 +758,19 @@ fn handle_stream(
     } else {
         ControlHttpResponse::from_control(node.handle_control_request(request))
     };
-    runtime_stats.record_response(response.status);
+    runtime_stats.record_response(&endpoint, response.status, started_at.elapsed());
     let allow_origin = security.access_control_origin(origin.as_deref());
     stream.write_all(response.to_http_string(&allow_origin).as_bytes())?;
     Ok(())
+}
+
+fn control_endpoint_key(request: &ControlRequest) -> String {
+    let path = request
+        .path
+        .split_once('?')
+        .map(|(path, _)| path)
+        .unwrap_or(&request.path);
+    format!("{} {}", request.method, path)
 }
 
 fn request_is_within_rate_limit(
@@ -931,13 +975,21 @@ mod tests {
     #[test]
     fn control_runtime_stats_counts_status_classes_and_security_events() {
         let mut stats = ControlRuntimeStats::new(123);
-        stats.record_response(200);
-        stats.record_response(201);
-        stats.record_response(400);
-        stats.record_response(401);
-        stats.record_response(403);
-        stats.record_response(429);
-        stats.record_response(500);
+        stats.record_response("GET /health", 200, std::time::Duration::from_micros(10));
+        stats.record_response("GET /health", 201, std::time::Duration::from_micros(20));
+        stats.record_response(
+            "POST /mailbox/push",
+            400,
+            std::time::Duration::from_micros(5),
+        );
+        stats.record_response("GET /sync/status", 401, std::time::Duration::from_micros(1));
+        stats.record_response("GET /sync/status", 403, std::time::Duration::from_micros(2));
+        stats.record_response("GET /sync/status", 429, std::time::Duration::from_micros(3));
+        stats.record_response(
+            "GET /control/stats",
+            500,
+            std::time::Duration::from_micros(4),
+        );
 
         assert_eq!(stats.started_at, 123);
         assert_eq!(stats.requests_total, 7);
@@ -948,6 +1000,15 @@ mod tests {
         assert_eq!(stats.unauthorized, 1);
         assert_eq!(stats.cors_rejected, 1);
         assert_eq!(stats.rate_limited, 1);
+        let health = stats.endpoints.get("GET /health").unwrap();
+        assert_eq!(health.requests, 2);
+        assert_eq!(health.responses_2xx, 2);
+        assert_eq!(health.total_duration_micros, 30);
+        assert_eq!(health.max_duration_micros, 20);
+        assert_eq!(health.last_status, Some(201));
+        let sync = stats.endpoints.get("GET /sync/status").unwrap();
+        assert_eq!(sync.requests, 3);
+        assert_eq!(sync.responses_4xx, 3);
     }
 
     #[test]

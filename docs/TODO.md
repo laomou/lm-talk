@@ -891,7 +891,8 @@ MVP 群聊采用逐个加密。
    - [x] `/health` 暴露 mailbox/prekey/peer 基础数量。
    - [x] `/sync/status` 暴露同步 peer attempts/successes/failures/last_success_at/last_error/next_attempt_at/consecutive_failures。
    - [x] `/control/stats` 暴露控制面 started_at、请求总数、2xx/4xx/5xx、bad request、unauthorized、CORS 拒绝和限流命中次数。
-   - [ ] 更完整 stats：过期清理次数、endpoint 维度延迟/错误率、同步导入/导出字节数。
+   - [x] `/control/stats` 增加 endpoint 维度请求数、2xx/4xx/5xx、累计耗时、最大耗时和 last_status。
+   - [ ] 更完整 stats：过期清理次数、同步导入/导出字节数、可导出的 Prometheus/OpenMetrics 格式。
 
 ### P2：生产网络能力
 
