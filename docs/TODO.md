@@ -902,7 +902,8 @@ MVP 群聊采用逐个加密。
    - [x] 生成 due-for-republish records 的 closest-k replication plan。
    - [x] 生成 256 个 Kademlia bucket routing refresh target plan。
    - [x] 控制面提供 `GET /dht/replication-plan` 与 `GET /dht/routing-refresh-plan`。
-   - [ ] 接入传输层网络 find_node/find_value/store RPC。
+   - [x] DHT runner/helper 通过 `DhtTransport` 抽象发送 `FindNode` / `FindValue` / `StoreRecord` RPC；当前默认实现仍是 HTTP control-plane `/dht/rpc`，为后续 TCP/WebSocket/QUIC 传输接入预留边界。
+   - [ ] 接入真实传输层网络 find_node/find_value/store RPC。
    - [x] 已配置 control peers 支持按 `sync_peers[].peer_id` 匹配 closest-k target 执行 DHT `StoreRecord` replication；未配置 peer_id 时保持全量 control-peer 兼容行为。
    - [ ] 开放传输层 closest-k replication：接入真实网络 RPC、节点发现和端到端传输策略。
 

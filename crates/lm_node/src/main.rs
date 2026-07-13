@@ -367,6 +367,29 @@ struct SyncPeerConfig {
     peer_id: Option<String>,
 }
 
+trait DhtTransport {
+    fn send_dht_rpc(
+        &self,
+        peer: &SyncPeerConfig,
+        request: &DhtRpcRequest,
+    ) -> Result<DhtRpcResponse, Box<dyn std::error::Error>>;
+}
+
+#[derive(Debug, Clone, Copy)]
+struct HttpControlDhtTransport;
+
+impl DhtTransport for HttpControlDhtTransport {
+    fn send_dht_rpc(
+        &self,
+        peer: &SyncPeerConfig,
+        request: &DhtRpcRequest,
+    ) -> Result<DhtRpcResponse, Box<dyn std::error::Error>> {
+        let body = serde_json::json!({ "request": request }).to_string();
+        let response = http_control_request(peer, "POST", "/dht/rpc", &body)?;
+        Ok(serde_json::from_str(&response)?)
+    }
+}
+
 #[derive(Debug, Clone)]
 struct SyncPeerRuntime {
     config: SyncPeerConfig,
@@ -2270,6 +2293,22 @@ fn run_dht_replication_with_logger(
     replication_factor: usize,
     logger: Option<&ControlLogger>,
 ) -> DhtReplicationRunStats {
+    run_dht_replication_with_transport(
+        node,
+        peers,
+        replication_factor,
+        logger,
+        &HttpControlDhtTransport,
+    )
+}
+
+fn run_dht_replication_with_transport(
+    node: &mut NativeNode,
+    peers: &[SyncPeerConfig],
+    replication_factor: usize,
+    logger: Option<&ControlLogger>,
+    transport: &dyn DhtTransport,
+) -> DhtReplicationRunStats {
     if peers.is_empty() || replication_factor == 0 {
         return DhtReplicationRunStats::default();
     }
@@ -2289,7 +2328,7 @@ fn run_dht_replication_with_logger(
                 ),
                 record: planned.record.clone(),
             };
-            match send_dht_rpc(peer, &request) {
+            match transport.send_dht_rpc(peer, &request) {
                 Ok(DhtRpcResponse::StoreResult { stored: true, .. }) => {
                     stats.successes = stats.successes.saturating_add(1);
                 }
@@ -2363,6 +2402,24 @@ fn run_dht_routing_refresh_with_logger(
     max_targets: usize,
     logger: Option<&ControlLogger>,
 ) -> DhtRoutingRefreshRunStats {
+    run_dht_routing_refresh_with_transport(
+        node,
+        peers,
+        limit,
+        max_targets,
+        logger,
+        &HttpControlDhtTransport,
+    )
+}
+
+fn run_dht_routing_refresh_with_transport(
+    node: &mut NativeNode,
+    peers: &[SyncPeerConfig],
+    limit: usize,
+    max_targets: usize,
+    logger: Option<&ControlLogger>,
+    transport: &dyn DhtTransport,
+) -> DhtRoutingRefreshRunStats {
     if peers.is_empty() || max_targets == 0 {
         return DhtRoutingRefreshRunStats::default();
     }
@@ -2384,7 +2441,7 @@ fn run_dht_routing_refresh_with_logger(
                 target,
                 limit: limit.clamp(1, 64),
             };
-            match send_dht_rpc(peer, &request) {
+            match transport.send_dht_rpc(peer, &request) {
                 Ok(DhtRpcResponse::Nodes { nodes, .. }) => {
                     stats.successes = stats.successes.saturating_add(1);
                     stats.nodes_returned = stats.nodes_returned.saturating_add(nodes.len());
@@ -2422,6 +2479,23 @@ fn run_dht_routing_refresh_with_logger(
         }
     }
     stats
+}
+
+#[cfg(test)]
+fn dht_find_value_with_transport(
+    peer: &SyncPeerConfig,
+    key: lm_node::DhtRecordKey,
+    limit: usize,
+    transport: &dyn DhtTransport,
+) -> Result<DhtRpcResponse, Box<dyn std::error::Error>> {
+    transport.send_dht_rpc(
+        peer,
+        &DhtRpcRequest::FindValue {
+            request_id: format!("find-value-{}", key),
+            key,
+            limit: limit.clamp(1, 64),
+        },
+    )
 }
 
 fn run_snapshot_sync(
@@ -2523,13 +2597,12 @@ fn current_unix_timestamp() -> u64 {
         .unwrap_or(0)
 }
 
+#[cfg(test)]
 fn send_dht_rpc(
     peer: &SyncPeerConfig,
     request: &DhtRpcRequest,
 ) -> Result<DhtRpcResponse, Box<dyn std::error::Error>> {
-    let body = serde_json::json!({ "request": request }).to_string();
-    let response = http_control_request(peer, "POST", "/dht/rpc", &body)?;
-    Ok(serde_json::from_str(&response)?)
+    HttpControlDhtTransport.send_dht_rpc(peer, request)
 }
 
 fn fetch_snapshot(peer: &SyncPeerConfig) -> Result<NodeStateSnapshot, Box<dyn std::error::Error>> {
@@ -2869,10 +2942,13 @@ serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--st
 mod tests {
     use super::{
         ControlLogger, ControlRuntimeStats, DhtReplicationRunStats, DhtRoutingRefreshRunStats,
-        LogFormat, NodeMaintenanceStats, RateLimitConfig, RateLimiter, ServeControlConfigFile,
-        StateDbStats, SyncPeerConfig, atomic_write_text, current_unix_timestamp,
-        load_node_state_db, parse_log_format, read_secret_file, run_dht_replication,
-        run_dht_routing_refresh, save_node_state_db, send_dht_rpc, sync_backoff_delay_seconds,
+        DhtTransport, LogFormat, NodeMaintenanceStats, RateLimitConfig, RateLimiter,
+        ServeControlConfigFile, StateDbStats, SyncPeerConfig, atomic_write_text,
+        current_unix_timestamp, dht_find_value_with_transport, load_node_state_db,
+        parse_log_format, read_secret_file, run_dht_replication,
+        run_dht_replication_with_transport, run_dht_routing_refresh,
+        run_dht_routing_refresh_with_transport, save_node_state_db, send_dht_rpc,
+        sync_backoff_delay_seconds,
     };
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use lm_core::{Identity, MailboxMessage, MailboxMessageKind, PreKeyBundle};
@@ -2880,8 +2956,31 @@ mod tests {
         DhtRecord, DhtRecordKey, DhtRecordKind, DhtRpcRequest, DhtRpcResponse,
         MailboxPushRejectStats, NativeNode, NodeConfig,
     };
+    use std::cell::RefCell;
     use std::io::{Read, Write};
     use std::net::TcpListener;
+
+    #[derive(Default)]
+    struct FakeDhtTransport {
+        requests: RefCell<Vec<(String, DhtRpcRequest)>>,
+        responses: RefCell<Vec<DhtRpcResponse>>,
+    }
+
+    impl DhtTransport for FakeDhtTransport {
+        fn send_dht_rpc(
+            &self,
+            peer: &SyncPeerConfig,
+            request: &DhtRpcRequest,
+        ) -> Result<DhtRpcResponse, Box<dyn std::error::Error>> {
+            self.requests
+                .borrow_mut()
+                .push((peer.url.clone(), request.clone()));
+            self.responses
+                .borrow_mut()
+                .pop()
+                .ok_or_else(|| "fake DHT response exhausted".into())
+        }
+    }
 
     fn spawn_dht_rpc_store_result_server(
         expected_requests: usize,
@@ -3038,6 +3137,81 @@ mod tests {
         assert_eq!(stats.failures, 0);
         assert_eq!(stats.nodes_returned, 0);
         server.join().unwrap();
+    }
+
+    #[test]
+    fn dht_runners_use_transport_abstraction() {
+        let mut node = NativeNode::new(NodeConfig::default());
+        let now = current_unix_timestamp();
+        assert!(node.dht_records.store(DhtRecord {
+            key: DhtRecordKey::for_public_peer("transport-record"),
+            kind: DhtRecordKind::PublicPeer,
+            value: "value".into(),
+            created_at: now,
+            expires_at: now.saturating_add(60),
+            republish_at: now,
+        }));
+        let peer = SyncPeerConfig {
+            url: "transport://peer-a".into(),
+            token: None,
+            peer_id: None,
+        };
+        let transport = FakeDhtTransport {
+            responses: RefCell::new(vec![
+                DhtRpcResponse::Nodes {
+                    request_id: "fake-refresh".into(),
+                    nodes: Vec::new(),
+                },
+                DhtRpcResponse::Value {
+                    request_id: "fake-find-value".into(),
+                    record: None,
+                    closer_records: Vec::new(),
+                    closer_nodes: Vec::new(),
+                },
+                DhtRpcResponse::StoreResult {
+                    request_id: "fake-store".into(),
+                    stored: true,
+                    inserted: true,
+                },
+            ]),
+            ..Default::default()
+        };
+
+        let replication = run_dht_replication_with_transport(
+            &mut node,
+            std::slice::from_ref(&peer),
+            1,
+            None,
+            &transport,
+        );
+        assert_eq!(replication.attempts, 1);
+        assert_eq!(replication.successes, 1);
+
+        let find_value = dht_find_value_with_transport(
+            &peer,
+            DhtRecordKey::for_public_peer("transport-record"),
+            8,
+            &transport,
+        )
+        .unwrap();
+        assert!(matches!(find_value, DhtRpcResponse::Value { .. }));
+
+        let refresh = run_dht_routing_refresh_with_transport(
+            &mut node,
+            std::slice::from_ref(&peer),
+            8,
+            1,
+            None,
+            &transport,
+        );
+        assert_eq!(refresh.attempts, 1);
+        assert_eq!(refresh.successes, 1);
+
+        let requests = transport.requests.borrow();
+        assert_eq!(requests.len(), 3);
+        assert!(matches!(requests[0].1, DhtRpcRequest::StoreRecord { .. }));
+        assert!(matches!(requests[1].1, DhtRpcRequest::FindValue { .. }));
+        assert!(matches!(requests[2].1, DhtRpcRequest::FindNode { .. }));
     }
 
     #[test]
