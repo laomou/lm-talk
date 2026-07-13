@@ -1,4 +1,7 @@
-use libp2p::{StreamProtocol, noise, request_response, swarm::NetworkBehaviour, tcp, yamux};
+use futures::StreamExt;
+use libp2p::{
+    Multiaddr, PeerId, StreamProtocol, noise, request_response, swarm::NetworkBehaviour, tcp, yamux,
+};
 use lm_core::PublicPeerAnnounce;
 use lm_node::{
     ConsumedOneTimePreKey, ControlRequest, DhtRecord, DhtRecordReplicationPlan, DhtRpcRequest,
@@ -416,6 +419,33 @@ impl DhtTransport for HttpControlDhtTransport {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
+struct Libp2pDhtTransport {
+    timeout: Duration,
+}
+
+#[allow(dead_code)]
+impl Default for Libp2pDhtTransport {
+    fn default() -> Self {
+        Self {
+            timeout: Duration::from_secs(10),
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl DhtTransport for Libp2pDhtTransport {
+    fn send_dht_rpc(
+        &self,
+        peer: &SyncPeerConfig,
+        request: &DhtRpcRequest,
+    ) -> Result<DhtRpcResponse, Box<dyn std::error::Error>> {
+        let (peer_id, address) = parse_libp2p_dht_peer(peer)?;
+        send_libp2p_dht_rpc(peer_id, address, request.clone(), self.timeout)
+    }
+}
+
 #[allow(dead_code)]
 fn libp2p_dht_rpc_behaviour() -> Libp2pDhtRpcBehaviour {
     request_response::json::Behaviour::new(
@@ -465,6 +495,74 @@ fn handle_libp2p_dht_rpc_event(
         return Some(response);
     }
     None
+}
+
+#[allow(dead_code)]
+fn parse_libp2p_dht_peer(
+    peer: &SyncPeerConfig,
+) -> Result<(PeerId, Multiaddr), Box<dyn std::error::Error>> {
+    let peer_id = peer
+        .peer_id
+        .as_deref()
+        .ok_or("libp2p DHT peers require peer_id")?
+        .parse::<PeerId>()?;
+    let address_text = peer
+        .url
+        .strip_prefix("libp2p://")
+        .unwrap_or(peer.url.as_str());
+    let address = address_text.parse::<Multiaddr>()?;
+    Ok((peer_id, address))
+}
+
+#[allow(dead_code)]
+fn send_libp2p_dht_rpc(
+    peer_id: PeerId,
+    address: Multiaddr,
+    request: DhtRpcRequest,
+    timeout: Duration,
+) -> Result<DhtRpcResponse, Box<dyn std::error::Error>> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .enable_time()
+        .build()?;
+    runtime.block_on(send_libp2p_dht_rpc_async(
+        peer_id, address, request, timeout,
+    ))
+}
+
+#[allow(dead_code)]
+async fn send_libp2p_dht_rpc_async(
+    peer_id: PeerId,
+    address: Multiaddr,
+    request: DhtRpcRequest,
+    timeout: Duration,
+) -> Result<DhtRpcResponse, Box<dyn std::error::Error>> {
+    let mut swarm = libp2p_dht_swarm()?;
+    let request_id =
+        swarm
+            .behaviour_mut()
+            .dht_rpc
+            .send_request_with_addresses(&peer_id, request, vec![address]);
+    let response = async {
+        loop {
+            if let libp2p::swarm::SwarmEvent::Behaviour(Libp2pDhtEvent::DhtRpc(
+                request_response::Event::Message { message, .. },
+            )) = swarm.select_next_some().await
+            {
+                match message {
+                    request_response::Message::Response {
+                        request_id: received_id,
+                        response,
+                    } if received_id == request_id => break Ok(response),
+                    request_response::Message::Request { .. } => {}
+                    request_response::Message::Response { .. } => {}
+                }
+            }
+        }
+    };
+    tokio::time::timeout(timeout, response)
+        .await
+        .map_err(|_| "libp2p DHT RPC timed out")?
 }
 
 #[derive(Debug, Clone)]
@@ -3076,17 +3174,17 @@ serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--st
 mod tests {
     use super::{
         ControlLogger, ControlRuntimeStats, DhtReplicationRunStats, DhtRoutingRefreshRunStats,
-        DhtTransport, LIBP2P_DHT_RPC_PROTOCOL, Libp2pDhtEvent, LogFormat, NodeMaintenanceStats,
-        RateLimitConfig, RateLimiter, ServeControlConfigFile, StateDbStats, SyncPeerConfig,
-        atomic_write_text, current_unix_timestamp, dht_find_value_with_transport,
+        DhtTransport, LIBP2P_DHT_RPC_PROTOCOL, Libp2pDhtEvent, Libp2pDhtTransport, LogFormat,
+        NodeMaintenanceStats, RateLimitConfig, RateLimiter, ServeControlConfigFile, StateDbStats,
+        SyncPeerConfig, atomic_write_text, current_unix_timestamp, dht_find_value_with_transport,
         handle_libp2p_dht_rpc_request, libp2p_dht_rpc_behaviour, libp2p_dht_swarm,
-        load_node_state_db, parse_log_format, read_secret_file, run_dht_replication,
-        run_dht_replication_with_transport, run_dht_routing_refresh,
+        load_node_state_db, parse_libp2p_dht_peer, parse_log_format, read_secret_file,
+        run_dht_replication, run_dht_replication_with_transport, run_dht_routing_refresh,
         run_dht_routing_refresh_with_transport, save_node_state_db, send_dht_rpc,
-        sync_backoff_delay_seconds,
+        send_libp2p_dht_rpc_async, sync_backoff_delay_seconds,
     };
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-    use futures::{FutureExt, StreamExt};
+    use futures::StreamExt;
     use libp2p::{request_response, swarm::SwarmEvent};
     use lm_core::{Identity, MailboxMessage, MailboxMessageKind, PreKeyBundle};
     use lm_node::{
@@ -3118,6 +3216,108 @@ mod tests {
                 .pop()
                 .ok_or_else(|| "fake DHT response exhausted".into())
         }
+    }
+
+    async fn libp2p_dht_roundtrip(
+        server_node: &mut NativeNode,
+        request: DhtRpcRequest,
+    ) -> DhtRpcResponse {
+        let mut server_swarm = libp2p_dht_swarm().unwrap();
+        let server_peer = *server_swarm.local_peer_id();
+        server_swarm
+            .listen_on("/ip4/127.0.0.1/tcp/0".parse().unwrap())
+            .unwrap();
+
+        let listen_addr = loop {
+            if let SwarmEvent::NewListenAddr { address, .. } = server_swarm.select_next_some().await
+            {
+                break address;
+            }
+        };
+
+        let client_request =
+            send_libp2p_dht_rpc_async(server_peer, listen_addr, request, Duration::from_secs(10));
+        let server = async {
+            loop {
+                if let SwarmEvent::Behaviour(Libp2pDhtEvent::DhtRpc(
+                    request_response::Event::Message { message, .. },
+                )) = server_swarm.select_next_some().await
+                {
+                    if let request_response::Message::Request {
+                        request, channel, ..
+                    } = message
+                    {
+                        let response = handle_libp2p_dht_rpc_request(server_node, request);
+                        server_swarm
+                            .behaviour_mut()
+                            .dht_rpc
+                            .send_response(channel, response)
+                            .unwrap();
+                        break;
+                    }
+                }
+            }
+        };
+
+        let (response, _) = futures::future::join(client_request, server).await;
+        response.unwrap()
+    }
+
+    async fn libp2p_dht_transport_roundtrip(
+        server_node: &mut NativeNode,
+        request: DhtRpcRequest,
+    ) -> DhtRpcResponse {
+        let mut server_swarm = libp2p_dht_swarm().unwrap();
+        let server_peer = *server_swarm.local_peer_id();
+        server_swarm
+            .listen_on("/ip4/127.0.0.1/tcp/0".parse().unwrap())
+            .unwrap();
+        let listen_addr = loop {
+            if let SwarmEvent::NewListenAddr { address, .. } = server_swarm.select_next_some().await
+            {
+                break address;
+            }
+        };
+        let peer = SyncPeerConfig {
+            url: format!("libp2p://{listen_addr}"),
+            token: None,
+            peer_id: Some(server_peer.to_string()),
+        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let transport = Libp2pDhtTransport {
+                timeout: Duration::from_secs(10),
+            };
+            let response = transport
+                .send_dht_rpc(&peer, &request)
+                .map_err(|err| err.to_string());
+            tx.send(response).unwrap();
+        });
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if let Ok(response) = rx.try_recv() {
+                    return response.expect("libp2p DHT transport request should complete");
+                }
+                if let SwarmEvent::Behaviour(Libp2pDhtEvent::DhtRpc(
+                    request_response::Event::Message { message, .. },
+                )) = server_swarm.select_next_some().await
+                {
+                    if let request_response::Message::Request {
+                        request, channel, ..
+                    } = message
+                    {
+                        let response = handle_libp2p_dht_rpc_request(server_node, request);
+                        server_swarm
+                            .behaviour_mut()
+                            .dht_rpc
+                            .send_response(channel, response)
+                            .unwrap();
+                    }
+                }
+            }
+        })
+        .await
+        .unwrap()
     }
 
     fn spawn_dht_rpc_store_result_server(
@@ -3426,6 +3626,35 @@ mod tests {
     }
 
     #[test]
+    fn libp2p_dht_transport_parses_peer_config() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let mut swarm = libp2p_dht_swarm().unwrap();
+            let peer_id = *swarm.local_peer_id();
+            swarm
+                .listen_on("/ip4/127.0.0.1/tcp/0".parse().unwrap())
+                .unwrap();
+            let address = loop {
+                if let SwarmEvent::NewListenAddr { address, .. } = swarm.select_next_some().await {
+                    break address;
+                }
+            };
+            let peer = SyncPeerConfig {
+                url: format!("libp2p://{address}"),
+                token: Some("ignored-for-libp2p".into()),
+                peer_id: Some(peer_id.to_string()),
+            };
+            let (parsed_peer_id, parsed_address) = parse_libp2p_dht_peer(&peer).unwrap();
+            assert_eq!(parsed_peer_id, peer_id);
+            assert_eq!(parsed_address, address);
+        });
+    }
+
+    #[test]
     fn libp2p_dht_rpc_request_handler_uses_native_node_logic() {
         let mut node = NativeNode::new(NodeConfig::default());
         let record = DhtRecord::public_peer(
@@ -3467,21 +3696,6 @@ mod tests {
             .build()
             .unwrap();
         runtime.block_on(async {
-            let mut server_swarm = libp2p_dht_swarm().unwrap();
-            let mut client_swarm = libp2p_dht_swarm().unwrap();
-            let server_peer = *server_swarm.local_peer_id();
-            server_swarm
-                .listen_on("/ip4/127.0.0.1/tcp/0".parse().unwrap())
-                .unwrap();
-
-            let listen_addr = loop {
-                if let SwarmEvent::NewListenAddr { address, .. } =
-                    server_swarm.select_next_some().await
-                {
-                    break address;
-                }
-            };
-
             let key = DhtRecordKey::for_public_peer("libp2p-roundtrip");
             let record = DhtRecord {
                 key,
@@ -3494,55 +3708,102 @@ mod tests {
             let mut server_node = NativeNode::new(NodeConfig::default());
             assert!(server_node.dht_records.store(record.clone()));
 
-            client_swarm
-                .behaviour_mut()
-                .dht_rpc
-                .send_request_with_addresses(
-                    &server_peer,
-                    DhtRpcRequest::FindValue {
-                        request_id: "libp2p-find".into(),
-                        key,
-                        limit: 8,
-                    },
-                    vec![listen_addr],
-                );
+            let response = libp2p_dht_roundtrip(
+                &mut server_node,
+                DhtRpcRequest::FindValue {
+                    request_id: "libp2p-find".into(),
+                    key,
+                    limit: 8,
+                },
+            )
+            .await;
+            match response {
+                DhtRpcResponse::Value {
+                    record: Some(found),
+                    ..
+                } => assert_eq!(found.value, "roundtrip-value"),
+                other => panic!("unexpected response: {other:?}"),
+            }
+        });
+    }
 
-            let roundtrip = async {
-                loop {
-                futures::select! {
-                    event = server_swarm.select_next_some().fuse() => {
-                        if let SwarmEvent::Behaviour(Libp2pDhtEvent::DhtRpc(
-                            request_response::Event::Message { message, .. },
-                        )) = event
-                        {
-                            if let request_response::Message::Request { request, channel, .. } = message {
-                                let response = handle_libp2p_dht_rpc_request(&mut server_node, request);
-                                server_swarm.behaviour_mut().dht_rpc.send_response(channel, response).unwrap();
-                            }
-                        }
-                    }
-                    event = client_swarm.select_next_some().fuse() => {
-                        if let SwarmEvent::Behaviour(Libp2pDhtEvent::DhtRpc(
-                            request_response::Event::Message { message, .. },
-                        )) = event
-                        {
-                            if let request_response::Message::Response { response, .. } = message {
-                                match response {
-                                    DhtRpcResponse::Value { record: Some(found), .. } => {
-                                        assert_eq!(found.value, "roundtrip-value");
-                                        break;
-                                    }
-                                    other => panic!("unexpected response: {other:?}"),
-                                }
-                            }
-                        }
-                    }
-                }
-                }
+    #[test]
+    fn libp2p_dht_rpc_roundtrips_store_record_between_local_swarms() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let key = DhtRecordKey::for_public_peer("libp2p-store-roundtrip");
+            let record = DhtRecord {
+                key,
+                kind: DhtRecordKind::PublicPeer,
+                value: "stored-over-libp2p".into(),
+                created_at: current_unix_timestamp(),
+                expires_at: current_unix_timestamp().saturating_add(60),
+                republish_at: current_unix_timestamp().saturating_add(30),
             };
-            tokio::time::timeout(Duration::from_secs(10), roundtrip)
-                .await
+            let mut server_node = NativeNode::new(NodeConfig::default());
+            let response = libp2p_dht_transport_roundtrip(
+                &mut server_node,
+                DhtRpcRequest::StoreRecord {
+                    request_id: "libp2p-store".into(),
+                    record,
+                },
+            )
+            .await;
+            assert!(matches!(
+                response,
+                DhtRpcResponse::StoreResult {
+                    stored: true,
+                    inserted: true,
+                    ..
+                }
+            ));
+            assert_eq!(
+                server_node.dht_records.find_value(&key).unwrap().value,
+                "stored-over-libp2p"
+            );
+        });
+    }
+
+    #[test]
+    fn libp2p_dht_rpc_roundtrips_find_node_between_local_swarms() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let (identity, _) = Identity::create_with_passphrase("libp2p find node peer").unwrap();
+            let announce = NodeConfig {
+                peer_id: "libp2p-find-node-peer".into(),
+                ..Default::default()
+            }
+            .create_announce(&identity)
+            .unwrap();
+            let mut server_node = NativeNode::new(NodeConfig::default());
+            server_node
+                .kademlia
+                .insert_verified(announce.clone(), &identity.identity_public_key())
                 .unwrap();
+            let response = libp2p_dht_roundtrip(
+                &mut server_node,
+                DhtRpcRequest::FindNode {
+                    request_id: "libp2p-find-node".into(),
+                    target: lm_node::KademliaNodeId::from_peer_id(&announce.peer_id),
+                    limit: 8,
+                },
+            )
+            .await;
+            match response {
+                DhtRpcResponse::Nodes { nodes, .. } => {
+                    assert_eq!(nodes.len(), 1);
+                    assert_eq!(nodes[0].announce.peer_id, "libp2p-find-node-peer");
+                }
+                other => panic!("unexpected response: {other:?}"),
+            }
         });
     }
 
