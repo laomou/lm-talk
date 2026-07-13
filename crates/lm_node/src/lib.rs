@@ -99,6 +99,11 @@ impl DhtRecordKey {
         Self(bytes)
     }
 
+    pub fn from_hex(value: &str) -> Result<Self> {
+        let bytes = decode_hex_32(value)?;
+        Ok(Self(bytes))
+    }
+
     pub fn for_public_peer(peer_id: &str) -> Self {
         Self::derive("public-peer", peer_id.as_bytes())
     }
@@ -258,6 +263,27 @@ impl DhtRecordStore {
         before.saturating_sub(self.records.len())
     }
 
+    pub fn all_records(&self) -> Vec<DhtRecord> {
+        self.records.values().cloned().collect()
+    }
+
+    pub fn restore_records(&mut self, records: Vec<DhtRecord>) {
+        self.records.clear();
+        for record in records {
+            self.store(record);
+        }
+    }
+
+    pub fn merge_records(&mut self, records: Vec<DhtRecord>) -> usize {
+        let mut inserted = 0;
+        for record in records {
+            if self.store(record) {
+                inserted += 1;
+            }
+        }
+        inserted
+    }
+
     pub fn len(&self) -> usize {
         self.records.len()
     }
@@ -394,6 +420,20 @@ fn bytes_to_hex(bytes: &[u8]) -> String {
         out.push(HEX[(byte & 0x0f) as usize] as char);
     }
     out
+}
+
+fn decode_hex_32(value: &str) -> Result<[u8; KADEMLIA_ID_BYTES]> {
+    if value.len() != KADEMLIA_ID_BYTES * 2 {
+        return Err(LmError::InvalidBackupFormat);
+    }
+    let mut out = [0u8; KADEMLIA_ID_BYTES];
+    let bytes = value.as_bytes();
+    for idx in 0..KADEMLIA_ID_BYTES {
+        let hi = from_hex(bytes[idx * 2]).ok_or(LmError::InvalidBackupFormat)?;
+        let lo = from_hex(bytes[idx * 2 + 1]).ok_or(LmError::InvalidBackupFormat)?;
+        out[idx] = (hi << 4) | lo;
+    }
+    Ok(out)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -927,6 +967,7 @@ pub struct NativeNode {
     pub kademlia: KademliaRoutingTable,
     pub mailbox: MailboxStore,
     pub prekeys: PreKeyStore,
+    pub dht_records: DhtRecordStore,
     pub sync_status: NodeSyncStatus,
     pub maintenance: NodeMaintenanceStats,
 }
@@ -1028,6 +1069,8 @@ pub struct NodeStateSnapshot {
     #[serde(default)]
     pub consumed_one_time_prekeys: Vec<ConsumedOneTimePreKey>,
     #[serde(default)]
+    pub dht_records: Vec<DhtRecord>,
+    #[serde(default)]
     pub sync_status: NodeSyncStatus,
     #[serde(default)]
     pub maintenance: NodeMaintenanceStats,
@@ -1044,6 +1087,7 @@ pub struct NodeMergeStats {
     pub peers: usize,
     pub mailbox_deliveries: usize,
     pub prekey_bundles: usize,
+    pub dht_records: usize,
 }
 
 impl NativeNode {
@@ -1055,6 +1099,7 @@ impl NativeNode {
             kademlia: KademliaRoutingTable::new(local_id, DEFAULT_K_BUCKET_SIZE),
             mailbox: MailboxStore::default(),
             prekeys: PreKeyStore::default(),
+            dht_records: DhtRecordStore::default(),
             sync_status: NodeSyncStatus::default(),
             maintenance: NodeMaintenanceStats::default(),
         }
@@ -1072,6 +1117,7 @@ impl NativeNode {
         let now = current_unix_timestamp();
         let mailbox_removed = self.mailbox.prune_expired(now) as u64;
         let prekey_removed = self.prekeys.prune_expired(now) as u64;
+        self.dht_records.prune_expired(now);
         self.maintenance.prune_runs = self.maintenance.prune_runs.saturating_add(1);
         self.maintenance.mailbox_expired_deliveries = self
             .maintenance
@@ -1109,6 +1155,7 @@ impl NativeNode {
                     })
                 })
                 .collect(),
+            dht_records: self.dht_records.all_records(),
             sync_status: self.sync_status.clone(),
             maintenance: self.maintenance.clone(),
         }
@@ -1136,6 +1183,7 @@ impl NativeNode {
         node.prekeys.restore_bundles(snapshot.prekey_bundles);
         node.prekeys
             .restore_consumed(snapshot.consumed_one_time_prekeys);
+        node.dht_records.restore_records(snapshot.dht_records);
         node.sync_status = snapshot.sync_status;
         node.maintenance = snapshot.maintenance;
         node
@@ -1170,6 +1218,7 @@ impl NativeNode {
         let prekey_bundles = self.prekeys.merge_bundles(snapshot.prekey_bundles);
         self.prekeys
             .merge_consumed(snapshot.consumed_one_time_prekeys);
+        let dht_records = self.dht_records.merge_records(snapshot.dht_records);
         for (url, status) in snapshot.sync_status.peers {
             self.sync_status.peers.entry(url).or_insert(status);
         }
@@ -1177,6 +1226,7 @@ impl NativeNode {
             peers,
             mailbox_deliveries,
             prekey_bundles,
+            dht_records,
         }
     }
 }
@@ -1299,6 +1349,7 @@ struct HealthResponse<'a> {
     prekeys: usize,
     mailbox_deliveries: usize,
     mailbox_bytes: usize,
+    dht_records: usize,
     maintenance: NodeMaintenanceStats,
     sync: NodeSyncStatus,
 }
@@ -1371,6 +1422,32 @@ struct GetPreKeyResponse {
 }
 
 #[derive(Debug, Deserialize)]
+struct StoreDhtRecordRequest {
+    record: DhtRecord,
+}
+
+#[derive(Debug, Serialize)]
+struct StoreDhtRecordResponse {
+    stored: bool,
+    inserted: bool,
+    key: String,
+    records: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct GetDhtRecordResponse {
+    key: String,
+    found: bool,
+    record: Option<DhtRecord>,
+}
+
+#[derive(Debug, Serialize)]
+struct ClosestDhtRecordsResponse {
+    target: String,
+    records: Vec<DhtRecord>,
+}
+
+#[derive(Debug, Deserialize)]
 struct ImportSnapshotRequest {
     snapshot: NodeStateSnapshot,
 }
@@ -1381,6 +1458,7 @@ struct ImportSnapshotResponse {
     peers: usize,
     mailbox_deliveries: usize,
     prekey_bundles: usize,
+    dht_records: usize,
 }
 
 impl NativeNode {
@@ -1398,6 +1476,7 @@ impl NativeNode {
                     prekeys: self.prekeys.len(),
                     mailbox_deliveries: self.mailbox.total_pending(),
                     mailbox_bytes: self.mailbox.total_bytes(),
+                    dht_records: self.dht_records.len(),
                     maintenance: self.maintenance.clone(),
                     sync: self.sync_status.clone(),
                 },
@@ -1409,14 +1488,17 @@ impl NativeNode {
             ("POST", "/mailbox/ack") => self.handle_control_mailbox_ack(&request.body),
             ("POST", "/prekey/publish") => self.handle_control_prekey_publish(&request.body),
             ("GET", "/prekey/get") => self.handle_control_prekey_get(&request.path),
+            ("POST", "/dht/record") => self.handle_control_dht_record_store(&request.body),
+            ("GET", "/dht/record") => self.handle_control_dht_record_get(&request.path),
+            ("GET", "/dht/closest") => self.handle_control_dht_closest(&request.path),
             ("GET", "/sync/snapshot") => ControlResponse::json(200, &self.to_state_snapshot()),
             ("GET", "/sync/status") => ControlResponse::json(200, &self.sync_status),
             ("POST", "/sync/import") => self.handle_control_sync_import(&request.body),
             (
                 _,
                 "/health" | "/announce" | "/peers/closest" | "/mailbox/push" | "/mailbox/take"
-                | "/mailbox/ack" | "/prekey/publish" | "/prekey/get" | "/sync/snapshot"
-                | "/sync/status" | "/sync/import",
+                | "/mailbox/ack" | "/prekey/publish" | "/prekey/get" | "/dht/record"
+                | "/dht/closest" | "/sync/snapshot" | "/sync/status" | "/sync/import",
             ) => ControlResponse::text(405, "method not allowed"),
             _ => ControlResponse::text(404, "not found"),
         }
@@ -1622,6 +1704,68 @@ impl NativeNode {
         )
     }
 
+    fn handle_control_dht_record_store(&mut self, body: &str) -> ControlResponse {
+        let req: StoreDhtRecordRequest = match serde_json::from_str(body) {
+            Ok(v) => v,
+            Err(e) => return ControlResponse::text(400, format!("invalid json: {e}")),
+        };
+        let key = req.record.key.to_hex();
+        let inserted = self.dht_records.store(req.record);
+        ControlResponse::json(
+            201,
+            &StoreDhtRecordResponse {
+                stored: true,
+                inserted,
+                key,
+                records: self.dht_records.len(),
+            },
+        )
+    }
+
+    fn handle_control_dht_record_get(&mut self, path: &str) -> ControlResponse {
+        let query = query_params(path);
+        let Some(key) = query.get("key") else {
+            return ControlResponse::text(400, "missing key");
+        };
+        let key = match DhtRecordKey::from_hex(key) {
+            Ok(v) => v,
+            Err(e) => return ControlResponse::text(400, e.to_string()),
+        };
+        let record = self.dht_records.find_value(&key);
+        ControlResponse::json(
+            200,
+            &GetDhtRecordResponse {
+                key: key.to_hex(),
+                found: record.is_some(),
+                record,
+            },
+        )
+    }
+
+    fn handle_control_dht_closest(&mut self, path: &str) -> ControlResponse {
+        let query = query_params(path);
+        let Some(target) = query.get("target") else {
+            return ControlResponse::text(400, "missing target");
+        };
+        let target = match DhtRecordKey::from_hex(target) {
+            Ok(v) => v,
+            Err(e) => return ControlResponse::text(400, e.to_string()),
+        };
+        let limit = query
+            .get("limit")
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(8)
+            .clamp(1, 64);
+        let records = self.dht_records.closest_records(target, limit);
+        ControlResponse::json(
+            200,
+            &ClosestDhtRecordsResponse {
+                target: target.to_hex(),
+                records,
+            },
+        )
+    }
+
     fn handle_control_sync_import(&mut self, body: &str) -> ControlResponse {
         let req: ImportSnapshotRequest = match serde_json::from_str(body) {
             Ok(v) => v,
@@ -1635,6 +1779,7 @@ impl NativeNode {
                 peers: stats.peers,
                 mailbox_deliveries: stats.mailbox_deliveries,
                 prekey_bundles: stats.prekey_bundles,
+                dht_records: stats.dht_records,
             },
         )
     }
@@ -2079,6 +2224,61 @@ mod tests {
         assert_ne!(
             node.kademlia.local_id(),
             KademliaNodeId::from_user_id(local_identity.user_id())
+        );
+    }
+
+    #[test]
+    fn control_plane_dht_record_store_get_closest_and_snapshot() {
+        let mut node = NativeNode::new(NodeConfig::default());
+        let record = DhtRecord {
+            key: DhtRecordKey::for_public_peer("peer-control"),
+            kind: DhtRecordKind::PublicPeer,
+            value: "public-peer-record".into(),
+            created_at: current_unix_timestamp(),
+            expires_at: current_unix_timestamp().saturating_add(3600),
+            republish_at: current_unix_timestamp().saturating_add(1800),
+        };
+        let key = record.key;
+        let response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/dht/record".into(),
+            body: serde_json::json!({ "record": record }).to_string(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 201, "{}", response.body);
+        let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(body["inserted"], true);
+        assert_eq!(body["records"], 1);
+
+        let response = node.handle_control_request(ControlRequest {
+            method: "GET".into(),
+            path: format!("/dht/record?key={key}"),
+            body: String::new(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 200, "{}", response.body);
+        let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(body["found"], true);
+        assert_eq!(body["record"]["value"], "public-peer-record");
+
+        let response = node.handle_control_request(ControlRequest {
+            method: "GET".into(),
+            path: format!("/dht/closest?target={key}&limit=1"),
+            body: String::new(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 200, "{}", response.body);
+        let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(body["records"].as_array().unwrap().len(), 1);
+
+        let restored = NativeNode::from_state_snapshot(node.to_state_snapshot());
+        assert_eq!(restored.dht_records.len(), 1);
+        let mut imported = NativeNode::new(NodeConfig::default());
+        let stats = imported.merge_snapshot(restored.to_state_snapshot());
+        assert_eq!(stats.dht_records, 1);
+        assert_eq!(
+            imported.dht_records.find_value(&key).unwrap().value,
+            "public-peer-record"
         );
     }
 
