@@ -291,6 +291,15 @@ struct DhtReplicationRunStats {
     failures: usize,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+struct DhtRoutingRefreshRunStats {
+    targets: usize,
+    attempts: usize,
+    successes: usize,
+    failures: usize,
+    nodes_returned: usize,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RateLimitConfig {
     window_seconds: u64,
@@ -337,6 +346,13 @@ struct ControlRuntimeStats {
     dht_replication_successes: u64,
     dht_replication_failures: u64,
     last_dht_replication_at: Option<u64>,
+    dht_routing_refresh_runs: u64,
+    dht_routing_refresh_targets: u64,
+    dht_routing_refresh_attempts: u64,
+    dht_routing_refresh_successes: u64,
+    dht_routing_refresh_failures: u64,
+    dht_routing_refresh_nodes_returned: u64,
+    last_dht_routing_refresh_at: Option<u64>,
     endpoints: HashMap<String, ControlEndpointStats>,
 }
 
@@ -373,6 +389,13 @@ impl ControlRuntimeStats {
             dht_replication_successes: 0,
             dht_replication_failures: 0,
             last_dht_replication_at: None,
+            dht_routing_refresh_runs: 0,
+            dht_routing_refresh_targets: 0,
+            dht_routing_refresh_attempts: 0,
+            dht_routing_refresh_successes: 0,
+            dht_routing_refresh_failures: 0,
+            dht_routing_refresh_nodes_returned: 0,
+            last_dht_routing_refresh_at: None,
             endpoints: HashMap::new(),
         }
     }
@@ -558,6 +581,95 @@ impl ControlRuntimeStats {
         }
         push_metric_help(
             &mut out,
+            "lm_node_dht_routing_refresh_runs_total",
+            "Total DHT routing refresh runner executions.",
+        );
+        push_metric_type(
+            &mut out,
+            "lm_node_dht_routing_refresh_runs_total",
+            "counter",
+        );
+        push_metric_value(
+            &mut out,
+            "lm_node_dht_routing_refresh_runs_total",
+            self.dht_routing_refresh_runs,
+        );
+        push_metric_help(
+            &mut out,
+            "lm_node_dht_routing_refresh_targets_total",
+            "DHT routing refresh targets queried by the runner.",
+        );
+        push_metric_type(
+            &mut out,
+            "lm_node_dht_routing_refresh_targets_total",
+            "counter",
+        );
+        push_metric_value(
+            &mut out,
+            "lm_node_dht_routing_refresh_targets_total",
+            self.dht_routing_refresh_targets,
+        );
+        push_metric_help(
+            &mut out,
+            "lm_node_dht_routing_refresh_attempts_total",
+            "DHT FindNode routing refresh attempts by result.",
+        );
+        push_metric_type(
+            &mut out,
+            "lm_node_dht_routing_refresh_attempts_total",
+            "counter",
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_dht_routing_refresh_attempts_total",
+            "result",
+            "success",
+            self.dht_routing_refresh_successes,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_dht_routing_refresh_attempts_total",
+            "result",
+            "failure",
+            self.dht_routing_refresh_failures,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_dht_routing_refresh_attempts_total",
+            "result",
+            "all",
+            self.dht_routing_refresh_attempts,
+        );
+        push_metric_help(
+            &mut out,
+            "lm_node_dht_routing_refresh_nodes_returned_total",
+            "Routing peers returned by DHT FindNode refresh responses.",
+        );
+        push_metric_type(
+            &mut out,
+            "lm_node_dht_routing_refresh_nodes_returned_total",
+            "counter",
+        );
+        push_metric_value(
+            &mut out,
+            "lm_node_dht_routing_refresh_nodes_returned_total",
+            self.dht_routing_refresh_nodes_returned,
+        );
+        if let Some(last_dht_routing_refresh_at) = self.last_dht_routing_refresh_at {
+            push_metric_help(
+                &mut out,
+                "lm_node_dht_routing_refresh_last_run_at",
+                "Unix timestamp of the last DHT routing refresh runner execution.",
+            );
+            push_metric_type(&mut out, "lm_node_dht_routing_refresh_last_run_at", "gauge");
+            push_metric_value(
+                &mut out,
+                "lm_node_dht_routing_refresh_last_run_at",
+                last_dht_routing_refresh_at,
+            );
+        }
+        push_metric_help(
+            &mut out,
             "lm_node_maintenance_prune_runs_total",
             "Total node expired-record prune runs.",
         );
@@ -708,6 +820,30 @@ impl ControlRuntimeStats {
             .dht_replication_failures
             .saturating_add(stats.failures as u64);
         self.last_dht_replication_at = Some(finished_at);
+    }
+
+    fn record_dht_routing_refresh_run(
+        &mut self,
+        stats: DhtRoutingRefreshRunStats,
+        finished_at: u64,
+    ) {
+        self.dht_routing_refresh_runs = self.dht_routing_refresh_runs.saturating_add(1);
+        self.dht_routing_refresh_targets = self
+            .dht_routing_refresh_targets
+            .saturating_add(stats.targets as u64);
+        self.dht_routing_refresh_attempts = self
+            .dht_routing_refresh_attempts
+            .saturating_add(stats.attempts as u64);
+        self.dht_routing_refresh_successes = self
+            .dht_routing_refresh_successes
+            .saturating_add(stats.successes as u64);
+        self.dht_routing_refresh_failures = self
+            .dht_routing_refresh_failures
+            .saturating_add(stats.failures as u64);
+        self.dht_routing_refresh_nodes_returned = self
+            .dht_routing_refresh_nodes_returned
+            .saturating_add(stats.nodes_returned as u64);
+        self.last_dht_routing_refresh_at = Some(finished_at);
     }
 
     fn record_sync_snapshot_bytes(
@@ -1083,6 +1219,18 @@ fn serve_control(
                     replication.failures
                 );
             }
+            let refresh = run_dht_routing_refresh(node, &peer_configs, 8, 8);
+            runtime_stats.record_dht_routing_refresh_run(refresh, current_unix_timestamp());
+            if refresh.attempts > 0 {
+                println!(
+                    "dht routing refresh: targets={} attempts={} successes={} failures={} nodes_returned={}",
+                    refresh.targets,
+                    refresh.attempts,
+                    refresh.successes,
+                    refresh.failures,
+                    refresh.nodes_returned
+                );
+            }
             if let Some(path) = state_file {
                 if let Err(err) = save_node_state(path, node) {
                     eprintln!("state save error: {err}");
@@ -1159,6 +1307,55 @@ fn run_dht_replication(
                 Err(err) => {
                     stats.failures = stats.failures.saturating_add(1);
                     eprintln!("dht replication to {} failed: {err}", peer.url);
+                }
+            }
+        }
+    }
+    stats
+}
+
+fn run_dht_routing_refresh(
+    node: &NativeNode,
+    peers: &[SyncPeerConfig],
+    limit: usize,
+    max_targets: usize,
+) -> DhtRoutingRefreshRunStats {
+    if peers.is_empty() || max_targets == 0 {
+        return DhtRoutingRefreshRunStats::default();
+    }
+    let plan = node.plan_dht_routing_refresh();
+    let targets = plan
+        .targets
+        .into_iter()
+        .take(max_targets)
+        .collect::<Vec<_>>();
+    let mut stats = DhtRoutingRefreshRunStats {
+        targets: targets.len(),
+        ..Default::default()
+    };
+    for (target_index, target) in targets.into_iter().enumerate() {
+        for peer in peers {
+            stats.attempts = stats.attempts.saturating_add(1);
+            let request = DhtRpcRequest::FindNode {
+                request_id: format!("refresh-{}-{}-{}", target, plan.generated_at, target_index),
+                target,
+                limit,
+            };
+            match send_dht_rpc(peer, &request) {
+                Ok(DhtRpcResponse::Nodes { nodes, .. }) => {
+                    stats.successes = stats.successes.saturating_add(1);
+                    stats.nodes_returned = stats.nodes_returned.saturating_add(nodes.len());
+                }
+                Ok(response) => {
+                    stats.failures = stats.failures.saturating_add(1);
+                    eprintln!(
+                        "dht routing refresh from {} returned {response:?}",
+                        peer.url
+                    );
+                }
+                Err(err) => {
+                    stats.failures = stats.failures.saturating_add(1);
+                    eprintln!("dht routing refresh from {} failed: {err}", peer.url);
                 }
             }
         }
@@ -1535,10 +1732,10 @@ serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--st
 #[cfg(test)]
 mod tests {
     use super::{
-        ControlRuntimeStats, DhtReplicationRunStats, NodeMaintenanceStats, RateLimitConfig,
-        RateLimiter, ServeControlConfigFile, SyncPeerConfig, atomic_write_text,
-        current_unix_timestamp, read_secret_file, run_dht_replication, send_dht_rpc,
-        sync_backoff_delay_seconds,
+        ControlRuntimeStats, DhtReplicationRunStats, DhtRoutingRefreshRunStats,
+        NodeMaintenanceStats, RateLimitConfig, RateLimiter, ServeControlConfigFile, SyncPeerConfig,
+        atomic_write_text, current_unix_timestamp, read_secret_file, run_dht_replication,
+        run_dht_routing_refresh, send_dht_rpc, sync_backoff_delay_seconds,
     };
     use lm_node::{
         DhtRecord, DhtRecordKey, DhtRecordKind, DhtRpcRequest, DhtRpcResponse, NativeNode,
@@ -1577,6 +1774,34 @@ mod tests {
         (format!("http://{addr}"), server)
     }
 
+    fn spawn_dht_rpc_find_node_server(
+        expected_requests: usize,
+    ) -> (String, std::thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            for _ in 0..expected_requests {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut raw = [0u8; 4096];
+                let len = stream.read(&mut raw).unwrap();
+                let request = String::from_utf8_lossy(&raw[..len]);
+                assert!(request.starts_with("POST /dht/rpc HTTP/1.1"));
+                let body = serde_json::to_string(&DhtRpcResponse::Nodes {
+                    request_id: "refresh-1".into(),
+                    nodes: Vec::new(),
+                })
+                .unwrap();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+        (format!("http://{addr}"), server)
+    }
+
     #[test]
     fn dht_replication_runner_sends_due_records_to_peers() {
         let (url, server) = spawn_dht_rpc_store_result_server(1);
@@ -1596,6 +1821,19 @@ mod tests {
         assert_eq!(stats.attempts, 1);
         assert_eq!(stats.successes, 1);
         assert_eq!(stats.failures, 0);
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn dht_routing_refresh_runner_sends_find_node_to_peers() {
+        let (url, server) = spawn_dht_rpc_find_node_server(2);
+        let node = NativeNode::new(NodeConfig::default());
+        let stats = run_dht_routing_refresh(&node, &[SyncPeerConfig { url, token: None }], 8, 2);
+        assert_eq!(stats.targets, 2);
+        assert_eq!(stats.attempts, 2);
+        assert_eq!(stats.successes, 2);
+        assert_eq!(stats.failures, 0);
+        assert_eq!(stats.nodes_returned, 0);
         server.join().unwrap();
     }
 
@@ -1714,6 +1952,23 @@ mod tests {
         assert_eq!(stats.dht_replication_successes, 3);
         assert_eq!(stats.dht_replication_failures, 1);
         assert_eq!(stats.last_dht_replication_at, Some(456));
+        stats.record_dht_routing_refresh_run(
+            DhtRoutingRefreshRunStats {
+                targets: 2,
+                attempts: 6,
+                successes: 5,
+                failures: 1,
+                nodes_returned: 7,
+            },
+            789,
+        );
+        assert_eq!(stats.dht_routing_refresh_runs, 1);
+        assert_eq!(stats.dht_routing_refresh_targets, 2);
+        assert_eq!(stats.dht_routing_refresh_attempts, 6);
+        assert_eq!(stats.dht_routing_refresh_successes, 5);
+        assert_eq!(stats.dht_routing_refresh_failures, 1);
+        assert_eq!(stats.dht_routing_refresh_nodes_returned, 7);
+        assert_eq!(stats.last_dht_routing_refresh_at, Some(789));
         let health = stats.endpoints.get("GET /health").unwrap();
         assert_eq!(health.requests, 2);
         assert_eq!(health.responses_2xx, 2);
@@ -1742,6 +1997,13 @@ mod tests {
         assert!(metrics.contains("lm_node_dht_replication_attempts_total{result=\"success\"} 3"));
         assert!(metrics.contains("lm_node_dht_replication_attempts_total{result=\"failure\"} 1"));
         assert!(metrics.contains("lm_node_dht_replication_last_run_at 456"));
+        assert!(metrics.contains("lm_node_dht_routing_refresh_runs_total 1"));
+        assert!(metrics.contains("lm_node_dht_routing_refresh_targets_total 2"));
+        assert!(
+            metrics.contains("lm_node_dht_routing_refresh_attempts_total{result=\"success\"} 5")
+        );
+        assert!(metrics.contains("lm_node_dht_routing_refresh_nodes_returned_total 7"));
+        assert!(metrics.contains("lm_node_dht_routing_refresh_last_run_at 789"));
         assert!(metrics.contains("lm_node_maintenance_prune_runs_total 2"));
         assert!(
             metrics

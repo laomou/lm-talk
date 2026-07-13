@@ -146,7 +146,7 @@ Friend Request -> Friend Response
 |---|---|---|
 | `lm_core` | 已实现身份、备份、Contact Card、好友请求/响应、DirectEnvelope、X3DH PreKey、Double Ratchet 状态与 envelope、群 Sender Key、群权限状态、文件分片加密包、本地安全策略、Outbox、MemoryStore、大小限制、测试向量 | 核心协议层已具备 MVP 主干，约 75-85% MVP 完整；仍需生产级审计、持久化接口、属性/模糊测试、多设备完整流程 |
 | `lm_wasm` | 已暴露大部分 core API，覆盖身份、联系人、好友、消息、PreKey/X3DH、Ratchet、群、文件、Public Peer、Mailbox、Signaling | 绑定层覆盖较全，约 70-80% MVP 完整；仍需随 core API 稳定后整理命名、错误码和兼容策略 |
-| `lm_node` | 已实现控制面 HTTP scaffold、Public Peer announce、Kademlia ID/XOR distance/closest peers、DHT record key/value scaffold 与控制面 store/find/closest、DHT RPC 消息/本地处理 scaffold 与 `POST /dht/rpc` 入口、closest-k replication plan 与 routing refresh target plan 及控制面 plan 端点、control-peer StoreRecord replication runner 及其 stats/metrics、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、one-time prekey 消费记录、PreKey 过期清理/轮换重置/低水位提示、snapshot sync/import、serve-control 定时 snapshot sync、控制面 token/CORS 基础安全、控制面 per-client IP 基础限流、`/control/stats` JSON 运行指标、`/control/metrics` OpenMetrics 文本导出、DHT replication runner 指标、过期清理维护统计、状态文件原子保存 | 可支撑节点辅助 PreKey + Mailbox + 粗粒度同步 demo，约 71-75% MVP 完整；不是生产 DHT/relay 节点 |
+| `lm_node` | 已实现控制面 HTTP scaffold、Public Peer announce、Kademlia ID/XOR distance/closest peers、DHT record key/value scaffold 与控制面 store/find/closest、DHT RPC 消息/本地处理 scaffold 与 `POST /dht/rpc` 入口、closest-k replication plan 与 routing refresh target plan 及控制面 plan 端点、control-peer StoreRecord replication runner、control-peer FindNode routing refresh runner 及其 stats/metrics、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、one-time prekey 消费记录、PreKey 过期清理/轮换重置/低水位提示、snapshot sync/import、serve-control 定时 snapshot sync、控制面 token/CORS 基础安全、控制面 per-client IP 基础限流、`/control/stats` JSON 运行指标、`/control/metrics` OpenMetrics 文本导出、DHT replication/routing refresh runner 指标、过期清理维护统计、状态文件原子保存 | 可支撑节点辅助 PreKey + Mailbox + 粗粒度同步 demo，约 71-75% MVP 完整；不是生产 DHT/relay 节点 |
 | CLI / 运维 | 已有 `announce`、`inspect-public`、`distance`、`run`、`serve-control`、`--config-file`、`--control-token`、`--control-token-file`、`--cors-allow-origin`、`--rate-limit-*` 等基础命令 | 调试和基础部署可用；缺配置 schema 文档、TLS 文档、日志、数据库、后台任务 |
 | 测试 | `scripts/test.sh all` 覆盖 Rust fmt/test、core e2e、node e2e、HTTP control flow、WASM smoke、Web build/e2e | 基础回归较好；仍需 proptest/fuzz、跨实现向量、真实网络故障/压力测试 |
 
@@ -1651,12 +1651,12 @@ MVP 不做：
 
 - `lm_node` 控制面 scaffold。
 - Public Peer announce 生成、验签、导入、closest 查询。
-- Kademlia NodeId、XOR distance、bucket、closest peer 排序；DHT record key/value scaffold 已覆盖 Public Peer、PreKey、Mailbox hint 三类记录 key，带 TTL、republish_at、closest record 查询和过期清理；控制面提供 `POST /dht/record`、`GET /dht/record`、`GET /dht/closest`，snapshot 可保存/合并 DHT records；已定义 `DhtRpcRequest` / `DhtRpcResponse` 并提供本地 `FindNode` / `FindValue` / `StoreRecord` handler，控制面 `POST /dht/rpc` 可作为传输层接入前的 RPC 兼容入口；已提供 due-for-republish 的 closest-k replication plan 和 256 个 bucket refresh target plan，并通过 `GET /dht/replication-plan` / `GET /dht/routing-refresh-plan` 暴露给控制面；`serve-control` 同步周期后会对已配置 control peers 执行 `StoreRecord` replication scaffold，并累计 runner 运行、records、attempts、success/failure 和 last run 时间。
+- Kademlia NodeId、XOR distance、bucket、closest peer 排序；DHT record key/value scaffold 已覆盖 Public Peer、PreKey、Mailbox hint 三类记录 key，带 TTL、republish_at、closest record 查询和过期清理；控制面提供 `POST /dht/record`、`GET /dht/record`、`GET /dht/closest`，snapshot 可保存/合并 DHT records；已定义 `DhtRpcRequest` / `DhtRpcResponse` 并提供本地 `FindNode` / `FindValue` / `StoreRecord` handler，控制面 `POST /dht/rpc` 可作为传输层接入前的 RPC 兼容入口；已提供 due-for-republish 的 closest-k replication plan 和 256 个 bucket refresh target plan，并通过 `GET /dht/replication-plan` / `GET /dht/routing-refresh-plan` 暴露给控制面；`serve-control` 同步周期后会对已配置 control peers 执行 `StoreRecord` replication scaffold，并执行 bounded `FindNode` routing refresh scaffold；当前 refresh runner 只统计远端返回节点数量，后续再把返回 `RoutingPeer` 验证/合并进 routing table。
 - Mailbox：`/mailbox/push`、`/mailbox/take`、`/mailbox/ack`。
 - PreKey：`/prekey/publish`、`/prekey/get`、`consume=true` 精确记录 one-time prekey 消费，并返回 remaining/low watermark；bundle 过期会清理，signed prekey 轮换会重置消费记录。
 - Snapshot：`/sync/snapshot`、`/sync/import`，可粗粒度同步 peers/mailbox/prekeys。
 - 自动 snapshot sync：`serve-control --config-file node.json` 可加载 JSON 配置；control/sync token 支持 CLI、环境变量或 secret 文件；`--sync-peer http://host:port --sync-interval-seconds N` 定时拉取并 merge peer snapshot；`--sync-peer-token`/`--sync-peer-token-file` 可拉取受 token 保护的 peer；`--sync-max-backoff-seconds` 控制失败指数退避；`/sync/status` 暴露 attempts/successes/failures/last_success_at/last_error/next_attempt_at。
-- 控制面基础安全与观测：未配置 token 时非 health API 仅允许 loopback；`--control-token` 要求 `Authorization: Bearer ...`；`--cors-allow-origin` 限制浏览器 Origin；`--rate-limit-window-seconds` / `--rate-limit-max-requests` 对非 health API 做 per-client IP 基础限流，超限返回 `429 Too Many Requests`；`GET /control/stats` 暴露 JSON 格式 started_at、请求总数、2xx/4xx/5xx、unauthorized、CORS 拒绝、限流命中、snapshot import/export 次数与字节数、DHT replication runner 运行/records/attempts/successes/failures/last run、过期清理运行次数/移除记录数，以及 endpoint 维度请求数、状态码分布、累计/最大耗时等运行指标；`GET /control/metrics` 导出 OpenMetrics 文本，便于 Prometheus 类系统采集。
+- 控制面基础安全与观测：未配置 token 时非 health API 仅允许 loopback；`--control-token` 要求 `Authorization: Bearer ...`；`--cors-allow-origin` 限制浏览器 Origin；`--rate-limit-window-seconds` / `--rate-limit-max-requests` 对非 health API 做 per-client IP 基础限流，超限返回 `429 Too Many Requests`；`GET /control/stats` 暴露 JSON 格式 started_at、请求总数、2xx/4xx/5xx、unauthorized、CORS 拒绝、限流命中、snapshot import/export 次数与字节数、DHT replication runner 运行/records/attempts/successes/failures/last run、routing refresh runner 运行/targets/attempts/successes/failures/nodes_returned/last run、过期清理运行次数/移除记录数，以及 endpoint 维度请求数、状态码分布、累计/最大耗时等运行指标；`GET /control/metrics` 导出 OpenMetrics 文本，便于 Prometheus 类系统采集。
 - `serve-control --state-file` 可保存/恢复节点状态；保存时写入同目录临时文件、fsync 后 rename，降低进程崩溃导致状态文件截断的风险。
 - 节点 e2e：PreKey 同步 + Mailbox 携带 ratchet envelope + 接收方解密。
 
@@ -1664,7 +1664,7 @@ MVP 不做：
 
 - SQLite / SQLCipher 或其他正式持久化数据库；当前 state-file 只提供原子替换式 JSON snapshot 持久化。
 - 真正 DHT 节点发现、传输层 RPC 执行、远端记录复制和定时 routing table refresh。
-- 自动 peer snapshot sync 的配置 schema 文档；后续将 control-peer DHT replication scaffold 升级为按 closest-k target 选择远端并合并 routing refresh 返回节点。
+- 自动 peer snapshot sync 的配置 schema 文档；后续将 control-peer DHT replication scaffold 升级为按 closest-k target 选择远端，并将 routing refresh 返回节点做签名校验/去重后合并到 routing table。
 - WebRTC signaling、relay/TURN 替代能力。
 - 节点控制面 token 轮换、TLS 部署说明、按 sender/全局维度的更细粒度反滥用、结构化日志和更完整指标。
 
