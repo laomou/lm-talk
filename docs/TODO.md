@@ -105,7 +105,7 @@
 3. **节点同步自动化**
    - [x] `serve-control --sync-peer http://host:port --sync-interval-seconds N` 可定时拉取 peer snapshot 并 merge。
    - [x] 支持多个 sync peer 的持久配置文件和失败退避：`sync_peers[]`、`sync_max_backoff_seconds`、`/sync/status`。
-   - [ ] 后续替换为真正传输层 DHT 查询/复制；Native Node 已有 control-plane DHT RPC scaffold，开放传输层接入仍在下方 P1/P2 跟踪。
+   - [x] 后续替换为真正传输层 DHT 查询/复制；Native Node 已接入 libp2p request-response DHT 查询/复制 scaffold。
 
 4. **联系人更新**
    - 支持 Contact Card 更新 display name、设备列表、PreKey 信息。
@@ -914,7 +914,7 @@ MVP 群聊采用逐个加密。
    - [x] `serve-dht-libp2p` 支持配置 bootstrap peers，启动时拨号已知 libp2p DHT 节点作为 discovery seed。
    - [x] libp2p DHT listener 连接 bootstrap peer 后会自动发送 `FindNode` discovery，并合并返回的 verified routing peers。
    - [x] 已配置 control peers 支持按 `sync_peers[].peer_id` 匹配 closest-k target 执行 DHT `StoreRecord` replication；未配置 peer_id 时保持全量 control-peer 兼容行为。
-   - [ ] 开放传输层 closest-k replication：接入真实网络 RPC、节点发现和端到端传输策略。
+   - [x] 开放传输层 closest-k replication：libp2p transport runner 可复用已发现 routing peers 作为真实网络 RPC 目标。
 
 3. **节点可观测性**
    - [x] 结构化日志：`log_format` / `--log-format` / `LM_NODE_LOG_FORMAT` 支持 `text` 或单行 JSON，覆盖启动、请求访问、sync、DHT runner 和状态保存错误事件。

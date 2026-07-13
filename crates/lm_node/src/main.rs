@@ -2545,9 +2545,11 @@ fn serve_control(
                 .iter()
                 .map(|peer| peer.config.clone())
                 .collect::<Vec<_>>();
+            let dht_peer_configs =
+                dht_runner_peer_configs(node, &peer_configs, dht_runner.transport);
             runtime_stats.record_dht_replication_schedule_delay(max_sync_schedule_delay);
             let replication =
-                run_dht_replication_with_logger(node, &peer_configs, dht_runner, Some(&logger));
+                run_dht_replication_with_logger(node, &dht_peer_configs, dht_runner, Some(&logger));
             runtime_stats.record_dht_replication_run(replication, current_unix_timestamp());
             if replication.attempts > 0 {
                 logger.info(
@@ -2568,8 +2570,12 @@ fn serve_control(
                 );
             }
             runtime_stats.record_dht_routing_refresh_schedule_delay(max_sync_schedule_delay);
-            let refresh =
-                run_dht_routing_refresh_with_logger(node, &peer_configs, dht_runner, Some(&logger));
+            let refresh = run_dht_routing_refresh_with_logger(
+                node,
+                &dht_peer_configs,
+                dht_runner,
+                Some(&logger),
+            );
             runtime_stats.record_dht_routing_refresh_run(refresh, current_unix_timestamp());
             if refresh.attempts > 0 {
                 logger.info(
@@ -2711,6 +2717,44 @@ fn run_dht_replication_with_logger(
             &Libp2pDhtTransport::default(),
         ),
     }
+}
+
+fn dht_runner_peer_configs(
+    node: &NativeNode,
+    configured_peers: &[SyncPeerConfig],
+    transport: DhtTransportKind,
+) -> Vec<SyncPeerConfig> {
+    let mut peers = configured_peers.to_vec();
+    if transport != DhtTransportKind::Libp2p {
+        return peers;
+    }
+    let mut seen = peers
+        .iter()
+        .map(|peer| (peer.url.clone(), peer.peer_id.clone()))
+        .collect::<HashSet<_>>();
+    for routing_peer in node.kademlia.all_peers() {
+        let Some(peer) = sync_peer_config_from_libp2p_routing_peer(&routing_peer) else {
+            continue;
+        };
+        if seen.insert((peer.url.clone(), peer.peer_id.clone())) {
+            peers.push(peer);
+        }
+    }
+    peers
+}
+
+fn sync_peer_config_from_libp2p_routing_peer(peer: &RoutingPeer) -> Option<SyncPeerConfig> {
+    peer.announce.peer_id.parse::<PeerId>().ok()?;
+    let address = peer
+        .announce
+        .addresses
+        .iter()
+        .find(|address| address.parse::<Multiaddr>().is_ok())?;
+    Some(SyncPeerConfig {
+        url: format!("libp2p://{address}"),
+        token: None,
+        peer_id: Some(peer.announce.peer_id.clone()),
+    })
 }
 
 fn run_dht_replication_with_transport(
@@ -3420,10 +3464,11 @@ mod tests {
         DhtTransport, DhtTransportKind, LIBP2P_DHT_RPC_PROTOCOL, Libp2pDhtTransport, LogFormat,
         NodeMaintenanceStats, RateLimitConfig, RateLimiter, ServeControlConfigFile, StateDbStats,
         SyncPeerConfig, atomic_write_text, current_unix_timestamp, dht_find_value_with_transport,
-        dial_libp2p_bootstrap_peers, handle_libp2p_dht_rpc_request, handle_libp2p_dht_server_event,
-        libp2p_dht_rpc_behaviour, libp2p_dht_swarm, load_node_state_db, parse_dht_transport_kind,
-        parse_libp2p_bootstrap_peers, parse_libp2p_dht_peer, parse_log_format, read_secret_file,
-        run_dht_replication, run_dht_replication_with_transport, run_dht_routing_refresh,
+        dht_runner_peer_configs, dial_libp2p_bootstrap_peers, handle_libp2p_dht_rpc_request,
+        handle_libp2p_dht_server_event, libp2p_dht_rpc_behaviour, libp2p_dht_swarm,
+        load_node_state_db, parse_dht_transport_kind, parse_libp2p_bootstrap_peers,
+        parse_libp2p_dht_peer, parse_log_format, read_secret_file, run_dht_replication,
+        run_dht_replication_with_transport, run_dht_routing_refresh,
         run_dht_routing_refresh_with_transport, save_node_state_db, send_dht_rpc,
         send_libp2p_dht_rpc_async, sync_backoff_delay_seconds,
     };
@@ -3834,6 +3879,61 @@ mod tests {
         assert!(matches!(requests[0].1, DhtRpcRequest::StoreRecord { .. }));
         assert!(matches!(requests[1].1, DhtRpcRequest::FindValue { .. }));
         assert!(matches!(requests[2].1, DhtRpcRequest::FindNode { .. }));
+    }
+
+    #[test]
+    fn dht_runner_libp2p_transport_uses_discovered_routing_peers() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let mut swarm = libp2p_dht_swarm().unwrap();
+            let libp2p_peer_id = *swarm.local_peer_id();
+            swarm
+                .listen_on("/ip4/127.0.0.1/tcp/0".parse().unwrap())
+                .unwrap();
+            let address = loop {
+                if let SwarmEvent::NewListenAddr { address, .. } = swarm.select_next_some().await {
+                    break address;
+                }
+            };
+            let (identity, _) =
+                Identity::create_with_passphrase("libp2p runner discovered peer").unwrap();
+            let announce = NodeConfig {
+                peer_id: libp2p_peer_id.to_string(),
+                addresses: vec![address.to_string()],
+                ..Default::default()
+            }
+            .create_announce(&identity)
+            .unwrap();
+            let mut node = NativeNode::new(NodeConfig::default());
+            node.kademlia
+                .insert_verified(announce, &identity.identity_public_key())
+                .unwrap();
+            let configured = vec![SyncPeerConfig {
+                url: "libp2p:///ip4/127.0.0.1/tcp/9999".into(),
+                token: None,
+                peer_id: Some(libp2p_peer_id.to_string()),
+            }];
+            let http_peers =
+                dht_runner_peer_configs(&node, &configured, DhtTransportKind::HttpControl);
+            assert_eq!(http_peers, configured);
+            let libp2p_peers =
+                dht_runner_peer_configs(&node, &configured, DhtTransportKind::Libp2p);
+            assert_eq!(libp2p_peers.len(), 2);
+            assert!(
+                libp2p_peers
+                    .iter()
+                    .any(|peer| peer.url == format!("libp2p://{address}"))
+            );
+            assert!(
+                libp2p_peers
+                    .iter()
+                    .all(|peer| peer.peer_id.as_deref() == Some(&libp2p_peer_id.to_string()))
+            );
+        });
     }
 
     #[test]
