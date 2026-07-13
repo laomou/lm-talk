@@ -311,6 +311,10 @@ struct ControlRuntimeStats {
     unauthorized: u64,
     rate_limited: u64,
     bad_requests: u64,
+    sync_snapshot_exports: u64,
+    sync_snapshot_export_bytes: u64,
+    sync_snapshot_imports: u64,
+    sync_snapshot_import_bytes: u64,
     endpoints: HashMap<String, ControlEndpointStats>,
 }
 
@@ -337,6 +341,10 @@ impl ControlRuntimeStats {
             unauthorized: 0,
             rate_limited: 0,
             bad_requests: 0,
+            sync_snapshot_exports: 0,
+            sync_snapshot_export_bytes: 0,
+            sync_snapshot_imports: 0,
+            sync_snapshot_import_bytes: 0,
             endpoints: HashMap::new(),
         }
     }
@@ -409,6 +417,50 @@ impl ControlRuntimeStats {
             "event",
             "rate_limited",
             self.rate_limited,
+        );
+        push_metric_help(
+            &mut out,
+            "lm_node_control_sync_snapshots_total",
+            "Successful snapshot sync import/export operations through the control plane.",
+        );
+        push_metric_type(&mut out, "lm_node_control_sync_snapshots_total", "counter");
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_control_sync_snapshots_total",
+            "direction",
+            "export",
+            self.sync_snapshot_exports,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_control_sync_snapshots_total",
+            "direction",
+            "import",
+            self.sync_snapshot_imports,
+        );
+        push_metric_help(
+            &mut out,
+            "lm_node_control_sync_snapshot_bytes_total",
+            "Snapshot sync import/export payload bytes through the control plane.",
+        );
+        push_metric_type(
+            &mut out,
+            "lm_node_control_sync_snapshot_bytes_total",
+            "counter",
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_control_sync_snapshot_bytes_total",
+            "direction",
+            "export",
+            self.sync_snapshot_export_bytes,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_control_sync_snapshot_bytes_total",
+            "direction",
+            "import",
+            self.sync_snapshot_import_bytes,
         );
         push_metric_help(
             &mut out,
@@ -497,6 +549,33 @@ impl ControlRuntimeStats {
         }
         out.push_str("# EOF\n");
         out
+    }
+
+    fn record_sync_snapshot_bytes(
+        &mut self,
+        endpoint: &str,
+        status: u16,
+        request_body_bytes: usize,
+        response_body_bytes: usize,
+    ) {
+        if !(200..=299).contains(&status) {
+            return;
+        }
+        match endpoint {
+            "GET /sync/snapshot" => {
+                self.sync_snapshot_exports = self.sync_snapshot_exports.saturating_add(1);
+                self.sync_snapshot_export_bytes = self
+                    .sync_snapshot_export_bytes
+                    .saturating_add(response_body_bytes as u64);
+            }
+            "POST /sync/import" => {
+                self.sync_snapshot_imports = self.sync_snapshot_imports.saturating_add(1);
+                self.sync_snapshot_import_bytes = self
+                    .sync_snapshot_import_bytes
+                    .saturating_add(request_body_bytes as u64);
+            }
+            _ => {}
+        }
     }
 
     fn record_response(&mut self, endpoint: &str, status: u16, duration: Duration) {
@@ -970,6 +1049,7 @@ fn handle_stream(
     let request = read_http_request(stream)?;
     let started_at = Instant::now();
     let endpoint = control_endpoint_key(&request);
+    let request_body_bytes = request.body.len();
     let origin = request.header("origin").map(str::to_string);
     let response = if !security.allows_origin(origin.as_deref()) {
         ControlHttpResponse::text(403, "cors origin not allowed")
@@ -988,6 +1068,12 @@ fn handle_stream(
         ControlHttpResponse::from_control(node.handle_control_request(request))
     };
     runtime_stats.record_response(&endpoint, response.status, started_at.elapsed());
+    runtime_stats.record_sync_snapshot_bytes(
+        &endpoint,
+        response.status,
+        request_body_bytes,
+        response.body.len(),
+    );
     let allow_origin = security.access_control_origin(origin.as_deref());
     stream.write_all(response.to_http_string(&allow_origin).as_bytes())?;
     Ok(())
@@ -1237,6 +1323,13 @@ mod tests {
         assert_eq!(stats.unauthorized, 1);
         assert_eq!(stats.cors_rejected, 1);
         assert_eq!(stats.rate_limited, 1);
+        stats.record_sync_snapshot_bytes("GET /sync/snapshot", 200, 0, 321);
+        stats.record_sync_snapshot_bytes("POST /sync/import", 200, 123, 10);
+        stats.record_sync_snapshot_bytes("POST /sync/import", 400, 999, 10);
+        assert_eq!(stats.sync_snapshot_exports, 1);
+        assert_eq!(stats.sync_snapshot_export_bytes, 321);
+        assert_eq!(stats.sync_snapshot_imports, 1);
+        assert_eq!(stats.sync_snapshot_import_bytes, 123);
         let health = stats.endpoints.get("GET /health").unwrap();
         assert_eq!(health.requests, 2);
         assert_eq!(health.responses_2xx, 2);

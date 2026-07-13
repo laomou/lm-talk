@@ -353,6 +353,8 @@ fn real_http_control_plane_exposes_runtime_stats() {
     let baseline_stats_endpoint = baseline["endpoints"]["GET /control/stats"]["requests"]
         .as_u64()
         .unwrap_or(0);
+    let baseline_sync_export_bytes = baseline["sync_snapshot_export_bytes"].as_u64().unwrap();
+    let baseline_sync_exports = baseline["sync_snapshot_exports"].as_u64().unwrap();
 
     let unauthorized = http_request(&base, "GET", "/sync/status", "");
     assert_eq!(unauthorized.status, 401);
@@ -375,6 +377,14 @@ fn real_http_control_plane_exposes_runtime_stats() {
         &[("authorization", "Bearer stats-secret")],
     );
     assert_eq!(ok.status, 200, "{}", ok.body);
+    let snapshot = http_request_with_headers(
+        &base,
+        "GET",
+        "/sync/snapshot",
+        "",
+        &[("authorization", "Bearer stats-secret")],
+    );
+    assert_eq!(snapshot.status, 200, "{}", snapshot.body);
 
     let stats = http_request_with_headers(
         &base,
@@ -388,9 +398,9 @@ fn real_http_control_plane_exposes_runtime_stats() {
     assert!(body["started_at"].as_u64().unwrap() > 0);
     assert_eq!(
         body["requests_total"].as_u64().unwrap(),
-        baseline_requests + 4
+        baseline_requests + 5
     );
-    assert_eq!(body["responses_2xx"].as_u64().unwrap(), baseline_2xx + 2);
+    assert_eq!(body["responses_2xx"].as_u64().unwrap(), baseline_2xx + 3);
     assert_eq!(body["responses_4xx"].as_u64().unwrap(), baseline_4xx + 2);
     assert_eq!(
         body["unauthorized"].as_u64().unwrap(),
@@ -412,6 +422,14 @@ fn real_http_control_plane_exposes_runtime_stats() {
             .as_u64()
             .unwrap(),
         baseline_stats_endpoint + 1
+    );
+    assert_eq!(
+        body["sync_snapshot_exports"].as_u64().unwrap(),
+        baseline_sync_exports + 1
+    );
+    assert_eq!(
+        body["sync_snapshot_export_bytes"].as_u64().unwrap(),
+        baseline_sync_export_bytes + snapshot.body.len() as u64
     );
 
     let metrics = http_request_with_headers(

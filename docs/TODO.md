@@ -893,7 +893,8 @@ MVP 群聊采用逐个加密。
    - [x] `/control/stats` 暴露控制面 started_at、请求总数、2xx/4xx/5xx、bad request、unauthorized、CORS 拒绝和限流命中次数。
    - [x] `/control/stats` 增加 endpoint 维度请求数、2xx/4xx/5xx、累计耗时、最大耗时和 last_status。
    - [x] `/control/metrics` 导出 OpenMetrics 文本格式，覆盖控制面全局与 endpoint 指标。
-   - [ ] 更完整 stats：过期清理次数、同步导入/导出字节数。
+   - [x] `/control/stats` / `/control/metrics` 暴露 snapshot import/export 次数与字节数。
+   - [ ] 更完整 stats：过期清理次数。
 
 ### P2：生产网络能力
 

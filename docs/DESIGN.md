@@ -1656,7 +1656,7 @@ MVP 不做：
 - PreKey：`/prekey/publish`、`/prekey/get`、`consume=true` 精确记录 one-time prekey 消费，并返回 remaining/low watermark；bundle 过期会清理，signed prekey 轮换会重置消费记录。
 - Snapshot：`/sync/snapshot`、`/sync/import`，可粗粒度同步 peers/mailbox/prekeys。
 - 自动 snapshot sync：`serve-control --config-file node.json` 可加载 JSON 配置；control/sync token 支持 CLI、环境变量或 secret 文件；`--sync-peer http://host:port --sync-interval-seconds N` 定时拉取并 merge peer snapshot；`--sync-peer-token`/`--sync-peer-token-file` 可拉取受 token 保护的 peer；`--sync-max-backoff-seconds` 控制失败指数退避；`/sync/status` 暴露 attempts/successes/failures/last_success_at/last_error/next_attempt_at。
-- 控制面基础安全与观测：未配置 token 时非 health API 仅允许 loopback；`--control-token` 要求 `Authorization: Bearer ...`；`--cors-allow-origin` 限制浏览器 Origin；`--rate-limit-window-seconds` / `--rate-limit-max-requests` 对非 health API 做 per-client IP 基础限流，超限返回 `429 Too Many Requests`；`GET /control/stats` 暴露 JSON 格式 started_at、请求总数、2xx/4xx/5xx、unauthorized、CORS 拒绝、限流命中，以及 endpoint 维度请求数、状态码分布、累计/最大耗时等运行指标；`GET /control/metrics` 导出 OpenMetrics 文本，便于 Prometheus 类系统采集。
+- 控制面基础安全与观测：未配置 token 时非 health API 仅允许 loopback；`--control-token` 要求 `Authorization: Bearer ...`；`--cors-allow-origin` 限制浏览器 Origin；`--rate-limit-window-seconds` / `--rate-limit-max-requests` 对非 health API 做 per-client IP 基础限流，超限返回 `429 Too Many Requests`；`GET /control/stats` 暴露 JSON 格式 started_at、请求总数、2xx/4xx/5xx、unauthorized、CORS 拒绝、限流命中、snapshot import/export 次数与字节数，以及 endpoint 维度请求数、状态码分布、累计/最大耗时等运行指标；`GET /control/metrics` 导出 OpenMetrics 文本，便于 Prometheus 类系统采集。
 - `serve-control --state-file` 可保存/恢复节点状态；保存时写入同目录临时文件、fsync 后 rename，降低进程崩溃导致状态文件截断的风险。
 - 节点 e2e：PreKey 同步 + Mailbox 携带 ratchet envelope + 接收方解密。
 
