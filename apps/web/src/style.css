@@ -349,6 +349,9 @@ button.secondary.danger:hover { background: var(--c-danger-soft); border-color: 
 }
 .contact-main b > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .contact-main small { display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-time { flex: 0 0 auto; font-size: 11px; font-weight: 400; color: var(--c-ink-3); }
+.conv-preview { color: var(--c-ink-3); }
 
 .avatar {
   width: 40px; height: 40px; border-radius: var(--r-md);
