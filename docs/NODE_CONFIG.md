@@ -26,7 +26,7 @@ CLI 参数 > 环境变量 > config file > 默认值
 |---|---:|---:|---|
 | `bind` | string | `127.0.0.1:8787` | 控制面监听地址。生产部署建议绑定 loopback，由反向代理负责 TLS。 |
 | `peer_id` | string | `lm-node-dev` | 本节点 public peer id。 |
-| `state_db` | string | 无 | SQLite 正式状态数据库；按表保存 mailbox、prekey bundle、signed one-time-prekey records、consumed prekey、public peer、DHT record 等节点状态。 |
+| `state_db` | string | 无 | SQLite 正式状态数据库；按表保存 mailbox、prekey bundle、signed one-time-prekey records、consumed prekey、public peer/routing peer、DHT record 等节点状态。 |
 | `state_file` | string | 无 | 兼容 JSON snapshot 状态文件；保存时采用临时文件 + fsync + rename。可与 `state_db` 同时配置作为调试导出。 |
 | `control_token` | string | 无 | 控制面 Bearer token。配置后除 `/health` 外都要求 `Authorization: Bearer ...`。 |
 | `control_token_file` | string | 无 | 从文件读取控制面 Bearer token；文件内容会 trim，空文件报错。 |
@@ -121,7 +121,7 @@ SQLite `state_db` 中对应表：
 - Mailbox `push` 拒绝原因会累计到 `maintenance.mailbox_push_rejects`，并通过 `/control/metrics` 的 `lm_node_mailbox_push_rejections_total{reason=...}` 暴露，便于观察异常 payload、重复消息和限流命中。
 - PreKey 发布建议使用新版客户端生成的 `signed_one_time_prekey_record_texts[]`。节点会优先按独立 signed one-time-prekey records 选择和消费 OTK；旧 bundle 内 `one_time_prekeys[]` 仍作为兼容回退。
 - 生产环境建议设置 `log_format = "json"` 或 `--log-format json`，便于 systemd/journald、容器平台或日志采集器按 `event` 和 `fields` 建索引。
-- 当前 control-peer DHT routing refresh 合并属于已配置 control peer 信任边界内的 bootstrap 能力；开放传输层 DHT 还需要返回节点携带 identity public key 并做端到端签名校验。
+- 当前 control-peer DHT routing refresh 合并属于已配置 control peer 信任边界内的 bootstrap 能力；`RoutingPeer` 已可携带并持久化 identity public key，节点在 verified merge 路径会校验 announce 签名。开放传输层 DHT 还需要真正的网络 RPC 与端到端策略。
 
 ## 结构化日志
 
@@ -364,7 +364,7 @@ curl -H "Authorization: Bearer $(cat /etc/lm-node/control.token)" \
 
 注意：
 
-- snapshot 包含 mailbox、prekey bundle、signed one-time-prekey records、consumed prekey、public peer 等节点状态，不包含用户身份私钥或 private prekey bundle。
+- snapshot 包含 mailbox、prekey bundle、signed one-time-prekey records、consumed prekey、public peer/routing peer 等节点状态，不包含用户身份私钥或 private prekey bundle。
 - 如果 token 丢失，只能在服务器上重置 token 并让客户端更新配置。
 - 恢复到旧 snapshot 可能重新暴露未 ack 的 mailbox delivery；客户端应依赖 message_id/delivery_id 去重。
 

@@ -610,6 +610,7 @@ impl NodeConfig {
 #[derive(Debug, Clone, Default)]
 pub struct RoutingTable {
     peers: HashMap<String, PublicPeerAnnounce>,
+    identity_public_keys: HashMap<String, String>,
 }
 
 impl RoutingTable {
@@ -619,6 +620,8 @@ impl RoutingTable {
         identity_public_key: &[u8; 32],
     ) -> Result<()> {
         announce.verify(identity_public_key)?;
+        self.identity_public_keys
+            .insert(announce.peer_id.clone(), BASE64.encode(identity_public_key));
         self.peers.insert(announce.peer_id.clone(), announce);
         Ok(())
     }
@@ -627,8 +630,21 @@ impl RoutingTable {
         self.peers.insert(announce.peer_id.clone(), announce);
     }
 
+    fn insert_routing_peer(&mut self, peer: &RoutingPeer) {
+        self.peers
+            .insert(peer.announce.peer_id.clone(), peer.announce.clone());
+        if let Some(identity_public_key) = &peer.identity_public_key {
+            self.identity_public_keys
+                .insert(peer.announce.peer_id.clone(), identity_public_key.clone());
+        }
+    }
+
     pub fn get(&self, peer_id: &str) -> Option<&PublicPeerAnnounce> {
         self.peers.get(peer_id)
+    }
+
+    pub fn identity_public_key_for(&self, peer_id: &str) -> Option<&str> {
+        self.identity_public_keys.get(peer_id).map(String::as_str)
     }
 
     pub fn peers(&self) -> impl Iterator<Item = &PublicPeerAnnounce> {
@@ -1608,6 +1624,8 @@ pub struct NodeStateSnapshot {
     pub config: NodeConfig,
     pub public_peers: Vec<PublicPeerAnnounce>,
     #[serde(default)]
+    pub routing_peers: Vec<RoutingPeer>,
+    #[serde(default)]
     pub mailbox_deliveries: Vec<MailboxDelivery>,
     #[serde(default)]
     pub mailbox_messages: Vec<MailboxMessage>,
@@ -1878,6 +1896,7 @@ impl NativeNode {
             version: 1,
             config: self.config.clone(),
             public_peers: self.routing_table.peers().cloned().collect(),
+            routing_peers: self.kademlia.all_peers(),
             mailbox_deliveries: self.mailbox.all_deliveries(),
             mailbox_messages: Vec::new(),
             prekey_bundles: self.prekeys.all_bundles(),
@@ -1901,17 +1920,34 @@ impl NativeNode {
 
     /// Restore a local trusted snapshot from disk.
     ///
-    /// Snapshot restore does not re-verify peer signatures because the snapshot
-    /// currently stores public announcements but not the external identity public
-    /// keys used to validate them. Network/API insertions are still verified at
-    /// ingress before they can be snapshotted.
+    /// New snapshots include routing peers with identity public keys so DHT
+    /// routing records can remain verifiable across restarts. Older snapshots
+    /// are still accepted through the legacy `public_peers` field.
     pub fn from_state_snapshot(snapshot: NodeStateSnapshot) -> Self {
         let mut node = Self::new(snapshot.config);
-        for announce in snapshot.public_peers {
-            node.routing_table
-                .peers
-                .insert(announce.peer_id.clone(), announce.clone());
-            node.kademlia.insert_local_snapshot(announce);
+        if snapshot.routing_peers.is_empty() {
+            for announce in snapshot.public_peers {
+                node.routing_table
+                    .peers
+                    .insert(announce.peer_id.clone(), announce.clone());
+                node.kademlia.insert_local_snapshot(announce);
+            }
+        } else {
+            for peer in snapshot.routing_peers {
+                node.routing_table.insert_routing_peer(&peer);
+                if let Some(identity_public_key) = &peer.identity_public_key {
+                    if let Ok(public_key) = decode_identity_public_key_base64(identity_public_key) {
+                        if node
+                            .kademlia
+                            .insert_verified(peer.announce.clone(), &public_key)
+                            .is_ok()
+                        {
+                            continue;
+                        }
+                    }
+                }
+                node.kademlia.insert_local_snapshot(peer.announce);
+            }
         }
         if snapshot.mailbox_deliveries.is_empty() {
             node.mailbox.restore_messages(snapshot.mailbox_messages);
@@ -1931,14 +1967,35 @@ impl NativeNode {
 
     pub fn merge_snapshot(&mut self, snapshot: NodeStateSnapshot) -> NodeMergeStats {
         let mut peers = 0;
-        for announce in snapshot.public_peers {
-            if self.routing_table.get(&announce.peer_id).is_none() {
-                peers += 1;
+        if snapshot.routing_peers.is_empty() {
+            for announce in snapshot.public_peers {
+                if self.routing_table.get(&announce.peer_id).is_none() {
+                    peers += 1;
+                }
+                self.routing_table
+                    .peers
+                    .insert(announce.peer_id.clone(), announce.clone());
+                self.kademlia.insert_local_snapshot(announce);
             }
-            self.routing_table
-                .peers
-                .insert(announce.peer_id.clone(), announce.clone());
-            self.kademlia.insert_local_snapshot(announce);
+        } else {
+            for peer in snapshot.routing_peers {
+                if self.routing_table.get(&peer.announce.peer_id).is_none() {
+                    peers += 1;
+                }
+                self.routing_table.insert_routing_peer(&peer);
+                if let Some(identity_public_key) = &peer.identity_public_key {
+                    if let Ok(public_key) = decode_identity_public_key_base64(identity_public_key) {
+                        if self
+                            .kademlia
+                            .insert_verified(peer.announce.clone(), &public_key)
+                            .is_ok()
+                        {
+                            continue;
+                        }
+                    }
+                }
+                self.kademlia.insert_local_snapshot(peer.announce);
+            }
         }
         let mailbox_deliveries = if snapshot.mailbox_deliveries.is_empty() {
             let deliveries = snapshot
@@ -3910,9 +3967,26 @@ mod tests {
             .unwrap();
 
         let snapshot = node.to_state_snapshot();
+        assert_eq!(snapshot.routing_peers.len(), 1);
+        assert_eq!(
+            snapshot.routing_peers[0].identity_public_key.as_deref(),
+            Some(BASE64.encode(alice.identity_public_key()).as_str())
+        );
         let restored = NativeNode::from_state_snapshot(snapshot);
         assert_eq!(restored.routing_table.len(), 1);
+        assert_eq!(
+            restored
+                .routing_table
+                .identity_public_key_for("peer-snapshot"),
+            Some(BASE64.encode(alice.identity_public_key()).as_str())
+        );
         assert_eq!(restored.kademlia.len(), 1);
+        assert_eq!(
+            restored.kademlia.all_peers()[0]
+                .identity_public_key
+                .as_deref(),
+            Some(BASE64.encode(alice.identity_public_key()).as_str())
+        );
         assert_eq!(restored.mailbox.pending_for(bob.user_id()), 1);
     }
 

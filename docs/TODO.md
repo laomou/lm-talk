@@ -897,13 +897,14 @@ MVP 群聊采用逐个加密。
    - [x] `/control/stats` 与 `/control/metrics` 暴露 DHT replication runner 的 runs、records、attempts、successes、failures 和 last run 时间。
    - [x] serve-control 同步周期后可执行 bounded control-peer `FindNode` routing refresh runner scaffold，并统计返回节点数量。
    - [x] routing refresh runner 可合并来自已配置 control peers 的可信返回节点：过滤过期、node_id/peer_id 不匹配和本机节点，并写入 routing table。
+   - [x] `RoutingPeer` 返回节点可携带 identity public key；verified merge 路径会校验 public peer announce 签名，snapshot / SQLite state_db 会持久化该字段。
    - [x] DHT runner 参数可通过 config/CLI/env 配置：replication factor、FindNode limit、每轮 refresh target 上限。
    - [x] 生成 due-for-republish records 的 closest-k replication plan。
    - [x] 生成 256 个 Kademlia bucket routing refresh target plan。
    - [x] 控制面提供 `GET /dht/replication-plan` 与 `GET /dht/routing-refresh-plan`。
    - [ ] 接入传输层网络 find_node/find_value/store RPC。
    - [x] 已配置 control peers 支持按 `sync_peers[].peer_id` 匹配 closest-k target 执行 DHT `StoreRecord` replication；未配置 peer_id 时保持全量 control-peer 兼容行为。
-   - [ ] 开放传输层 closest-k replication：返回节点需要携带 identity public key 并完成端到端签名校验。
+   - [ ] 开放传输层 closest-k replication：接入真实网络 RPC、节点发现和端到端传输策略。
 
 3. **节点可观测性**
    - [x] 结构化日志：`log_format` / `--log-format` / `LM_NODE_LOG_FORMAT` 支持 `text` 或单行 JSON，覆盖启动、请求访问、sync、DHT runner 和状态保存错误事件。

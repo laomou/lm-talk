@@ -2,8 +2,8 @@ use lm_core::PublicPeerAnnounce;
 use lm_node::{
     ConsumedOneTimePreKey, ControlRequest, DhtRecord, DhtRecordReplicationPlan, DhtRpcRequest,
     DhtRpcResponse, MailboxDelivery, NativeNode, NodeConfig, NodeMaintenanceStats,
-    NodeStateSnapshot, NodeSyncStatus, decode_identity_public_key_base64, parse_capabilities_csv,
-    restore_identity_from_backup_text,
+    NodeStateSnapshot, NodeSyncStatus, RoutingPeer, decode_identity_public_key_base64,
+    parse_capabilities_csv, restore_identity_from_backup_text,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::de::DeserializeOwned;
@@ -1604,7 +1604,8 @@ fn init_state_db(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
         );
         CREATE TABLE IF NOT EXISTS public_peers (
             peer_id TEXT PRIMARY KEY,
-            announce_json TEXT NOT NULL
+            announce_json TEXT NOT NULL,
+            routing_peer_json TEXT
         );
         CREATE TABLE IF NOT EXISTS mailbox_deliveries (
             delivery_id TEXT PRIMARY KEY,
@@ -1653,6 +1654,29 @@ fn init_state_db(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
             ON dht_records(expires_at);
         "#,
     )?;
+    ensure_column(
+        conn,
+        "public_peers",
+        "routing_peer_json",
+        "ALTER TABLE public_peers ADD COLUMN routing_peer_json TEXT",
+    )?;
+    Ok(())
+}
+
+fn ensure_column(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    alter_sql: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
+    for existing in columns {
+        if existing? == column {
+            return Ok(());
+        }
+    }
+    conn.execute(alter_sql, [])?;
     Ok(())
 }
 
@@ -1665,6 +1689,10 @@ fn load_node_state_db(path: &str) -> Result<NativeNode, Box<dyn std::error::Erro
     let maintenance =
         db_get_json::<NodeMaintenanceStats>(&conn, "maintenance")?.unwrap_or_default();
     let public_peers = db_get_all_json(&conn, "SELECT announce_json FROM public_peers")?;
+    let routing_peers = db_get_all_json::<RoutingPeer>(
+        &conn,
+        "SELECT routing_peer_json FROM public_peers WHERE routing_peer_json IS NOT NULL",
+    )?;
     let mailbox_deliveries =
         db_get_all_json::<MailboxDelivery>(&conn, "SELECT delivery_json FROM mailbox_deliveries")?;
     let prekey_bundles = db_get_all_json(&conn, "SELECT bundle_json FROM prekey_bundles")?;
@@ -1678,6 +1706,7 @@ fn load_node_state_db(path: &str) -> Result<NativeNode, Box<dyn std::error::Erro
         version,
         config,
         public_peers,
+        routing_peers,
         mailbox_deliveries,
         mailbox_messages: Vec::new(),
         prekey_bundles,
@@ -1698,10 +1727,19 @@ fn save_node_state_db(path: &str, node: &NativeNode) -> Result<(), Box<dyn std::
     db_set_json_tx(&tx, "sync_status", &snapshot.sync_status)?;
     db_set_json_tx(&tx, "maintenance", &snapshot.maintenance)?;
     tx.execute("DELETE FROM public_peers", [])?;
+    let routing_peers_by_id = snapshot
+        .routing_peers
+        .iter()
+        .map(|peer| (peer.announce.peer_id.as_str(), peer))
+        .collect::<HashMap<_, _>>();
     for peer in &snapshot.public_peers {
+        let routing_peer_json = routing_peers_by_id
+            .get(peer.peer_id.as_str())
+            .map(|routing_peer| serde_json::to_string(routing_peer))
+            .transpose()?;
         tx.execute(
-            "INSERT INTO public_peers(peer_id, announce_json) VALUES (?1, ?2)",
-            params![peer.peer_id, serde_json::to_string(peer)?],
+            "INSERT INTO public_peers(peer_id, announce_json, routing_peer_json) VALUES (?1, ?2, ?3)",
+            params![peer.peer_id, serde_json::to_string(peer)?, routing_peer_json],
         )?;
     }
     tx.execute("DELETE FROM mailbox_deliveries", [])?;
@@ -2836,6 +2874,7 @@ mod tests {
         load_node_state_db, parse_log_format, read_secret_file, run_dht_replication,
         run_dht_routing_refresh, save_node_state_db, send_dht_rpc, sync_backoff_delay_seconds,
     };
+    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use lm_core::{Identity, MailboxMessage, MailboxMessageKind, PreKeyBundle};
     use lm_node::{
         DhtRecord, DhtRecordKey, DhtRecordKind, DhtRpcRequest, DhtRpcResponse,
@@ -3363,6 +3402,18 @@ mod tests {
 
         assert_eq!(restored.config.peer_id, "sqlite-node");
         assert_eq!(restored.routing_table.len(), 1);
+        assert_eq!(
+            restored
+                .routing_table
+                .identity_public_key_for("sqlite-peer"),
+            Some(BASE64.encode(alice.identity_public_key()).as_str())
+        );
+        assert_eq!(
+            restored.kademlia.all_peers()[0]
+                .identity_public_key
+                .as_deref(),
+            Some(BASE64.encode(alice.identity_public_key()).as_str())
+        );
         assert_eq!(restored.mailbox.pending_for(bob.user_id()), 1);
         assert_eq!(restored.prekeys.len(), 1);
         assert_eq!(restored.prekeys.consumed_for(alice.user_id()), vec![0]);
@@ -3395,10 +3446,18 @@ mod tests {
         let peer_rows: i64 = conn
             .query_row("SELECT COUNT(*) FROM public_peers", [], |row| row.get(0))
             .unwrap();
+        let routing_peer_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM public_peers WHERE routing_peer_json IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(mailbox_rows, 1);
         assert_eq!(prekey_rows, 1);
         assert_eq!(signed_prekey_rows, 2);
         assert_eq!(peer_rows, 1);
+        assert_eq!(routing_peer_rows, 1);
         let _ = std::fs::remove_dir_all(dir);
     }
 
