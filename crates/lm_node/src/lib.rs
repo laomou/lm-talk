@@ -1650,14 +1650,31 @@ impl NativeNode {
             ("GET", "/dht/record") => self.handle_control_dht_record_get(&request.path),
             ("GET", "/dht/closest") => self.handle_control_dht_closest(&request.path),
             ("POST", "/dht/rpc") => self.handle_control_dht_rpc(&request.body),
+            ("GET", "/dht/replication-plan") => {
+                self.handle_control_dht_replication_plan(&request.path)
+            }
+            ("GET", "/dht/routing-refresh-plan") => self.handle_control_dht_routing_refresh_plan(),
             ("GET", "/sync/snapshot") => ControlResponse::json(200, &self.to_state_snapshot()),
             ("GET", "/sync/status") => ControlResponse::json(200, &self.sync_status),
             ("POST", "/sync/import") => self.handle_control_sync_import(&request.body),
             (
                 _,
-                "/health" | "/announce" | "/peers/closest" | "/mailbox/push" | "/mailbox/take"
-                | "/mailbox/ack" | "/prekey/publish" | "/prekey/get" | "/dht/record"
-                | "/dht/closest" | "/dht/rpc" | "/sync/snapshot" | "/sync/status" | "/sync/import",
+                "/health"
+                | "/announce"
+                | "/peers/closest"
+                | "/mailbox/push"
+                | "/mailbox/take"
+                | "/mailbox/ack"
+                | "/prekey/publish"
+                | "/prekey/get"
+                | "/dht/record"
+                | "/dht/closest"
+                | "/dht/rpc"
+                | "/dht/replication-plan"
+                | "/dht/routing-refresh-plan"
+                | "/sync/snapshot"
+                | "/sync/status"
+                | "/sync/import",
             ) => ControlResponse::text(405, "method not allowed"),
             _ => ControlResponse::text(404, "not found"),
         }
@@ -1861,6 +1878,21 @@ impl NativeNode {
                 low_one_time_prekeys: remaining.map(|value| value <= 1).unwrap_or(false),
             },
         )
+    }
+
+    fn handle_control_dht_replication_plan(&mut self, path: &str) -> ControlResponse {
+        let query = query_params(path);
+        let replication_factor = query
+            .get("replication_factor")
+            .or_else(|| query.get("factor"))
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(8)
+            .clamp(1, 64);
+        ControlResponse::json(200, &self.plan_dht_replication(replication_factor))
+    }
+
+    fn handle_control_dht_routing_refresh_plan(&self) -> ControlResponse {
+        ControlResponse::json(200, &self.plan_dht_routing_refresh())
     }
 
     fn handle_control_dht_rpc(&mut self, body: &str) -> ControlResponse {
@@ -2557,6 +2589,62 @@ mod tests {
         assert_ne!(
             node.kademlia.local_id(),
             KademliaNodeId::from_user_id(local_identity.user_id())
+        );
+    }
+
+    #[test]
+    fn control_plane_dht_plans_are_exposed() {
+        let (alice, _) = Identity::create_with_passphrase("control dht plan alice").unwrap();
+        let announce = NodeConfig {
+            peer_id: "control-plan-peer".into(),
+            ..Default::default()
+        }
+        .create_announce(&alice)
+        .unwrap();
+        let mut node = NativeNode::new(NodeConfig {
+            peer_id: "control-plan-local".into(),
+            ..Default::default()
+        });
+        node.kademlia
+            .insert_verified(announce, &alice.identity_public_key())
+            .unwrap();
+        let now = current_unix_timestamp();
+        let record = DhtRecord {
+            key: DhtRecordKey::for_public_peer("control-plan-record"),
+            kind: DhtRecordKind::PublicPeer,
+            value: "plan-record".into(),
+            created_at: now,
+            expires_at: now + 120,
+            republish_at: now,
+        };
+        assert!(node.dht_records.store(record));
+
+        let response = node.handle_control_request(ControlRequest {
+            method: "GET".into(),
+            path: "/dht/replication-plan?factor=1".into(),
+            body: String::new(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 200, "{}", response.body);
+        let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(body["replication_factor"], 1);
+        assert_eq!(body["records"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            body["records"][0]["target_nodes"].as_array().unwrap().len(),
+            1
+        );
+
+        let response = node.handle_control_request(ControlRequest {
+            method: "GET".into(),
+            path: "/dht/routing-refresh-plan".into(),
+            body: String::new(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 200, "{}", response.body);
+        let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(
+            body["targets"].as_array().unwrap().len(),
+            KADEMLIA_ID_BYTES * 8
         );
     }
 
