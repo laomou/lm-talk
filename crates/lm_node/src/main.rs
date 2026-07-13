@@ -1,5 +1,5 @@
 #[cfg(test)]
-use libp2p::{StreamProtocol, request_response};
+use libp2p::{StreamProtocol, noise, request_response, swarm::NetworkBehaviour, tcp, yamux};
 use lm_core::PublicPeerAnnounce;
 use lm_node::{
     ConsumedOneTimePreKey, ControlRequest, DhtRecord, DhtRecordReplicationPlan, DhtRpcRequest,
@@ -26,6 +26,12 @@ const LIBP2P_DHT_RPC_PROTOCOL: &str = "/lm-talk/dht-rpc/1";
 
 #[cfg(test)]
 type Libp2pDhtRpcBehaviour = request_response::json::Behaviour<DhtRpcRequest, DhtRpcResponse>;
+
+#[cfg(test)]
+#[derive(NetworkBehaviour)]
+struct Libp2pDhtBehaviour {
+    dht_rpc: Libp2pDhtRpcBehaviour,
+}
 
 fn main() {
     if let Err(err) = run() {
@@ -407,6 +413,21 @@ fn libp2p_dht_rpc_behaviour() -> Libp2pDhtRpcBehaviour {
         )],
         request_response::Config::default(),
     )
+}
+
+#[cfg(test)]
+fn libp2p_dht_swarm() -> Result<libp2p::Swarm<Libp2pDhtBehaviour>, Box<dyn std::error::Error>> {
+    Ok(libp2p::SwarmBuilder::with_new_identity()
+        .with_tokio()
+        .with_tcp(
+            tcp::Config::default(),
+            noise::Config::new,
+            yamux::Config::default,
+        )?
+        .with_behaviour(|_| Libp2pDhtBehaviour {
+            dht_rpc: libp2p_dht_rpc_behaviour(),
+        })?
+        .build())
 }
 
 #[derive(Debug, Clone)]
@@ -3021,8 +3042,8 @@ mod tests {
         DhtTransport, LIBP2P_DHT_RPC_PROTOCOL, LogFormat, NodeMaintenanceStats, RateLimitConfig,
         RateLimiter, ServeControlConfigFile, StateDbStats, SyncPeerConfig, atomic_write_text,
         current_unix_timestamp, dht_find_value_with_transport, libp2p_dht_rpc_behaviour,
-        load_node_state_db, parse_log_format, read_secret_file, run_dht_replication,
-        run_dht_replication_with_transport, run_dht_routing_refresh,
+        libp2p_dht_swarm, load_node_state_db, parse_log_format, read_secret_file,
+        run_dht_replication, run_dht_replication_with_transport, run_dht_routing_refresh,
         run_dht_routing_refresh_with_transport, save_node_state_db, send_dht_rpc,
         sync_backoff_delay_seconds,
     };
@@ -3346,6 +3367,20 @@ mod tests {
     fn libp2p_dht_rpc_behaviour_uses_lm_protocol() {
         let _behaviour = libp2p_dht_rpc_behaviour();
         assert_eq!(LIBP2P_DHT_RPC_PROTOCOL, "/lm-talk/dht-rpc/1");
+    }
+
+    #[test]
+    fn libp2p_dht_swarm_builds_with_tcp_transport() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let mut swarm = libp2p_dht_swarm().unwrap();
+            swarm
+                .listen_on("/ip4/127.0.0.1/tcp/0".parse().unwrap())
+                .unwrap();
+        });
     }
 
     #[test]
