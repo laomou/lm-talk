@@ -20,6 +20,7 @@ chacha20poly1305 = "0.10"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 getrandom = { version = "0.2", features = ["js"] }
 hkdf = "0.12"
+libp2p = { version = "0.56", features = ["macros", "noise", "request-response", "json", "tcp", "tokio", "yamux"] }
 postcard = { version = "1", features = ["alloc"] }
 rand_core = "0.6"
 serde = { version = "1", features = ["derive"] }

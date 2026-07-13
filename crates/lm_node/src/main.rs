@@ -1,3 +1,5 @@
+#[cfg(test)]
+use libp2p::{StreamProtocol, request_response};
 use lm_core::PublicPeerAnnounce;
 use lm_node::{
     ConsumedOneTimePreKey, ControlRequest, DhtRecord, DhtRecordReplicationPlan, DhtRpcRequest,
@@ -18,6 +20,12 @@ use std::{
     process,
     time::{Duration, Instant},
 };
+
+#[cfg(test)]
+const LIBP2P_DHT_RPC_PROTOCOL: &str = "/lm-talk/dht-rpc/1";
+
+#[cfg(test)]
+type Libp2pDhtRpcBehaviour = request_response::json::Behaviour<DhtRpcRequest, DhtRpcResponse>;
 
 fn main() {
     if let Err(err) = run() {
@@ -388,6 +396,17 @@ impl DhtTransport for HttpControlDhtTransport {
         let response = http_control_request(peer, "POST", "/dht/rpc", &body)?;
         Ok(serde_json::from_str(&response)?)
     }
+}
+
+#[cfg(test)]
+fn libp2p_dht_rpc_behaviour() -> Libp2pDhtRpcBehaviour {
+    request_response::json::Behaviour::new(
+        [(
+            StreamProtocol::new(LIBP2P_DHT_RPC_PROTOCOL),
+            request_response::ProtocolSupport::Full,
+        )],
+        request_response::Config::default(),
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -2999,10 +3018,10 @@ serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--st
 mod tests {
     use super::{
         ControlLogger, ControlRuntimeStats, DhtReplicationRunStats, DhtRoutingRefreshRunStats,
-        DhtTransport, LogFormat, NodeMaintenanceStats, RateLimitConfig, RateLimiter,
-        ServeControlConfigFile, StateDbStats, SyncPeerConfig, atomic_write_text,
-        current_unix_timestamp, dht_find_value_with_transport, load_node_state_db,
-        parse_log_format, read_secret_file, run_dht_replication,
+        DhtTransport, LIBP2P_DHT_RPC_PROTOCOL, LogFormat, NodeMaintenanceStats, RateLimitConfig,
+        RateLimiter, ServeControlConfigFile, StateDbStats, SyncPeerConfig, atomic_write_text,
+        current_unix_timestamp, dht_find_value_with_transport, libp2p_dht_rpc_behaviour,
+        load_node_state_db, parse_log_format, read_secret_file, run_dht_replication,
         run_dht_replication_with_transport, run_dht_routing_refresh,
         run_dht_routing_refresh_with_transport, save_node_state_db, send_dht_rpc,
         sync_backoff_delay_seconds,
@@ -3321,6 +3340,12 @@ mod tests {
         assert!(matches!(requests[0].1, DhtRpcRequest::StoreRecord { .. }));
         assert!(matches!(requests[1].1, DhtRpcRequest::FindValue { .. }));
         assert!(matches!(requests[2].1, DhtRpcRequest::FindNode { .. }));
+    }
+
+    #[test]
+    fn libp2p_dht_rpc_behaviour_uses_lm_protocol() {
+        let _behaviour = libp2p_dht_rpc_behaviour();
+        assert_eq!(LIBP2P_DHT_RPC_PROTOCOL, "/lm-talk/dht-rpc/1");
     }
 
     #[test]
