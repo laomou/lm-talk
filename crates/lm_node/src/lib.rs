@@ -752,6 +752,15 @@ pub struct NativeNode {
     pub mailbox: MailboxStore,
     pub prekeys: PreKeyStore,
     pub sync_status: NodeSyncStatus,
+    pub maintenance: NodeMaintenanceStats,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NodeMaintenanceStats {
+    pub prune_runs: u64,
+    pub mailbox_expired_deliveries: u64,
+    pub prekey_expired_bundles: u64,
+    pub last_pruned_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -844,6 +853,8 @@ pub struct NodeStateSnapshot {
     pub consumed_one_time_prekeys: Vec<ConsumedOneTimePreKey>,
     #[serde(default)]
     pub sync_status: NodeSyncStatus,
+    #[serde(default)]
+    pub maintenance: NodeMaintenanceStats,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -869,11 +880,38 @@ impl NativeNode {
             mailbox: MailboxStore::default(),
             prekeys: PreKeyStore::default(),
             sync_status: NodeSyncStatus::default(),
+            maintenance: NodeMaintenanceStats::default(),
         }
     }
 
     pub fn local_announce(&self, identity: &Identity) -> Result<PublicPeerAnnounce> {
         self.config.create_announce(identity)
+    }
+
+    pub fn maintenance_stats(&self) -> &NodeMaintenanceStats {
+        &self.maintenance
+    }
+
+    pub fn prune_expired_records(&mut self) -> NodeMaintenanceStats {
+        let now = current_unix_timestamp();
+        let mailbox_removed = self.mailbox.prune_expired(now) as u64;
+        let prekey_removed = self.prekeys.prune_expired(now) as u64;
+        self.maintenance.prune_runs = self.maintenance.prune_runs.saturating_add(1);
+        self.maintenance.mailbox_expired_deliveries = self
+            .maintenance
+            .mailbox_expired_deliveries
+            .saturating_add(mailbox_removed);
+        self.maintenance.prekey_expired_bundles = self
+            .maintenance
+            .prekey_expired_bundles
+            .saturating_add(prekey_removed);
+        self.maintenance.last_pruned_at = Some(now);
+        NodeMaintenanceStats {
+            prune_runs: 1,
+            mailbox_expired_deliveries: mailbox_removed,
+            prekey_expired_bundles: prekey_removed,
+            last_pruned_at: Some(now),
+        }
     }
 
     pub fn to_state_snapshot(&self) -> NodeStateSnapshot {
@@ -896,6 +934,7 @@ impl NativeNode {
                 })
                 .collect(),
             sync_status: self.sync_status.clone(),
+            maintenance: self.maintenance.clone(),
         }
     }
 
@@ -922,6 +961,7 @@ impl NativeNode {
         node.prekeys
             .restore_consumed(snapshot.consumed_one_time_prekeys);
         node.sync_status = snapshot.sync_status;
+        node.maintenance = snapshot.maintenance;
         node
     }
 
@@ -1083,6 +1123,7 @@ struct HealthResponse<'a> {
     prekeys: usize,
     mailbox_deliveries: usize,
     mailbox_bytes: usize,
+    maintenance: NodeMaintenanceStats,
     sync: NodeSyncStatus,
 }
 
@@ -1168,6 +1209,7 @@ struct ImportSnapshotResponse {
 
 impl NativeNode {
     pub fn handle_control_request(&mut self, request: ControlRequest) -> ControlResponse {
+        self.prune_expired_records();
         match (request.method.as_str(), path_without_query(&request.path)) {
             ("OPTIONS", _) => ControlResponse::text(200, ""),
             ("GET", "/health") => ControlResponse::json(
@@ -1180,6 +1222,7 @@ impl NativeNode {
                     prekeys: self.prekeys.len(),
                     mailbox_deliveries: self.mailbox.total_pending(),
                     mailbox_bytes: self.mailbox.total_bytes(),
+                    maintenance: self.maintenance.clone(),
                     sync: self.sync_status.clone(),
                 },
             ),
@@ -1584,6 +1627,48 @@ mod tests {
         assert_eq!(mailbox.pending_for(bob.user_id()), 1);
         assert_eq!(mailbox.prune_expired(u64::MAX), 1);
         assert_eq!(mailbox.pending_for(bob.user_id()), 0);
+    }
+
+    #[test]
+    fn native_node_tracks_expired_record_prune_stats() {
+        let (alice, _) = Identity::create_with_passphrase("alice maintenance").unwrap();
+        let (bob, _) = Identity::create_with_passphrase("bob maintenance").unwrap();
+        let mut message = MailboxMessage::new(
+            &alice,
+            bob.user_id().clone(),
+            MailboxMessageKind::DirectEnvelope,
+            "expired".into(),
+            3600,
+        )
+        .unwrap();
+        message.expires_at = 1;
+        let mut node = NativeNode::new(NodeConfig::default());
+        node.mailbox
+            .deliveries
+            .entry(bob.user_id().clone())
+            .or_default()
+            .push(MailboxDelivery {
+                delivery_id: Uuid::new_v4().to_string(),
+                message,
+                created_at: 1,
+                delivered_at: None,
+            });
+        node.mailbox.rebuild_message_ids();
+        assert_eq!(node.mailbox.total_pending(), 1);
+
+        let delta = node.prune_expired_records();
+
+        assert_eq!(delta.prune_runs, 1);
+        assert_eq!(delta.mailbox_expired_deliveries, 1);
+        assert_eq!(delta.prekey_expired_bundles, 0);
+        assert_eq!(node.mailbox.total_pending(), 0);
+        assert_eq!(node.maintenance.prune_runs, 1);
+        assert_eq!(node.maintenance.mailbox_expired_deliveries, 1);
+        assert!(node.maintenance.last_pruned_at.is_some());
+        let snapshot = node.to_state_snapshot();
+        assert_eq!(snapshot.maintenance.mailbox_expired_deliveries, 1);
+        let restored = NativeNode::from_state_snapshot(snapshot);
+        assert_eq!(restored.maintenance.mailbox_expired_deliveries, 1);
     }
 
     #[test]

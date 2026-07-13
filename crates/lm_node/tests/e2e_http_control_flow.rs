@@ -431,6 +431,18 @@ fn real_http_control_plane_exposes_runtime_stats() {
         body["sync_snapshot_export_bytes"].as_u64().unwrap(),
         baseline_sync_export_bytes + snapshot.body.len() as u64
     );
+    assert!(body["maintenance"]["prune_runs"].as_u64().unwrap() >= 1);
+    assert!(
+        body["maintenance"]["mailbox_expired_deliveries"]
+            .as_u64()
+            .is_some()
+    );
+    assert!(
+        body["maintenance"]["prekey_expired_bundles"]
+            .as_u64()
+            .is_some()
+    );
+    assert!(body["maintenance"]["last_pruned_at"].as_u64().is_some());
 
     let metrics = http_request_with_headers(
         &base,

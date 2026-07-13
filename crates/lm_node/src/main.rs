@@ -1,7 +1,7 @@
 use lm_core::PublicPeerAnnounce;
 use lm_node::{
-    ControlRequest, NativeNode, NodeConfig, NodeStateSnapshot, decode_identity_public_key_base64,
-    parse_capabilities_csv, restore_identity_from_backup_text,
+    ControlRequest, NativeNode, NodeConfig, NodeMaintenanceStats, NodeStateSnapshot,
+    decode_identity_public_key_base64, parse_capabilities_csv, restore_identity_from_backup_text,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -300,6 +300,13 @@ struct RateLimitEntry {
     count: u32,
 }
 
+#[derive(Debug, Serialize)]
+struct ControlStatsResponse<'a> {
+    #[serde(flatten)]
+    runtime: &'a ControlRuntimeStats,
+    maintenance: NodeMaintenanceStats,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 struct ControlRuntimeStats {
     started_at: u64,
@@ -349,7 +356,7 @@ impl ControlRuntimeStats {
         }
     }
 
-    fn to_openmetrics(&self) -> String {
+    fn to_openmetrics(&self, maintenance: &NodeMaintenanceStats) -> String {
         let mut out = String::new();
         push_metric_help(
             &mut out,
@@ -462,6 +469,54 @@ impl ControlRuntimeStats {
             "import",
             self.sync_snapshot_import_bytes,
         );
+        push_metric_help(
+            &mut out,
+            "lm_node_maintenance_prune_runs_total",
+            "Total node expired-record prune runs.",
+        );
+        push_metric_type(&mut out, "lm_node_maintenance_prune_runs_total", "counter");
+        push_metric_value(
+            &mut out,
+            "lm_node_maintenance_prune_runs_total",
+            maintenance.prune_runs,
+        );
+        push_metric_help(
+            &mut out,
+            "lm_node_maintenance_expired_records_total",
+            "Expired records removed by node maintenance prune jobs.",
+        );
+        push_metric_type(
+            &mut out,
+            "lm_node_maintenance_expired_records_total",
+            "counter",
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_maintenance_expired_records_total",
+            "kind",
+            "mailbox_delivery",
+            maintenance.mailbox_expired_deliveries,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_maintenance_expired_records_total",
+            "kind",
+            "prekey_bundle",
+            maintenance.prekey_expired_bundles,
+        );
+        if let Some(last_pruned_at) = maintenance.last_pruned_at {
+            push_metric_help(
+                &mut out,
+                "lm_node_maintenance_last_pruned_at",
+                "Unix timestamp of the last expired-record prune run.",
+            );
+            push_metric_type(&mut out, "lm_node_maintenance_last_pruned_at", "gauge");
+            push_metric_value(
+                &mut out,
+                "lm_node_maintenance_last_pruned_at",
+                last_pruned_at,
+            );
+        }
         push_metric_help(
             &mut out,
             "lm_node_control_endpoint_requests_total",
@@ -1061,9 +1116,20 @@ fn handle_stream(
     } else if !request_is_authorized(&request, security, peer_addr.as_ref()) {
         ControlHttpResponse::text(401, "unauthorized")
     } else if request.method == "GET" && request.path.starts_with("/control/stats") {
-        ControlHttpResponse::json(200, runtime_stats)
+        node.prune_expired_records();
+        ControlHttpResponse::json(
+            200,
+            &ControlStatsResponse {
+                runtime: runtime_stats,
+                maintenance: node.maintenance_stats().clone(),
+            },
+        )
     } else if request.method == "GET" && request.path.starts_with("/control/metrics") {
-        ControlHttpResponse::openmetrics(200, &runtime_stats.to_openmetrics())
+        node.prune_expired_records();
+        ControlHttpResponse::openmetrics(
+            200,
+            &runtime_stats.to_openmetrics(node.maintenance_stats()),
+        )
     } else {
         ControlHttpResponse::from_control(node.handle_control_request(request))
     };
@@ -1282,8 +1348,9 @@ serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--st
 #[cfg(test)]
 mod tests {
     use super::{
-        ControlRuntimeStats, RateLimitConfig, RateLimiter, ServeControlConfigFile,
-        atomic_write_text, current_unix_timestamp, read_secret_file, sync_backoff_delay_seconds,
+        ControlRuntimeStats, NodeMaintenanceStats, RateLimitConfig, RateLimiter,
+        ServeControlConfigFile, atomic_write_text, current_unix_timestamp, read_secret_file,
+        sync_backoff_delay_seconds,
     };
 
     #[test]
@@ -1339,7 +1406,12 @@ mod tests {
         let sync = stats.endpoints.get("GET /sync/status").unwrap();
         assert_eq!(sync.requests, 3);
         assert_eq!(sync.responses_4xx, 3);
-        let metrics = stats.to_openmetrics();
+        let metrics = stats.to_openmetrics(&NodeMaintenanceStats {
+            prune_runs: 2,
+            mailbox_expired_deliveries: 3,
+            prekey_expired_bundles: 4,
+            last_pruned_at: Some(1234),
+        });
         assert!(metrics.contains("# TYPE lm_node_control_requests_total counter"));
         assert!(metrics.contains("lm_node_control_requests_total 7"));
         assert!(
@@ -1348,6 +1420,11 @@ mod tests {
         assert!(metrics.contains(
             "lm_node_control_endpoint_requests_total{endpoint=\"GET /sync/status\",class=\"4xx\"} 3"
         ));
+        assert!(metrics.contains("lm_node_maintenance_prune_runs_total 2"));
+        assert!(
+            metrics
+                .contains("lm_node_maintenance_expired_records_total{kind=\"mailbox_delivery\"} 3")
+        );
         assert!(metrics.ends_with("# EOF\n"));
     }
 
