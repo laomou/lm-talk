@@ -1517,6 +1517,11 @@ struct StoreDhtRecordRequest {
     record: DhtRecord,
 }
 
+#[derive(Debug, Deserialize)]
+struct DhtRpcControlRequest {
+    request: DhtRpcRequest,
+}
+
 #[derive(Debug, Serialize)]
 struct StoreDhtRecordResponse {
     stored: bool,
@@ -1582,6 +1587,7 @@ impl NativeNode {
             ("POST", "/dht/record") => self.handle_control_dht_record_store(&request.body),
             ("GET", "/dht/record") => self.handle_control_dht_record_get(&request.path),
             ("GET", "/dht/closest") => self.handle_control_dht_closest(&request.path),
+            ("POST", "/dht/rpc") => self.handle_control_dht_rpc(&request.body),
             ("GET", "/sync/snapshot") => ControlResponse::json(200, &self.to_state_snapshot()),
             ("GET", "/sync/status") => ControlResponse::json(200, &self.sync_status),
             ("POST", "/sync/import") => self.handle_control_sync_import(&request.body),
@@ -1589,7 +1595,7 @@ impl NativeNode {
                 _,
                 "/health" | "/announce" | "/peers/closest" | "/mailbox/push" | "/mailbox/take"
                 | "/mailbox/ack" | "/prekey/publish" | "/prekey/get" | "/dht/record"
-                | "/dht/closest" | "/sync/snapshot" | "/sync/status" | "/sync/import",
+                | "/dht/closest" | "/dht/rpc" | "/sync/snapshot" | "/sync/status" | "/sync/import",
             ) => ControlResponse::text(405, "method not allowed"),
             _ => ControlResponse::text(404, "not found"),
         }
@@ -1793,6 +1799,14 @@ impl NativeNode {
                 low_one_time_prekeys: remaining.map(|value| value <= 1).unwrap_or(false),
             },
         )
+    }
+
+    fn handle_control_dht_rpc(&mut self, body: &str) -> ControlResponse {
+        let req: DhtRpcControlRequest = match serde_json::from_str(body) {
+            Ok(v) => v,
+            Err(e) => return ControlResponse::text(400, format!("invalid json: {e}")),
+        };
+        ControlResponse::json(200, &self.handle_dht_rpc(req.request))
     }
 
     fn handle_control_dht_record_store(&mut self, body: &str) -> ControlResponse {
@@ -2426,6 +2440,93 @@ mod tests {
         assert_ne!(
             node.kademlia.local_id(),
             KademliaNodeId::from_user_id(local_identity.user_id())
+        );
+    }
+
+    #[test]
+    fn control_plane_dht_rpc_handles_store_find_value_and_find_node() {
+        let (identity, _) = Identity::create_with_passphrase("control dht rpc peer").unwrap();
+        let announce = NodeConfig {
+            peer_id: "control-rpc-peer".into(),
+            ..Default::default()
+        }
+        .create_announce(&identity)
+        .unwrap();
+        let mut node = NativeNode::new(NodeConfig {
+            peer_id: "control-rpc-local".into(),
+            ..Default::default()
+        });
+        node.kademlia
+            .insert_verified(announce, &identity.identity_public_key())
+            .unwrap();
+        let key = DhtRecordKey::for_public_peer("control-rpc-record");
+        let record = DhtRecord {
+            key,
+            kind: DhtRecordKind::PublicPeer,
+            value: "control-rpc-value".into(),
+            created_at: current_unix_timestamp(),
+            expires_at: current_unix_timestamp().saturating_add(3600),
+            republish_at: current_unix_timestamp().saturating_add(1800),
+        };
+
+        let response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/dht/rpc".into(),
+            body: serde_json::json!({
+                "request": {
+                    "StoreRecord": {
+                        "request_id": "store-control",
+                        "record": record,
+                    }
+                }
+            })
+            .to_string(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 200, "{}", response.body);
+        let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(body["StoreResult"]["stored"], true);
+        assert_eq!(body["StoreResult"]["inserted"], true);
+
+        let response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/dht/rpc".into(),
+            body: serde_json::json!({
+                "request": {
+                    "FindValue": {
+                        "request_id": "find-control",
+                        "key": key,
+                        "limit": 4,
+                    }
+                }
+            })
+            .to_string(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 200, "{}", response.body);
+        let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(body["Value"]["record"]["value"], "control-rpc-value");
+
+        let response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/dht/rpc".into(),
+            body: serde_json::json!({
+                "request": {
+                    "FindNode": {
+                        "request_id": "find-node-control",
+                        "target": KademliaNodeId::from_peer_id("control-rpc-peer"),
+                        "limit": 1,
+                    }
+                }
+            })
+            .to_string(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 200, "{}", response.body);
+        let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(
+            body["Nodes"]["nodes"][0]["announce"]["peer_id"],
+            "control-rpc-peer"
         );
     }
 

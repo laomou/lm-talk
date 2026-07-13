@@ -923,7 +923,7 @@ fn serve_control(
     };
     println!("LM Talk control plane listening on http://{bind}");
     println!(
-        "endpoints: GET /health, GET /control/stats, GET /control/metrics, POST /announce, GET /peers/closest, POST /mailbox/push, GET /mailbox/take, POST /mailbox/ack, POST /prekey/publish, GET /prekey/get, POST/GET /dht/record, GET /dht/closest, GET /sync/snapshot, GET /sync/status, POST /sync/import"
+        "endpoints: GET /health, GET /control/stats, GET /control/metrics, POST /announce, GET /peers/closest, POST /mailbox/push, GET /mailbox/take, POST /mailbox/ack, POST /prekey/publish, GET /prekey/get, POST/GET /dht/record, GET /dht/closest, POST /dht/rpc, GET /sync/snapshot, GET /sync/status, POST /sync/import"
     );
     if security.token.is_some() {
         println!("control security: bearer token required");
