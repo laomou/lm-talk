@@ -1945,7 +1945,7 @@ Public Peer：
 
 - 创建者默认为 admin。
 - Rename/AddMember/PromoteAdmin/DemoteAdmin 需要 admin。
-- RemoveMember 允许 admin 踢人，也允许成员自己退出。
+- RemoveMember 只允许成员自己退出，不提供管理员移除其他成员。
 - 防止只剩一个 admin 时把唯一 admin 移除。
 - Web 应用群事件时优先通过 WASM policy state 校验并更新成员/admin/sequence。
 
