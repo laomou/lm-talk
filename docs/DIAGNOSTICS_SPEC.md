@@ -29,6 +29,7 @@ Web 当前生成 JSON 文本，顶层字段如下：
 
 ```json
 {
+  "diagnostics_version": 1,
   "time": "2026-07-14T00:00:00.000Z",
   "account": {},
   "browser": {},
@@ -42,6 +43,7 @@ Web 当前生成 JSON 文本，顶层字段如下：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
+| `diagnostics_version` | number | 诊断报告 schema 版本；当前为 `1`。 |
 | `time` | string | 生成报告的 ISO 8601 时间。 |
 | `account` | object | 当前账号摘要。 |
 | `browser` | object | 浏览器能力和本地缓存能力摘要。 |
@@ -156,7 +158,6 @@ Web 诊断分享必须满足：
 
 - 增加“一键脱敏”开关：隐藏 `user_id`、`display_name` 和同步服务 URL。
 - 增加“仅复制摘要”模式：只复制浏览器能力、同步状态和本地计数。
-- 增加 schema version，例如 `diagnostics_version: 1`。
 
 ---
 

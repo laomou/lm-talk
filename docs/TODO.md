@@ -169,8 +169,8 @@
 
 8. **诊断报告规范**
    - Web 已有诊断页和状态摘要报告，并声明不导出提示词、身份私钥或消息明文。
-   - 允许字段、禁止字段和分享前预览确认已整理到 `docs/DIAGNOSTICS_SPEC.md`。
-   - 仍需实现可选脱敏、仅复制摘要和 `diagnostics_version`。
+   - 允许字段、禁止字段、`diagnostics_version` 和分享前预览确认已整理到 `docs/DIAGNOSTICS_SPEC.md`。
+   - 仍需实现可选脱敏和仅复制摘要。
 
 9. **可访问性与国际化**
    - Web 已有 `zh-CN` 页面语言、按钮焦点样式、toast `aria-live`、主导航/搜索/消息列表/弹窗基础可访问性语义。

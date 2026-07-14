@@ -9,6 +9,7 @@ async function runDiagnostics() {
   const registrations = nav.serviceWorker?.getRegistrations ? await nav.serviceWorker.getRegistrations().catch(() => []) : []
   const cacheKeys = typeof caches !== 'undefined' ? await caches.keys().catch(() => []) : []
   const report = {
+    diagnostics_version: 1,
     time: new Date().toISOString(),
     account: {
       user_id: props.ctx.identity.value?.user_id ?? '',
