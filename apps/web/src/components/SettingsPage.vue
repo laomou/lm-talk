@@ -135,9 +135,10 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
           <button class="secondary" @click="ctx.publishPreKeyToNode">发布 PreKey</button>
           <button class="secondary" @click="ctx.refreshPreKeyStatusFromNode">刷新 PreKey</button>
           <button class="secondary" @click="ctx.replenishPreKeyIfLow">检查补货</button>
-          <button class="secondary" @click="ctx.clearPreKeyRawState">清除原始状态</button>
+          <button class="secondary" @click="ctx.clearPreKeyRawState">清除公开原文</button>
           <button v-if="ctx.prekeyAutoErrorText.value" class="secondary" @click="ctx.retryPreKeyAutoPublish">重试自动发布</button>
         </div>
+        <small>清除公开原文只移除节点返回和 selected record 等临时文本；本地加密 private bundle 会保留用于补货。</small>
         <div class="row compact">
           <button class="secondary" @click="ctx.enableNotifications">开启通知</button>
           <button class="secondary" @click="ctx.refreshRuntimeStatus">刷新状态</button>
