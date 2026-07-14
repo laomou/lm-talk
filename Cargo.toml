@@ -23,6 +23,7 @@ futures = "0.3"
 hkdf = "0.12"
 libp2p = { version = "0.56", features = ["macros", "noise", "request-response", "json", "tcp", "tokio", "yamux"] }
 postcard = { version = "1", features = ["alloc"] }
+proptest = "1"
 rand_core = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
