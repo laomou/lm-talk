@@ -1499,6 +1499,16 @@ const nodeSettingsSummaryText = computed(() => {
   const missingRemoteTokens = entries.filter((entry) => !entry.token && !isLoopbackNodeUrl(entry.url)).length
   return `${entries.length} 个同步服务 · 主节点 ${entries[0].url}${tokenCount ? ` · ${tokenCount} 个已配置令牌` : ''}${missingRemoteTokens ? ` · ${missingRemoteTokens} 个远端缺令牌` : ''} · 成功节点会自动置顶`
 })
+const nodeTokenStorageText = computed(() => {
+  let entries: NodeEntry[]
+  try {
+    entries = nodeEntries()
+  } catch {
+    return ''
+  }
+  const tokenCount = entries.filter((entry) => entry.token).length
+  return tokenCount ? `已配置 ${tokenCount} 个令牌；令牌只保存在本机浏览器，诊断报告默认不导出。` : ''
+})
 function nodeTokenFor(url: string): string {
   const base = url.replace(/\/$/, '')
   return nodeEntries().find((e) => e.url.replace(/\/$/, '') === base)?.token || ''
@@ -5083,7 +5093,7 @@ function logout() {
 const appContext = {
   goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, pwaStatusText, pwaBackgroundCapabilityText, webVersionText,
-  nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
+  nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, nodeTokenStorageText, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
   enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, createMyDeviceCert, myDeviceCertJson,

@@ -70,6 +70,7 @@ const hasRawSyncStatus = computed(() => syncStatusText.value.includes('\n') || s
         <label for="sync-service-input">同步服务</label>
         <textarea id="sync-service-input" v-model="ctx.nodeControlUrl.value" rows="4" aria-label="同步服务地址列表" placeholder="每行一个同步服务地址，例如：&#10;http://127.0.0.1:8787&#10;http://192.168.1.23:8787|令牌&#10;http://[fd00::1234]:8787|令牌" />
         <small>{{ ctx.nodeSettingsSummaryText.value }}</small>
+        <small v-if="ctx.nodeTokenStorageText.value">{{ ctx.nodeTokenStorageText.value }}</small>
         <small>{{ ctx.syncTriggerPolicyText.value }}</small>
         <small>开启后可自动收发好友请求和离线消息。支持局域网 IPv4/IPv6，可填多个。<br>跨设备访问时节点需设 <code>--control-token</code>，在地址后用 <code>|令牌</code> 附上（与节点一致）；仅本机(127.0.0.1)可不填令牌。</small>
         <div class="row compact">
