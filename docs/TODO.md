@@ -965,6 +965,7 @@ MVP 群聊采用逐个加密。
    - [x] libp2p DHT listener 连接 bootstrap peer 后会自动发送 `FindNode` discovery，并合并返回的 verified routing peers。
    - [x] 已配置 control peers 支持按 `sync_peers[].peer_id` 匹配 closest-k target 执行 DHT `StoreRecord` replication；未配置 peer_id 时保持全量 control-peer 兼容行为。
    - [x] 开放传输层 closest-k replication：libp2p transport runner 可复用已发现 routing peers 作为真实网络 RPC 目标。
+   - [x] 本地 DHT record store 已有基础容量上限，超出时优先淘汰最早过期/最早创建的记录，避免无界增长。
 
 3. **节点可观测性**
    - [x] 结构化日志：`log_format` / `--log-format` / `LM_NODE_LOG_FORMAT` 支持 `text` 或单行 JSON，覆盖启动、请求访问、sync、DHT runner 和状态保存错误事件。
@@ -986,7 +987,7 @@ MVP 群聊采用逐个加密。
    - 节点发现。
    - routing table refresh。
    - record replication。
-   - Sybil/垃圾记录基础防护。
+   - 更强的 Sybil/垃圾记录防护。
 
 2. **Relay / TURN 替代能力**
    - 允许公网节点作为可选 relay/mailbox/bootstrap。
