@@ -17,6 +17,11 @@ function outboxExpiryText(item: any) {
   if (Date.now() > item.expires_at) return '已过期'
   return `过期 ${props.ctx.formatDateTime(item.expires_at)}`
 }
+function outboxRetryText(item: any) {
+  const nextRetryAt = item.next_retry_at ?? item.created_at
+  if (!nextRetryAt || Date.now() >= nextRetryAt) return '下次重试：可立即重试'
+  return `下次重试：${props.ctx.formatDateTime(nextRetryAt)}`
+}
 const localObjectCount = computed(() =>
   props.ctx.contacts.value.length +
   props.ctx.groups.value.length +
@@ -155,6 +160,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
           <div v-for="item in pendingOutbox.slice(0, 6)" :key="item.id" class="outbox-row">
             <b>{{ contactName(item.peer_user_id) }}</b>
             <small>{{ outboxKindLabel(item.kind) }} · 重试 {{ item.retry_count }}</small>
+            <small>{{ outboxRetryText(item) }}</small>
             <small>{{ outboxExpiryText(item) }}</small>
             <small v-if="item.last_error" class="danger-text">{{ item.last_error }}</small>
           </div>
