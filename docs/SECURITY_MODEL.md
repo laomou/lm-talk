@@ -1,16 +1,16 @@
-# LM Talk Security Model
+# LM Talk 安全模型
 
-Goals:
+目标：
 
-- End-to-end encryption for message/file contents.
-- Stable signed identity and contact cards.
-- Local-first storage with app-layer encryption for sensitive browser data.
-- Best-effort offline delivery without making nodes trusted with plaintext.
+- 消息/文件内容端到端加密。
+- 稳定的签名身份和联系人名片。
+- 本地优先存储，并对浏览器敏感数据做应用层加密。
+- best-effort 离线投递，但不让节点接触明文。
 
-Non-goals / limitations:
+非目标 / 限制：
 
-- No anonymity guarantee.
-- Metadata is not fully hidden.
-- Web builds have supply-chain risk unless pinned/offline.
-- Nodes can deny service, delay, drop, or correlate deliveries.
-- Lost identity backup/passphrase cannot be recovered by any platform operator.
+- 不保证匿名性。
+- 元数据不会被完全隐藏。
+- Web build 若不是固定版本/离线分发，存在供应链风险。
+- 节点可以拒绝服务、延迟、丢弃或关联投递。
+- 身份备份包或提示词丢失后，任何平台运营方都无法恢复。

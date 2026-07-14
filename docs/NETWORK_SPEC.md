@@ -1,13 +1,13 @@
-# LM Talk Network Spec v1
+# LM Talk 网络规格 v1
 
-Networking is optional and best-effort.
+网络能力是可选的，并采用 best-effort 语义。
 
-- WebRTC DataChannel is preferred for online direct delivery.
-- Mailbox is used for offline delivery through configured `lm_node` control plane.
-- Outbox retries use exponential backoff: 30s, 2m, 10m, 1h, 6h; default expiry is 7 days.
-- Snapshot sync can pull `/sync/snapshot` from a peer node and import it locally.
+- 在线直连优先使用 WebRTC DataChannel。
+- 离线投递通过已配置的 `lm_node` 控制面使用 Mailbox。
+- Outbox 重试使用指数退避：30s、2m、10m、1h、6h；默认过期时间为 7 天。
+- Snapshot sync 可以从对端节点拉取 `/sync/snapshot` 并导入本地。
 
-Current node networking is a control-plane scaffold with closest-peer and snapshot support, not a production DHT.
+当前节点网络仍是控制面 scaffold，具备 closest-peer 和 snapshot 支持，但不是生产级 DHT。
 
 ## 控制面鉴权模型
 
@@ -54,4 +54,3 @@ openssl rand -hex 16 > node.token
 在 VPS 上跑 B 的命令，双方填 `http://<vps-ip>:8787|<令牌>`。可用 `--sync-peer` 让多个节点互相拉取 `/sync/snapshot` 联邦同步。
 
 > 以上均为文字/离线消息路径（mailbox）。音视频/文件直连另走 WebRTC，需要 STUN/TURN（见 `RTCPeerConnection` 的 `iceServers`）。
-

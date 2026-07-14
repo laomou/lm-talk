@@ -1,14 +1,14 @@
-# LM Talk Contact Spec v1
+# LM Talk 联系人规格 v1
 
-Contact Cards are signed identity advertisements:
+联系人名片是带签名的身份声明：
 
 ```text
 lm-contact-card-v1:<base64url-json>
 ```
 
-Signed fields include UserID, display name, identity public key, X25519 public key, device certificates, creation time, and optional expiry. Clients may update display name and device certificates only when `user_id` and `identity_public_key` match the existing contact. Silent identity key replacement is forbidden.
+签名字段包括 UserID、显示名、身份公钥、X25519 公钥、设备证书、创建时间和可选过期时间。只有当 `user_id` 和 `identity_public_key` 与现有联系人一致时，客户端才可以更新显示名和设备证书。禁止静默替换身份密钥。
 
-Trust levels: Imported, LinkImported, QrScanned, FingerprintVerified.
-Fingerprint display uses a short BLAKE3-derived hexadecimal code.
+信任等级：Imported、LinkImported、QrScanned、FingerprintVerified。
+指纹展示使用由 BLAKE3 派生的短十六进制码。
 
-See `test-vectors/contact_card_v1.json`.
+测试向量见 `test-vectors/contact_card_v1.json`。
