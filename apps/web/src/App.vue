@@ -2409,9 +2409,25 @@ function nextGroupSequence(group: GroupItem): number {
   return (group.sequence ?? 0) + 1
 }
 
+function ensureActiveGroupAdmin(actionLabel: string) {
+  const group = activeGroup.value
+  if (!group) throw new Error('请选择群组')
+  if (group.removed_self_at) {
+    const reason = `群权限拒绝：你已被移出群聊，不能${actionLabel}`
+    rememberGroupEventError(group.group_id, reason)
+    throw new Error(reason)
+  }
+  const admins = group.admin_user_ids ?? []
+  if (identity.value && admins.includes(identity.value.user_id)) return
+  const reason = `群权限拒绝：只有管理员可以${actionLabel}`
+  rememberGroupEventError(group.group_id, reason)
+  throw new Error(reason)
+}
+
 function createRenameGroupEvent() {
   run('生成群改名事件', () => {
     if (!activeGroup.value) throw new Error('请选择群组')
+    ensureActiveGroupAdmin('修改群名')
     const name = groupRenameText.value.trim()
     if (!name) throw new Error('请输入新群名')
     const sequence = nextGroupSequence(activeGroup.value)
@@ -2428,6 +2444,7 @@ function createRenameGroupEvent() {
 function createAddMemberGroupEvent(userId: string) {
   run('生成加人事件', () => {
     if (!activeGroup.value) throw new Error('请选择群组')
+    ensureActiveGroupAdmin('添加成员')
     const sequence = nextGroupSequence(activeGroup.value)
     groupEventText.value = create_group_event(
       backupText.value,
@@ -2442,6 +2459,7 @@ function createAddMemberGroupEvent(userId: string) {
 function createRemoveMemberGroupEvent(userId: string) {
   run('生成移除成员事件', () => {
     if (!activeGroup.value) throw new Error('请选择群组')
+    ensureActiveGroupAdmin('移除成员')
     const sequence = nextGroupSequence(activeGroup.value)
     groupEventText.value = create_group_event(
       backupText.value,
@@ -2457,6 +2475,7 @@ function createRemoveMemberGroupEvent(userId: string) {
 function createPromoteAdminGroupEvent(userId: string) {
   run('生成提升管理员事件', () => {
     if (!activeGroup.value) throw new Error('请选择群组')
+    ensureActiveGroupAdmin('提升管理员')
     const sequence = nextGroupSequence(activeGroup.value)
     groupEventText.value = create_group_event(
       backupText.value,
@@ -2471,6 +2490,7 @@ function createPromoteAdminGroupEvent(userId: string) {
 function createDemoteAdminGroupEvent(userId: string) {
   run('生成取消管理员事件', () => {
     if (!activeGroup.value) throw new Error('请选择群组')
+    ensureActiveGroupAdmin('取消管理员')
     const sequence = nextGroupSequence(activeGroup.value)
     groupEventText.value = create_group_event(
       backupText.value,
