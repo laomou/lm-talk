@@ -618,7 +618,8 @@ onMounted(async () => {
     void refreshRuntimeStatus()
     if ('serviceWorker' in navigator) {
       const swUrl = new URL('sw.js', import.meta.env.BASE_URL ? new URL(import.meta.env.BASE_URL, window.location.origin) : window.location.origin)
-      void navigator.serviceWorker.register(swUrl.pathname)
+      swUrl.searchParams.set('v', __BUILD_REF__)
+      void navigator.serviceWorker.register(`${swUrl.pathname}${swUrl.search}`)
         .then(() => refreshPwaStatus())
         .catch((e) => appendLog(`PWA Service Worker 注册失败：${String(e)}`))
     }

@@ -1,4 +1,5 @@
-const CACHE_NAME = 'lm-talk-pwa-v1'
+const BUILD_REF = new URL(self.location.href).searchParams.get('v') || 'dev'
+const CACHE_NAME = `lm-talk-pwa-${BUILD_REF}`
 const BASE_PATH = new URL(self.registration.scope).pathname
 const appUrl = (path) => new URL(path.replace(/^\//, ''), self.registration.scope).toString()
 const APP_SHELL = [appUrl(''), appUrl('manifest.webmanifest')]
