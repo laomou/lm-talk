@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 
 const props = defineProps<{ ctx: any }>()
 const syncRecoveryQuery = ref('')
+const showRawSyncStatus = ref(false)
 
 const outboxItems = computed(() => props.ctx.outbox.value)
 const pendingOutbox = computed(() => outboxItems.value.filter((item: any) => item.status !== 'sent'))
@@ -26,6 +27,9 @@ const filteredSyncRecoveryHistory = computed(() => {
   const history = props.ctx.syncRecoveryHistory.value
   return q ? history.filter((item: string) => item.toLowerCase().includes(q)) : history
 })
+const syncStatusText = computed(() => props.ctx.nodeControlStatus.value || '未连接')
+const syncStatusSummary = computed(() => syncStatusText.value.split('\n')[0])
+const hasRawSyncStatus = computed(() => syncStatusText.value.includes('\n') || syncStatusText.value.trim().startsWith('{') || syncStatusText.value.trim().startsWith('['))
 </script>
 
 <template>
@@ -83,7 +87,8 @@ const filteredSyncRecoveryHistory = computed(() => {
         </div>
         <div class="sync-status">
           <b>同步状态</b>
-          <small>{{ ctx.nodeControlStatus.value || '未连接' }}</small>
+          <small>{{ showRawSyncStatus ? syncStatusText : syncStatusSummary }}</small>
+          <button v-if="hasRawSyncStatus" class="secondary" @click="showRawSyncStatus = !showRawSyncStatus">{{ showRawSyncStatus ? '隐藏原始状态' : '显示原始状态' }}</button>
           <small :class="{ 'danger-text': ctx.syncFailureSummaryText.value !== '暂无同步失败' }">{{ ctx.syncFailureSummaryText.value }}</small>
           <small>{{ ctx.syncRecoveryStatusText.value }}</small>
           <input v-if="ctx.syncRecoveryHistory.value.length" v-model="syncRecoveryQuery" type="search" aria-label="筛选同步恢复历史" placeholder="筛选恢复历史" />
