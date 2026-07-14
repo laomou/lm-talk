@@ -3517,6 +3517,14 @@ function createSecureSessionOfferText() {
   })
 }
 
+function clearActiveSecureSessionError() {
+  run('清除安全建链错误', () => {
+    if (!activeContact.value) throw new Error('请选择联系人')
+    activeContact.value.last_secure_session_error = undefined
+    persist()
+  })
+}
+
 function applySecureSessionOfferText() {
   run('应用安全会话 Offer 并生成 Response', () => {
     if (!identity.value) throw new Error('请先登录')
@@ -4798,7 +4806,7 @@ const appContext = {
   nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
   enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
-  secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, createMyDeviceCert, myDeviceCertJson,
+  secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, createMyDeviceCert, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
   exportFullDataBackup, importFullDataBackup, downloadText, addContactText, addContact, incomingFriendRequestText,
   addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, friendRequestRateRecords, friendRequestRateSummaryText, clearFriendRequestRateRecords, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
