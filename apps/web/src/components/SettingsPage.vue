@@ -52,6 +52,10 @@ const outboxKindLabel = (kind?: string) =>
           <b>同步状态</b>
           <small>{{ ctx.nodeControlStatus.value || '未连接' }}</small>
         </div>
+        <div class="row compact">
+          <button class="secondary" @click="ctx.enableNotifications">开启通知</button>
+          <small class="sync-note">通知：{{ ctx.notificationPermission.value || '未知' }}</small>
+        </div>
       </section>
 
       <section class="home-card outbox-card">

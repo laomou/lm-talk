@@ -543,6 +543,7 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 .sync-status { margin-top: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface-2); display: grid; gap: var(--sp-1); }
 .sync-status b { font-size: 13px; color: var(--c-ink-2); }
 .sync-status small { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--c-ink-3); max-height: 120px; overflow: auto; }
+.sync-note { color: var(--c-ink-3); font-size: 12px; align-self: center; }
 .outbox-summary { display: flex; gap: var(--sp-3); color: var(--c-ink-3); font-size: 13px; margin-bottom: var(--sp-3); }
 .outbox-list { display: grid; gap: var(--sp-2); }
 .outbox-row { display: grid; gap: 2px; padding: var(--sp-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface-2); min-width: 0; }

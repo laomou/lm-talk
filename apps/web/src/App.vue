@@ -325,6 +325,7 @@ const ratchetSessions = ref<RatchetSessionItem[]>([])
 const processedMailboxIds = ref<string[]>([])
 let outboxRetryTimer: number | undefined
 let lastDeliveryError = ''
+const notificationPermission = ref(typeof Notification !== 'undefined' ? Notification.permission : 'unsupported')
 const activePeerId = ref('')
 const activeGroupId = ref('')
 
@@ -530,6 +531,25 @@ function toast(text: string, kind: ToastKind = 'info') {
   window.setTimeout(() => {
     toasts.value = toasts.value.filter((item) => item.id !== id)
   }, 2800)
+}
+
+async function enableNotifications() {
+  if (typeof Notification === 'undefined') throw new Error('当前浏览器不支持通知')
+  if (Notification.permission === 'granted') {
+    notificationPermission.value = 'granted'
+    return
+  }
+  const permission = await Notification.requestPermission()
+  notificationPermission.value = permission
+  if (permission !== 'granted') throw new Error('通知权限未开启')
+}
+
+function notifyIfAllowed(title: string, body: string) {
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+  if (document.visibilityState === 'visible') return
+  try {
+    new Notification(title, { body })
+  } catch {}
 }
 
 function showAlert(title: string, message: string, kind: ToastKind = 'info') {
@@ -3654,6 +3674,7 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
   }
   mailboxInboxStatus.value = `收到 ${messagesFromNode.length}，已处理 ${handled}，重复 ${duplicate}，失败 ${failed}`
   appendLog(`mailbox 自动处理完成：${mailboxInboxStatus.value}`)
+  if (handled > 0) notifyIfAllowed('LM Talk 收到新消息', mailboxInboxStatus.value)
   persist()
   return ackIds
 }
@@ -3851,6 +3872,7 @@ function logout() {
 const appContext = {
   goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, myContactCardText, backupText,
   nodeControlUrl, nodeUrlList, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
+  enableNotifications, notificationPermission,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, createMyDeviceCert, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
