@@ -223,6 +223,10 @@ function openGroupDetail(groupId: string) {
               <span>事件序列 {{ ctx.activeGroup.value.sequence ?? 0 }}</span>
               <span>管理员 {{ ctx.activeGroup.value.admin_user_ids?.length ?? 0 }}</span>
             </div>
+            <div v-if="ctx.activeGroup.value.removed_self_at" class="group-event-summary">
+              <b class="danger-text">你已被移出群聊</b>
+              <small>{{ ctx.activeGroup.value.removed_self_by || '未知发起者' }} · {{ ctx.formatTime(ctx.activeGroup.value.removed_self_at) }}</small>
+            </div>
             <div class="member-list">
               <span v-for="m in ctx.activeGroupMembers.value" :key="m.user_id">{{ m.display_name || m.user_id }}</span>
             </div>

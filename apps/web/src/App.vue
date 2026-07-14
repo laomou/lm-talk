@@ -176,6 +176,8 @@ type GroupItem = {
   last_event_at?: number
   last_event_error?: string
   last_event_error_at?: number
+  removed_self_at?: number
+  removed_self_by?: string
 }
 
 type GroupSenderKeyItem = {
@@ -560,6 +562,7 @@ const activeGroupWarningText = computed(() => {
   })
   const blocked = activeGroupMembers.value.filter((c) => c.state === 'Blocked').map((c) => c.display_name || c.user_id)
   const warnings = []
+  if (activeGroup.value.removed_self_at) warnings.push(`你已被移出群聊：${formatDateTime(activeGroup.value.removed_self_at)}`)
   if (missing.length > 0) warnings.push(`缺少联系人：${missing.join(', ')}`)
   if (notFriend.length > 0) warnings.push(`非好友成员：${notFriend.join(', ')}`)
   if (blocked.length > 0) warnings.push(`已拉黑成员：${blocked.join(', ')}`)
@@ -2540,6 +2543,15 @@ function applyGroupEventRaw(text: string, actorId: string): { group_id: string; 
     group.member_user_ids = policy.members.filter((id) => id !== identity.value?.user_id)
     group.admin_user_ids = policy.admins
     group.sequence = policy.sequence
+    if (identity.value && info.action.AddMember?.user_id === identity.value.user_id) {
+      group.removed_self_at = undefined
+      group.removed_self_by = undefined
+    }
+    if (identity.value && info.action.RemoveMember?.user_id === identity.value.user_id) {
+      group.removed_self_at = Date.now()
+      group.removed_self_by = info.actor_user_id
+      appendLog('你已被该群事件移出群聊')
+    }
   } else {
     const admins = group.admin_user_ids ?? []
     const isSelfLeave = info.action.RemoveMember?.user_id === info.actor_user_id
@@ -2549,11 +2561,19 @@ function applyGroupEventRaw(text: string, actorId: string): { group_id: string; 
     } else if (info.action.AddMember) {
       const uid = info.action.AddMember.user_id
       if (!group.member_user_ids.includes(uid)) group.member_user_ids.push(uid)
+      if (uid === identity.value?.user_id) {
+        group.removed_self_at = undefined
+        group.removed_self_by = undefined
+      }
     } else if (info.action.RemoveMember) {
       const uid = info.action.RemoveMember.user_id
       group.member_user_ids = group.member_user_ids.filter((id) => id !== uid)
       group.admin_user_ids = (group.admin_user_ids ?? []).filter((id) => id !== uid)
-      if (uid === identity.value?.user_id) appendLog('你已被该群事件移出群聊')
+      if (uid === identity.value?.user_id) {
+        group.removed_self_at = Date.now()
+        group.removed_self_by = info.actor_user_id
+        appendLog('你已被该群事件移出群聊')
+      }
     } else if (info.action.PromoteAdmin) {
       const uid = info.action.PromoteAdmin.user_id
       if (!group.admin_user_ids) group.admin_user_ids = []
@@ -2859,6 +2879,7 @@ function sendMessage() {
     if (!outgoingFiltered.allow) throw new Error('本地策略阻止发送')
 
     if (activeGroup.value) {
+      if (activeGroup.value.removed_self_at) throw new Error('你已被移出该群聊，不能继续发送群消息')
       let fanout: Array<{ to_user_id: string; envelope: string }> = []
       const senderEnvelope = encryptGroupSenderText(activeGroup.value, `[${activeGroup.value.name}] ${outgoingFiltered.text}`)
       if (senderEnvelope) {
