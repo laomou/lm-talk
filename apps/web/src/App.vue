@@ -1598,6 +1598,15 @@ async function sendDeliveryAck(sender: ContactItem, messageId?: string) {
   persist()
 }
 
+function resendAckForDuplicateMailboxMessage(message: any) {
+  const fromUserId = String(message?.from_user_id ?? '')
+  const sender = contactByUserId(fromUserId)
+  const kind = typeof message?.kind === 'string' ? message.kind.replace(/[-_]/g, '').toLowerCase() : ''
+  const ciphertext = String(message?.ciphertext ?? '')
+  if (!sender || kind !== 'directenvelope') return
+  void sendDeliveryAck(sender, messageProtocolIdFromEnvelope(ciphertext))
+}
+
 function retryDelayMs(retryCount: number): number {
   return [30_000, 2 * 60_000, 10 * 60_000, 60 * 60_000, 6 * 60 * 60_000][Math.min(retryCount, 4)]
 }
@@ -4543,6 +4552,7 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
     const dedupeId = deliveryId || messageId
     if (dedupeId && hasProcessedMailboxId(dedupeId)) {
       duplicate += 1
+      resendAckForDuplicateMailboxMessage(message)
       if (deliveryId) ackIds.push(deliveryId)
       continue
     }
