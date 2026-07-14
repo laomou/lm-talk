@@ -241,4 +241,13 @@ mod tests {
         card.display_name = Some("Mallory".to_string());
         assert_eq!(card.verify().unwrap_err(), LmError::InvalidSignature);
     }
+
+    #[test]
+    fn invalid_contact_card_user_id_is_rejected() {
+        let (alice, _a) = Identity::create_with_passphrase("alice").unwrap();
+        let (mallory, _m) = Identity::create_with_passphrase("mallory").unwrap();
+        let mut card = alice.export_contact_card(None, None, vec![]).unwrap();
+        card.user_id = mallory.user_id().clone();
+        assert_eq!(card.verify().unwrap_err(), LmError::InvalidUserId);
+    }
 }

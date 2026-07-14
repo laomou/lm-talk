@@ -958,8 +958,8 @@ MVP 群聊采用逐个加密。
 - [x] identity create/restore roundtrip
 - [x] wrong passphrase fails
 - [x] backup tamper fails
-- contact card verify
-- invalid contact card rejected
+- [x] contact card verify
+- [x] invalid contact card rejected
 - friend request verify
 - [x] expired friend request rejected
 - message encrypt/decrypt
