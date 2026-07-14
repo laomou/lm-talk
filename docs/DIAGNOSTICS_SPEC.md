@@ -30,6 +30,7 @@ Web 当前生成 JSON 文本，顶层字段如下：
 ```json
 {
   "diagnostics_version": 1,
+  "report_scope": "full",
   "time": "2026-07-14T00:00:00.000Z",
   "account": {},
   "browser": {},
@@ -44,6 +45,7 @@ Web 当前生成 JSON 文本，顶层字段如下：
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `diagnostics_version` | number | 诊断报告 schema 版本；当前为 `1`。 |
+| `report_scope` | string | 报告范围，`full` 表示完整状态摘要，`summary` 表示仅摘要。 |
 | `time` | string | 生成报告的 ISO 8601 时间。 |
 | `account` | object | 当前账号摘要。 |
 | `browser` | object | 浏览器能力和本地缓存能力摘要。 |
@@ -65,6 +67,7 @@ Web 当前生成 JSON 文本，顶层字段如下：
 约束：
 
 - `user_id` 和 `display_name` 可能识别用户身份，报告 UI 必须在复制前展示完整文本。
+- 仅摘要模式不得包含 `account`。
 - 不得包含身份私钥、身份种子、设备私钥、PreKey 私钥、Sender Key 或备份包内容。
 
 ### 浏览器能力
@@ -125,6 +128,7 @@ Web 当前生成 JSON 文本，顶层字段如下：
 - 单条日志不得包含提示词、备份包、私钥、seed、原始消息明文、附件内容、完整 direct envelope、完整 mailbox payload、完整 Contact Card、完整 Friend Request 或 auth token。
 - 错误对象需要转换为稳定错误类别或短文本，不直接序列化异常对象。
 - 默认最多导出最近 12 条。
+- 仅摘要模式不得包含 `recent_logs`。
 
 ---
 
@@ -153,11 +157,12 @@ Web 诊断分享必须满足：
 3. 用户点击“复制报告”前可以完整预览。
 4. 复制按钮只复制当前预览文本，不后台追加隐藏字段。
 5. UI 文案必须说明报告不包含提示词、身份私钥或消息明文。
+6. 仅摘要模式生成的预览文本必须只包含浏览器能力、同步状态和本地计数，不得在复制时追加隐藏字段。
 
 后续增强：
 
 - 当前 Web 已提供脱敏开关，可隐藏 `user_id`、`display_name` 和同步服务 URL。
-- 增加“仅复制摘要”模式：只复制浏览器能力、同步状态和本地计数。
+- 当前 Web 已提供仅摘要模式，只生成并复制浏览器能力、同步状态和本地计数。
 
 ---
 

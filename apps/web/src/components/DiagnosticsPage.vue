@@ -4,6 +4,7 @@ import { ref } from 'vue'
 const props = defineProps<{ ctx: any }>()
 const diagnosticReport = ref('')
 const redactDiagnosticReport = ref(false)
+const diagnosticSummaryOnly = ref(false)
 
 function redacted(value: string) {
   return value ? '[已脱敏]' : ''
@@ -13,13 +14,10 @@ async function runDiagnostics() {
   const nav = navigator as Navigator & { serviceWorker?: ServiceWorkerContainer }
   const registrations = nav.serviceWorker?.getRegistrations ? await nav.serviceWorker.getRegistrations().catch(() => []) : []
   const cacheKeys = typeof caches !== 'undefined' ? await caches.keys().catch(() => []) : []
-  const report = {
+  const report: Record<string, unknown> = {
     diagnostics_version: 1,
+    report_scope: diagnosticSummaryOnly.value ? 'summary' : 'full',
     time: new Date().toISOString(),
-    account: {
-      user_id: redactDiagnosticReport.value ? redacted(props.ctx.identity.value?.user_id ?? '') : props.ctx.identity.value?.user_id ?? '',
-      display_name: redactDiagnosticReport.value ? redacted(props.ctx.displayName.value ?? '') : props.ctx.displayName.value ?? '',
-    },
     browser: {
       secure_context: window.isSecureContext,
       indexed_db: 'indexedDB' in window,
@@ -42,7 +40,13 @@ async function runDiagnostics() {
       pending_outbox: props.ctx.outbox.value.filter((x: any) => x.status !== 'sent').length,
       messages: props.ctx.messages.value.length,
     },
-    recent_logs: props.ctx.log.value.slice(0, 12),
+  }
+  if (!diagnosticSummaryOnly.value) {
+    report.account = {
+      user_id: redactDiagnosticReport.value ? redacted(props.ctx.identity.value?.user_id ?? '') : props.ctx.identity.value?.user_id ?? '',
+      display_name: redactDiagnosticReport.value ? redacted(props.ctx.displayName.value ?? '') : props.ctx.displayName.value ?? '',
+    }
+    report.recent_logs = props.ctx.log.value.slice(0, 12)
   }
   diagnosticReport.value = JSON.stringify(report, null, 2)
 }
@@ -88,6 +92,10 @@ async function runDiagnostics() {
         <label class="check-row diagnostic-option">
           <input v-model="redactDiagnosticReport" type="checkbox" />
           脱敏账号和同步服务地址
+        </label>
+        <label class="check-row diagnostic-option">
+          <input v-model="diagnosticSummaryOnly" type="checkbox" />
+          只生成摘要报告
         </label>
         <div class="row compact">
           <button @click="runDiagnostics">生成诊断报告</button>
