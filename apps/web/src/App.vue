@@ -437,6 +437,7 @@ const nodeSyncPeerUrl = ref('http://127.0.0.1:8788')
 const nodeSyncSnapshotText = ref('')
 const nodeSyncStatusText = ref('')
 const syncRecoveryStatusText = ref('尚未恢复')
+const syncRecoveryHistory = ref<string[]>([])
 const syncFailureSummaryText = computed(() => {
   const parts: string[] = []
   if (prekeyAutoErrorText.value) parts.push(`PreKey：${prekeyAutoErrorText.value}`)
@@ -4318,6 +4319,7 @@ async function recoverSyncFailures() {
       results.push('节点快照已重试')
     }
     syncRecoveryStatusText.value = results.length ? results.join('；') : '没有需要恢复的同步失败'
+    syncRecoveryHistory.value = [syncRecoveryStatusText.value, ...syncRecoveryHistory.value].slice(0, 5)
     appendLog(actions.length ? `已恢复同步失败：${actions.join('、')}` : '没有需要恢复的同步失败')
     persist()
   })
@@ -4616,7 +4618,7 @@ function logout() {
 const appContext = {
   goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, myContactCardText, backupText,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, pwaStatusText, pwaBackgroundCapabilityText, webVersionText,
-  nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
+  nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
   enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, createMyDeviceCert, myDeviceCertJson,
