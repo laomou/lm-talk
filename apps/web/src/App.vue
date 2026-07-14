@@ -248,6 +248,7 @@ type PersistedState = {
   autoNodeSync?: boolean
   processedMailboxIds?: string[]
   mailboxFailedItems?: MailboxFailedItem[]
+  syncRecoveryHistory?: string[]
 }
 
 type PersistedMeta = {
@@ -266,6 +267,7 @@ type PersistedMeta = {
   autoNodeSync?: boolean
   processedMailboxIds?: string[]
   mailboxFailedItems?: MailboxFailedItem[]
+  syncRecoveryHistory?: string[]
   schemaVersion: number
 }
 
@@ -976,6 +978,7 @@ function currentPersistedState(): PersistedState {
     autoNodeSync: autoNodeSync.value,
     processedMailboxIds: processedMailboxIds.value,
     mailboxFailedItems: mailboxFailedItems.value,
+    syncRecoveryHistory: syncRecoveryHistory.value,
   }
 }
 
@@ -996,6 +999,7 @@ function persistedMeta(): PersistedMeta {
     autoNodeSync: autoNodeSync.value,
     processedMailboxIds: processedMailboxIds.value,
     mailboxFailedItems: mailboxFailedItems.value,
+    syncRecoveryHistory: syncRecoveryHistory.value,
     schemaVersion: 3,
   }
 }
@@ -1077,6 +1081,7 @@ async function writeStateToTables(state: PersistedState) {
   autoNodeSync.value = state.autoNodeSync ?? false
   processedMailboxIds.value = state.processedMailboxIds ?? []
   mailboxFailedItems.value = state.mailboxFailedItems ?? []
+  syncRecoveryHistory.value = state.syncRecoveryHistory ?? []
   await persistStateTables()
 }
 
@@ -1100,6 +1105,7 @@ async function loadStateFromTables(): Promise<boolean> {
   autoNodeSync.value = meta.autoNodeSync ?? false
   processedMailboxIds.value = meta.processedMailboxIds ?? []
   mailboxFailedItems.value = meta.mailboxFailedItems ?? []
+  syncRecoveryHistory.value = meta.syncRecoveryHistory ?? []
   const prefix = ownerPrefix()
   contacts.value = await Promise.all((await idbTableGetAllByPrefix<any>(TABLES.contacts, prefix)).map((c: any) => decryptContactFromStore(c, key)))
   friendRequests.value = await idbTableGetAllByPrefix<FriendRequestItem>(TABLES.friendRequests, prefix)
@@ -1155,6 +1161,7 @@ function resetAccountScopedState() {
   ratchetSessions.value = []
   processedMailboxIds.value = []
   mailboxFailedItems.value = []
+  syncRecoveryHistory.value = []
   activePeerId.value = ''
   activeGroupId.value = ''
   myContactCardText.value = ''
@@ -1200,6 +1207,7 @@ async function clearPersisted() {
   ratchetSessions.value = []
   processedMailboxIds.value = []
   mailboxFailedItems.value = []
+  syncRecoveryHistory.value = []
   myContactCardText.value = ''
   myDeviceCertJson.value = ''
   myDeviceId.value = ''
@@ -1322,6 +1330,14 @@ function downloadText(value: string, filename: string) {
     a.click()
     URL.revokeObjectURL(url)
   })
+}
+
+function exportSyncRecoveryHistory() {
+  const text = JSON.stringify({
+    exported_at: Date.now(),
+    history: syncRecoveryHistory.value,
+  }, null, 2)
+  downloadText(text, `lm-talk-sync-recovery-${Date.now()}.json`)
 }
 
 
@@ -4618,7 +4634,7 @@ function logout() {
 const appContext = {
   goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, myContactCardText, backupText,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, pwaStatusText, pwaBackgroundCapabilityText, webVersionText,
-  nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
+  nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
   enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, createMyDeviceCert, myDeviceCertJson,
