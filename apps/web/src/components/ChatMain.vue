@@ -91,7 +91,7 @@ function onComposerKeydown(e: KeyboardEvent) {
 
     </section>
 
-    <div class="messages clean-messages" ref="messagesEl">
+    <div class="messages clean-messages" ref="messagesEl" role="log" aria-label="消息列表" aria-live="polite">
       <template v-if="ctx.activeContact.value || ctx.activeGroup.value">
         <template v-for="item in thread" :key="item.id">
           <div v-if="item.kind === 'sep'" class="day-sep"><span>{{ item.label }}</span></div>
@@ -110,7 +110,7 @@ function onComposerKeydown(e: KeyboardEvent) {
     </div>
 
     <footer class="composer clean-composer" v-if="ctx.activeGroup.value || (ctx.activeContact.value && ctx.activeContact.value.state === 'Friend')">
-      <textarea v-model="ctx.composerText.value" rows="3" placeholder="输入消息，Enter 发送 / Shift+Enter 换行" @keydown="onComposerKeydown" />
+      <textarea v-model="ctx.composerText.value" rows="3" aria-label="输入消息" placeholder="输入消息，Enter 发送 / Shift+Enter 换行" @keydown="onComposerKeydown" />
       <button @click="ctx.sendMessage">发送</button>
     </footer>
   </section>

@@ -82,7 +82,7 @@ function select(it: any) {
       <h2>聊天</h2>
     </header>
     <div class="list-col-search">
-      <input v-model="keyword" placeholder="搜索聊天" />
+      <input v-model="keyword" type="search" aria-label="搜索聊天" placeholder="搜索聊天" />
     </div>
 
     <section class="conversation-list only-conversations">
@@ -91,6 +91,7 @@ function select(it: any) {
         :key="it.type + ':' + it.id"
         class="contact"
         :class="{ active: isActive(it) }"
+        :aria-current="isActive(it) ? 'true' : undefined"
         @click="select(it)"
       >
         <span v-if="it.type === 'group'" class="avatar group-avatar">群</span>

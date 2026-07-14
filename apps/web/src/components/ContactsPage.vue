@@ -46,11 +46,11 @@ function openGroupDetail(groupId: string) {
         </div>
       </header>
       <div class="list-col-search">
-        <input v-model="keyword" placeholder="搜索好友或群聊" />
+        <input v-model="keyword" type="search" aria-label="搜索好友或群聊" placeholder="搜索好友或群聊" />
       </div>
 
       <div class="conversation-list">
-        <button class="contact" :class="{ active: view === 'requests' }" @click="view = 'requests'">
+        <button class="contact" :class="{ active: view === 'requests' }" :aria-current="view === 'requests' ? 'true' : undefined" @click="view = 'requests'">
           <span class="avatar" style="background:#f59e0b">新</span>
           <span class="contact-main">
             <b>新的朋友 <em v-if="requestCount">{{ requestCount }}</em></b>
@@ -64,6 +64,7 @@ function openGroupDetail(groupId: string) {
           :key="g.group_id"
           class="contact"
           :class="{ active: view === 'detail' && g.group_id === ctx.activeGroupId.value }"
+          :aria-current="view === 'detail' && g.group_id === ctx.activeGroupId.value ? 'true' : undefined"
           @click="openGroupDetail(g.group_id)"
         >
           <span class="avatar group-avatar">群</span>
@@ -79,6 +80,7 @@ function openGroupDetail(groupId: string) {
           :key="c.user_id"
           class="contact"
           :class="{ active: view === 'detail' && c.user_id === ctx.activePeerId.value }"
+          :aria-current="view === 'detail' && c.user_id === ctx.activePeerId.value ? 'true' : undefined"
           @click="openContact(c.user_id)"
         >
           <span class="avatar" :style="{ background: avatarColor(c.user_id) }">{{ (c.display_name || c.user_id || '?').slice(0, 1).toUpperCase() }}</span>
