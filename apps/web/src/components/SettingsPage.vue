@@ -130,6 +130,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
           <button class="secondary" @click="ctx.publishPreKeyToNode">发布 PreKey</button>
           <button class="secondary" @click="ctx.refreshPreKeyStatusFromNode">刷新 PreKey</button>
           <button class="secondary" @click="ctx.replenishPreKeyIfLow">检查补货</button>
+          <button class="secondary" @click="ctx.clearPreKeyRawState">清除原始状态</button>
           <button v-if="ctx.prekeyAutoErrorText.value" class="secondary" @click="ctx.retryPreKeyAutoPublish">重试自动发布</button>
         </div>
         <div class="row compact">
