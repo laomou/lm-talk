@@ -46,7 +46,7 @@
 2. **PreKey 自动发布/补货产品化**
    - Web 已支持自动生成并发布 PreKey Bundle 与 signed one-time-prekey records。
    - 本地 Private PreKey Bundle 已加密持久化，节点不生成用户密钥。
-   - 设置页已有 PreKey 发布入口和剩余 one-time key / 低水位补货摘要。
+   - 设置页已有 PreKey 发布入口、状态刷新和剩余 one-time key / 低水位补货摘要。
    - 仍需低水位自动补货、失败重试和进一步减少高级 JSON 暴露。
 
 3. **添加好友后的自动安全建链产品化**

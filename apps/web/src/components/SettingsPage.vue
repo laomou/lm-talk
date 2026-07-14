@@ -64,6 +64,7 @@ const localObjectCount = computed(() =>
         </div>
         <div class="row compact">
           <button class="secondary" @click="ctx.publishPreKeyToNode">发布 PreKey</button>
+          <button class="secondary" @click="ctx.refreshPreKeyStatusFromNode">刷新 PreKey</button>
         </div>
         <div class="row compact">
           <button class="secondary" @click="ctx.enableNotifications">开启通知</button>

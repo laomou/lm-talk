@@ -3535,13 +3535,25 @@ async function publishPreKeyToNode() {
   })
 }
 
+async function refreshPreKeyStatusFromNode() {
+  await runAsync('刷新 PreKey 状态', async () => {
+    const userId = identity.value?.user_id
+    if (!userId) throw new Error('需要当前身份')
+    const body = await nodeFetchJson(`/prekey/status?user_id=${encodeURIComponent(userId)}`)
+    nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
+    prekeyStatusSummary.value = summarizePreKeyStatus(body)
+  })
+}
+
 function summarizePreKeyStatus(body: any): string {
   const remaining = typeof body?.remaining_one_time_prekeys === 'number' ? body.remaining_one_time_prekeys : null
   const low = Boolean(body?.low_one_time_prekeys || body?.replenishment_required)
   const userId = String(body?.user_id ?? identity.value?.user_id ?? '')
+  const found = body?.found !== false
+  if (!found) return `${userId ? userId + '：' : ''}节点未找到 PreKey，需要发布`
   const keyText = remaining === null ? 'one-time key 数量未知' : `剩余 one-time key ${remaining}`
   const action = low ? '，需要客户端补货' : '，库存正常'
-  return `${userId ? userId + '：' : ''}已发布，${keyText}${action}`
+  return `${userId ? userId + '：' : ''}${keyText}${action}`
 }
 
 async function fetchPreKeyFromNode() {
@@ -4073,7 +4085,7 @@ const appContext = {
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
   ratchetDhStepText, saveSafetyPolicy, createPeerAnnounceText, inspectPeerAnnounceText, createPublicPeerAnnounceText, inspectPublicPeerAnnounceText,
   createMailboxMessageText, inspectMailboxMessageText, checkNodeHealth, submitPublicPeerToNode, pushMailboxToNode, queryNodeClosestPeers,
-  takeMailboxFromNode, processMailboxTakeInfoText, publishPreKeyToNode, fetchPreKeyFromNode, consumePreKeyFromNode, exportNodeSnapshot,
+  takeMailboxFromNode, processMailboxTakeInfoText, publishPreKeyToNode, refreshPreKeyStatusFromNode, fetchPreKeyFromNode, consumePreKeyFromNode, exportNodeSnapshot,
   importNodeSnapshot, pullSnapshotFromPeerNode,
 
 }
