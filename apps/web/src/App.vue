@@ -1095,6 +1095,18 @@ async function clearPersisted() {
   appendLog('已清空本地状态')
 }
 
+async function clearBrowserCaches() {
+  const ok = await showConfirm('清理浏览器缓存', '清理 PWA 缓存和 Service Worker？这不会删除身份、联系人或聊天数据。', true)
+  if (!ok) return
+  const cacheKeys = typeof caches !== 'undefined' ? await caches.keys().catch(() => []) : []
+  await Promise.all(cacheKeys.map((key) => caches.delete(key)))
+  const nav = navigator as Navigator & { serviceWorker?: ServiceWorkerContainer }
+  const registrations = nav.serviceWorker?.getRegistrations ? await nav.serviceWorker.getRegistrations().catch(() => []) : []
+  await Promise.all(registrations.map((registration) => registration.unregister()))
+  appendLog(`已清理浏览器缓存：cache=${cacheKeys.length}, service_worker=${registrations.length}`)
+  toast('已清理浏览器缓存', 'success')
+}
+
 
 function exportFullDataBackup() {
   run('导出完整数据备份', () => {
@@ -3894,6 +3906,7 @@ function logout() {
 }
 const appContext = {
   goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, myContactCardText, backupText,
+  clearBrowserCaches,
   nodeControlUrl, nodeUrlList, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
   enableNotifications, notificationPermission,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,

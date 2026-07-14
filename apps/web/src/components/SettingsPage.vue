@@ -88,6 +88,9 @@ const outboxKindLabel = (kind?: string) =>
           <button class="settings-row" @click="ctx.goDiagnosticsPage">
             <span>诊断工具</span><span class="chevron">›</span>
           </button>
+          <button class="settings-row" @click="ctx.clearBrowserCaches">
+            <span>清理浏览器缓存</span><span class="chevron">›</span>
+          </button>
           <button class="settings-row danger-row" @click="ctx.logout">
             <span>退出登录</span><span class="chevron">›</span>
           </button>
