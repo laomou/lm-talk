@@ -960,7 +960,7 @@ MVP 群聊采用逐个加密。
 - [x] backup tamper fails
 - [x] contact card verify
 - [x] invalid contact card rejected
-- friend request verify
+- [x] friend request verify
 - [x] expired friend request rejected
 - message encrypt/decrypt
 - tampered ciphertext fails
