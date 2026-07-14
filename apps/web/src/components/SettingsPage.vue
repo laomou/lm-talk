@@ -79,6 +79,7 @@ const localObjectCount = computed(() =>
           <b>同步状态</b>
           <small>{{ ctx.nodeControlStatus.value || '未连接' }}</small>
           <small :class="{ 'danger-text': ctx.syncFailureSummaryText.value !== '暂无同步失败' }">{{ ctx.syncFailureSummaryText.value }}</small>
+          <button v-if="ctx.syncFailureSummaryText.value !== '暂无同步失败'" class="secondary" @click="ctx.recoverSyncFailures">恢复同步失败</button>
         </div>
         <div class="sync-status">
           <b>运行环境</b>

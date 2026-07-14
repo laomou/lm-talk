@@ -4244,44 +4244,73 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
   return ackIds
 }
 
+async function retryFailedMailboxItemsNow() {
+  const items = [...mailboxFailedItems.value]
+  if (items.length === 0) {
+    mailboxInboxStatus.value = '失败队列为空'
+    return { handled: 0, failed: 0 }
+  }
+  let handled = 0
+  let failed = 0
+  const ackIds: string[] = []
+  const handledItemIds: string[] = []
+  const failureReasons: string[] = []
+  for (const failedItem of items) {
+    failedItem.retry_count += 1
+    const result = handleMailboxPayload({
+      delivery_id: failedItem.delivery_id,
+      message: failedItem.message,
+    })
+    if (result.handled) {
+      handled += 1
+      const dedupeId = failedItem.delivery_id || failedItem.message_id || result.deliveryId
+      if (dedupeId) rememberProcessedMailboxId(dedupeId)
+      if (failedItem.delivery_id) ackIds.push(failedItem.delivery_id)
+      handledItemIds.push(failedItem.id)
+    } else {
+      failed += 1
+      const reason = result.reason || failedItem.reason
+      failedItem.reason = reason
+      failedItem.last_failed_at = Date.now()
+      failureReasons.push(reason)
+    }
+  }
+  if (ackIds.length > 0) await acknowledgeMailboxDeliveries(ackIds)
+  mailboxFailedItems.value = mailboxFailedItems.value.filter((item) => !handledItemIds.includes(item.id))
+  mailboxInboxStatus.value = `失败队列重试：成功 ${handled}，失败 ${failed}`
+  mailboxInboxErrorText.value = failureReasons.slice(0, 3).join('\n')
+  mailboxFailureSummaryText.value = summarizeMailboxFailures(failureReasons)
+  appendLog(`mailbox 失败队列重试完成：${mailboxInboxStatus.value}`)
+  persist()
+  return { handled, failed }
+}
+
 async function retryFailedMailboxItems() {
-  await runAsync('重试 mailbox 失败队列', async () => {
-    const items = [...mailboxFailedItems.value]
-    if (items.length === 0) {
-      mailboxInboxStatus.value = '失败队列为空'
-      return
+  await runAsync('重试 mailbox 失败队列', async () => { await retryFailedMailboxItemsNow() })
+}
+
+async function recoverSyncFailures() {
+  await runAsync('恢复同步失败', async () => {
+    const actions: string[] = []
+    if (prekeyAutoErrorText.value) {
+      await ensurePreKeyInventory()
+      actions.push('PreKey')
     }
-    let handled = 0
-    let failed = 0
-    const ackIds: string[] = []
-    const handledItemIds: string[] = []
-    const failureReasons: string[] = []
-    for (const failedItem of items) {
-      failedItem.retry_count += 1
-      const result = handleMailboxPayload({
-        delivery_id: failedItem.delivery_id,
-        message: failedItem.message,
-      })
-      if (result.handled) {
-        handled += 1
-        const dedupeId = failedItem.delivery_id || failedItem.message_id || result.deliveryId
-        if (dedupeId) rememberProcessedMailboxId(dedupeId)
-        if (failedItem.delivery_id) ackIds.push(failedItem.delivery_id)
-        handledItemIds.push(failedItem.id)
-      } else {
-        failed += 1
-        const reason = result.reason || failedItem.reason
-        failedItem.reason = reason
-        failedItem.last_failed_at = Date.now()
-        failureReasons.push(reason)
-      }
+    if (mailboxFailedItems.value.length > 0) {
+      await retryFailedMailboxItemsNow()
+      actions.push('Mailbox 失败队列')
     }
-    if (ackIds.length > 0) await acknowledgeMailboxDeliveries(ackIds)
-    mailboxFailedItems.value = mailboxFailedItems.value.filter((item) => !handledItemIds.includes(item.id))
-    mailboxInboxStatus.value = `失败队列重试：成功 ${handled}，失败 ${failed}`
-    mailboxInboxErrorText.value = failureReasons.slice(0, 3).join('\n')
-    mailboxFailureSummaryText.value = summarizeMailboxFailures(failureReasons)
-    appendLog(`mailbox 失败队列重试完成：${mailboxInboxStatus.value}`)
+    const pendingOutbox = outbox.value.filter((item) => item.status !== 'sent')
+    if (pendingOutbox.length > 0) {
+      for (const item of pendingOutbox) item.next_retry_at = Date.now()
+      await retryDueOutbox()
+      actions.push(`Outbox ${pendingOutbox.length} 条`)
+    }
+    if (/failed|失败/i.test(nodeSyncStatusText.value) && autoNodeSync.value && nodeSyncPeerUrl.value.trim()) {
+      await autoPullSnapshotFromPeerNode()
+      actions.push('节点快照')
+    }
+    appendLog(actions.length ? `已恢复同步失败：${actions.join('、')}` : '没有需要恢复的同步失败')
     persist()
   })
 }
@@ -4579,7 +4608,7 @@ function logout() {
 const appContext = {
   goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, myContactCardText, backupText,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, pwaStatusText, pwaBackgroundCapabilityText, webVersionText,
-  nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, syncTriggerPolicyText, syncFailureSummaryText, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
+  nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, syncTriggerPolicyText, syncFailureSummaryText, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
   enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, createMyDeviceCert, myDeviceCertJson,
