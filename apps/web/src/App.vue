@@ -2582,19 +2582,23 @@ function createAddMemberGroupEvent(userId: string) {
   })
 }
 
+function createRemoveMemberGroupEventText(userId: string) {
+  if (!activeGroup.value) throw new Error('请选择群组')
+  if (!identity.value) throw new Error('请先登录')
+  if (userId !== identity.value.user_id) throw new Error('群成员只能生成自己的退群事件，不能移除其他成员')
+  const sequence = nextGroupSequence(activeGroup.value)
+  groupEventText.value = create_group_event(
+    backupText.value,
+    passphrase.value,
+    activeGroup.value.group_id,
+    BigInt(sequence),
+    JSON.stringify({ RemoveMember: { user_id: userId } }),
+  )
+}
+
 function createRemoveMemberGroupEvent(userId: string) {
   run('生成退群事件', () => {
-    if (!activeGroup.value) throw new Error('请选择群组')
-    if (!identity.value) throw new Error('请先登录')
-    if (userId !== identity.value.user_id) throw new Error('群成员只能生成自己的退群事件，不能移除其他成员')
-    const sequence = nextGroupSequence(activeGroup.value)
-    groupEventText.value = create_group_event(
-      backupText.value,
-      passphrase.value,
-      activeGroup.value.group_id,
-      BigInt(sequence),
-      JSON.stringify({ RemoveMember: { user_id: userId } }),
-    )
+    createRemoveMemberGroupEventText(userId)
   })
 }
 
@@ -2805,21 +2809,25 @@ function applyGroupEventText() {
 
 function createGroupEventFanout() {
   run('生成群事件 fanout', () => {
-    if (!activeGroup.value) throw new Error('请选择群组')
-    if (!groupEventText.value.trim()) throw new Error('请先生成群事件')
-    const fanout = activeGroup.value.member_user_ids.map((uid) => {
-      const contact = contacts.value.find((c) => c.user_id === uid)
-      if (!contact || contact.state !== 'Friend') throw new Error(`群成员还不是好友: ${uid}`)
-      const envelope = encryptEnvelopeForContact(
-        contact,
-        `grp-${activeGroup.value!.group_id}`,
-        `${GROUP_EVENT_PAYLOAD_PREFIX}${groupEventText.value}`,
-      )
-      return { to_user_id: uid, envelope }
-    })
-    groupEventFanoutJson.value = JSON.stringify(fanout, null, 2)
-    appendLog(`✅ 已为 ${fanout.length} 个群成员生成群事件 fanout`)
+    createGroupEventFanoutRaw()
   })
+}
+
+function createGroupEventFanoutRaw() {
+  if (!activeGroup.value) throw new Error('请选择群组')
+  if (!groupEventText.value.trim()) throw new Error('请先生成群事件')
+  const fanout = activeGroup.value.member_user_ids.map((uid) => {
+    const contact = contacts.value.find((c) => c.user_id === uid)
+    if (!contact || contact.state !== 'Friend') throw new Error(`群成员还不是好友: ${uid}`)
+    const envelope = encryptEnvelopeForContact(
+      contact,
+      `grp-${activeGroup.value!.group_id}`,
+      `${GROUP_EVENT_PAYLOAD_PREFIX}${groupEventText.value}`,
+    )
+    return { to_user_id: uid, envelope }
+  })
+  groupEventFanoutJson.value = JSON.stringify(fanout, null, 2)
+  appendLog(`✅ 已为 ${fanout.length} 个群成员生成群事件 fanout`)
 }
 
 function addIncomingGroupInvite() {
@@ -2879,6 +2887,46 @@ async function removeActiveGroup() {
   activeGroupId.value = groups.value[0]?.group_id ?? ''
   appendLog(`已本地退出群聊：${name}`)
   persist()
+}
+
+async function leaveActiveGroupWithNotice() {
+  if (!activeGroup.value || !identity.value) return
+  const group = activeGroup.value
+  const ok = await showConfirm('通知退群', `生成并发送「${group.name}」退群通知，然后删除本地群消息和群密钥？`, true)
+  if (!ok) return
+  try {
+    createRemoveMemberGroupEventText(identity.value.user_id)
+    createGroupEventFanoutRaw()
+  } catch (e) {
+    const message = userFacingError(e)
+    appendLog(`❌ 生成退群通知失败：${message}`)
+    showAlert('生成退群通知失败', message, 'error')
+    return
+  }
+  try {
+    const fanout = groupEventFanoutItems.value
+    let sent = 0
+    let queued = 0
+    let failed = 0
+    for (const item of fanout) {
+      const contact = contacts.value.find((c) => c.user_id === item.to_user_id)
+      if (!contact) { failed += 1; continue }
+      const result = await deliverPayloadToContact(contact, item.envelope, '退群通知', 'group-fanout')
+      if (result === 'sent' || result === 'mailbox') sent += 1
+      else {
+        queued += 1
+        outbox.value.push(createOutboxItem(contact, item.envelope, undefined, 'group-fanout'))
+      }
+    }
+    appendLog(`退群通知发送完成：已发送 ${sent}，待发送 ${queued}，失败 ${failed}`)
+  } finally {
+    groups.value = groups.value.filter((g) => g.group_id !== group.group_id)
+    messages.value = messages.value.filter((m) => m.group_id !== group.group_id)
+    groupSenderKeys.value = groupSenderKeys.value.filter((k) => k.group_id !== group.group_id)
+    activeGroupId.value = groups.value[0]?.group_id ?? ''
+    appendLog(`已本地退出群聊：${group.name}`)
+    persist()
+  }
 }
 
 
@@ -5047,7 +5095,7 @@ const appContext = {
   newGroupName, friendContacts, selectedGroupMembers, createGroup, groups, activeGroupId,
   selectGroup, activeContact, activeGroup, activeRatchetSession, activeRatchetStatusText, activeGroupMembers, activeGroupWarningText, blockReason, blockActiveContact,
   unblockActiveContact, removeActiveContact, clearActiveConversation, createFriendRequestForActive, clearActiveFriendRequestError, createInviteForActiveGroup, groupInviteText, groupFanoutJson,
-  removeActiveGroup, messages, activeMessages, formatTime, formatDateTime, statusLabel, copyMessageEnvelope, composerText,
+  removeActiveGroup, leaveActiveGroupWithNotice, messages, activeMessages, formatTime, formatDateTime, statusLabel, copyMessageEnvelope, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
   flushOutboxForActive, retryAllOutbox, cancelOutboxForActive, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
