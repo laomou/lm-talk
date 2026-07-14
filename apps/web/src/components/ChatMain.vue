@@ -119,6 +119,13 @@ function onComposerKeydown(e: KeyboardEvent) {
 
     </section>
 
+    <section v-if="ctx.activeGroup.value && ctx.activeGroupWarningText.value" class="chat-notice-panel">
+      <div class="notice-text">
+        <b>群聊发送检查</b>
+        <span>{{ ctx.activeGroupWarningText.value }}</span>
+      </div>
+    </section>
+
     <div class="messages clean-messages" ref="messagesEl" role="log" aria-label="消息列表" aria-live="polite">
       <template v-if="ctx.activeContact.value || ctx.activeGroup.value">
         <template v-for="item in thread" :key="item.id">

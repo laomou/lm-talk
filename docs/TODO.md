@@ -76,7 +76,8 @@
 7. **群聊正式收发流程**
    - 群消息 fanout 自动对每个成员发送：WebRTC 在线直发，否则 Mailbox。
    - 群邀请、群事件、Sender Key Distribution 自动进入收件箱并应用。
-   - 群成员不是 Friend、被拉黑、缺少密钥时给出明确提示。
+   - Web 已在群聊头显示非好友、被拉黑、缺少联系人和 Sender Key 回退提示。
+   - 仍需更细的群事件 UI。
 
 8. **文件发送走正式流程**
    - 文件包生成后可自动通过 WebRTC 或 Mailbox 发送。

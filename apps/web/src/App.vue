@@ -444,6 +444,21 @@ const activeGroupMembers = computed(() => activeGroup.value
   ? activeGroup.value.member_user_ids.map((id) => contacts.value.find((c) => c.user_id === id)).filter(Boolean) as ContactItem[]
   : []
 )
+const activeGroupWarningText = computed(() => {
+  if (!activeGroup.value || !identity.value) return ''
+  const missing = activeGroup.value.member_user_ids.filter((id) => !contacts.value.some((c) => c.user_id === id))
+  const notFriend = activeGroup.value.member_user_ids.filter((id) => {
+    const contact = contacts.value.find((c) => c.user_id === id)
+    return contact && contact.state !== 'Friend'
+  })
+  const blocked = activeGroupMembers.value.filter((c) => c.state === 'Blocked').map((c) => c.display_name || c.user_id)
+  const warnings = []
+  if (missing.length > 0) warnings.push(`缺少联系人：${missing.join(', ')}`)
+  if (notFriend.length > 0) warnings.push(`非好友成员：${notFriend.join(', ')}`)
+  if (blocked.length > 0) warnings.push(`已拉黑成员：${blocked.join(', ')}`)
+  if (!getGroupSenderKey(activeGroup.value.group_id, identity.value.user_id)) warnings.push('未启用本群 Sender Key，将回退逐个加密')
+  return warnings.join('；')
+})
 const fanoutItems = computed(() => {
   try {
     const parsed = JSON.parse(groupFanoutJson.value || '[]') as Array<{ to_user_id: string; envelope: string }>
@@ -4129,7 +4144,7 @@ const appContext = {
   addIncomingFriendRequest, friendRequests, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
   newGroupName, friendContacts, selectedGroupMembers, createGroup, groups, activeGroupId,
-  selectGroup, activeContact, activeGroup, activeGroupMembers, blockReason, blockActiveContact,
+  selectGroup, activeContact, activeGroup, activeGroupMembers, activeGroupWarningText, blockReason, blockActiveContact,
   unblockActiveContact, removeActiveContact, clearActiveConversation, createFriendRequestForActive, createInviteForActiveGroup, groupInviteText, groupFanoutJson,
   removeActiveGroup, messages, activeMessages, formatTime, statusLabel, copyMessageEnvelope, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
