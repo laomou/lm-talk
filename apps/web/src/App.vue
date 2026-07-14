@@ -1455,7 +1455,7 @@ const nodeSettingsSummaryText = computed(() => {
   const entries = nodeEntries()
   if (entries.length === 0) return '未配置同步服务'
   const tokenCount = entries.filter((entry) => entry.token).length
-  return `${entries.length} 个同步服务 · 主节点 ${entries[0].url}${tokenCount ? ` · ${tokenCount} 个已配置令牌` : ''}`
+  return `${entries.length} 个同步服务 · 主节点 ${entries[0].url}${tokenCount ? ` · ${tokenCount} 个已配置令牌` : ''} · 成功节点会自动置顶`
 })
 function nodeTokenFor(url: string): string {
   const base = url.replace(/\/$/, '')
