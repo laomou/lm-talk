@@ -1,10 +1,10 @@
 # LM Talk 遗留事项 / TODO
 
 版本：v0.1  
-日期：2026-07-12  
+日期：2026-07-14  
 状态：实现同步草案
 
-本文档记录 `docs/DESIGN.md` 中尚未完全细化的设计决策、协议细节和实现前置任务。
+本文档记录 `docs/DESIGN.md` 中尚未完全细化的设计决策、协议细节、实现前置任务和少量长期边界。
 
 优先级定义：
 
@@ -14,25 +14,25 @@
 
 ---
 
-## 当前实现状态快照（2026-07-12）
+## 当前实现状态快照（2026-07-14）
 
 已完成或基本成型：
 
-- `lm_core`：身份/备份、Contact Card、好友请求/响应、DirectEnvelope、X3DH PreKey、Double Ratchet、群 Sender Key、群权限状态、文件分片加密包、本地安全策略、Outbox、MemoryStore、大小限制、测试向量。
+- `lm_core`：身份/备份、Contact Card、好友请求/响应、DirectEnvelope、X3DH PreKey、Double Ratchet、群 Sender Key、群权限状态、文件分片加密包、本地安全策略、Outbox、MemoryStore、大小限制、属性测试、跨平台测试向量。
 - `lm_wasm`：大部分 core 能力已导出，并有 smoke 测试。
 - `lm_node`：HTTP control plane、Public Peer announce、Kademlia ID/distance/closest scaffold、DHT record key/value scaffold 与控制面 store/find/closest、DHT RPC 消息/本地处理 scaffold 与 `POST /dht/rpc` 入口、closest-k replication plan 与 routing refresh target plan 及控制面 plan 端点、control-peer StoreRecord replication runner、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、独立 signed one-time prekey records 发布/同步/消费、PreKey 过期清理/轮换重置/低水位提示、snapshot sync/import、serve-control 定时 snapshot sync、控制面 token/CORS 基础安全、控制面 per-client IP 基础限流、`/control/stats` JSON 运行指标、`/control/metrics` OpenMetrics 文本导出、过期清理维护统计、状态文件原子保存。
-- 测试：`scripts/test.sh all` 当前通过 Rust 测试、core/node e2e、HTTP control flow、WASM smoke、Web build/e2e。
+- 测试：`scripts/test.sh all` 当前通过 Rust 测试、core/node e2e、HTTP control flow、WASM smoke、Web build/e2e；Web 侧补齐了 IndexedDB 持久化和 Web RNG 生成身份的真实流程验证。
 
 关键边界：
 
 - `lm_node` 仍是控制面 + snapshot sync scaffold，不是真正生产 DHT。
 - Mailbox/PreKey 可支撑 demo；Mailbox 已有基础 TTL/配额/message_id 去重、控制面 per-client IP 限流和 SQLite state_db 持久化，但仍缺完整投递回执与更强反滥用。
-- Core 协议对象已可测，但仍需属性测试、模糊测试、跨平台测试向量和安全审计。
+- Core 协议对象已可测，属性测试和跨平台测试向量已补齐，但仍需模糊测试和安全审计。
 - 本地持久化仍偏 Web IndexedDB / MemoryStore；Native node 已有 SQLite state_db，SQLCipher/客户端完整数据加密仍未实现。
 
 ---
 
-## 当前未完成功能清单（2026-07-12 更新）
+## 当前未完成功能清单（2026-07-14 更新）
 
 > 当前 `lm_core` / `lm_wasm` / `lm_node` 已具备可测试 MVP scaffold；Web 产品化流程仍是最直接的用户可用性缺口。下面按当前代码状态整理真实缺口。
 
@@ -946,66 +946,6 @@ MVP 群聊采用逐个加密。
    - [x] systemd/container 示例：见 `docs/NODE_CONFIG.md`。
    - [x] 数据备份/恢复：见 `docs/NODE_CONFIG.md`。
    - [x] 升级兼容策略：见 `docs/NODE_CONFIG.md`。
-
----
-
-## 测试计划 TODO
-
-### 单元测试
-
-必须覆盖：
-
-- [x] identity create/restore roundtrip
-- [x] wrong passphrase fails
-- [x] backup tamper fails
-- [x] contact card verify
-- [x] invalid contact card rejected
-- [x] friend request verify
-- [x] expired friend request rejected
-- [x] message encrypt/decrypt
-- [x] tampered ciphertext fails
-- [x] blocked sender dropped
-- [x] duplicate message ignored
-
----
-
-### 属性测试
-
-建议使用 `proptest`。
-
-覆盖：
-
-- [x] 任意 payload encode/decode 一致。
-- [x] 任意字节篡改导致验签或解密失败。
-- [x] 过期时间边界。
-- [x] 大小限制边界。
-
----
-
-### WASM 测试
-
-需要验证：
-
-- [x] Web RNG 可用。
-- [x] Argon2id 浏览器路径暂不要求：当前 WASM 使用 wasm-local 身份备份，native/core 继续覆盖 Argon2id 备份。
-- [x] IndexedDB 存取可用。
-- [x] WASM 与 native 生成一致 UserID。
-- [x] WASM 与 native 测试向量一致。
-
----
-
-### 跨平台测试向量
-
-必须确保以下内容跨平台一致：
-
-- [x] passphrase normalization
-- [x] backup decrypt
-- [x] UserID generation
-- [x] Contact Card signature
-- [x] Friend Request signature
-- [x] message encryption
-
----
 
 ## 法律与产品边界 TODO
 

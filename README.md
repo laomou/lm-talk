@@ -21,12 +21,12 @@
 
 ## 文档
 
-更详细的设计与规格：
+更详细的设计、规格和部署说明见 [文档索引](docs/README.md)。
 
 - [设计总览](docs/DESIGN.md)
 - [安全模型](docs/SECURITY_MODEL.md)
 - [网络与部署](docs/NETWORK_SPEC.md)
-- [身份](docs/IDENTITY_SPEC.md) · [好友](docs/FRIEND_SPEC.md) · [群组](docs/GROUP_SPEC.md) · [消息](docs/MESSAGE_SPEC.md) · [存储](docs/STORAGE_SPEC.md) · [备份](docs/BACKUP_SPEC.md)
+- [协议规格](docs/README.md#协议规格)
 
 ## 许可证
 
