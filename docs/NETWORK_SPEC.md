@@ -6,8 +6,9 @@
 - 离线投递通过已配置的 `lm_node` 控制面使用 Mailbox。
 - Outbox 重试使用指数退避：30s、2m、10m、1h、6h；默认过期时间为 7 天。
 - Snapshot sync 可以从对端节点拉取 `/sync/snapshot` 并导入本地。
+- DHT RPC 当前有 HTTP control-plane 和 libp2p request-response 两条实验性传输路径。
 
-当前节点网络仍是控制面 scaffold，具备 closest-peer 和 snapshot 支持，但不是生产级 DHT。
+当前节点网络可支撑控制面同步、Mailbox、PreKey 和实验性 libp2p DHT RPC；它仍不是生产级 DHT/relay 网络。
 
 ## 控制面鉴权模型
 

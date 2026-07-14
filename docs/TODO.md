@@ -38,38 +38,32 @@
 
 ### P0：让 Web 页面像聊天软件一样可用
 
-1. **正式网络设置区**
-   - 在主界面提供简洁设置：`lm_node 控制面 URL`、启用/停用节点、连接状态。
-   - 不依赖“Public Peer / Mailbox 协议调试”折叠面板。
-   - 设置持久化到 IndexedDB。
+1. **正式网络设置区产品化**
+   - Web 已有 `lm_node 控制面 URL`、启用/停用节点、连接状态和 IndexedDB 持久化。
+   - 仍需把入口从协议/调试语境收敛成更简洁的正式设置区。
+   - 错误提示、多个节点优先级和 token 管理需要更产品化。
 
-2. **自动发布 PreKey**
-   - 用户创建/恢复身份后可一键或自动发布自己的 PreKey Bundle 到配置的节点。
-   - UI 只显示“已发布/失败/重试”，不暴露大段 JSON。
-   - 本地保存 Private PreKey Bundle；不能发给别人。
+2. **PreKey 自动发布/补货产品化**
+   - Web 已支持自动生成并发布 PreKey Bundle 与 signed one-time-prekey records。
+   - 本地 Private PreKey Bundle 已加密持久化，节点不生成用户密钥。
+   - 仍需低水位自动补货、失败重试和更少 JSON 暴露的正式 UI。
 
-3. **添加好友后的自动安全建链**
-   - 添加联系人后，自动尝试从节点拉取对方 PreKey。
-   - 拉取成功后自动创建 X3DH Initial Message / Double Ratchet 初始状态。
+3. **添加好友后的自动安全建链产品化**
+   - Web 已能从节点拉取并消费对方 PreKey，创建 X3DH Initial Message / Double Ratchet 初始状态，并通过 Mailbox 发安全会话响应。
+   - 仍需在好友通过后的主流程中自动触发、补齐失败恢复和更清晰的状态 UI。
    - 没有节点或没有 PreKey 时，继续支持复制粘贴安全会话流程。
 
-4. **离线消息自动走 Mailbox**
-   - 单聊发送时：
-     - WebRTC DataChannel 已连接：直发。
-     - 未连接但配置了节点：自动封装 MailboxMessage 并提交 `/mailbox/push`。
-     - 都不可用：保留本地 outbox，并提示可复制密文。
-   - 消息状态区分：`queued` / `sent` / `mailbox` / `failed`。
+4. **离线消息 Mailbox 路径增强**
+   - 单聊和群 fanout 已能在 WebRTC 不可用且节点启用时通过 `/mailbox/push` 投递，并维护 `queued` / `sent` / `mailbox` / `failed` 状态。
+   - 仍需 outbox 调度器、批量重试、取消发送、失败分类和端到端送达回执。
 
-5. **自动收取 Mailbox**
-   - 登录后、切回页面、手动点击“收取消息”时调用 `/mailbox/take`。
-   - 自动解密 direct-envelope、friend request/response、group fanout、file package。
-   - 成功处理后自动 `/mailbox/ack`。
-   - UI 只显示“收到 N 条 / 已处理 N 条 / 失败 N 条”。
+5. **Mailbox 收取与处理产品化**
+   - Web 已能登录后/切回页面/手动同步时调用 `/mailbox/take`，自动处理 direct-envelope、好友请求/响应、群 fanout、文件包和安全会话 offer/response，成功后 `/mailbox/ack`。
+   - 仍需正式收件箱 UI、失败重试队列、错误分类和长期 dedupe 持久化策略。
 
-6. **好友请求走 Mailbox**
-   - 对方有 Contact Card / UserID 时，可生成好友请求并通过 Mailbox 投递。
-   - 收到好友请求后在正式“好友请求收件箱”显示。
-   - 接受/拒绝响应也可通过 Mailbox 返回。
+6. **好友请求 Mailbox UI 收口**
+   - 好友请求和接受/拒绝响应已可作为 Mailbox `Other` 载荷投递和处理。
+   - 仍需正式“好友请求收件箱”、通知和错误恢复。
 
 7. **群聊正式收发流程**
    - 群消息 fanout 自动对每个成员发送：WebRTC 在线直发，否则 Mailbox。
@@ -124,9 +118,9 @@
 
 ### P2：协议与长期增强
 
-1. **真正 DHT / Kademlia 网络**
-   - 当前 `lm_node` 是控制面 + snapshot sync scaffold，不是真正 DHT。
-   - 需要实现节点发现、closest lookup、记录复制、过期清理。
+1. **生产级 DHT / Kademlia 网络**
+   - 当前 `lm_node` 已有 HTTP control-plane DHT RPC、libp2p request-response DHT RPC、bootstrap discovery、closest-k replication 和 routing refresh scaffold。
+   - 仍需生产级查询鲁棒性、跨公网运维、Sybil/垃圾记录防护、传输安全策略和压力测试。
 
 2. **Relay / TURN 替代能力**
    - 有公网 IP 的节点可选做 bootstrap / DHT / relay / mailbox。
@@ -607,10 +601,10 @@ Web 版应明确风险。
 - X3DH initial message。
 - 发起方/响应方 shared secret 派生测试。
 
-待实现：
+当前状态与剩余事项：
 
-- prekey bundle 与 signed one-time-prekey records 可发布到 `lm_node` 控制面，并可通过 snapshot / SQLite state_db 保存和粗粒度同步；还需真正 DHT 查询/复制。
-- DHT 上如何防抢占。
+- prekey bundle 与 signed one-time-prekey records 可发布到 `lm_node` 控制面，并可通过 snapshot / SQLite state_db 保存和粗粒度同步。
+- 节点已有 HTTP control-plane 和 libp2p request-response DHT RPC scaffold；仍需把 PreKey 查询/复制接入正式产品路径，并补 DHT 抢占/垃圾记录防护。
 - one-time prekey 消费记录已实现；独立 signed one-time-prekey records 已接入节点发布/消费路径，还需多设备同步与补货协调。
 - 复制粘贴版 Ratchet DH public key 交换和 UX 串联已完成；Web 可从 lm_node 拉取 PreKey 与 selected signed OTK record，还需自动节点发现。
 - shared secret 初始化 Double Ratchet 已完成；Web 已持久化 per-contact Ratchet Session，并自动用于发送/接收。
@@ -678,9 +672,7 @@ TURN 不作为默认官方服务。
 
 ### 26. 完整数据备份
 
-当前只有身份备份包。
-
-还需要设计完整数据备份。
+Web/WASM 已有基础完整数据备份导入/导出路径：用当前身份备份包和提示词派生身份后，加密导出本地持久化状态。这里保留生产级策略和 UX 待办。
 
 包含：
 
@@ -698,6 +690,13 @@ TURN 不作为默认官方服务。
 Identity Backup：身份备份包
 Data Backup：完整本地数据备份
 ```
+
+待完成：
+
+- 备份版本迁移策略。
+- 大数据量分片或流式导出。
+- 备份文件命名、下载/导入 UX 和失败恢复。
+- 是否把节点配置、processed mailbox ids、诊断日志纳入数据备份。
 
 ---
 
