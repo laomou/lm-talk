@@ -3,6 +3,11 @@ import { ref } from 'vue'
 
 const props = defineProps<{ ctx: any }>()
 const diagnosticReport = ref('')
+const redactDiagnosticReport = ref(false)
+
+function redacted(value: string) {
+  return value ? '[已脱敏]' : ''
+}
 
 async function runDiagnostics() {
   const nav = navigator as Navigator & { serviceWorker?: ServiceWorkerContainer }
@@ -12,8 +17,8 @@ async function runDiagnostics() {
     diagnostics_version: 1,
     time: new Date().toISOString(),
     account: {
-      user_id: props.ctx.identity.value?.user_id ?? '',
-      display_name: props.ctx.displayName.value ?? '',
+      user_id: redactDiagnosticReport.value ? redacted(props.ctx.identity.value?.user_id ?? '') : props.ctx.identity.value?.user_id ?? '',
+      display_name: redactDiagnosticReport.value ? redacted(props.ctx.displayName.value ?? '') : props.ctx.displayName.value ?? '',
     },
     browser: {
       secure_context: window.isSecureContext,
@@ -25,7 +30,7 @@ async function runDiagnostics() {
     },
     sync: {
       enabled: props.ctx.nodeEnabled.value,
-      services: props.ctx.nodeUrlList(),
+      services: redactDiagnosticReport.value ? props.ctx.nodeUrlList().map(() => '[已脱敏]') : props.ctx.nodeUrlList(),
       status: props.ctx.nodeControlStatus.value,
     },
     local_counts: {
@@ -80,6 +85,10 @@ async function runDiagnostics() {
       <section class="home-card">
         <h3>一键诊断</h3>
         <p class="hint">生成只包含状态摘要的诊断报告，不会导出提示词、身份私钥或消息明文。</p>
+        <label class="check-row diagnostic-option">
+          <input v-model="redactDiagnosticReport" type="checkbox" />
+          脱敏账号和同步服务地址
+        </label>
         <div class="row compact">
           <button @click="runDiagnostics">生成诊断报告</button>
           <button class="secondary" :disabled="!diagnosticReport" @click="ctx.copyText(diagnosticReport, '诊断报告')">复制报告</button>
