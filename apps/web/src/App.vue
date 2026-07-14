@@ -392,6 +392,7 @@ const storageEstimateText = ref('尚未估算')
 const selectedFile = ref<File | null>(null)
 const filePackageText = ref('')
 const incomingFilePackageText = ref('')
+const pendingFilePackageText = ref('')
 const filePackageInfoText = ref('')
 const receivedFileName = ref('')
 const receivedFileUrl = ref('')
@@ -3803,9 +3804,11 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
       return { handled: true, deliveryId, event: 'device-revoke' }
     }
     if (parsed?.type === 'lm-file-package-v1') {
+      pendingFilePackageText.value = ciphertext
       incomingFilePackageText.value = ciphertext
       inspectIncomingFilePackage()
-      decryptIncomingFilePackage()
+      fileTransferPhase.value = '待解密'
+      rtcFileStatus.value = '收到文件包，点击后解密'
       return { handled: true, deliveryId, event: 'file' }
     }
     if (parsed?.type === 'lm-secure-session-response-v1') {
@@ -3990,7 +3993,7 @@ function inspectIncomingFilePackage() {
 function decryptIncomingFilePackage() {
   run('解密文件包', () => {
     if (!activeContact.value) throw new Error('请选择发送者联系人')
-    const text = incomingFilePackageText.value.trim() || filePackageText.value.trim()
+    const text = pendingFilePackageText.value.trim() || incomingFilePackageText.value.trim() || filePackageText.value.trim()
     if (!text) throw new Error('请粘贴文件包 JSON')
     ensureUiTextSize('文件包', text, MAX_RTC_TEXT_BYTES)
     const out = JSON.parse(decrypt_file_package(
@@ -4018,6 +4021,7 @@ function decryptIncomingFilePackage() {
         created_at: Date.now(),
       })
     }
+    pendingFilePackageText.value = ''
     fileTransferPhase.value = '已接收'
     rtcFileStatus.value = `已解密文件：${out.name}`
     appendLog(`已解密文件：${out.name}`)
@@ -4132,7 +4136,7 @@ const appContext = {
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
   flushOutboxForActive, retryAllOutbox, cancelOutboxForActive, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
   receiveEnvelope, onFileSelected, cancelSelectedFile, selectedFile, formatBytes, isDangerousFileName, createFilePackageForActive, sendFilePackageOverRtc, sendSelectedFile, filePackageText, rtcFileStatus, fileTransferPhase,
-  incomingFilePackageText, inspectIncomingFilePackage, decryptIncomingFilePackage, receivedFileUrl, receivedFileName, receivedFileMeta, receivedFileMime, filePackageInfoText,
+  incomingFilePackageText, pendingFilePackageText, inspectIncomingFilePackage, decryptIncomingFilePackage, receivedFileUrl, receivedFileName, receivedFileMeta, receivedFileMime, filePackageInfoText,
   createGroupSenderKeyForActiveGroup, groupSenderDistributionText, importGroupSenderKeyForActiveContact, groupSenderEncryptDebug, groupSenderDecryptDebug, createGroupSenderDistributionFanoutForActiveGroup,
   groupSenderDistributionFanoutJson, groupSenderDistributionFanoutItems, groupSenderEnvelopeText, groupSenderPlainText, groupRenameText, createRenameGroupEvent,
   groupEventText, applyGroupEventText, createGroupEventFanout, groupEventFanoutJson, groupEventFanoutItems, incomingGroupEventText,

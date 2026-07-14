@@ -505,6 +505,7 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 .received-file-card b { color: var(--c-ink); margin: 0; overflow-wrap: anywhere; }
 .received-file-card small { grid-column: 1; }
 .received-file-card a { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: var(--c-primary-ink); font-weight: 600; }
+.received-file-card button { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
 .received-file-preview {
   grid-column: 1 / -1;
   width: 100%;
