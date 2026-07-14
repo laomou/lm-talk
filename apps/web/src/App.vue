@@ -1452,11 +1452,17 @@ class NodeRequestError extends Error {
 function nodeEntries(): NodeEntry[] {
   return nodeControlUrl.value
     .split(/[\n,]+/)
-    .map((x) => x.trim())
-    .filter(Boolean)
-    .map((raw) => {
+    .map((x, index) => ({ raw: x.trim(), line: index + 1 }))
+    .filter((item) => item.raw)
+    .map(({ raw, line }) => {
       // 每行：<url> 或 <url>|<令牌>（令牌对应节点的 --control-token）
       const [url, token] = raw.split('|').map((s) => s.trim())
+      try {
+        const parsed = new URL(url)
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('protocol')
+      } catch {
+        throw new Error(`同步服务第 ${line} 行地址无效，请使用 http:// 或 https:// 开头的完整地址`)
+      }
       return { url, token: token || '' }
     })
     .filter((e) => e.url)
@@ -1466,7 +1472,12 @@ function nodeUrlList(): string[] {
   return nodeEntries().map((e) => e.url)
 }
 const nodeSettingsSummaryText = computed(() => {
-  const entries = nodeEntries()
+  let entries: NodeEntry[]
+  try {
+    entries = nodeEntries()
+  } catch (e) {
+    return userFacingError(e)
+  }
   if (entries.length === 0) return '未配置同步服务'
   const tokenCount = entries.filter((entry) => entry.token).length
   return `${entries.length} 个同步服务 · 主节点 ${entries[0].url}${tokenCount ? ` · ${tokenCount} 个已配置令牌` : ''} · 成功节点会自动置顶`
@@ -1480,16 +1491,27 @@ function primaryNodeUrl(): string {
   return nodeUrlList()[0] ?? ''
 }
 
-function saveNetworkSettings() {
-  const entries = nodeEntries()
-  if (entries.length > 0) nodeControlUrl.value = entries.map(nodeEntryLine).join('\n')
-  persist()
-  appendLog(`✅ 已保存消息同步设置：${nodeEnabled.value ? '启用' : '停用'} ${entries.length ? `${entries.length} 个节点` : '未填写节点'}`)
+function saveNetworkSettings(): boolean {
+  try {
+    const entries = nodeEntries()
+    if (entries.length > 0) nodeControlUrl.value = entries.map(nodeEntryLine).join('\n')
+    persist()
+    appendLog(`✅ 已保存消息同步设置：${nodeEnabled.value ? '启用' : '停用'} ${entries.length ? `${entries.length} 个节点` : '未填写节点'}`)
+    return true
+  } catch (e) {
+    const message = userFacingError(e)
+    appendLog(`❌ 保存消息同步设置: ${message}`)
+    showAlert('保存消息同步设置', message, 'error')
+    return false
+  }
 }
 
 function toggleNodeEnabled() {
   nodeEnabled.value = !nodeEnabled.value
-  saveNetworkSettings()
+  if (!saveNetworkSettings()) {
+    nodeEnabled.value = !nodeEnabled.value
+    return
+  }
   if (nodeEnabled.value) void checkNodeHealth()
 }
 
