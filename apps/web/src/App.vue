@@ -1209,7 +1209,7 @@ function downloadText(value: string, filename: string) {
 
 async function afterLoginAutomation() {
   if (!nodeEnabled.value) return
-  if (autoPublishPreKey.value) await publishPreKeyToNode()
+  if (autoPublishPreKey.value) await ensurePreKeyInventory()
   if (autoMailboxTake.value) await takeMailboxFromNode()
 }
 
@@ -1221,7 +1221,7 @@ async function syncNow() {
   }
   appendLog('🔄 开始消息同步')
   try {
-    if (autoPublishPreKey.value) await publishPreKeyToNode()
+    if (autoPublishPreKey.value) await ensurePreKeyInventory()
     await takeMailboxFromNode()
     appendLog('✅ 消息同步完成')
   } catch (e) {
@@ -1285,7 +1285,7 @@ function toggleNodeEnabled() {
 
 async function autoPublishPreKeyIfEnabled() {
   if (!nodeEnabled.value || !autoPublishPreKey.value || !loggedIn.value) return
-  await publishPreKeyToNode()
+  await ensurePreKeyInventory()
 }
 
 async function pushMailboxPayload(to: ContactItem, kind: string, payload: string): Promise<string> {
@@ -3590,11 +3590,33 @@ async function publishPreKeyBundlePayload(): Promise<any> {
   })
 }
 
+async function fetchOwnPreKeyStatus(): Promise<any> {
+  const userId = identity.value?.user_id
+  if (!userId) throw new Error('需要当前身份')
+  return nodeFetchJson(`/prekey/status?user_id=${encodeURIComponent(userId)}`)
+}
+
+async function ensurePreKeyInventory() {
+  if (!identity.value) throw new Error('需要当前身份')
+  const status = await fetchOwnPreKeyStatus()
+  const missing = status?.found === false
+  const low = Boolean(status?.low_one_time_prekeys || status?.replenishment_required)
+  if (!missing && !low) {
+    nodePreKeyStatusText.value = JSON.stringify(status, null, 2)
+    prekeyStatusSummary.value = summarizePreKeyStatus(status)
+    return
+  }
+  if (missing && !prekeyBundleText.value.trim()) createMyPreKeyBundleText()
+  if (low) createMyPreKeyBundleText()
+  const body = await publishPreKeyBundlePayload()
+  nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
+  prekeyStatusSummary.value = `${summarizePreKeyStatus(body)}，${missing ? '已自动发布' : '已自动补货'}`
+  appendLog(missing ? '✅ PreKey 已自动发布到节点' : '✅ PreKey one-time key 已自动补货')
+}
+
 async function refreshPreKeyStatusFromNode() {
   await runAsync('刷新 PreKey 状态', async () => {
-    const userId = identity.value?.user_id
-    if (!userId) throw new Error('需要当前身份')
-    const body = await nodeFetchJson(`/prekey/status?user_id=${encodeURIComponent(userId)}`)
+    const body = await fetchOwnPreKeyStatus()
     nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
     prekeyStatusSummary.value = summarizePreKeyStatus(body)
   })
@@ -3602,19 +3624,7 @@ async function refreshPreKeyStatusFromNode() {
 
 async function replenishPreKeyIfLow() {
   await runAsync('检查并补货 PreKey', async () => {
-    const userId = identity.value?.user_id
-    if (!userId) throw new Error('需要当前身份')
-    const status = await nodeFetchJson(`/prekey/status?user_id=${encodeURIComponent(userId)}`)
-    if (!status?.low_one_time_prekeys && !status?.replenishment_required) {
-      nodePreKeyStatusText.value = JSON.stringify(status, null, 2)
-      prekeyStatusSummary.value = summarizePreKeyStatus(status)
-      return
-    }
-    createMyPreKeyBundleText()
-    const body = await publishPreKeyBundlePayload()
-    nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
-    prekeyStatusSummary.value = `${summarizePreKeyStatus(body)}，已自动补货`
-    appendLog('✅ PreKey one-time key 已自动补货')
+    await ensurePreKeyInventory()
   })
 }
 
