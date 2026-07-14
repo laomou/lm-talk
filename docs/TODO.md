@@ -961,7 +961,7 @@ MVP 群聊采用逐个加密。
 - contact card verify
 - invalid contact card rejected
 - friend request verify
-- expired friend request rejected
+- [x] expired friend request rejected
 - message encrypt/decrypt
 - tampered ciphertext fails
 - blocked sender dropped

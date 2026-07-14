@@ -291,4 +291,13 @@ mod tests {
         request.note = Some("changed".into());
         assert_eq!(request.verify().unwrap_err(), LmError::InvalidSignature);
     }
+
+    #[test]
+    fn expired_friend_request_is_rejected() {
+        let (alice, _a) = Identity::create_with_passphrase("alice").unwrap();
+        let (bob, _b) = Identity::create_with_passphrase("bob").unwrap();
+        let bob_card = bob.export_contact_card(None, None, vec![]).unwrap();
+        let request = FriendRequest::new(&bob, alice.user_id().clone(), bob_card, None, 0).unwrap();
+        assert_eq!(request.verify().unwrap_err(), LmError::ExpiredObject);
+    }
 }
