@@ -179,12 +179,14 @@ function openGroupDetail(groupId: string) {
           <div class="detail-hero-text">
             <h2>{{ ctx.activeContact.value.display_name || '未命名' }}</h2>
             <small>{{ stateLabel(ctx.activeContact.value.state) }} · {{ ctx.activeContact.value.user_id }}</small>
+            <small v-if="ctx.activeContact.value.state === 'Friend'">端到端会话：{{ ctx.activeRatchetStatusText.value }}</small>
             <small v-if="ctx.activeContact.value.last_friend_request_error" class="danger-text">好友请求失败：{{ ctx.activeContact.value.last_friend_request_error }}</small>
           </div>
         </div>
         <div class="detail-body">
           <div class="row detail-actions">
             <button @click="ctx.goChatPage()">发消息</button>
+            <button v-if="ctx.activeContact.value.state === 'Friend' && !ctx.activeRatchetSession.value" class="secondary" @click="ctx.recreateActiveRatchetSession">本地建链</button>
             <button class="secondary" @click="ctx.showQr(ctx.activeContact.value.contact_card_text, '好友身份')">查看名片</button>
             <button v-if="ctx.activeContact.value.state !== 'Blocked'" class="secondary" @click="ctx.blockActiveContact">拉黑</button>
             <button v-else class="secondary" @click="ctx.unblockActiveContact">解除拉黑</button>

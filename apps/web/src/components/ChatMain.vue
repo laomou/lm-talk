@@ -81,6 +81,7 @@ function onComposerKeydown(e: KeyboardEvent) {
         <small v-else-if="ctx.activeContact.value.state === 'RequestSent'">等待对方通过</small>
         <small v-else-if="ctx.activeContact.value.state === 'Blocked'">已拉黑</small>
         <small v-else>还不是好友</small>
+        <small v-if="ctx.activeContact.value.state === 'Friend'">端到端会话：{{ ctx.activeRatchetStatusText.value }}</small>
       </div>
       <div v-else-if="ctx.activeGroup.value" class="chat-title-block">
         <h2>{{ ctx.activeGroup.value.name }}</h2>
@@ -94,6 +95,7 @@ function onComposerKeydown(e: KeyboardEvent) {
         <small v-if="activeOutboxError" class="outbox-error">{{ activeOutboxError }}</small>
         <button v-if="activePendingOutboxCount" class="secondary" @click="ctx.flushOutboxForActive">重发 {{ activePendingOutboxCount }}</button>
         <button v-if="activePendingOutboxCount" class="secondary danger" @click="ctx.cancelOutboxForActive">取消发送</button>
+        <button v-if="ctx.activeContact.value?.state === 'Friend' && !ctx.activeRatchetSession.value" class="secondary" @click="ctx.recreateActiveRatchetSession">本地建链</button>
         <button class="secondary danger" @click="ctx.clearActiveConversation">清空聊天</button>
       </div>
     </header>

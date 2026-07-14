@@ -448,6 +448,12 @@ let dc: RTCDataChannel | null = null
 const normalized = computed(() => ready.value ? normalize_passphrase(passphrase.value) : '')
 const activeContact = computed(() => contacts.value.find((c) => c.user_id === activePeerId.value) ?? null)
 const activeGroup = computed(() => groups.value.find((g) => g.group_id === activeGroupId.value) ?? null)
+const activeRatchetSession = computed(() => activeContact.value ? ratchetSessionFor(activeContact.value.user_id) : null)
+const activeRatchetStatusText = computed(() => {
+  if (!activeContact.value) return ''
+  if (activeContact.value.state !== 'Friend') return '未建链'
+  return activeRatchetSession.value ? '已建链' : '未建链'
+})
 const activeMessages = computed(() => activeGroup.value
   ? messages.value.filter((m) => m.group_id === activeGroup.value?.group_id)
   : messages.value.filter((m) => m.peer_user_id === activePeerId.value)
@@ -2474,6 +2480,23 @@ function createFriendRequestForActive() {
   })
 }
 
+function recreateActiveRatchetSession() {
+  run('重建 Ratchet 会话', () => {
+    if (!activeContact.value) throw new Error('请选择联系人')
+    if (activeContact.value.state !== 'Friend') throw new Error('联系人还不是 Friend')
+    if (!activeContact.value.contact_card_text) throw new Error('缺少联系人名片')
+    const out = JSON.parse(create_ratchet_session_pair(myContactCardText.value, activeContact.value.contact_card_text)) as {
+      local_state_text: string
+      remote_state_text: string
+    }
+    ratchetStateText.value = out.local_state_text
+    ratchetPeerStateText.value = out.remote_state_text
+    saveRatchetSession(activeContact.value.user_id, out.local_state_text)
+    secureSessionStatusText.value = '已重建本地 Ratchet Session。'
+    persist()
+  })
+}
+
 
 function ratchetSessionFor(userId: string): RatchetSessionItem | null {
   return ratchetSessions.value.find((r) => r.peer_user_id === userId) ?? null
@@ -4271,14 +4294,14 @@ const appContext = {
   nodeControlUrl, nodeUrlList, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
   enableNotifications, notificationPermission, runtimeStatusText, refreshRuntimeStatus,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
-  secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, createMyDeviceCert, myDeviceCertJson,
+  secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, createMyDeviceCert, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
   exportFullDataBackup, importFullDataBackup, downloadText, addContactText, addContact, incomingFriendRequestText,
   addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
   restoreQuarantinedFriendRequest, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
   newGroupName, friendContacts, selectedGroupMembers, createGroup, groups, activeGroupId,
-  selectGroup, activeContact, activeGroup, activeGroupMembers, activeGroupWarningText, blockReason, blockActiveContact,
+  selectGroup, activeContact, activeGroup, activeRatchetSession, activeRatchetStatusText, activeGroupMembers, activeGroupWarningText, blockReason, blockActiveContact,
   unblockActiveContact, removeActiveContact, clearActiveConversation, createFriendRequestForActive, createInviteForActiveGroup, groupInviteText, groupFanoutJson,
   removeActiveGroup, messages, activeMessages, formatTime, statusLabel, copyMessageEnvelope, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
