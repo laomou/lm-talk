@@ -3556,15 +3556,19 @@ async function publishPreKeyToNode() {
   await runAsync('发布 PreKey Bundle 到 lm_node', async () => {
     if (!prekeyBundleText.value.trim()) createMyPreKeyBundleText()
     if (!prekeyBundleText.value.trim()) throw new Error('请先生成 PreKey Bundle')
-    const body = await nodeFetchJson('/prekey/publish', {
-      method: 'POST',
-      body: JSON.stringify({
-        prekey_bundle_text: prekeyBundleText.value,
-        signed_one_time_prekey_record_texts: prekeySignedOneTimeRecordTexts.value,
-      }),
-    })
+    const body = await publishPreKeyBundlePayload()
     nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
     prekeyStatusSummary.value = summarizePreKeyStatus(body)
+  })
+}
+
+async function publishPreKeyBundlePayload(): Promise<any> {
+  return nodeFetchJson('/prekey/publish', {
+    method: 'POST',
+    body: JSON.stringify({
+      prekey_bundle_text: prekeyBundleText.value,
+      signed_one_time_prekey_record_texts: prekeySignedOneTimeRecordTexts.value,
+    }),
   })
 }
 
@@ -3575,6 +3579,24 @@ async function refreshPreKeyStatusFromNode() {
     const body = await nodeFetchJson(`/prekey/status?user_id=${encodeURIComponent(userId)}`)
     nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
     prekeyStatusSummary.value = summarizePreKeyStatus(body)
+  })
+}
+
+async function replenishPreKeyIfLow() {
+  await runAsync('检查并补货 PreKey', async () => {
+    const userId = identity.value?.user_id
+    if (!userId) throw new Error('需要当前身份')
+    const status = await nodeFetchJson(`/prekey/status?user_id=${encodeURIComponent(userId)}`)
+    if (!status?.low_one_time_prekeys && !status?.replenishment_required) {
+      nodePreKeyStatusText.value = JSON.stringify(status, null, 2)
+      prekeyStatusSummary.value = summarizePreKeyStatus(status)
+      return
+    }
+    createMyPreKeyBundleText()
+    const body = await publishPreKeyBundlePayload()
+    nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
+    prekeyStatusSummary.value = `${summarizePreKeyStatus(body)}，已自动补货`
+    appendLog('✅ PreKey one-time key 已自动补货')
   })
 }
 
@@ -4127,7 +4149,7 @@ const appContext = {
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
   ratchetDhStepText, saveSafetyPolicy, createPeerAnnounceText, inspectPeerAnnounceText, createPublicPeerAnnounceText, inspectPublicPeerAnnounceText,
   createMailboxMessageText, inspectMailboxMessageText, checkNodeHealth, submitPublicPeerToNode, pushMailboxToNode, queryNodeClosestPeers,
-  takeMailboxFromNode, processMailboxTakeInfoText, publishPreKeyToNode, refreshPreKeyStatusFromNode, fetchPreKeyFromNode, consumePreKeyFromNode, exportNodeSnapshot,
+  takeMailboxFromNode, processMailboxTakeInfoText, publishPreKeyToNode, refreshPreKeyStatusFromNode, replenishPreKeyIfLow, fetchPreKeyFromNode, consumePreKeyFromNode, exportNodeSnapshot,
   importNodeSnapshot, pullSnapshotFromPeerNode,
 
 }
