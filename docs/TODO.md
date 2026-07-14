@@ -998,7 +998,7 @@ MVP 群聊采用逐个加密。
 
 必须确保以下内容跨平台一致：
 
-- passphrase normalization
+- [x] passphrase normalization
 - backup decrypt
 - UserID generation
 - Contact Card signature
