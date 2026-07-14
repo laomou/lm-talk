@@ -436,6 +436,7 @@ const prekeyAutoErrorText = ref('')
 const nodeSyncPeerUrl = ref('http://127.0.0.1:8788')
 const nodeSyncSnapshotText = ref('')
 const nodeSyncStatusText = ref('')
+const syncRecoveryStatusText = ref('尚未恢复')
 const syncFailureSummaryText = computed(() => {
   const parts: string[] = []
   if (prekeyAutoErrorText.value) parts.push(`PreKey：${prekeyAutoErrorText.value}`)
@@ -4292,24 +4293,31 @@ async function retryFailedMailboxItems() {
 async function recoverSyncFailures() {
   await runAsync('恢复同步失败', async () => {
     const actions: string[] = []
+    const results: string[] = []
     if (prekeyAutoErrorText.value) {
       await ensurePreKeyInventory()
       actions.push('PreKey')
+      results.push('PreKey 已重试')
     }
     if (mailboxFailedItems.value.length > 0) {
-      await retryFailedMailboxItemsNow()
+      const result = await retryFailedMailboxItemsNow()
       actions.push('Mailbox 失败队列')
+      results.push(`Mailbox 成功 ${result.handled}，失败 ${result.failed}`)
     }
     const pendingOutbox = outbox.value.filter((item) => item.status !== 'sent')
     if (pendingOutbox.length > 0) {
       for (const item of pendingOutbox) item.next_retry_at = Date.now()
       await retryDueOutbox()
       actions.push(`Outbox ${pendingOutbox.length} 条`)
+      const remaining = outbox.value.filter((item) => item.status !== 'sent').length
+      results.push(`Outbox 已触发 ${pendingOutbox.length}，剩余 ${remaining}`)
     }
     if (/failed|失败/i.test(nodeSyncStatusText.value) && autoNodeSync.value && nodeSyncPeerUrl.value.trim()) {
       await autoPullSnapshotFromPeerNode()
       actions.push('节点快照')
+      results.push('节点快照已重试')
     }
+    syncRecoveryStatusText.value = results.length ? results.join('；') : '没有需要恢复的同步失败'
     appendLog(actions.length ? `已恢复同步失败：${actions.join('、')}` : '没有需要恢复的同步失败')
     persist()
   })
@@ -4608,7 +4616,7 @@ function logout() {
 const appContext = {
   goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, myContactCardText, backupText,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, pwaStatusText, pwaBackgroundCapabilityText, webVersionText,
-  nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, syncTriggerPolicyText, syncFailureSummaryText, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
+  nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
   enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, createMyDeviceCert, myDeviceCertJson,
