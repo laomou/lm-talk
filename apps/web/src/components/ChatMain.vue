@@ -18,6 +18,10 @@ function dayLabel(ts: number) {
   if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}月${d.getDate()}日`
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
 }
+function shortMessageId(value?: string) {
+  if (!value) return ''
+  return value.length > 12 ? `${value.slice(0, 6)}…${value.slice(-4)}` : value
+}
 
 // 把消息序列展开成「日期分割线 + 气泡」的渲染项
 const thread = computed(() => {
@@ -136,7 +140,10 @@ function onComposerKeydown(e: KeyboardEvent) {
           <div v-else class="bubble" :class="item.m.direction">
             <small v-if="ctx.activeGroup.value && item.m.direction !== 'out'" class="bubble-sender">{{ contactName(item.m.peer_user_id) }}</small>
             <div class="text">{{ item.m.text }}</div>
-            <small class="bubble-meta">{{ hmTime(item.m.created_at) }} · {{ ctx.statusLabel(item.m.status) }}</small>
+            <small class="bubble-meta">
+              {{ hmTime(item.m.created_at) }} · {{ ctx.statusLabel(item.m.status) }}
+              <span v-if="item.m.direction === 'out' && item.m.protocol_message_id"> · {{ shortMessageId(item.m.protocol_message_id) }}</span>
+            </small>
           </div>
         </template>
         <div v-if="ctx.activeMessages.value.length === 0" class="empty center">还没有消息</div>
