@@ -186,6 +186,7 @@ function onComposerKeydown(e: KeyboardEvent) {
         <button v-if="activeFileOutboxError" class="secondary" @click="ctx.flushOutboxForActive">重试文件</button>
         <div v-if="ctx.pendingFilePackageText.value && !ctx.receivedFileUrl.value" class="received-file-card">
           <b>收到文件包</b>
+          <small v-if="ctx.pendingFileMeta.value">{{ ctx.pendingFileMeta.value }}</small>
           <small>文件尚未解密，确认来源可信后再打开。</small>
           <button class="secondary" @click="ctx.decryptIncomingFilePackage">解密文件</button>
         </div>

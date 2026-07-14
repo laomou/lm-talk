@@ -483,6 +483,7 @@ const selectedFile = ref<File | null>(null)
 const filePackageText = ref('')
 const incomingFilePackageText = ref('')
 const pendingFilePackageText = ref('')
+const pendingFileMeta = ref('')
 const filePackageInfoText = ref('')
 const receivedFileName = ref('')
 const receivedFileUrl = ref('')
@@ -4688,6 +4689,7 @@ function cancelSelectedFile() {
   selectedFile.value = null
   filePackageText.value = ''
   filePackageInfoText.value = ''
+  pendingFileMeta.value = ''
   fileProgressText.value = ''
   fileTransferPhase.value = '待选择'
   rtcFileStatus.value = '未发送文件'
@@ -4768,7 +4770,14 @@ function inspectIncomingFilePackage() {
     const text = incomingFilePackageText.value.trim() || filePackageText.value.trim()
     if (!text) throw new Error('请粘贴文件包 JSON')
     ensureUiTextSize('文件包', text, MAX_RTC_TEXT_BYTES)
-    filePackageInfoText.value = JSON.stringify(JSON.parse(inspect_file_package(text)), null, 2)
+    const info = JSON.parse(inspect_file_package(text)) as { manifest?: { name?: string; mime_type?: string; size?: number } }
+    filePackageInfoText.value = JSON.stringify(info, null, 2)
+    const manifest = info.manifest
+    if (manifest) {
+      const packageBytes = new TextEncoder().encode(text).byteLength
+      pendingFileMeta.value = `${manifest.name || '未命名文件'} · ${manifest.mime_type || 'application/octet-stream'} · ${formatBytes(manifest.size ?? 0)} · 加密包 ${formatBytes(packageBytes)}`
+      fileProgressText.value = `待解密 · 加密包 ${formatBytes(packageBytes)}`
+    }
   })
 }
 
@@ -4805,6 +4814,7 @@ function decryptIncomingFilePackage() {
       })
     }
     pendingFilePackageText.value = ''
+    pendingFileMeta.value = ''
     fileTransferPhase.value = '已接收'
     rtcFileStatus.value = `已解密文件：${out.name}`
     appendLog(`已解密文件：${out.name}`)
@@ -4941,7 +4951,7 @@ const appContext = {
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
   flushOutboxForActive, retryAllOutbox, cancelOutboxForActive, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
   receiveEnvelope, onFileSelected, cancelSelectedFile, selectedFile, formatBytes, isDangerousFileName, createFilePackageForActive, sendFilePackageOverRtc, sendSelectedFile, filePackageText, rtcFileStatus, fileTransferPhase, fileProgressText,
-  incomingFilePackageText, pendingFilePackageText, inspectIncomingFilePackage, decryptIncomingFilePackage, receivedFileUrl, receivedFileName, receivedFileMeta, receivedFileMime, receivedFilePreviewKind, filePackageInfoText,
+  incomingFilePackageText, pendingFilePackageText, pendingFileMeta, inspectIncomingFilePackage, decryptIncomingFilePackage, receivedFileUrl, receivedFileName, receivedFileMeta, receivedFileMime, receivedFilePreviewKind, filePackageInfoText,
   createGroupSenderKeyForActiveGroup, groupSenderDistributionText, importGroupSenderKeyForActiveContact, groupSenderEncryptDebug, groupSenderDecryptDebug, createGroupSenderDistributionFanoutForActiveGroup,
   groupSenderDistributionFanoutJson, groupSenderDistributionFanoutItems, groupSenderEnvelopeText, groupSenderPlainText, groupRenameText, createRenameGroupEvent,
   groupEventText, applyGroupEventText, createGroupEventFanout, groupEventFanoutJson, groupEventFanoutItems, incomingGroupEventText, clearActiveGroupEventError,
