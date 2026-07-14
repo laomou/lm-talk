@@ -22,6 +22,15 @@ function shortMessageId(value?: string) {
   if (!value) return ''
   return value.length > 12 ? `${value.slice(0, 6)}…${value.slice(-4)}` : value
 }
+function mailboxWaitText(message: any) {
+  if (message.status !== 'mailbox' || message.direction !== 'out') return ''
+  const elapsedMs = Math.max(0, Date.now() - (message.created_at ?? Date.now()))
+  const minutes = Math.floor(elapsedMs / 60_000)
+  if (minutes < 1) return '等待收取 <1 分钟'
+  if (minutes < 60) return `等待收取 ${minutes} 分钟`
+  const hours = Math.floor(minutes / 60)
+  return `等待收取 ${hours} 小时`
+}
 
 // 把消息序列展开成「日期分割线 + 气泡」的渲染项
 const thread = computed(() => {
@@ -168,6 +177,7 @@ function onComposerKeydown(e: KeyboardEvent) {
             <div class="text">{{ item.m.text }}</div>
             <small class="bubble-meta">
               {{ hmTime(item.m.created_at) }} · {{ ctx.statusLabel(item.m.status) }}
+              <span v-if="mailboxWaitText(item.m)"> · {{ mailboxWaitText(item.m) }}</span>
               <span v-if="item.m.direction === 'out' && item.m.protocol_message_id"> · {{ shortMessageId(item.m.protocol_message_id) }}</span>
             </small>
           </div>
