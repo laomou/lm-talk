@@ -116,6 +116,7 @@ type ContactItem = ContactInfo & {
   state: 'LocalOnly' | 'RequestSent' | 'RequestReceived' | 'Friend' | 'Rejected' | 'Blocked'
   pending_request_id?: string
   last_friend_request_error?: string
+  last_secure_session_error?: string
   revoked_device_ids?: string[]
   device_certs?: DeviceCertItem[]
   block_reason?: string
@@ -1524,7 +1525,13 @@ async function ensureRatchetSessionFromNode(contact: ContactItem): Promise<boole
     created_at: Date.now(),
   }
   secureSessionResponseText.value = JSON.stringify(response, null, 2)
-  await pushMailboxPayload(contact, 'other', secureSessionResponseText.value)
+  try {
+    await pushMailboxPayload(contact, 'other', secureSessionResponseText.value)
+    contact.last_secure_session_error = undefined
+  } catch (e) {
+    recordSecureSessionError(contact, e, '⚠️ 安全会话 Response 发送失败')
+    throw e
+  }
   appendLog(`✅ 已从节点拉取 PreKey 并为 ${contact.display_name || contact.user_id} 建立会话初始化消息`)
   persist()
   return true
@@ -1879,15 +1886,19 @@ function acceptInboxRequest(req: FriendRequestItem) {
     persist()
     if (nodeEnabled.value) {
       void pushMailboxPayload(contact, 'other', response)
-        .then(() => {
+        .then(async () => {
           appendLog('✅ 已通过好友请求')
           toast('已添加好友', 'success')
-          return sendSecureSessionOfferToContact(contact)
+          try {
+            await sendSecureSessionOfferToContact(contact)
+          } catch (e) {
+            showAlert('已添加好友，但自动建链失败', userFacingError(e), 'warning')
+          }
         })
         .catch((e) => {
           const message = userFacingError(e)
           appendLog(`⚠️ 好友确认发送失败：${message}`)
-          showAlert('已添加好友，但自动建链失败', message, 'warning')
+          showAlert('已添加好友，但好友确认发送失败', message, 'warning')
         })
     } else {
       toast('已添加好友', 'success')
@@ -2501,6 +2512,7 @@ function recreateActiveRatchetSession() {
     ratchetStateText.value = out.local_state_text
     ratchetPeerStateText.value = out.remote_state_text
     saveRatchetSession(activeContact.value.user_id, out.local_state_text)
+    activeContact.value.last_secure_session_error = undefined
     secureSessionStatusText.value = '已重建本地 Ratchet Session。'
     persist()
   })
@@ -2516,6 +2528,13 @@ function saveRatchetSession(userId: string, stateText: string) {
   const index = ratchetSessions.value.findIndex((r) => r.peer_user_id === userId)
   if (index >= 0) ratchetSessions.value[index] = item
   else ratchetSessions.value.push(item)
+}
+
+function recordSecureSessionError(contact: ContactItem, error: unknown, logPrefix: string) {
+  const message = userFacingError(error)
+  contact.last_secure_session_error = message
+  persist()
+  appendLog(`${logPrefix}：${message}`)
 }
 
 function encryptEnvelopeForContact(contact: ContactItem, conversationId: string, text: string): string {
@@ -3210,8 +3229,15 @@ function buildSecureSessionOfferForContact(contact: ContactItem): string {
 
 async function sendSecureSessionOfferToContact(contact: ContactItem) {
   const offer = buildSecureSessionOfferForContact(contact)
-  await pushMailboxPayload(contact, 'other', offer)
+  try {
+    await pushMailboxPayload(contact, 'other', offer)
+    contact.last_secure_session_error = undefined
+  } catch (e) {
+    recordSecureSessionError(contact, e, '⚠️ 安全会话 Offer 发送失败')
+    throw e
+  }
   appendLog(`✅ 已向 ${contact.display_name || contact.user_id} 发送安全会话 Offer`)
+  persist()
 }
 
 function createSecureSessionOfferText() {
@@ -3269,6 +3295,7 @@ function applySecureSessionOfferText() {
     )
     ratchetStateText.value = stateText
     saveRatchetSession(offer.from_user_id, stateText)
+    contact.last_secure_session_error = undefined
     const response: SecureSessionResponse = {
       type: 'lm-secure-session-response-v1',
       version: 1,
@@ -3320,6 +3347,7 @@ function applySecureSessionResponseText() {
     )
     ratchetStateText.value = stateText
     saveRatchetSession(response.from_user_id, stateText)
+    contact.last_secure_session_error = undefined
     secureSessionStatusText.value = '已应用 Response，双方现在应该都有 Ratchet Session。后续聊天会自动优先使用 Double Ratchet。'
     incomingSecureSessionText.value = ''
     inspectRatchetStateText()
