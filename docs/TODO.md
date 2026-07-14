@@ -36,7 +36,7 @@
 
 > 当前 `lm_core` / `lm_wasm` / `lm_node` 已具备可测试 MVP scaffold；Web 产品化流程仍是最直接的用户可用性缺口。下面按当前代码状态整理真实缺口。
 
-### P0：让 Web 页面像聊天软件一样可用
+### 已有基础路径但需产品化
 
 1. **正式网络设置区产品化**
    - Web 已有 `lm_node 控制面 URL`、启用/停用节点、连接状态和 IndexedDB 持久化。
@@ -64,6 +64,8 @@
 6. **好友请求 Mailbox UI 收口**
    - 好友请求和接受/拒绝响应已可作为 Mailbox `Other` 载荷投递和处理。
    - 仍需正式“好友请求收件箱”、通知和错误恢复。
+
+### P0：让 Web 页面像聊天软件一样可用
 
 7. **群聊正式收发流程**
    - 群消息 fanout 自动对每个成员发送：WebRTC 在线直发，否则 Mailbox。
@@ -921,13 +923,13 @@ MVP 群聊采用逐个加密。
 建议下一步优先完成：
 
 ```text
-1. Web 正式网络设置区：lm_node URL、启停、连接状态。
-2. PreKey 自动发布/拉取/补货：隐藏 JSON 调试细节，保留 private bundle 本地加密保存。
-3. 添加好友后自动 X3DH + Double Ratchet 建链，失败时回退复制粘贴流程。
-4. Mailbox 自动发送、收取、解密、ack、去重和失败重试。
+1. Web 同步设置产品化：多节点、token、连接状态和错误提示。
+2. PreKey 自动补货与失败重试：低水位提示、隐藏 JSON 调试细节。
+3. 好友通过后自动 X3DH + Double Ratchet 建链：失败时回退复制粘贴流程。
+4. Mailbox 产品化：正式收件箱、失败重试、长期去重和送达回执。
 5. 本地数据应用层加密增强：迁移策略、错误恢复、更多字段覆盖。
-6. Native node 正式持久化：SQLite/SQLCipher 或等价数据库，含过期清理和崩溃恢复测试。
-7. 节点自动同步增强：配置 schema 文档、token 轮换、同步状态指标细化；后续替换为 DHT replication。
+6. Native node 持久化增强：SQLCipher 或等价数据库加密、备份演练和运维指标。
+7. 节点自动同步增强：token 轮换、同步状态指标细化、libp2p DHT transport 产品化。
 8. Outbox 调度器：指数退避、取消发送、过期、delivery status。
 9. 协议稳定化：错误码、对象大小限制、Contact Card 更新策略、PreKey 轮换策略。
 10. 安全测试增强：fuzz、ratchet replay/window/skipped-key 不变量、外部安全审计。
