@@ -231,6 +231,11 @@ type MailboxFailedItem = {
   retry_count: number
 }
 
+type ProcessedMailboxRecord = {
+  id: string
+  processed_at: number
+}
+
 type PersistedState = {
   backupText: string
   contacts: ContactItem[]
@@ -253,7 +258,7 @@ type PersistedState = {
   autoMailboxTake?: boolean
   autoPublishPreKey?: boolean
   autoNodeSync?: boolean
-  processedMailboxIds?: string[]
+  processedMailboxIds?: Array<string | ProcessedMailboxRecord>
   mailboxFailedItems?: MailboxFailedItem[]
   syncRecoveryHistory?: string[]
   friendRequestRateRecords?: FriendRequestRateRecord[]
@@ -273,7 +278,7 @@ type PersistedMeta = {
   autoMailboxTake?: boolean
   autoPublishPreKey?: boolean
   autoNodeSync?: boolean
-  processedMailboxIds?: string[]
+  processedMailboxIds?: Array<string | ProcessedMailboxRecord>
   mailboxFailedItems?: MailboxFailedItem[]
   syncRecoveryHistory?: string[]
   friendRequestRateRecords?: FriendRequestRateRecord[]
@@ -319,6 +324,8 @@ const FRIEND_REQUEST_RATE_WINDOW_MS = 10 * 60 * 1000
 const FRIEND_REQUEST_RATE_LIMIT = 3
 const FRIEND_REQUEST_LONG_RATE_WINDOW_MS = 24 * 60 * 60 * 1000
 const FRIEND_REQUEST_LONG_RATE_LIMIT = 5
+const MAILBOX_DEDUPE_MAX_RECORDS = 1000
+const MAILBOX_DEDUPE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 const MAX_SIGNAL_BYTES = 256 * 1024
 const MAX_FILE_BYTES = 16 * 1024 * 1024
 const MAX_RTC_TEXT_BYTES = MAX_FILE_BYTES * 3
@@ -358,7 +365,7 @@ const groupSenderKeys = ref<GroupSenderKeyItem[]>([])
 const messages = ref<ChatMessage[]>([])
 const outbox = ref<OutboxItem[]>([])
 const ratchetSessions = ref<RatchetSessionItem[]>([])
-const processedMailboxIds = ref<string[]>([])
+const processedMailboxIds = ref<ProcessedMailboxRecord[]>([])
 const mailboxFailedItems = ref<MailboxFailedItem[]>([])
 let outboxRetryTimer: number | undefined
 let lastDeliveryError = ''
@@ -441,7 +448,7 @@ const mailboxInboxErrorText = ref('')
 const mailboxFailureSummaryText = ref('')
 const mailboxDedupeCount = computed(() => processedMailboxIds.value.length)
 const mailboxFailedCount = computed(() => mailboxFailedItems.value.length)
-const mailboxDedupeStatusText = computed(() => `本地去重记录 ${mailboxDedupeCount.value}/1000，失败队列 ${mailboxFailedCount.value}`)
+const mailboxDedupeStatusText = computed(() => `本地去重记录 ${mailboxDedupeCount.value}/${MAILBOX_DEDUPE_MAX_RECORDS}，保留 30 天；失败队列 ${mailboxFailedCount.value}`)
 const nodePreKeyUserId = ref('')
 const nodePreKeyStatusText = ref('')
 const prekeyStatusSummary = ref('尚未发布 PreKey')
@@ -951,6 +958,23 @@ async function decryptOutboxFromStore(item: any, key: CryptoKey | null): Promise
   return { ...item, status: item.status ?? 'queued', retry_count: item.retry_count ?? 0, envelope_json: await decryptLocalString(item.envelope_json, key) }
 }
 
+function normalizeProcessedMailboxRecords(records: Array<string | ProcessedMailboxRecord> | undefined): ProcessedMailboxRecord[] {
+  const now = Date.now()
+  const seen = new Set<string>()
+  const normalized: ProcessedMailboxRecord[] = []
+  for (const record of records ?? []) {
+    const id = typeof record === 'string' ? record : record.id
+    if (!id || seen.has(id)) continue
+    const processedAt = typeof record === 'string' ? now : record.processed_at || now
+    if (now - processedAt > MAILBOX_DEDUPE_RETENTION_MS) continue
+    seen.add(id)
+    normalized.push({ id, processed_at: processedAt })
+  }
+  return normalized
+    .sort((a, b) => b.processed_at - a.processed_at)
+    .slice(0, MAILBOX_DEDUPE_MAX_RECORDS)
+}
+
 async function encryptRatchetForStore(item: RatchetSessionItem, key: CryptoKey | null): Promise<any> {
   return { ...item, state_text: await encryptLocalString(item.state_text, key) }
 }
@@ -1097,7 +1121,7 @@ async function writeStateToTables(state: PersistedState) {
   autoMailboxTake.value = state.autoMailboxTake ?? true
   autoPublishPreKey.value = state.autoPublishPreKey ?? true
   autoNodeSync.value = state.autoNodeSync ?? false
-  processedMailboxIds.value = state.processedMailboxIds ?? []
+  processedMailboxIds.value = normalizeProcessedMailboxRecords(state.processedMailboxIds)
   mailboxFailedItems.value = state.mailboxFailedItems ?? []
   syncRecoveryHistory.value = state.syncRecoveryHistory ?? []
   friendRequestRateRecords.value = state.friendRequestRateRecords ?? []
@@ -1122,7 +1146,7 @@ async function loadStateFromTables(): Promise<boolean> {
   autoMailboxTake.value = meta.autoMailboxTake ?? true
   autoPublishPreKey.value = meta.autoPublishPreKey ?? true
   autoNodeSync.value = meta.autoNodeSync ?? false
-  processedMailboxIds.value = meta.processedMailboxIds ?? []
+  processedMailboxIds.value = normalizeProcessedMailboxRecords(meta.processedMailboxIds)
   mailboxFailedItems.value = meta.mailboxFailedItems ?? []
   syncRecoveryHistory.value = meta.syncRecoveryHistory ?? []
   friendRequestRateRecords.value = meta.friendRequestRateRecords ?? []
@@ -4240,7 +4264,16 @@ function mailboxNotificationText(events: MailboxEventKind[]): string {
 
 function rememberProcessedMailboxId(id: string) {
   if (!id) return
-  processedMailboxIds.value = [id, ...processedMailboxIds.value.filter((x) => x !== id)].slice(0, 1000)
+  const now = Date.now()
+  processedMailboxIds.value = normalizeProcessedMailboxRecords([
+    { id, processed_at: now },
+    ...processedMailboxIds.value.filter((record) => record.id !== id),
+  ])
+}
+
+function hasProcessedMailboxId(id: string): boolean {
+  if (!id) return false
+  return processedMailboxIds.value.some((record) => record.id === id)
 }
 
 function mailboxFailedItemId(deliveryId: string, messageId: string): string {
@@ -4315,7 +4348,7 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
     const { deliveryId, message } = unwrapMailboxDelivery(item)
     const messageId = String(message?.message_id ?? '')
     const dedupeId = deliveryId || messageId
-    if (dedupeId && processedMailboxIds.value.includes(dedupeId)) {
+    if (dedupeId && hasProcessedMailboxId(dedupeId)) {
       duplicate += 1
       if (deliveryId) ackIds.push(deliveryId)
       continue
