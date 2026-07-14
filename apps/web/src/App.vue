@@ -413,6 +413,7 @@ const receivedFileMime = ref('')
 const receivedFilePreviewKind = ref('')
 const rtcFileStatus = ref('未发送文件')
 const fileTransferPhase = ref('待选择')
+const fileProgressText = ref('')
 const ratchetStateText = ref('')
 const ratchetPeerStateText = ref('')
 const ratchetHeaderText = ref('')
@@ -4113,6 +4114,7 @@ function cancelSelectedFile() {
   selectedFile.value = null
   filePackageText.value = ''
   filePackageInfoText.value = ''
+  fileProgressText.value = ''
   fileTransferPhase.value = '待选择'
   rtcFileStatus.value = '未发送文件'
 }
@@ -4121,6 +4123,34 @@ function clearSelectedFileDraft() {
   selectedFile.value = null
   filePackageText.value = ''
   filePackageInfoText.value = ''
+  fileProgressText.value = ''
+}
+
+async function readFileWithProgress(file: File): Promise<Uint8Array> {
+  if (!file.stream) {
+    fileProgressText.value = '读取中'
+    return new Uint8Array(await file.arrayBuffer())
+  }
+  const reader = file.stream().getReader()
+  const chunks: Uint8Array[] = []
+  let loaded = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (value) {
+      chunks.push(value)
+      loaded += value.byteLength
+      const percent = file.size > 0 ? Math.min(100, Math.round((loaded / file.size) * 100)) : 100
+      fileProgressText.value = `读取 ${formatBytes(loaded)} / ${formatBytes(file.size)} (${percent}%)`
+    }
+  }
+  const out = new Uint8Array(loaded)
+  let offset = 0
+  for (const chunk of chunks) {
+    out.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return out
 }
 
 async function createFilePackageForActive(): Promise<boolean> {
@@ -4134,9 +4164,10 @@ async function createFilePackageForActive(): Promise<boolean> {
     await warnIfLowStorageForFile(selectedFile.value.size)
     fileTransferPhase.value = '读取文件'
     rtcFileStatus.value = `正在读取文件：${selectedFile.value.name}`
-    const bytes = new Uint8Array(await selectedFile.value.arrayBuffer())
+    const bytes = await readFileWithProgress(selectedFile.value)
     if (bytes.length === 0) throw new Error('不能发送空文件')
     fileTransferPhase.value = '加密封装'
+    fileProgressText.value = `读取完成 · ${formatBytes(bytes.length)}`
     rtcFileStatus.value = `正在生成加密文件包：${selectedFile.value.name}`
     filePackageText.value = create_file_package(
       backupText.value,
@@ -4149,6 +4180,7 @@ async function createFilePackageForActive(): Promise<boolean> {
     )
     filePackageInfoText.value = JSON.stringify(JSON.parse(inspect_file_package(filePackageText.value)), null, 2)
     fileTransferPhase.value = '待发送'
+    fileProgressText.value = `封装完成 · ${formatBytes(bytes.length)}`
     rtcFileStatus.value = '文件包已生成，可复制或 WebRTC 发送'
     appendLog(`已生成文件包：${selectedFile.value.name}`)
     ok = true
@@ -4313,7 +4345,7 @@ const appContext = {
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
   flushOutboxForActive, retryAllOutbox, cancelOutboxForActive, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
-  receiveEnvelope, onFileSelected, cancelSelectedFile, selectedFile, formatBytes, isDangerousFileName, createFilePackageForActive, sendFilePackageOverRtc, sendSelectedFile, filePackageText, rtcFileStatus, fileTransferPhase,
+  receiveEnvelope, onFileSelected, cancelSelectedFile, selectedFile, formatBytes, isDangerousFileName, createFilePackageForActive, sendFilePackageOverRtc, sendSelectedFile, filePackageText, rtcFileStatus, fileTransferPhase, fileProgressText,
   incomingFilePackageText, pendingFilePackageText, inspectIncomingFilePackage, decryptIncomingFilePackage, receivedFileUrl, receivedFileName, receivedFileMeta, receivedFileMime, receivedFilePreviewKind, filePackageInfoText,
   createGroupSenderKeyForActiveGroup, groupSenderDistributionText, importGroupSenderKeyForActiveContact, groupSenderEncryptDebug, groupSenderDecryptDebug, createGroupSenderDistributionFanoutForActiveGroup,
   groupSenderDistributionFanoutJson, groupSenderDistributionFanoutItems, groupSenderEnvelopeText, groupSenderPlainText, groupRenameText, createRenameGroupEvent,

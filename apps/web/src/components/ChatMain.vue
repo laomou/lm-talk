@@ -168,6 +168,7 @@ function onComposerKeydown(e: KeyboardEvent) {
           <b v-if="ctx.isDangerousFileName(ctx.selectedFile.value.name)">危险类型</b>
         </small>
         <small v-else>{{ ctx.rtcFileStatus.value }}</small>
+        <small v-if="ctx.fileProgressText.value">{{ ctx.fileProgressText.value }}</small>
         <div v-if="ctx.pendingFilePackageText.value && !ctx.receivedFileUrl.value" class="received-file-card">
           <b>收到文件包</b>
           <small>文件尚未解密，确认来源可信后再打开。</small>
