@@ -218,13 +218,13 @@ const hasRawSyncStatus = computed(() => syncStatusText.value.includes('\n') || s
       <section class="home-card">
         <h3>账号与高级</h3>
         <div class="settings-rows">
-          <button class="settings-row" @click="ctx.goDiagnosticsPage">
+          <button class="settings-row" aria-label="打开诊断工具" @click="ctx.goDiagnosticsPage">
             <span>诊断工具</span><span class="chevron">›</span>
           </button>
-          <button class="settings-row" @click="ctx.clearBrowserCaches">
+          <button class="settings-row" aria-label="清理浏览器缓存" @click="ctx.clearBrowserCaches">
             <span>清理浏览器缓存</span><span class="chevron">›</span>
           </button>
-          <button class="settings-row danger-row" @click="ctx.logout">
+          <button class="settings-row danger-row" aria-label="退出登录" @click="ctx.logout">
             <span>退出登录</span><span class="chevron">›</span>
           </button>
         </div>

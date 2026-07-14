@@ -152,7 +152,7 @@ function resetRegister() {
                 <small>{{ item.user_id }}</small>
               </span>
             </label>
-            <button class="identity-delete" title="删除本地身份" @click="emit('removeIdentity', item.id)">×</button>
+            <button class="identity-delete" title="删除本地身份" aria-label="删除本地身份" @click="emit('removeIdentity', item.id)">×</button>
           </div>
         </div>
         <div v-else class="empty auth-empty">
