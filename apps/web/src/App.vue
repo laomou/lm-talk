@@ -1120,6 +1120,10 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`
 }
 
+function isDangerousFileName(name: string): boolean {
+  return /\.(exe|bat|cmd|com|scr|ps1|vbs|js|jar|msi|apk|dmg|pkg|sh)$/i.test(name)
+}
+
 async function refreshStorageEstimate() {
   const estimate = navigator.storage?.estimate ? await navigator.storage.estimate() : {}
   const usage = estimate.usage ?? 0
@@ -3778,6 +3782,10 @@ function base64ToBytes(value: string): Uint8Array {
 function onFileSelected(event: Event) {
   const input = event.target as HTMLInputElement
   selectedFile.value = input.files?.[0] ?? null
+  if (selectedFile.value) {
+    const warning = isDangerousFileName(selectedFile.value.name) ? '，请确认来源可信' : ''
+    rtcFileStatus.value = `已选择文件：${selectedFile.value.name} (${formatBytes(selectedFile.value.size)})${warning}`
+  }
 }
 
 async function createFilePackageForActive() {
@@ -3942,7 +3950,7 @@ const appContext = {
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
   flushOutboxForActive, cancelOutboxForActive, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
-  receiveEnvelope, onFileSelected, createFilePackageForActive, sendFilePackageOverRtc, filePackageText, rtcFileStatus,
+  receiveEnvelope, onFileSelected, selectedFile, formatBytes, isDangerousFileName, createFilePackageForActive, sendFilePackageOverRtc, filePackageText, rtcFileStatus,
   incomingFilePackageText, inspectIncomingFilePackage, decryptIncomingFilePackage, receivedFileUrl, receivedFileName, filePackageInfoText,
   createGroupSenderKeyForActiveGroup, groupSenderDistributionText, importGroupSenderKeyForActiveContact, groupSenderEncryptDebug, groupSenderDecryptDebug, createGroupSenderDistributionFanoutForActiveGroup,
   groupSenderDistributionFanoutJson, groupSenderDistributionFanoutItems, groupSenderEnvelopeText, groupSenderPlainText, groupRenameText, createRenameGroupEvent,

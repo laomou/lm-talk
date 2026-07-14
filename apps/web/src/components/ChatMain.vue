@@ -133,6 +133,16 @@ function onComposerKeydown(e: KeyboardEvent) {
     <footer class="composer clean-composer" v-if="ctx.activeGroup.value || (ctx.activeContact.value && ctx.activeContact.value.state === 'Friend')">
       <textarea v-model="ctx.composerText.value" rows="3" aria-label="输入消息" placeholder="输入消息，Enter 发送 / Shift+Enter 换行" @keydown="onComposerKeydown" />
       <button @click="ctx.sendMessage">发送</button>
+      <div v-if="ctx.activeContact.value" class="attachment-row">
+        <input type="file" aria-label="选择附件" @change="ctx.onFileSelected" />
+        <button class="secondary" :disabled="!ctx.selectedFile.value" @click="ctx.createFilePackageForActive().then(ctx.sendFilePackageOverRtc)">发送文件</button>
+        <small v-if="ctx.selectedFile.value">
+          {{ ctx.selectedFile.value.name }} · {{ ctx.formatBytes(ctx.selectedFile.value.size) }}
+          <b v-if="ctx.isDangerousFileName(ctx.selectedFile.value.name)">危险类型</b>
+        </small>
+        <small v-else>{{ ctx.rtcFileStatus.value }}</small>
+        <a v-if="ctx.receivedFileUrl.value" :href="ctx.receivedFileUrl.value" :download="ctx.receivedFileName.value">下载收到的文件</a>
+      </div>
     </footer>
   </section>
 </template>
