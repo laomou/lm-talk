@@ -155,6 +155,7 @@ const localObjectCount = computed(() =>
         <div class="sync-status">
           <b>离线缓存</b>
           <small>{{ ctx.pwaStatusText.value }}</small>
+          <small>{{ ctx.pwaBackgroundCapabilityText.value }}</small>
         </div>
       </section>
 

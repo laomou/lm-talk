@@ -430,6 +430,7 @@ const nodeSyncStatusText = ref('')
 const storageEstimateText = ref('尚未估算')
 const webVersionText = `v${__APP_VERSION__} (${__BUILD_REF__})`
 const pwaStatusText = ref('尚未检查')
+const pwaBackgroundCapabilityText = ref('尚未检查')
 const selectedFile = ref<File | null>(null)
 const filePackageText = ref('')
 const incomingFilePackageText = ref('')
@@ -1222,7 +1223,10 @@ async function refreshPwaStatus() {
   const registrations = swSupported && nav.serviceWorker?.getRegistrations ? await nav.serviceWorker.getRegistrations().catch(() => []) : []
   const cacheKeys = typeof caches !== 'undefined' ? await caches.keys().catch(() => []) : []
   const controller = swSupported && nav.serviceWorker?.controller ? '已接管' : registrations.length ? '已注册' : swSupported ? '未注册' : '不支持'
+  const pushSupported = swSupported && 'PushManager' in window
+  const periodicSyncSupported = swSupported && 'PeriodicSyncManager' in window
   pwaStatusText.value = `${controller} · 缓存 ${cacheKeys.length} · ${webVersionText}`
+  pwaBackgroundCapabilityText.value = `Push ${pushSupported ? '可探测' : '不可用'} · Periodic Sync ${periodicSyncSupported ? '可探测' : '不可用'}`
 }
 
 function formatBytes(bytes: number): string {
@@ -4548,7 +4552,7 @@ function logout() {
 }
 const appContext = {
   goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, myContactCardText, backupText,
-  clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, pwaStatusText, webVersionText,
+  clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, pwaStatusText, pwaBackgroundCapabilityText, webVersionText,
   nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
   enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
