@@ -71,6 +71,12 @@ function goImport() {
   void router.push('/import')
 }
 
+function verifyRegisteredBackup() {
+  if (!props.registeredIdentity) return
+  backupText.value = props.registeredIdentity.backup_text
+  void router.push('/import')
+}
+
 function login() {
   emit('login')
 }
@@ -175,6 +181,7 @@ function resetRegister() {
           <div class="row compact">
             <button @click="downloadRegisteredBackup">下载身份</button>
             <button class="secondary" @click="copyRegisteredBackup">复制身份</button>
+            <button class="secondary" @click="verifyRegisteredBackup">验证导入</button>
             <button class="secondary" @click="goLogin">去登录</button>
             <button @click="resetRegister">返回注册</button>
           </div>
