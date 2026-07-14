@@ -1133,6 +1133,20 @@ async function refreshStorageEstimate() {
   storageEstimateText.value = `已用 ${formatBytes(usage)} / 可用 ${formatBytes(quota)}${ratio}`
 }
 
+async function warnIfLowStorageForFile(fileSize: number) {
+  if (!navigator.storage?.estimate) return
+  const estimate = await navigator.storage.estimate()
+  const usage = estimate.usage ?? 0
+  const quota = estimate.quota ?? 0
+  if (quota <= 0) return
+  const remaining = quota - usage
+  if (remaining < fileSize * 2) {
+    const message = `浏览器剩余存储约 ${formatBytes(Math.max(remaining, 0))}，发送大文件可能失败`
+    rtcFileStatus.value = message
+    appendLog(`⚠️ ${message}`)
+  }
+}
+
 function exportFullDataBackup() {
   run('导出完整数据备份', () => {
     if (!backupText.value || !passphrase.value) throw new Error('需要当前身份备份包和提示词')
@@ -3808,6 +3822,7 @@ async function createFilePackageForActive() {
     if (activeContact.value.state !== 'Friend') throw new Error('联系人还不是 Friend')
     if (!selectedFile.value) throw new Error('请选择文件')
     if (selectedFile.value.size > MAX_FILE_BYTES) throw new Error(`文件过大：最大 ${MAX_FILE_BYTES} bytes`)
+    await warnIfLowStorageForFile(selectedFile.value.size)
     const bytes = new Uint8Array(await selectedFile.value.arrayBuffer())
     if (bytes.length === 0) throw new Error('不能发送空文件')
     filePackageText.value = create_file_package(
