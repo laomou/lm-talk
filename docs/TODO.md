@@ -79,7 +79,8 @@
    - 群消息 fanout 自动对每个成员发送：WebRTC 在线直发，否则 Mailbox。
    - 群邀请、群事件、Sender Key Distribution 自动进入收件箱并应用。
    - Web 已在群聊头显示非好友、被拉黑、缺少联系人和 Sender Key 回退提示。
-   - 仍需更细的群事件 UI。
+   - 群详情页已显示群事件 sequence、管理员数量和最近群事件摘要。
+   - 仍需更细的冲突/乱序/权限失败恢复 UI。
 
 8. **文件发送走正式流程**
    - 文件包生成后可自动通过 WebRTC 或 Mailbox 发送。
