@@ -106,6 +106,7 @@ function openGroupDetail(groupId: string) {
               <span>垃圾请求 {{ ctx.quarantinedFriendRequests.value.length }}</span>
               <span>群邀请 {{ ctx.groupInvites.value.length }}</span>
             </div>
+            <small v-if="ctx.friendRequestRateSummaryText.value" class="danger-text">请求频率：{{ ctx.friendRequestRateSummaryText.value }}</small>
             <small>{{ ctx.mailboxInboxStatus.value }}</small>
             <small>{{ ctx.mailboxDedupeStatusText.value }}</small>
             <small v-if="ctx.mailboxFailureSummaryText.value" class="danger-text">{{ ctx.mailboxFailureSummaryText.value }}</small>
@@ -141,7 +142,10 @@ function openGroupDetail(groupId: string) {
           <section class="home-card">
             <div class="section-title-row">
               <h3>垃圾请求</h3>
-              <button v-if="ctx.quarantinedFriendRequests.value.length" class="secondary danger" @click="ctx.clearQuarantinedFriendRequests">清空</button>
+              <div v-if="ctx.quarantinedFriendRequests.value.length" class="row compact">
+                <button class="secondary" @click="ctx.restoreAllQuarantinedFriendRequests">全部恢复</button>
+                <button class="secondary danger" @click="ctx.clearQuarantinedFriendRequests">清空</button>
+              </div>
             </div>
             <div v-if="ctx.quarantinedFriendRequests.value.length" class="request-grid">
               <div v-for="req in ctx.quarantinedFriendRequests.value" :key="req.request_id" class="request-item">
