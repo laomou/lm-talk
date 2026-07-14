@@ -33,6 +33,12 @@ const thread = computed(() => {
   return out
 })
 
+const activePendingOutboxCount = computed(() => {
+  const peerId = props.ctx.activeContact.value?.user_id
+  if (!peerId) return 0
+  return props.ctx.outbox.value.filter((item: any) => item.peer_user_id === peerId && item.status !== 'sent').length
+})
+
 const messagesEl = ref<HTMLElement | null>(null)
 function scrollToBottom() {
   const el = messagesEl.value
@@ -68,6 +74,10 @@ function onComposerKeydown(e: KeyboardEvent) {
       </div>
       <div v-else class="chat-title-block">
         <h2>选择一个聊天</h2>
+      </div>
+      <div v-if="activePendingOutboxCount" class="chat-header-actions">
+        <button class="secondary" @click="ctx.flushOutboxForActive">重发 {{ activePendingOutboxCount }}</button>
+        <button class="secondary danger" @click="ctx.cancelOutboxForActive">取消发送</button>
       </div>
     </header>
 

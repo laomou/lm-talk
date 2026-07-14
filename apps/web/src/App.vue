@@ -2617,6 +2617,22 @@ function flushOutboxForActive() {
   })
 }
 
+function cancelOutboxForActive() {
+  run('取消当前联系人待发送队列', () => {
+    if (!activeContact.value) throw new Error('请选择联系人')
+    const peerId = activeContact.value.user_id
+    const pending = outbox.value.filter((item) => item.peer_user_id === peerId && item.status !== 'sent')
+    if (pending.length === 0) throw new Error('当前联系人没有待发送内容')
+    const cancelledMessageIds = new Set(pending.map((item) => item.message_id).filter(Boolean))
+    outbox.value = outbox.value.filter((item) => item.peer_user_id !== peerId || item.status === 'sent')
+    for (const msg of messages.value) {
+      if (cancelledMessageIds.has(msg.id) && msg.direction === 'out') msg.status = 'failed'
+    }
+    appendLog(`已取消待发送 ${pending.length} 条`)
+    persist()
+  })
+}
+
 function clearSentOutbox() {
   outbox.value = outbox.value.filter((item) => item.status !== 'sent')
   persist()
@@ -3792,7 +3808,7 @@ const appContext = {
   removeActiveGroup, messages, activeMessages, formatTime, statusLabel, copyMessageEnvelope, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
-  flushOutboxForActive, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
+  flushOutboxForActive, cancelOutboxForActive, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
   receiveEnvelope, onFileSelected, createFilePackageForActive, sendFilePackageOverRtc, filePackageText, rtcFileStatus,
   incomingFilePackageText, inspectIncomingFilePackage, decryptIncomingFilePackage, receivedFileUrl, receivedFileName, filePackageInfoText,
   createGroupSenderKeyForActiveGroup, groupSenderDistributionText, importGroupSenderKeyForActiveContact, groupSenderEncryptDebug, groupSenderDecryptDebug, createGroupSenderDistributionFanoutForActiveGroup,
