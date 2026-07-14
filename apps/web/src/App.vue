@@ -526,7 +526,7 @@ onMounted(async () => {
 })
 
 function appendLog(line: string) {
-  log.value = [`${new Date().toLocaleTimeString()} ${line}`, ...log.value].slice(0, 50)
+  log.value = [`${formatTime(Date.now())} ${line}`, ...log.value].slice(0, 50)
 }
 
 function newId(): string {
@@ -4181,7 +4181,7 @@ async function copySignal(value: string) {
 }
 
 function formatTime(ts: number) {
-  return new Date(ts).toLocaleTimeString()
+  return new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(ts))
 }
 
 function goChatHome() {
