@@ -962,7 +962,7 @@ MVP 群聊采用逐个加密。
 - [x] invalid contact card rejected
 - [x] friend request verify
 - [x] expired friend request rejected
-- message encrypt/decrypt
+- [x] message encrypt/decrypt
 - tampered ciphertext fails
 - blocked sender dropped
 - duplicate message ignored
