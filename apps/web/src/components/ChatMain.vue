@@ -179,6 +179,7 @@ function onComposerKeydown(e: KeyboardEvent) {
               {{ hmTime(item.m.created_at) }} · {{ ctx.statusLabel(item.m.status) }}
               <span v-if="mailboxWaitText(item.m)"> · {{ mailboxWaitText(item.m) }}</span>
               <span v-if="item.m.direction === 'out' && item.m.protocol_message_id"> · {{ shortMessageId(item.m.protocol_message_id) }}</span>
+              <span v-if="item.m.file_downloaded_at"> · 已下载 {{ ctx.formatDateTime(item.m.file_downloaded_at) }}</span>
             </small>
           </div>
         </template>

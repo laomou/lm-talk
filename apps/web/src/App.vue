@@ -212,6 +212,7 @@ type ChatMessage = {
   text: string
   envelope_json?: string
   protocol_message_id?: string
+  file_downloaded_at?: number
   status: MessageStatus
   created_at: number
 }
@@ -506,6 +507,7 @@ const receivedFileUrl = ref('')
 const receivedFileMeta = ref('')
 const receivedFileMime = ref('')
 const receivedFilePreviewKind = ref('')
+const receivedFileMessageId = ref('')
 const rtcFileStatus = ref('未发送文件')
 const fileTransferPhase = ref('待选择')
 const fileProgressText = ref('')
@@ -5029,7 +5031,7 @@ function decryptIncomingFilePackage() {
     receivedFileMeta.value = `${receivedFileMime.value} · ${formatBytes(out.size ?? bytes.length)}`
     receivedFilePreviewKind.value = filePreviewKind(out.name, receivedFileMime.value)
     if (activeContact.value) {
-      messages.value.push({
+      const msg: ChatMessage = {
         id: newId(),
         conversation_id: `conv-${activeContact.value.user_id}`,
         peer_user_id: activeContact.value.user_id,
@@ -5038,7 +5040,9 @@ function decryptIncomingFilePackage() {
         envelope_json: text,
         status: 'received',
         created_at: Date.now(),
-      })
+      }
+      messages.value.push(msg)
+      receivedFileMessageId.value = msg.id
     }
     pendingFilePackageText.value = ''
     pendingFileMeta.value = ''
@@ -5051,10 +5055,14 @@ function decryptIncomingFilePackage() {
 
 function markReceivedFileDownloaded() {
   if (!receivedFileName.value) return
+  const downloadedAt = Date.now()
+  const msg = messages.value.find((item) => item.id === receivedFileMessageId.value)
+  if (msg) msg.file_downloaded_at = downloadedAt
   fileTransferPhase.value = '已下载'
   rtcFileStatus.value = `已触发下载：${receivedFileName.value}`
   fileProgressText.value = receivedFileMeta.value ? `下载文件 · ${receivedFileMeta.value}` : '下载文件'
   appendLog(`已触发文件下载：${receivedFileName.value}`)
+  persist()
 }
 
 function sendFilePackageOverRtc() {
