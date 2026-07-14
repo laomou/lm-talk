@@ -3635,7 +3635,9 @@ function unwrapMailboxDelivery(item: any): { deliveryId?: string; message: any }
   return { message: item }
 }
 
-function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: string } {
+type MailboxEventKind = 'message' | 'file' | 'friend-request' | 'friend-response' | 'group-invite' | 'delivery-ack' | 'device-revoke' | 'secure-session' | 'other'
+
+function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: string; event?: MailboxEventKind } {
   const { deliveryId, message } = unwrapMailboxDelivery(item)
   const kind = typeof message.kind === 'string' ? message.kind : ''
   const normalizedKind = kind.replace(/[-_]/g, '').toLowerCase()
@@ -3670,7 +3672,7 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
     try {
       receiveEnvelopeWithContact(ciphertext, sender)
       appendLog(`✅ 已自动解密 mailbox ${kind}`)
-      return { handled: true, deliveryId }
+      return { handled: true, deliveryId, event: 'message' }
     } catch (e) {
       appendLog(`❌ mailbox ${kind} 自动解密失败：${String(e)}`)
       inboundEnvelopeText.value = ciphertext
@@ -3681,61 +3683,74 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
   if (normalizedKind === 'signaloffer') {
     remoteSignalText.value = ciphertext
     appendLog('✅ 已从 mailbox 填入远端 Signal Offer')
-    return { handled: true, deliveryId }
+    return { handled: true, deliveryId, event: 'secure-session' }
   }
   if (normalizedKind === 'signalanswer') {
     remoteSignalText.value = ciphertext
     appendLog('✅ 已从 mailbox 填入远端 Signal Answer')
-    return { handled: true, deliveryId }
+    return { handled: true, deliveryId, event: 'secure-session' }
   }
 
   if (ciphertext.startsWith('lm-friend-request-v1:')) {
     incomingFriendRequestText.value = ciphertext
     addIncomingFriendRequest()
-    return { handled: true, deliveryId }
+    return { handled: true, deliveryId, event: 'friend-request' }
   }
   if (ciphertext.startsWith('lm-friend-response-v1:')) {
     incomingFriendResponseText.value = ciphertext
     applyFriendResponse()
-    return { handled: true, deliveryId }
+    return { handled: true, deliveryId, event: 'friend-response' }
   }
   if (ciphertext.startsWith('lm-group-invite-v1:')) {
     incomingGroupInviteText.value = ciphertext
     addIncomingGroupInvite()
-    return { handled: true, deliveryId }
+    return { handled: true, deliveryId, event: 'group-invite' }
   }
   try {
     const parsed = JSON.parse(ciphertext) as { type?: string; message_id?: string; from_user_id?: string }
     if (parsed?.type === 'lm-delivery-ack-v1' && parsed.message_id) {
       applyDeliveryAck(parsed.message_id, fromUserId)
-      return { handled: true, deliveryId }
+      return { handled: true, deliveryId, event: 'delivery-ack' }
     }
     if (parsed?.type === 'lm-device-revoke-v1') {
       incomingDeviceRevokeText.value = ciphertext
       applyDeviceRevokeToActiveContact()
-      return { handled: true, deliveryId }
+      return { handled: true, deliveryId, event: 'device-revoke' }
     }
     if (parsed?.type === 'lm-file-package-v1') {
       incomingFilePackageText.value = ciphertext
       inspectIncomingFilePackage()
       decryptIncomingFilePackage()
-      return { handled: true, deliveryId }
+      return { handled: true, deliveryId, event: 'file' }
     }
     if (parsed?.type === 'lm-secure-session-response-v1') {
       incomingSecureSessionText.value = ciphertext
       applySecureSessionResponseText()
-      return { handled: true, deliveryId }
+      return { handled: true, deliveryId, event: 'secure-session' }
     }
     if (parsed?.type === 'lm-secure-session-offer-v1') {
       incomingSecureSessionText.value = ciphertext
       applySecureSessionOfferText()
-      return { handled: true, deliveryId }
+      return { handled: true, deliveryId, event: 'secure-session' }
     }
   } catch {}
 
   mailboxCiphertext.value = ciphertext
   appendLog(`mailbox 消息类型 ${kind || 'unknown'} 已放入载荷输入框`)
   return { handled: false, deliveryId }
+}
+
+function mailboxNotificationText(events: MailboxEventKind[]): string {
+  const count = (kind: MailboxEventKind) => events.filter((event) => event === kind).length
+  const parts = [
+    ['消息', count('message')],
+    ['文件', count('file')],
+    ['好友请求', count('friend-request')],
+    ['好友通过', count('friend-response')],
+    ['群邀请', count('group-invite')],
+    ['安全会话', count('secure-session')],
+  ].filter(([, n]) => Number(n) > 0).map(([label, n]) => `${label} ${n}`)
+  return parts.length ? parts.join('，') : `已处理 ${events.length} 条`
 }
 
 function rememberProcessedMailboxId(id: string) {
@@ -3747,6 +3762,7 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
   let handled = 0
   let duplicate = 0
   let failed = 0
+  const events: MailboxEventKind[] = []
   const ackIds: string[] = []
   for (const item of messagesFromNode) {
     const { deliveryId, message } = unwrapMailboxDelivery(item)
@@ -3760,13 +3776,14 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
     const result = handleMailboxPayload(item)
     if (result.handled) {
       handled += 1
+      if (result.event) events.push(result.event)
       if (deliveryId) ackIds.push(deliveryId)
       if (dedupeId) rememberProcessedMailboxId(dedupeId)
     } else failed += 1
   }
   mailboxInboxStatus.value = `收到 ${messagesFromNode.length}，已处理 ${handled}，重复 ${duplicate}，失败 ${failed}`
   appendLog(`mailbox 自动处理完成：${mailboxInboxStatus.value}`)
-  if (handled > 0) notifyIfAllowed('LM Talk 收到新消息', mailboxInboxStatus.value)
+  if (events.length > 0) notifyIfAllowed('LM Talk 收到新内容', mailboxNotificationText(events))
   persist()
   return ackIds
 }
