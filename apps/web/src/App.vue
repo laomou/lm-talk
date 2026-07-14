@@ -124,6 +124,7 @@ type ContactItem = ContactInfo & {
   last_friend_request_error?: string
   last_secure_session_error?: string
   last_secure_session_attempt_at?: number
+  last_secure_session_success_at?: number
   revoked_device_ids?: string[]
   device_certs?: DeviceCertItem[]
   block_reason?: string
@@ -1756,6 +1757,7 @@ async function ensureRatchetSessionFromNode(contact: ContactItem): Promise<boole
     init.shared_secret,
   )) as { local_state_text: string; remote_state_text: string }
   saveRatchetSession(contact.user_id, ratchetPair.local_state_text)
+  contact.last_secure_session_success_at = Date.now()
   const response: SecureSessionResponse = {
     type: 'lm-secure-session-response-v1',
     version: 1,
@@ -3031,6 +3033,7 @@ function recreateActiveRatchetSession() {
     ratchetPeerStateText.value = out.remote_state_text
     saveRatchetSession(activeContact.value.user_id, out.local_state_text)
     activeContact.value.last_secure_session_error = undefined
+    activeContact.value.last_secure_session_success_at = Date.now()
     secureSessionStatusText.value = '已重建本地 Ratchet Session。'
     persist()
   })
@@ -3852,6 +3855,7 @@ function applySecureSessionOfferText() {
     ratchetStateText.value = stateText
     saveRatchetSession(offer.from_user_id, stateText)
     contact.last_secure_session_error = undefined
+    contact.last_secure_session_success_at = Date.now()
     const response: SecureSessionResponse = {
       type: 'lm-secure-session-response-v1',
       version: 1,
@@ -3904,6 +3908,7 @@ function applySecureSessionResponseText() {
     ratchetStateText.value = stateText
     saveRatchetSession(response.from_user_id, stateText)
     contact.last_secure_session_error = undefined
+    contact.last_secure_session_success_at = Date.now()
     secureSessionStatusText.value = '已应用 Response，双方现在应该都有 Ratchet Session。后续聊天会自动优先使用 Double Ratchet。'
     incomingSecureSessionText.value = ''
     inspectRatchetStateText()
