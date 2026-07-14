@@ -121,7 +121,8 @@
    - Web 已本地记录已处理 delivery_id / message_id，并随 IndexedDB meta 持久化。
    - 重复拉取会跳过重复处理并继续 ack 对应 delivery。
    - 通讯录收件箱已展示本地去重记录数量，并支持清空本地去重记录。
-   - 仍需长期 dedupe 保留策略和跨设备合并策略。
+   - Web 已为本地去重记录保留处理时间，按 30 天 / 1000 条裁剪并兼容旧字符串记录。
+   - 仍需跨设备 dedupe 合并策略。
 
 3. **节点同步自动化**
    - [x] `serve-control --sync-peer http://host:port --sync-interval-seconds N` 可定时拉取 peer snapshot 并 merge。
