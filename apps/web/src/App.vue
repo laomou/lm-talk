@@ -156,6 +156,13 @@ type FriendRequestItem = {
   quarantine_reason?: string
 }
 
+type FriendRequestRateRecord = {
+  from_user_id: string
+  first_seen_at: number
+  last_seen_at: number
+  count: number
+}
+
 type GroupItem = {
   group_id: string
   name: string
@@ -249,6 +256,7 @@ type PersistedState = {
   processedMailboxIds?: string[]
   mailboxFailedItems?: MailboxFailedItem[]
   syncRecoveryHistory?: string[]
+  friendRequestRateRecords?: FriendRequestRateRecord[]
 }
 
 type PersistedMeta = {
@@ -268,6 +276,7 @@ type PersistedMeta = {
   processedMailboxIds?: string[]
   mailboxFailedItems?: MailboxFailedItem[]
   syncRecoveryHistory?: string[]
+  friendRequestRateRecords?: FriendRequestRateRecord[]
   schemaVersion: number
 }
 
@@ -308,6 +317,8 @@ const MAX_TEXT_MESSAGE_BYTES = 64 * 1024
 const MAX_CONTACT_CARD_BYTES = 32 * 1024
 const FRIEND_REQUEST_RATE_WINDOW_MS = 10 * 60 * 1000
 const FRIEND_REQUEST_RATE_LIMIT = 3
+const FRIEND_REQUEST_LONG_RATE_WINDOW_MS = 24 * 60 * 60 * 1000
+const FRIEND_REQUEST_LONG_RATE_LIMIT = 5
 const MAX_SIGNAL_BYTES = 256 * 1024
 const MAX_FILE_BYTES = 16 * 1024 * 1024
 const MAX_RTC_TEXT_BYTES = MAX_FILE_BYTES * 3
@@ -340,6 +351,7 @@ const safetyPolicy = ref<SafetyPolicy>({
 
 const contacts = ref<ContactItem[]>([])
 const friendRequests = ref<FriendRequestItem[]>([])
+const friendRequestRateRecords = ref<FriendRequestRateRecord[]>([])
 const groups = ref<GroupItem[]>([])
 const groupInvites = ref<GroupInviteItem[]>([])
 const groupSenderKeys = ref<GroupSenderKeyItem[]>([])
@@ -515,12 +527,16 @@ const friendContacts = computed(() => contacts.value.filter((c) => c.state === '
 const visibleFriendRequests = computed(() => friendRequests.value.filter((req) => !req.quarantined))
 const quarantinedFriendRequests = computed(() => friendRequests.value.filter((req) => req.quarantined))
 const friendRequestRateSummaryText = computed(() => {
-  if (friendRequests.value.length === 0) return ''
+  const parts: string[] = []
   const counts = new Map<string, number>()
   for (const req of friendRequests.value) counts.set(req.from_user_id, (counts.get(req.from_user_id) ?? 0) + 1)
   const hot = [...counts.entries()].filter(([, count]) => count >= FRIEND_REQUEST_RATE_LIMIT)
-  if (hot.length === 0) return ''
-  return hot.map(([userId, count]) => `${userId} ${count} 条`).join('，')
+  if (hot.length > 0) parts.push(`未处理：${hot.map(([userId, count]) => `${userId} ${count} 条`).join('，')}`)
+  const now = Date.now()
+  const longHot = friendRequestRateRecords.value
+    .filter((record) => now - record.first_seen_at <= FRIEND_REQUEST_LONG_RATE_WINDOW_MS && record.count >= FRIEND_REQUEST_LONG_RATE_LIMIT)
+  if (longHot.length > 0) parts.push(`24小时：${longHot.map((record) => `${record.from_user_id} ${record.count} 条`).join('，')}`)
+  return parts.join('；')
 })
 const activeGroupMembers = computed(() => activeGroup.value
   ? activeGroup.value.member_user_ids.map((id) => contacts.value.find((c) => c.user_id === id)).filter(Boolean) as ContactItem[]
@@ -979,6 +995,7 @@ function currentPersistedState(): PersistedState {
     processedMailboxIds: processedMailboxIds.value,
     mailboxFailedItems: mailboxFailedItems.value,
     syncRecoveryHistory: syncRecoveryHistory.value,
+    friendRequestRateRecords: friendRequestRateRecords.value,
   }
 }
 
@@ -1000,6 +1017,7 @@ function persistedMeta(): PersistedMeta {
     processedMailboxIds: processedMailboxIds.value,
     mailboxFailedItems: mailboxFailedItems.value,
     syncRecoveryHistory: syncRecoveryHistory.value,
+    friendRequestRateRecords: friendRequestRateRecords.value,
     schemaVersion: 3,
   }
 }
@@ -1082,6 +1100,7 @@ async function writeStateToTables(state: PersistedState) {
   processedMailboxIds.value = state.processedMailboxIds ?? []
   mailboxFailedItems.value = state.mailboxFailedItems ?? []
   syncRecoveryHistory.value = state.syncRecoveryHistory ?? []
+  friendRequestRateRecords.value = state.friendRequestRateRecords ?? []
   await persistStateTables()
 }
 
@@ -1106,6 +1125,7 @@ async function loadStateFromTables(): Promise<boolean> {
   processedMailboxIds.value = meta.processedMailboxIds ?? []
   mailboxFailedItems.value = meta.mailboxFailedItems ?? []
   syncRecoveryHistory.value = meta.syncRecoveryHistory ?? []
+  friendRequestRateRecords.value = meta.friendRequestRateRecords ?? []
   const prefix = ownerPrefix()
   contacts.value = await Promise.all((await idbTableGetAllByPrefix<any>(TABLES.contacts, prefix)).map((c: any) => decryptContactFromStore(c, key)))
   friendRequests.value = await idbTableGetAllByPrefix<FriendRequestItem>(TABLES.friendRequests, prefix)
@@ -1162,6 +1182,7 @@ function resetAccountScopedState() {
   processedMailboxIds.value = []
   mailboxFailedItems.value = []
   syncRecoveryHistory.value = []
+  friendRequestRateRecords.value = []
   activePeerId.value = ''
   activeGroupId.value = ''
   myContactCardText.value = ''
@@ -1208,6 +1229,7 @@ async function clearPersisted() {
   processedMailboxIds.value = []
   mailboxFailedItems.value = []
   syncRecoveryHistory.value = []
+  friendRequestRateRecords.value = []
   myContactCardText.value = ''
   myDeviceCertJson.value = ''
   myDeviceId.value = ''
@@ -1889,6 +1911,54 @@ function saveSafetyPolicy() {
   appendLog('✅ 已保存本地安全策略')
 }
 
+function recordFriendRequestRate(fromUserId: string, now = Date.now()): FriendRequestRateRecord {
+  const activeRecords = friendRequestRateRecords.value.filter((record) =>
+    now - record.first_seen_at <= FRIEND_REQUEST_LONG_RATE_WINDOW_MS || record.from_user_id === fromUserId,
+  )
+  friendRequestRateRecords.value = activeRecords
+  let record = friendRequestRateRecords.value.find((item) => item.from_user_id === fromUserId)
+  if (!record || now - record.first_seen_at > FRIEND_REQUEST_LONG_RATE_WINDOW_MS) {
+    record = { from_user_id: fromUserId, first_seen_at: now, last_seen_at: now, count: 0 }
+    friendRequestRateRecords.value.push(record)
+  }
+  record.count += 1
+  record.last_seen_at = now
+  return record
+}
+
+function friendRequestQuarantineReason(info: Pick<FriendRequestItem, 'from_user_id' | 'request_id' | 'created_at'>, recordLongRate: boolean, now = Date.now()): string | undefined {
+  const recentSameSourceCount = friendRequests.value.filter((req) =>
+    req.from_user_id === info.from_user_id &&
+    req.request_id !== info.request_id &&
+    now - req.created_at <= FRIEND_REQUEST_RATE_WINDOW_MS,
+  ).length
+  if (recentSameSourceCount >= 1) {
+    const windowMinutes = Math.round(FRIEND_REQUEST_RATE_WINDOW_MS / 60_000)
+    return `同一来源 ${windowMinutes} 分钟内已有 ${recentSameSourceCount} 条未处理请求`
+  }
+  if (!recordLongRate) return undefined
+  const rateRecord = recordFriendRequestRate(info.from_user_id, now)
+  if (rateRecord.count > FRIEND_REQUEST_LONG_RATE_LIMIT) {
+    const windowHours = Math.round(FRIEND_REQUEST_LONG_RATE_WINDOW_MS / 60 / 60 / 1000)
+    return `同一来源 ${windowHours} 小时内已有 ${rateRecord.count} 条请求`
+  }
+  return undefined
+}
+
+function upsertFriendRequestWithLocalRateLimit(item: FriendRequestItem, now = Date.now()) {
+  const index = friendRequests.value.findIndex((req) => req.request_id === item.request_id)
+  const existing = index >= 0 ? friendRequests.value[index] : undefined
+  const quarantineReason = friendRequestQuarantineReason(item, index < 0, now)
+  const next: FriendRequestItem = {
+    ...item,
+    quarantined: existing?.quarantined || Boolean(quarantineReason),
+    quarantine_reason: existing?.quarantine_reason || quarantineReason,
+  }
+  if (index >= 0) friendRequests.value[index] = next
+  else friendRequests.value.unshift(next)
+  return next
+}
+
 async function showQr(value: string, label: string) {
   try {
     if (!value) throw new Error('内容为空')
@@ -1944,22 +2014,10 @@ function addIncomingFriendRequest() {
       throw new Error('这个好友请求不是发给当前身份的')
     }
     const now = Date.now()
-    const recentSameSourceCount = friendRequests.value.filter((req) =>
-      req.from_user_id === info.from_user_id &&
-      req.request_id !== info.request_id &&
-      now - req.created_at <= FRIEND_REQUEST_RATE_WINDOW_MS,
-    ).length
-    const shouldQuarantine = recentSameSourceCount >= 1
-    const windowMinutes = Math.round(FRIEND_REQUEST_RATE_WINDOW_MS / 60_000)
-    const item: FriendRequestItem = {
+    const item = upsertFriendRequestWithLocalRateLimit({
       ...info,
       request_text: incomingFriendRequestText.value,
-      quarantined: shouldQuarantine,
-      quarantine_reason: shouldQuarantine ? `同一来源 ${windowMinutes} 分钟内已有 ${recentSameSourceCount} 条未处理请求` : undefined,
-    }
-    const index = friendRequests.value.findIndex((r) => r.request_id === item.request_id)
-    if (index >= 0) friendRequests.value[index] = item
-    else friendRequests.value.unshift(item)
+    }, now)
     incomingFriendRequestText.value = ''
     toast(item.quarantined ? '好友请求已隔离' : '收到新的好友请求', item.quarantined ? 'warning' : 'info')
     persist()
@@ -2070,6 +2128,16 @@ function clearQuarantinedFriendRequests() {
     if (count === 0) throw new Error('没有垃圾请求')
     friendRequests.value = friendRequests.value.filter((req) => !req.quarantined)
     appendLog(`已清空垃圾请求 ${count} 条`)
+    persist()
+  })
+}
+
+function clearFriendRequestRateRecords() {
+  run('清空好友请求频率记录', () => {
+    const count = friendRequestRateRecords.value.length
+    if (count === 0) throw new Error('没有频率记录')
+    friendRequestRateRecords.value = []
+    appendLog(`已清空好友请求频率记录 ${count} 条`)
     persist()
   })
 }
@@ -4102,8 +4170,12 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
   }
 
   if (ciphertext.startsWith('lm-friend-request-v1:')) {
-    incomingFriendRequestText.value = ciphertext
-    addIncomingFriendRequest()
+    const info = safeJson<Omit<FriendRequestItem, 'request_text'>>(inspect_friend_request(ciphertext))
+    if (identity.value && info.to_user_id !== identity.value.user_id) {
+      throw new Error('这个好友请求不是发给当前身份的')
+    }
+    const item = upsertFriendRequestWithLocalRateLimit({ ...info, request_text: ciphertext })
+    toast(item.quarantined ? '好友请求已隔离' : '收到新的好友请求', item.quarantined ? 'warning' : 'info')
     return { handled: true, deliveryId, event: 'friend-request' }
   }
   if (ciphertext.startsWith('lm-friend-response-v1:')) {
@@ -4647,7 +4719,7 @@ const appContext = {
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, createMyDeviceCert, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
   exportFullDataBackup, importFullDataBackup, downloadText, addContactText, addContact, incomingFriendRequestText,
-  addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, friendRequestRateSummaryText, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
+  addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, friendRequestRateRecords, friendRequestRateSummaryText, clearFriendRequestRateRecords, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
   newGroupName, friendContacts, selectedGroupMembers, createGroup, groups, activeGroupId,

@@ -105,6 +105,7 @@ function openGroupDetail(groupId: string) {
               <span>好友请求 {{ ctx.visibleFriendRequests.value.length }}</span>
               <span>垃圾请求 {{ ctx.quarantinedFriendRequests.value.length }}</span>
               <span>群邀请 {{ ctx.groupInvites.value.length }}</span>
+              <span>24小时计数 {{ ctx.friendRequestRateRecords.value.length }}</span>
             </div>
             <small v-if="ctx.friendRequestRateSummaryText.value" class="danger-text">请求频率：{{ ctx.friendRequestRateSummaryText.value }}</small>
             <small>{{ ctx.mailboxInboxStatus.value }}</small>
@@ -115,6 +116,7 @@ function openGroupDetail(groupId: string) {
               <button class="secondary" :disabled="ctx.mailboxDedupeCount.value === 0" @click="ctx.clearProcessedMailboxIds">清空去重记录</button>
               <button class="secondary" :disabled="ctx.mailboxFailedCount.value === 0" @click="ctx.retryFailedMailboxItems">重试失败</button>
               <button class="secondary danger" :disabled="ctx.mailboxFailedCount.value === 0" @click="ctx.clearFailedMailboxItems">清空失败</button>
+              <button class="secondary danger" :disabled="ctx.friendRequestRateRecords.value.length === 0" @click="ctx.clearFriendRequestRateRecords">清空请求计数</button>
             </div>
           </section>
 
