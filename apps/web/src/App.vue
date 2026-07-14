@@ -2846,6 +2846,9 @@ function acceptGroupInvite(invite: GroupInviteItem) {
       policy_state_json: create_group_policy_state(invite.group_id, invite.group_name, invite.inviter_user_id, JSON.stringify(invite.member_user_ids)),
       created_at: Date.now(),
       sequence: 0,
+      last_event_summary: '已接受群邀请；历史消息不会自动同步',
+      last_event_actor_user_id: invite.inviter_user_id,
+      last_event_at: Date.now(),
     }
     const index = groups.value.findIndex((g) => g.group_id === group.group_id)
     if (index >= 0) groups.value[index] = group
