@@ -174,6 +174,8 @@ type GroupItem = {
   last_event_summary?: string
   last_event_actor_user_id?: string
   last_event_at?: number
+  last_event_error?: string
+  last_event_error_at?: number
 }
 
 type GroupSenderKeyItem = {
@@ -2479,6 +2481,35 @@ function summarizeGroupEventAction(action: any): string {
   return '未知事件'
 }
 
+function rememberGroupEventError(groupId: string | undefined, reason: string) {
+  const group = groupId ? groups.value.find((item) => item.group_id === groupId) : activeGroup.value
+  if (!group) return
+  group.last_event_error = reason
+  group.last_event_error_at = Date.now()
+}
+
+function groupIdFromEventText(text: string, actorId: string): string | undefined {
+  const actor = actorId === identity.value?.user_id
+    ? { contact_card_text: myContactCardText.value }
+    : contacts.value.find((c) => c.user_id === actorId)
+  if (!actor?.contact_card_text) return undefined
+  try {
+    const info = JSON.parse(inspect_group_event(text, actor.contact_card_text)) as { group_id?: string }
+    return info.group_id
+  } catch {
+    return undefined
+  }
+}
+
+function clearActiveGroupEventError() {
+  run('清除群事件错误', () => {
+    if (!activeGroup.value) throw new Error('请选择群组')
+    activeGroup.value.last_event_error = undefined
+    activeGroup.value.last_event_error_at = undefined
+    persist()
+  })
+}
+
 function applyGroupEventRaw(text: string, actorId: string): { group_id: string; summary: string } {
   if (!text) throw new Error('请粘贴群事件')
   if (!actorId) throw new Error('需要事件发起者 UserID')
@@ -2532,6 +2563,8 @@ function applyGroupEventRaw(text: string, actorId: string): { group_id: string; 
   group.last_event_summary = summary
   group.last_event_actor_user_id = info.actor_user_id
   group.last_event_at = Date.now()
+  group.last_event_error = undefined
+  group.last_event_error_at = undefined
   const membershipChanged = Boolean(info.action.AddMember || info.action.RemoveMember)
   if (membershipChanged) {
     groupSenderKeys.value = groupSenderKeys.value.filter((k) => k.group_id !== group.group_id || k.sender_user_id === identity.value?.user_id)
@@ -2550,7 +2583,15 @@ function applyGroupEventText() {
   run('应用群事件', () => {
     const text = incomingGroupEventText.value.trim() || groupEventText.value.trim()
     const actorId = groupEventActorUserId.value.trim() || activeContact.value?.user_id || identity.value?.user_id || ''
-    const result = applyGroupEventRaw(text, actorId)
+    let result: { group_id: string; summary: string }
+    try {
+      result = applyGroupEventRaw(text, actorId)
+    } catch (e) {
+      const reason = userFacingError(e)
+      rememberGroupEventError(activeGroup.value?.group_id, reason)
+      persist()
+      throw e
+    }
     messages.value.push({
       id: newId(),
       conversation_id: `grp-${result.group_id}`,
@@ -2930,7 +2971,14 @@ function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem) {
   }
   if (typeof rawText === 'string' && rawText.startsWith(GROUP_EVENT_PAYLOAD_PREFIX)) {
     const eventText = rawText.slice(GROUP_EVENT_PAYLOAD_PREFIX.length)
-    const result = applyGroupEventRaw(eventText, sender.user_id)
+    let result: { group_id: string; summary: string }
+    try {
+      result = applyGroupEventRaw(eventText, sender.user_id)
+    } catch (e) {
+      const groupId = groupIdFromEventText(eventText, sender.user_id)
+      rememberGroupEventError(groupId, userFacingError(e))
+      throw e
+    }
     messages.value.push({
       id: newId(),
       conversation_id: `grp-${result.group_id}`,
@@ -4766,7 +4814,7 @@ const appContext = {
   incomingFilePackageText, pendingFilePackageText, inspectIncomingFilePackage, decryptIncomingFilePackage, receivedFileUrl, receivedFileName, receivedFileMeta, receivedFileMime, receivedFilePreviewKind, filePackageInfoText,
   createGroupSenderKeyForActiveGroup, groupSenderDistributionText, importGroupSenderKeyForActiveContact, groupSenderEncryptDebug, groupSenderDecryptDebug, createGroupSenderDistributionFanoutForActiveGroup,
   groupSenderDistributionFanoutJson, groupSenderDistributionFanoutItems, groupSenderEnvelopeText, groupSenderPlainText, groupRenameText, createRenameGroupEvent,
-  groupEventText, applyGroupEventText, createGroupEventFanout, groupEventFanoutJson, groupEventFanoutItems, incomingGroupEventText,
+  groupEventText, applyGroupEventText, createGroupEventFanout, groupEventFanoutJson, groupEventFanoutItems, incomingGroupEventText, clearActiveGroupEventError,
   groupEventActorUserId, createAddMemberGroupEvent, createRemoveMemberGroupEvent, createPromoteAdminGroupEvent, createDemoteAdminGroupEvent, fanoutItems,
   prekeySignedId, prekeyOneTimeCount, prekeyBundleText, prekeyPrivateBundleJson, prekeySignedOneTimeRecordTexts, prekeyInfoText, x3dhInitialMessageJson,
   selectedOneTimePreKeyId, selectedSignedOneTimePreKeyRecordText, x3dhSharedSecretText, ratchetStateText, ratchetPeerStateText, ratchetLocalDhKeyPairJson, ratchetRemoteDhPublicKeyForInit,

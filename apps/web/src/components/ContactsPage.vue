@@ -227,11 +227,16 @@ function openGroupDetail(groupId: string) {
           </section>
           <section class="home-card">
             <h3>最近群事件</h3>
+            <div v-if="ctx.activeGroup.value.last_event_error" class="group-event-summary">
+              <b class="danger-text">群事件失败：{{ ctx.activeGroup.value.last_event_error }}</b>
+              <small>{{ ctx.formatTime(ctx.activeGroup.value.last_event_error_at || Date.now()) }}</small>
+              <button class="secondary" @click="ctx.clearActiveGroupEventError">清除错误</button>
+            </div>
             <div v-if="ctx.activeGroup.value.last_event_summary" class="group-event-summary">
               <b>{{ ctx.activeGroup.value.last_event_summary }}</b>
               <small>{{ ctx.activeGroup.value.last_event_actor_user_id || '未知发起者' }} · {{ ctx.formatTime(ctx.activeGroup.value.last_event_at || Date.now()) }}</small>
             </div>
-            <div v-else class="empty">暂无群事件</div>
+            <div v-if="!ctx.activeGroup.value.last_event_summary && !ctx.activeGroup.value.last_event_error" class="empty">暂无群事件</div>
           </section>
           <div class="row detail-actions">
             <button @click="ctx.goChatPage()">进入群聊</button>
