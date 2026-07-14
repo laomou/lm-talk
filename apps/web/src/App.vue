@@ -381,6 +381,7 @@ const nodeClosestInfoText = ref('')
 const nodeMailboxTakeUserId = ref('')
 const nodeMailboxTakeInfoText = ref('')
 const mailboxInboxStatus = ref('尚未同步')
+const mailboxInboxErrorText = ref('')
 const nodePreKeyUserId = ref('')
 const nodePreKeyStatusText = ref('')
 const prekeyStatusSummary = ref('尚未发布 PreKey')
@@ -3696,7 +3697,7 @@ function unwrapMailboxDelivery(item: any): { deliveryId?: string; message: any }
 
 type MailboxEventKind = 'message' | 'file' | 'friend-request' | 'friend-response' | 'group-invite' | 'delivery-ack' | 'device-revoke' | 'secure-session' | 'other'
 
-function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: string; event?: MailboxEventKind } {
+function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: string; event?: MailboxEventKind; reason?: string } {
   const { deliveryId, message } = unwrapMailboxDelivery(item)
   const kind = typeof message.kind === 'string' ? message.kind : ''
   const normalizedKind = kind.replace(/[-_]/g, '').toLowerCase()
@@ -3717,12 +3718,14 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
     }
   }
   if (!sender) {
-    appendLog(`消息来自未知联系人：${fromUserId}`)
-    return { handled: false, deliveryId }
+    const reason = `未知联系人：${fromUserId || 'unknown'}`
+    appendLog(`消息来自${reason}`)
+    return { handled: false, deliveryId, reason }
   }
   if (sender.state === 'Blocked') {
-    appendLog(`mailbox 消息来自已拉黑联系人：${fromUserId}`)
-    return { handled: false, deliveryId }
+    const reason = `已拉黑联系人：${fromUserId}`
+    appendLog(`mailbox 消息来自${reason}`)
+    return { handled: false, deliveryId, reason }
   }
   activePeerId.value = sender.user_id
   activeGroupId.value = ''
@@ -3733,9 +3736,10 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
       appendLog(`✅ 已自动解密 mailbox ${kind}`)
       return { handled: true, deliveryId, event: 'message' }
     } catch (e) {
-      appendLog(`❌ mailbox ${kind} 自动解密失败：${String(e)}`)
+      const reason = `${kind || 'message'} 解密失败：${userFacingError(e)}`
+      appendLog(`❌ mailbox ${reason}`)
       inboundEnvelopeText.value = ciphertext
-      return { handled: false, deliveryId }
+      return { handled: false, deliveryId, reason }
     }
   }
 
@@ -3795,8 +3799,9 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
   } catch {}
 
   mailboxCiphertext.value = ciphertext
+  const reason = `未知类型：${kind || 'unknown'}`
   appendLog(`mailbox 消息类型 ${kind || 'unknown'} 已放入载荷输入框`)
-  return { handled: false, deliveryId }
+  return { handled: false, deliveryId, reason }
 }
 
 function mailboxNotificationText(events: MailboxEventKind[]): string {
@@ -3821,6 +3826,7 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
   let handled = 0
   let duplicate = 0
   let failed = 0
+  const failureReasons: string[] = []
   const events: MailboxEventKind[] = []
   const ackIds: string[] = []
   for (const item of messagesFromNode) {
@@ -3838,9 +3844,13 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
       if (result.event) events.push(result.event)
       if (deliveryId) ackIds.push(deliveryId)
       if (dedupeId) rememberProcessedMailboxId(dedupeId)
-    } else failed += 1
+    } else {
+      failed += 1
+      if (result.reason) failureReasons.push(result.reason)
+    }
   }
   mailboxInboxStatus.value = `收到 ${messagesFromNode.length}，已处理 ${handled}，重复 ${duplicate}，失败 ${failed}`
+  mailboxInboxErrorText.value = failureReasons.slice(0, 3).join('\n')
   appendLog(`mailbox 自动处理完成：${mailboxInboxStatus.value}`)
   if (events.length > 0) notifyIfAllowed('LM Talk 收到新内容', mailboxNotificationText(events))
   persist()
@@ -4111,7 +4121,7 @@ const appContext = {
   ratchetInfoText, safetyPolicy, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
-  nodeClosestTarget, nodeClosestInfoText, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, nodePreKeyUserId, nodePreKeyStatusText,
+  nodeClosestTarget, nodeClosestInfoText, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxInboxErrorText, nodePreKeyUserId, nodePreKeyStatusText,
   nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, prekeyStatusSummary, createMyPreKeyBundleText, inspectPreKeyBundleText, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,

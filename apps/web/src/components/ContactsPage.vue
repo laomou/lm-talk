@@ -106,6 +106,7 @@ function openGroupDetail(groupId: string) {
               <span>群邀请 {{ ctx.groupInvites.value.length }}</span>
             </div>
             <small>{{ ctx.mailboxInboxStatus.value }}</small>
+            <small v-if="ctx.mailboxInboxErrorText.value" class="danger-text">{{ ctx.mailboxInboxErrorText.value }}</small>
           </section>
 
           <section class="home-card">
