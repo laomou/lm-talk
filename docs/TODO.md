@@ -56,7 +56,8 @@
    - Web 已能从节点拉取并消费对方 PreKey，创建 X3DH Initial Message / Double Ratchet 初始状态，并通过 Mailbox 发安全会话响应。
    - 接受好友请求后会自动通过 Mailbox 发送安全会话 Offer；对方收取后会应用 Offer 并回传 Response。
    - 聊天头和联系人详情已显示端到端会话状态，缺失会话时可手动本地建链。
-   - 仍需补齐失败恢复。
+   - 聊天头和联系人详情已显示安全建链失败原因，成功发送 Offer、应用 Offer/Response 或本地重建会话后会清除旧错误。
+   - 仍需补齐失败重试。
    - 没有节点或没有 PreKey 时，继续支持复制粘贴安全会话流程。
 
 4. **离线消息 Mailbox 路径增强**

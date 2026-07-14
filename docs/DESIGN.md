@@ -928,7 +928,6 @@ pub enum GroupMemberStatus {
 - 服务器内容扫描
 - 全局封禁
 - 全局删除
-- 公开举报中心
 
 ---
 
