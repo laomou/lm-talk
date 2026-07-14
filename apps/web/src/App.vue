@@ -2276,13 +2276,17 @@ function ignoreGroupInvite(invite: GroupInviteItem) {
   persist()
 }
 
-function removeActiveGroup() {
+async function removeActiveGroup() {
   if (!activeGroup.value) return
   const id = activeGroup.value.group_id
+  const name = activeGroup.value.name
+  const ok = await showConfirm('退出群聊', `退出「${name}」并删除本地群消息和群密钥？这只影响本设备，不会通知其他成员。`, true)
+  if (!ok) return
   groups.value = groups.value.filter((g) => g.group_id !== id)
   messages.value = messages.value.filter((m) => m.group_id !== id)
   groupSenderKeys.value = groupSenderKeys.value.filter((k) => k.group_id !== id)
   activeGroupId.value = groups.value[0]?.group_id ?? ''
+  appendLog(`已本地退出群聊：${name}`)
   persist()
 }
 

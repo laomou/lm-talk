@@ -178,7 +178,7 @@ function openGroupDetail(groupId: string) {
           </section>
           <div class="row detail-actions">
             <button @click="ctx.goChatPage()">进入群聊</button>
-            <button class="secondary danger" @click="ctx.removeActiveGroup">删除群聊</button>
+            <button class="secondary danger" @click="ctx.removeActiveGroup">退出群聊</button>
           </div>
         </div>
       </section>
