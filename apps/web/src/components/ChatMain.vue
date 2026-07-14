@@ -48,6 +48,14 @@ const activePendingOutboxCount = computed(() => {
   return props.ctx.outbox.value.filter((item: any) => item.peer_user_id === peerId && item.status !== 'sent').length
 })
 
+const activeFailedOutboxCount = computed(() => {
+  const peerId = props.ctx.activeContact.value?.user_id
+  if (!peerId) return 0
+  return props.ctx.outbox.value.filter((item: any) => item.peer_user_id === peerId && item.status === 'failed').length
+})
+
+const activeQueuedOutboxCount = computed(() => Math.max(0, activePendingOutboxCount.value - activeFailedOutboxCount.value))
+
 const activeOutboxError = computed(() => {
   const peerId = props.ctx.activeContact.value?.user_id
   if (!peerId) return ''
@@ -111,6 +119,7 @@ function onComposerKeydown(e: KeyboardEvent) {
       <div v-if="ctx.activeContact.value || ctx.activeGroup.value" class="chat-header-actions">
         <input v-model="messageSearch" type="search" aria-label="搜索当前聊天" placeholder="搜索消息" />
         <small v-if="activeOutboxError" class="outbox-error">{{ activeOutboxError }}</small>
+        <small v-if="activePendingOutboxCount">待发送：{{ activeQueuedOutboxCount }}，失败：{{ activeFailedOutboxCount }}</small>
         <button v-if="activePendingOutboxCount" class="secondary" @click="ctx.flushOutboxForActive">重发 {{ activePendingOutboxCount }}</button>
         <button v-if="activePendingOutboxCount" class="secondary danger" @click="ctx.cancelOutboxForActive">取消发送</button>
         <button v-if="ctx.activeContact.value?.state === 'Friend' && ctx.activeContact.value.last_secure_session_error" class="secondary" @click="ctx.retrySecureSessionForActiveContact">重试建链</button>
