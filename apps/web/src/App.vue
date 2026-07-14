@@ -2754,7 +2754,7 @@ function applyGroupEventRaw(text: string, actorId: string): { group_id: string; 
     action: any
   }
   const group = groups.value.find((g) => g.group_id === info.group_id)
-  if (!group) throw new Error('本地没有这个群')
+  if (!group) throw new Error(`本地没有这个群：${info.group_id}；可能尚未接受邀请或已仅本机退出`)
   if (info.sequence > (group.sequence ?? 0) + 1) {
     group.last_event_recovery_hint = groupEventRecoveryHint(group, info.sequence)
     throw new Error(`群事件 sequence 乱序：当前 ${group.sequence ?? 0}，收到 ${info.sequence}`)
