@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 type LocalIdentityRecord = {
@@ -35,6 +35,21 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const hasLocalIdentity = computed(() => props.localIdentities.length > 0)
+const registeredBackupChecksum = ref('')
+
+async function sha256Hex(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value)
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+watch(
+  () => props.registeredIdentity?.backup_text,
+  async (value) => {
+    registeredBackupChecksum.value = value ? (await sha256Hex(value)).slice(0, 16) : ''
+  },
+  { immediate: true },
+)
 
 function goRegister() {
   void router.push('/register')
@@ -68,6 +83,12 @@ async function copyRegisteredBackup() {
   if (!props.registeredIdentity) return
   if ((navigator.clipboard as Clipboard | undefined)?.writeText) await navigator.clipboard.writeText(props.registeredIdentity.backup_text)
   else fallbackCopyText(props.registeredIdentity.backup_text)
+}
+
+async function copyRegisteredChecksum() {
+  if (!registeredBackupChecksum.value) return
+  if ((navigator.clipboard as Clipboard | undefined)?.writeText) await navigator.clipboard.writeText(registeredBackupChecksum.value)
+  else fallbackCopyText(registeredBackupChecksum.value)
 }
 
 function downloadRegisteredBackup() {
@@ -137,6 +158,11 @@ function resetRegister() {
           <h2>注册成功</h2>
           <p>身份已保存在本机，也建议下载一份身份文件。</p>
           <small>{{ registeredIdentity.display_name }} · {{ registeredIdentity.user_id }}</small>
+          <div v-if="registeredBackupChecksum" class="backup-checksum">
+            <span>备份校验码</span>
+            <b>{{ registeredBackupChecksum }}</b>
+            <button class="secondary" @click="copyRegisteredChecksum">复制校验码</button>
+          </div>
           <div class="row compact">
             <button @click="downloadRegisteredBackup">下载身份</button>
             <button class="secondary" @click="copyRegisteredBackup">复制身份</button>

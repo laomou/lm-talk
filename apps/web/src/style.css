@@ -280,6 +280,18 @@ button.secondary.danger:hover { background: var(--c-danger-soft); border-color: 
 .registered-result small { max-width: 100%; overflow-wrap: anywhere; }
 .registered-result .row { width: 100%; justify-content: center; margin-top: var(--sp-3); }
 .registered-result .row button { min-width: 110px; }
+.backup-checksum {
+  width: 100%;
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+}
+.backup-checksum span { color: var(--c-ink-3); font-size: 12px; }
+.backup-checksum b { font-family: var(--font-mono); font-size: 13px; overflow-wrap: anywhere; }
+.backup-checksum button { justify-self: center; padding: 6px 10px; font-size: 12px; }
 
 /* ---- Chat: shell -------------------------------------------------------- */
 .chat-shell {
