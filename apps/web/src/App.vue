@@ -1828,6 +1828,28 @@ function rejectAllInboxRequests() {
   })
 }
 
+function blockAllInboxRequests() {
+  run('拉黑全部好友请求来源', () => {
+    const requests = [...friendRequests.value]
+    if (requests.length === 0) throw new Error('没有好友请求')
+    let blocked = 0
+    for (const req of requests) {
+      const info = contactInfoFromCardText(req.from_contact_card_text)
+      if (!info) continue
+      const index = contacts.value.findIndex((c) => c.user_id === info.user_id)
+      const contact = mergeContactCard(index >= 0 ? contacts.value[index] : undefined, info, req.from_contact_card_text)
+      contact.state = 'Blocked'
+      contact.block_reason = 'blocked from inbox'
+      if (index >= 0) contacts.value[index] = contact
+      else contacts.value.push(contact)
+      blocked += 1
+    }
+    friendRequests.value = []
+    appendLog(`已拉黑好友请求来源 ${blocked} 个，清空请求 ${requests.length} 条`)
+    persist()
+  })
+}
+
 
 function selectContact(userId: string) {
   activePeerId.value = userId
@@ -4068,7 +4090,7 @@ const appContext = {
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, createMyDeviceCert, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
   exportFullDataBackup, importFullDataBackup, downloadText, addContactText, addContact, incomingFriendRequestText,
-  addIncomingFriendRequest, friendRequests, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, incomingGroupInviteText, addIncomingGroupInvite,
+  addIncomingFriendRequest, friendRequests, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
   newGroupName, friendContacts, selectedGroupMembers, createGroup, groups, activeGroupId,
   selectGroup, activeContact, activeGroup, activeGroupMembers, blockReason, blockActiveContact,

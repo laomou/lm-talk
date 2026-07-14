@@ -111,7 +111,10 @@ function openGroupDetail(groupId: string) {
           <section class="home-card">
             <div class="section-title-row">
               <h3>好友请求</h3>
-              <button v-if="ctx.friendRequests.value.length" class="secondary danger" @click="ctx.rejectAllInboxRequests">全部忽略</button>
+              <div v-if="ctx.friendRequests.value.length" class="row compact">
+                <button class="secondary" @click="ctx.rejectAllInboxRequests">全部忽略</button>
+                <button class="secondary danger" @click="ctx.blockAllInboxRequests">全部拉黑</button>
+              </div>
             </div>
             <div v-if="ctx.friendRequests.value.length" class="request-grid">
               <div v-for="req in ctx.friendRequests.value" :key="req.request_id" class="request-item">
