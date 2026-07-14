@@ -78,6 +78,10 @@ const localObjectCount = computed(() =>
           <small>{{ ctx.nodeControlStatus.value || '未连接' }}</small>
         </div>
         <div class="sync-status">
+          <b>运行环境</b>
+          <small>{{ ctx.runtimeStatusText.value }}</small>
+        </div>
+        <div class="sync-status">
           <b>PreKey</b>
           <small>{{ ctx.prekeyStatusSummary.value }}</small>
         </div>
@@ -88,6 +92,7 @@ const localObjectCount = computed(() =>
         </div>
         <div class="row compact">
           <button class="secondary" @click="ctx.enableNotifications">开启通知</button>
+          <button class="secondary" @click="ctx.refreshRuntimeStatus">刷新状态</button>
           <small class="sync-note">通知：{{ ctx.notificationPermission.value || '未知' }}</small>
         </div>
       </section>

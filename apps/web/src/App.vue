@@ -331,6 +331,7 @@ const processedMailboxIds = ref<string[]>([])
 let outboxRetryTimer: number | undefined
 let lastDeliveryError = ''
 const notificationPermission = ref(typeof Notification !== 'undefined' ? Notification.permission : 'unsupported')
+const runtimeStatusText = ref('尚未检查')
 const activePeerId = ref('')
 const activeGroupId = ref('')
 
@@ -509,6 +510,7 @@ onMounted(async () => {
     startOutboxRetryLoop()
     startNodeSyncLoop()
     document.addEventListener('visibilitychange', () => {
+      refreshRuntimeStatus()
       if (document.visibilityState === 'visible' && loggedIn.value && nodeEnabled.value && autoMailboxTake.value) {
         const now = Date.now()
         if (now - lastVisibilityMailboxTakeAt >= 30_000) {
@@ -517,6 +519,9 @@ onMounted(async () => {
         }
       }
     })
+    window.addEventListener('online', refreshRuntimeStatus)
+    window.addEventListener('offline', refreshRuntimeStatus)
+    void refreshRuntimeStatus()
     if ('serviceWorker' in navigator) {
       const swUrl = new URL('sw.js', import.meta.env.BASE_URL ? new URL(import.meta.env.BASE_URL, window.location.origin) : window.location.origin)
       void navigator.serviceWorker.register(swUrl.pathname)
@@ -591,6 +596,21 @@ function notifyIfAllowed(title: string, body: string) {
   try {
     new Notification(title, { body })
   } catch {}
+}
+
+async function refreshRuntimeStatus() {
+  const online = navigator.onLine ? '在线' : '离线'
+  const visibility = document.visibilityState === 'visible' ? '前台' : '后台'
+  let battery = ''
+  const nav = navigator as Navigator & { getBattery?: () => Promise<{ charging: boolean; level: number }> }
+  if (typeof nav.getBattery === 'function') {
+    const info = await nav.getBattery().catch(() => null)
+    if (info) {
+      const percent = Math.round(info.level * 100)
+      battery = info.charging ? ` · 电量 ${percent}% 充电中` : percent <= 20 ? ` · 低电量 ${percent}%` : ` · 电量 ${percent}%`
+    }
+  }
+  runtimeStatusText.value = `${online} · ${visibility}${battery}`
 }
 
 function showAlert(title: string, message: string, kind: ToastKind = 'info') {
@@ -4232,7 +4252,7 @@ const appContext = {
   goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, myContactCardText, backupText,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, pwaStatusText, webVersionText,
   nodeControlUrl, nodeUrlList, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
-  enableNotifications, notificationPermission,
+  enableNotifications, notificationPermission, runtimeStatusText, refreshRuntimeStatus,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, createMyDeviceCert, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
