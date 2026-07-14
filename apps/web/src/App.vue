@@ -4680,8 +4680,10 @@ function onFileSelected(event: Event) {
   selectedFile.value = input.files?.[0] ?? null
   if (selectedFile.value) {
     const warning = isDangerousFileName(selectedFile.value.name) ? '，请确认来源可信' : ''
+    const transferLimit = `当前 Web 端整包发送，最大 ${formatBytes(MAX_FILE_BYTES)}，暂不支持断点续传`
     fileTransferPhase.value = '已选择'
     rtcFileStatus.value = `已选择文件：${selectedFile.value.name} (${formatBytes(selectedFile.value.size)})${warning}`
+    fileProgressText.value = transferLimit
   }
 }
 
@@ -4735,7 +4737,7 @@ async function createFilePackageForActive(): Promise<boolean> {
     if (!activeContact.value) throw new Error('请选择联系人')
     if (activeContact.value.state !== 'Friend') throw new Error('联系人还不是 Friend')
     if (!selectedFile.value) throw new Error('请选择文件')
-    if (selectedFile.value.size > MAX_FILE_BYTES) throw new Error(`文件过大：最大 ${MAX_FILE_BYTES} bytes`)
+    if (selectedFile.value.size > MAX_FILE_BYTES) throw new Error(`文件过大：当前 Web 端最大 ${formatBytes(MAX_FILE_BYTES)}，暂不支持断点续传`)
     fileTransferPhase.value = '检查空间'
     await warnIfLowStorageForFile(selectedFile.value.size)
     fileTransferPhase.value = '读取文件'
