@@ -1613,7 +1613,7 @@ async function sendDeliveryAck(sender: ContactItem, messageId?: string) {
   if (!messageId || !identity.value) return
   const ack = createDeliveryAckPayload(messageId)
   const result = await deliverPayloadToContact(sender, ack, '送达回执', 'other')
-  if (result === 'queued' || result === 'failed') outbox.value.push(createOutboxItem(sender, ack, undefined, 'other'))
+  if (result === 'queued' || result === 'failed') queueOutboxItem(sender, ack, undefined, 'other')
   persist()
 }
 
@@ -1902,7 +1902,7 @@ async function fanoutDeviceRevokeToFriends() {
     for (const contact of friendContacts.value) {
       const result = await deliverPayloadToContact(contact, deviceRevokeText.value, '设备撤销事件', 'other')
       if (result === 'sent' || result === 'mailbox') sent += 1
-      else { queued += 1; outbox.value.push(createOutboxItem(contact, deviceRevokeText.value, undefined, 'other')) }
+      else { queued += 1; queueOutboxItem(contact, deviceRevokeText.value, undefined, 'other') }
     }
     appendLog(`设备撤销事件分发完成：已投递 ${sent}，queued ${queued}`)
     persist()
@@ -4912,7 +4912,7 @@ function sendFilePackageOverRtc() {
       void deliverPayloadToContact(contact, payload, '文件包', 'file-package')
         .then((result) => {
           msg.status = result === 'mailbox' ? 'mailbox' : result === 'sent' ? 'sent' : result === 'failed' ? 'failed' : 'queued'
-          if (result === 'queued' || result === 'failed') outbox.value.push(createOutboxItem(contact, payload, msg.id, 'file-package'))
+          if (result === 'queued' || result === 'failed') queueOutboxItem(contact, payload, msg.id, 'file-package')
           fileTransferPhase.value = result === 'failed' ? '失败' : result === 'queued' ? '已入队' : '已发送'
           rtcFileStatus.value = result === 'mailbox' ? `已通过 Mailbox 发送：${info.manifest.name}` : `文件投递状态：${result}`
           fileProgressText.value = result === 'failed'
@@ -4924,7 +4924,7 @@ function sendFilePackageOverRtc() {
           persist()
         })
     } else {
-      outbox.value.push(createOutboxItem(activeContact.value, filePackageText.value, msg.id, 'file-package'))
+      queueOutboxItem(activeContact.value, filePackageText.value, msg.id, 'file-package')
       fileTransferPhase.value = '已入队'
       rtcFileStatus.value = `文件已加入 outbox：${info.manifest.name}`
       fileProgressText.value = `已入队 · ${formatBytes(packageBytes)}`
