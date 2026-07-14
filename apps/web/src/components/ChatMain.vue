@@ -135,8 +135,9 @@ function onComposerKeydown(e: KeyboardEvent) {
       <button @click="ctx.sendMessage">发送</button>
       <div v-if="ctx.activeContact.value" class="attachment-row">
         <input type="file" aria-label="选择附件" @change="ctx.onFileSelected" />
-        <button class="secondary" :disabled="!ctx.selectedFile.value" @click="ctx.createFilePackageForActive().then(ctx.sendFilePackageOverRtc)">发送文件</button>
+        <button class="secondary" :disabled="!ctx.selectedFile.value" @click="ctx.sendSelectedFile">发送文件</button>
         <button class="secondary danger" :disabled="!ctx.selectedFile.value && !ctx.filePackageText.value" @click="ctx.cancelSelectedFile">取消文件</button>
+        <span class="file-transfer-phase">{{ ctx.fileTransferPhase.value }}</span>
         <small v-if="ctx.selectedFile.value">
           {{ ctx.selectedFile.value.name }} · {{ ctx.formatBytes(ctx.selectedFile.value.size) }}
           <b v-if="ctx.isDangerousFileName(ctx.selectedFile.value.name)">危险类型</b>

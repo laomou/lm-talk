@@ -395,6 +395,7 @@ const receivedFileName = ref('')
 const receivedFileUrl = ref('')
 const receivedFileMeta = ref('')
 const rtcFileStatus = ref('未发送文件')
+const fileTransferPhase = ref('待选择')
 const ratchetStateText = ref('')
 const ratchetPeerStateText = ref('')
 const ratchetHeaderText = ref('')
@@ -3799,6 +3800,7 @@ function onFileSelected(event: Event) {
   selectedFile.value = input.files?.[0] ?? null
   if (selectedFile.value) {
     const warning = isDangerousFileName(selectedFile.value.name) ? '，请确认来源可信' : ''
+    fileTransferPhase.value = '已选择'
     rtcFileStatus.value = `已选择文件：${selectedFile.value.name} (${formatBytes(selectedFile.value.size)})${warning}`
   }
 }
@@ -3807,6 +3809,7 @@ function cancelSelectedFile() {
   selectedFile.value = null
   filePackageText.value = ''
   filePackageInfoText.value = ''
+  fileTransferPhase.value = '待选择'
   rtcFileStatus.value = '未发送文件'
 }
 
@@ -3816,15 +3819,21 @@ function clearSelectedFileDraft() {
   filePackageInfoText.value = ''
 }
 
-async function createFilePackageForActive() {
+async function createFilePackageForActive(): Promise<boolean> {
+  let ok = false
   await runAsync('生成文件包', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
     if (activeContact.value.state !== 'Friend') throw new Error('联系人还不是 Friend')
     if (!selectedFile.value) throw new Error('请选择文件')
     if (selectedFile.value.size > MAX_FILE_BYTES) throw new Error(`文件过大：最大 ${MAX_FILE_BYTES} bytes`)
+    fileTransferPhase.value = '检查空间'
     await warnIfLowStorageForFile(selectedFile.value.size)
+    fileTransferPhase.value = '读取文件'
+    rtcFileStatus.value = `正在读取文件：${selectedFile.value.name}`
     const bytes = new Uint8Array(await selectedFile.value.arrayBuffer())
     if (bytes.length === 0) throw new Error('不能发送空文件')
+    fileTransferPhase.value = '加密封装'
+    rtcFileStatus.value = `正在生成加密文件包：${selectedFile.value.name}`
     filePackageText.value = create_file_package(
       backupText.value,
       passphrase.value,
@@ -3835,9 +3844,13 @@ async function createFilePackageForActive() {
       16 * 1024,
     )
     filePackageInfoText.value = JSON.stringify(JSON.parse(inspect_file_package(filePackageText.value)), null, 2)
+    fileTransferPhase.value = '待发送'
     rtcFileStatus.value = '文件包已生成，可复制或 WebRTC 发送'
     appendLog(`已生成文件包：${selectedFile.value.name}`)
+    ok = true
   })
+  if (!ok) fileTransferPhase.value = '失败'
+  return ok
 }
 
 function inspectIncomingFilePackage() {
@@ -3879,6 +3892,7 @@ function decryptIncomingFilePackage() {
         created_at: Date.now(),
       })
     }
+    fileTransferPhase.value = '已接收'
     rtcFileStatus.value = `已解密文件：${out.name}`
     appendLog(`已解密文件：${out.name}`)
     persist()
@@ -3900,9 +3914,11 @@ function sendFilePackageOverRtc() {
       status: 'queued',
       created_at: Date.now(),
     }
+    fileTransferPhase.value = '投递中'
     if (dc && dc.readyState === 'open') {
       sendRtcText(filePackageText.value, '文件包')
       msg.status = 'sent'
+      fileTransferPhase.value = '已发送'
       rtcFileStatus.value = `已通过 WebRTC 发送：${info.manifest.name}`
       clearSelectedFileDraft()
     } else if (nodeEnabled.value) {
@@ -3913,18 +3929,24 @@ function sendFilePackageOverRtc() {
         .then((result) => {
           msg.status = result === 'mailbox' ? 'mailbox' : result === 'sent' ? 'sent' : result === 'failed' ? 'failed' : 'queued'
           if (result === 'queued' || result === 'failed') outbox.value.push(createOutboxItem(contact, payload, msg.id, 'file-package'))
+          fileTransferPhase.value = result === 'failed' ? '失败' : result === 'queued' ? '已入队' : '已发送'
           rtcFileStatus.value = result === 'mailbox' ? `已通过 Mailbox 发送：${info.manifest.name}` : `文件投递状态：${result}`
           if (result !== 'failed') clearSelectedFileDraft()
           persist()
         })
     } else {
       outbox.value.push(createOutboxItem(activeContact.value, filePackageText.value, msg.id, 'file-package'))
+      fileTransferPhase.value = '已入队'
       rtcFileStatus.value = `文件已加入 outbox：${info.manifest.name}`
       clearSelectedFileDraft()
     }
     messages.value.push(msg)
     persist()
   })
+}
+
+async function sendSelectedFile() {
+  if (await createFilePackageForActive()) sendFilePackageOverRtc()
 }
 
 async function copySignal(value: string) {
@@ -3983,7 +4005,7 @@ const appContext = {
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
   flushOutboxForActive, cancelOutboxForActive, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
-  receiveEnvelope, onFileSelected, cancelSelectedFile, selectedFile, formatBytes, isDangerousFileName, createFilePackageForActive, sendFilePackageOverRtc, filePackageText, rtcFileStatus,
+  receiveEnvelope, onFileSelected, cancelSelectedFile, selectedFile, formatBytes, isDangerousFileName, createFilePackageForActive, sendFilePackageOverRtc, sendSelectedFile, filePackageText, rtcFileStatus, fileTransferPhase,
   incomingFilePackageText, inspectIncomingFilePackage, decryptIncomingFilePackage, receivedFileUrl, receivedFileName, receivedFileMeta, filePackageInfoText,
   createGroupSenderKeyForActiveGroup, groupSenderDistributionText, importGroupSenderKeyForActiveContact, groupSenderEncryptDebug, groupSenderDecryptDebug, createGroupSenderDistributionFanoutForActiveGroup,
   groupSenderDistributionFanoutJson, groupSenderDistributionFanoutItems, groupSenderEnvelopeText, groupSenderPlainText, groupRenameText, createRenameGroupEvent,
