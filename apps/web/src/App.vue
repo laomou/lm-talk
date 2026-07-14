@@ -393,6 +393,7 @@ const incomingFilePackageText = ref('')
 const filePackageInfoText = ref('')
 const receivedFileName = ref('')
 const receivedFileUrl = ref('')
+const receivedFileMeta = ref('')
 const rtcFileStatus = ref('未发送文件')
 const ratchetStateText = ref('')
 const ratchetPeerStateText = ref('')
@@ -3795,6 +3796,12 @@ function cancelSelectedFile() {
   rtcFileStatus.value = '未发送文件'
 }
 
+function clearSelectedFileDraft() {
+  selectedFile.value = null
+  filePackageText.value = ''
+  filePackageInfoText.value = ''
+}
+
 async function createFilePackageForActive() {
   await runAsync('生成文件包', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
@@ -3844,6 +3851,7 @@ function decryptIncomingFilePackage() {
     const blob = new Blob([new Uint8Array(bytes)], { type: out.mime_type || 'application/octet-stream' })
     receivedFileUrl.value = URL.createObjectURL(blob)
     receivedFileName.value = out.name
+    receivedFileMeta.value = `${out.mime_type || 'application/octet-stream'} · ${formatBytes(out.size ?? bytes.length)}`
     if (activeContact.value) {
       messages.value.push({
         id: newId(),
@@ -3881,6 +3889,7 @@ function sendFilePackageOverRtc() {
       sendRtcText(filePackageText.value, '文件包')
       msg.status = 'sent'
       rtcFileStatus.value = `已通过 WebRTC 发送：${info.manifest.name}`
+      clearSelectedFileDraft()
     } else if (nodeEnabled.value) {
       rtcFileStatus.value = `正在通过 Mailbox 发送：${info.manifest.name}`
       const payload = filePackageText.value
@@ -3890,11 +3899,13 @@ function sendFilePackageOverRtc() {
           msg.status = result === 'mailbox' ? 'mailbox' : result === 'sent' ? 'sent' : result === 'failed' ? 'failed' : 'queued'
           if (result === 'queued' || result === 'failed') outbox.value.push(createOutboxItem(contact, payload, msg.id, 'file-package'))
           rtcFileStatus.value = result === 'mailbox' ? `已通过 Mailbox 发送：${info.manifest.name}` : `文件投递状态：${result}`
+          if (result !== 'failed') clearSelectedFileDraft()
           persist()
         })
     } else {
       outbox.value.push(createOutboxItem(activeContact.value, filePackageText.value, msg.id, 'file-package'))
       rtcFileStatus.value = `文件已加入 outbox：${info.manifest.name}`
+      clearSelectedFileDraft()
     }
     messages.value.push(msg)
     persist()
@@ -3958,7 +3969,7 @@ const appContext = {
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
   flushOutboxForActive, cancelOutboxForActive, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
   receiveEnvelope, onFileSelected, cancelSelectedFile, selectedFile, formatBytes, isDangerousFileName, createFilePackageForActive, sendFilePackageOverRtc, filePackageText, rtcFileStatus,
-  incomingFilePackageText, inspectIncomingFilePackage, decryptIncomingFilePackage, receivedFileUrl, receivedFileName, filePackageInfoText,
+  incomingFilePackageText, inspectIncomingFilePackage, decryptIncomingFilePackage, receivedFileUrl, receivedFileName, receivedFileMeta, filePackageInfoText,
   createGroupSenderKeyForActiveGroup, groupSenderDistributionText, importGroupSenderKeyForActiveContact, groupSenderEncryptDebug, groupSenderDecryptDebug, createGroupSenderDistributionFanoutForActiveGroup,
   groupSenderDistributionFanoutJson, groupSenderDistributionFanoutItems, groupSenderEnvelopeText, groupSenderPlainText, groupRenameText, createRenameGroupEvent,
   groupEventText, applyGroupEventText, createGroupEventFanout, groupEventFanoutJson, groupEventFanoutItems, incomingGroupEventText,
