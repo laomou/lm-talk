@@ -396,6 +396,8 @@ const nodeSyncPeerUrl = ref('http://127.0.0.1:8788')
 const nodeSyncSnapshotText = ref('')
 const nodeSyncStatusText = ref('')
 const storageEstimateText = ref('尚未估算')
+const webVersionText = `v${__APP_VERSION__} (${__BUILD_REF__})`
+const pwaStatusText = ref('尚未检查')
 const selectedFile = ref<File | null>(null)
 const filePackageText = ref('')
 const incomingFilePackageText = ref('')
@@ -517,7 +519,9 @@ onMounted(async () => {
     })
     if ('serviceWorker' in navigator) {
       const swUrl = new URL('sw.js', import.meta.env.BASE_URL ? new URL(import.meta.env.BASE_URL, window.location.origin) : window.location.origin)
-      void navigator.serviceWorker.register(swUrl.pathname).catch((e) => appendLog(`PWA Service Worker 注册失败：${String(e)}`))
+      void navigator.serviceWorker.register(swUrl.pathname)
+        .then(() => refreshPwaStatus())
+        .catch((e) => appendLog(`PWA Service Worker 注册失败：${String(e)}`))
     }
     ready.value = true
   } catch (e) {
@@ -1137,6 +1141,16 @@ async function clearBrowserCaches() {
   await Promise.all(registrations.map((registration) => registration.unregister()))
   appendLog(`已清理浏览器缓存：cache=${cacheKeys.length}, service_worker=${registrations.length}`)
   toast('已清理浏览器缓存', 'success')
+  await refreshPwaStatus()
+}
+
+async function refreshPwaStatus() {
+  const swSupported = 'serviceWorker' in navigator
+  const nav = navigator as Navigator & { serviceWorker?: ServiceWorkerContainer }
+  const registrations = swSupported && nav.serviceWorker?.getRegistrations ? await nav.serviceWorker.getRegistrations().catch(() => []) : []
+  const cacheKeys = typeof caches !== 'undefined' ? await caches.keys().catch(() => []) : []
+  const controller = swSupported && nav.serviceWorker?.controller ? '已接管' : registrations.length ? '已注册' : swSupported ? '未注册' : '不支持'
+  pwaStatusText.value = `${controller} · 缓存 ${cacheKeys.length} · ${webVersionText}`
 }
 
 function formatBytes(bytes: number): string {
@@ -4216,7 +4230,7 @@ function logout() {
 }
 const appContext = {
   goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, myContactCardText, backupText,
-  clearBrowserCaches, refreshStorageEstimate, storageEstimateText,
+  clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, pwaStatusText, webVersionText,
   nodeControlUrl, nodeUrlList, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
   enableNotifications, notificationPermission,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,

@@ -136,6 +136,21 @@ const localObjectCount = computed(() =>
 
       <section class="home-card">
         <div class="section-title-row">
+          <h3>PWA 状态</h3>
+          <button class="secondary" @click="ctx.refreshPwaStatus">刷新</button>
+        </div>
+        <div class="sync-status">
+          <b>版本</b>
+          <small>{{ ctx.webVersionText }}</small>
+        </div>
+        <div class="sync-status">
+          <b>离线缓存</b>
+          <small>{{ ctx.pwaStatusText.value }}</small>
+        </div>
+      </section>
+
+      <section class="home-card">
+        <div class="section-title-row">
           <h3>本地安全策略</h3>
           <button class="secondary" @click="ctx.saveSafetyPolicy">保存</button>
         </div>
