@@ -65,7 +65,8 @@
 5. **Mailbox 收取与处理产品化**
    - Web 已能登录后/切回页面/手动同步时调用 `/mailbox/take`，自动处理 direct-envelope、好友请求/响应、群 fanout、文件包和安全会话 offer/response，成功后 `/mailbox/ack`。
    - 通讯录已有正式收件箱入口，展示好友请求、群邀请、最近 Mailbox 处理摘要和最近失败原因。
-   - 仍需失败重试队列、更细错误分类详情和长期 dedupe 保留/跨设备策略。
+   - 收件箱已按失败原因归类展示 Mailbox 处理失败摘要。
+   - 仍需失败重试队列、长期 dedupe 保留和跨设备策略。
 
 6. **好友请求 Mailbox UI 收口**
    - 好友请求和接受/拒绝响应已可作为 Mailbox `Other` 载荷投递和处理。
