@@ -57,6 +57,15 @@ const activeOutboxError = computed(() => {
   return failed?.last_error ?? ''
 })
 
+const activeFileOutboxError = computed(() => {
+  const peerId = props.ctx.activeContact.value?.user_id
+  if (!peerId) return ''
+  const failed = props.ctx.outbox.value
+    .filter((item: any) => item.peer_user_id === peerId && item.kind === 'file-package' && item.status === 'failed' && item.last_error)
+    .sort((a: any, b: any) => (b.created_at ?? 0) - (a.created_at ?? 0))[0]
+  return failed?.last_error ?? ''
+})
+
 const messagesEl = ref<HTMLElement | null>(null)
 function scrollToBottom() {
   const el = messagesEl.value
@@ -171,6 +180,8 @@ function onComposerKeydown(e: KeyboardEvent) {
         </small>
         <small v-else>{{ ctx.rtcFileStatus.value }}</small>
         <small v-if="ctx.fileProgressText.value">{{ ctx.fileProgressText.value }}</small>
+        <small v-if="activeFileOutboxError" class="outbox-error">文件发送失败：{{ activeFileOutboxError }}</small>
+        <button v-if="activeFileOutboxError" class="secondary" @click="ctx.flushOutboxForActive">重试文件</button>
         <div v-if="ctx.pendingFilePackageText.value && !ctx.receivedFileUrl.value" class="received-file-card">
           <b>收到文件包</b>
           <small>文件尚未解密，确认来源可信后再打开。</small>
