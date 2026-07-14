@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 const props = defineProps<{ ctx: any }>()
+const syncRecoveryQuery = ref('')
 
 const outboxItems = computed(() => props.ctx.outbox.value)
 const pendingOutbox = computed(() => outboxItems.value.filter((item: any) => item.status !== 'sent'))
@@ -20,6 +21,11 @@ const localObjectCount = computed(() =>
   props.ctx.messages.value.length +
   props.ctx.outbox.value.length
 )
+const filteredSyncRecoveryHistory = computed(() => {
+  const q = syncRecoveryQuery.value.trim().toLowerCase()
+  const history = props.ctx.syncRecoveryHistory.value
+  return q ? history.filter((item: string) => item.toLowerCase().includes(q)) : history
+})
 </script>
 
 <template>
@@ -80,7 +86,8 @@ const localObjectCount = computed(() =>
           <small>{{ ctx.nodeControlStatus.value || '未连接' }}</small>
           <small :class="{ 'danger-text': ctx.syncFailureSummaryText.value !== '暂无同步失败' }">{{ ctx.syncFailureSummaryText.value }}</small>
           <small>{{ ctx.syncRecoveryStatusText.value }}</small>
-          <small v-if="ctx.syncRecoveryHistory.value.length">历史：{{ ctx.syncRecoveryHistory.value.join(' ｜ ') }}</small>
+          <input v-if="ctx.syncRecoveryHistory.value.length" v-model="syncRecoveryQuery" type="search" aria-label="筛选同步恢复历史" placeholder="筛选恢复历史" />
+          <small v-if="filteredSyncRecoveryHistory.length">历史：{{ filteredSyncRecoveryHistory.join(' ｜ ') }}</small>
           <button v-if="ctx.syncFailureSummaryText.value !== '暂无同步失败'" class="secondary" @click="ctx.recoverSyncFailures">恢复同步失败</button>
         </div>
         <div class="sync-status">
