@@ -1,5 +1,14 @@
 <script setup lang="ts">
-defineProps<{ ctx: any }>()
+import { computed } from 'vue'
+
+const props = defineProps<{ ctx: any }>()
+
+const outboxItems = computed(() => props.ctx.outbox.value)
+const pendingOutbox = computed(() => outboxItems.value.filter((item: any) => item.status !== 'sent'))
+const failedOutbox = computed(() => outboxItems.value.filter((item: any) => item.status === 'failed'))
+const contactName = (userId: string) => props.ctx.contacts.value.find((c: any) => c.user_id === userId)?.display_name || userId
+const outboxKindLabel = (kind?: string) =>
+  kind === 'group-fanout' ? '群消息' : kind === 'file-package' ? '文件' : kind === 'other' ? '系统消息' : '单聊消息'
 </script>
 
 <template>
@@ -42,6 +51,30 @@ defineProps<{ ctx: any }>()
         <div class="sync-status">
           <b>同步状态</b>
           <small>{{ ctx.nodeControlStatus.value || '未连接' }}</small>
+        </div>
+      </section>
+
+      <section class="home-card outbox-card">
+        <div class="section-title-row">
+          <h3>待发送队列</h3>
+          <span class="sync-pill" :class="{ on: pendingOutbox.length === 0 }">
+            {{ pendingOutbox.length ? `${pendingOutbox.length} 待处理` : '已清空' }}
+          </span>
+        </div>
+        <div class="outbox-summary">
+          <span>总数 {{ outboxItems.length }}</span>
+          <span>失败 {{ failedOutbox.length }}</span>
+        </div>
+        <div v-if="pendingOutbox.length" class="outbox-list">
+          <div v-for="item in pendingOutbox.slice(0, 6)" :key="item.id" class="outbox-row">
+            <b>{{ contactName(item.peer_user_id) }}</b>
+            <small>{{ outboxKindLabel(item.kind) }} · 重试 {{ item.retry_count }}</small>
+            <small v-if="item.last_error" class="danger-text">{{ item.last_error }}</small>
+          </div>
+        </div>
+        <div v-else class="empty">没有待发送内容</div>
+        <div class="row compact">
+          <button class="secondary" @click="ctx.clearSentOutbox">清理已发送</button>
         </div>
       </section>
 
