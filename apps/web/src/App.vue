@@ -1557,6 +1557,25 @@ function createOutboxItem(contact: ContactItem, payload: string, messageId?: str
   }
 }
 
+function queueOutboxItem(contact: ContactItem, payload: string, messageId?: string, kind: OutboxItem['kind'] = 'direct-envelope'): OutboxItem {
+  const existing = outbox.value.find((item) =>
+    item.peer_user_id === contact.user_id
+    && item.kind === kind
+    && item.envelope_json === payload
+    && item.status !== 'sent'
+  )
+  if (existing) {
+    existing.status = 'queued'
+    existing.next_retry_at = Date.now()
+    existing.last_error = undefined
+    if (messageId) existing.message_id = messageId
+    return existing
+  }
+  const item = createOutboxItem(contact, payload, messageId, kind)
+  outbox.value.push(item)
+  return item
+}
+
 function mailboxKindForOutboxKind(kind: OutboxItem['kind']): string {
   if (kind === 'group-fanout') return 'group-fanout'
   if (kind === 'file-package') return 'other'
@@ -3627,7 +3646,7 @@ async function sendSecureSessionOfferToContact(contact: ContactItem) {
     contact.last_secure_session_error = undefined
   } catch (e) {
     recordSecureSessionError(contact, e, '⚠️ 安全会话 Offer 发送失败')
-    outbox.value.push(createOutboxItem(contact, offer, undefined, 'other'))
+    queueOutboxItem(contact, offer, undefined, 'other')
     appendLog(`安全会话 Offer 已加入 outbox 自动重试：${contact.display_name || contact.user_id}`)
     throw e
   }
