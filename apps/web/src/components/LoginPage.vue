@@ -36,6 +36,7 @@ const emit = defineEmits<{
 const router = useRouter()
 const hasLocalIdentity = computed(() => props.localIdentities.length > 0)
 const registeredBackupChecksum = ref('')
+const importBackupChecksum = ref('')
 
 async function sha256Hex(value: string): Promise<string> {
   const bytes = new TextEncoder().encode(value)
@@ -49,6 +50,13 @@ watch(
     registeredBackupChecksum.value = value ? (await sha256Hex(value)).slice(0, 16) : ''
   },
   { immediate: true },
+)
+
+watch(
+  backupText,
+  async (value) => {
+    importBackupChecksum.value = value.trim() ? (await sha256Hex(value.trim())).slice(0, 16) : ''
+  },
 )
 
 function goRegister() {
@@ -186,6 +194,10 @@ function resetRegister() {
         <textarea v-model="passphrase" rows="2" placeholder="输入身份对应提示词" />
         <label>身份文本</label>
         <textarea v-model="backupText" rows="6" placeholder="粘贴导出的身份文本" />
+        <div v-if="importBackupChecksum" class="backup-checksum compact-checksum">
+          <span>导入文本校验码</span>
+          <b>{{ importBackupChecksum }}</b>
+        </div>
         <div class="row auth-actions">
           <button :disabled="!backupText.trim()" @click="emit('importIdentity')">导入</button>
         </div>

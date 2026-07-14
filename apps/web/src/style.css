@@ -292,6 +292,7 @@ button.secondary.danger:hover { background: var(--c-danger-soft); border-color: 
 .backup-checksum span { color: var(--c-ink-3); font-size: 12px; }
 .backup-checksum b { font-family: var(--font-mono); font-size: 13px; overflow-wrap: anywhere; }
 .backup-checksum button { justify-self: center; padding: 6px 10px; font-size: 12px; }
+.compact-checksum { margin-top: var(--sp-3); text-align: center; }
 
 /* ---- Chat: shell -------------------------------------------------------- */
 .chat-shell {
