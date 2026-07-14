@@ -287,6 +287,7 @@ const MAX_CONTACT_CARD_BYTES = 32 * 1024
 const MAX_SIGNAL_BYTES = 256 * 1024
 const MAX_FILE_BYTES = 16 * 1024 * 1024
 const MAX_RTC_TEXT_BYTES = MAX_FILE_BYTES * 3
+const MAX_OUTBOX_RETRY_COUNT = 5
 const GROUP_EVENT_PAYLOAD_PREFIX = 'lm-group-event-message-v1:'
 const GROUP_SENDER_KEY_PAYLOAD_PREFIX = 'lm-group-sender-key-message-v1:'
 
@@ -2557,6 +2558,11 @@ function unblockActiveContact() {
 
 async function retryOutboxItem(item: OutboxItem): Promise<boolean> {
   if (item.status === 'sent') return true
+  if (item.retry_count >= MAX_OUTBOX_RETRY_COUNT) {
+    item.status = 'failed'
+    item.last_error = `已达到最大重试次数 ${MAX_OUTBOX_RETRY_COUNT}`
+    return false
+  }
   const contact = contacts.value.find((c) => c.user_id === item.peer_user_id)
   if (!contact || contact.state === 'Blocked') {
     item.status = 'failed'
@@ -2575,8 +2581,14 @@ async function retryOutboxItem(item: OutboxItem): Promise<boolean> {
     return true
   }
   item.status = result === 'failed' ? 'failed' : 'queued'
-  item.next_retry_at = Date.now() + retryDelayMs(item.retry_count)
-  item.last_error = result === 'failed' ? '投递失败' : undefined
+  if (item.retry_count >= MAX_OUTBOX_RETRY_COUNT) {
+    item.status = 'failed'
+    item.next_retry_at = undefined
+    item.last_error = `已达到最大重试次数 ${MAX_OUTBOX_RETRY_COUNT}`
+  } else {
+    item.next_retry_at = Date.now() + retryDelayMs(item.retry_count)
+    item.last_error = result === 'failed' ? '投递失败' : undefined
+  }
   return false
 }
 
