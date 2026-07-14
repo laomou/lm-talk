@@ -78,6 +78,7 @@ const localObjectCount = computed(() =>
         <div class="sync-status">
           <b>同步状态</b>
           <small>{{ ctx.nodeControlStatus.value || '未连接' }}</small>
+          <small :class="{ 'danger-text': ctx.syncFailureSummaryText.value !== '暂无同步失败' }">{{ ctx.syncFailureSummaryText.value }}</small>
         </div>
         <div class="sync-status">
           <b>运行环境</b>
