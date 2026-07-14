@@ -79,6 +79,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
           <div v-for="entry in ctx.nodeEntrySummaries.value" :key="entry.url" class="outbox-row">
             <b>{{ entry.url }}</b>
             <small>{{ entry.token_configured ? '令牌已配置' : entry.missing_remote_token ? '远端缺令牌' : '本机无需令牌' }}</small>
+            <small v-if="entry.missing_remote_token" class="danger-text">点击“编辑地址/令牌”，在地址后追加 |令牌。</small>
           </div>
         </div>
         <textarea v-if="showSyncEditor" id="sync-service-input" v-model="ctx.nodeControlUrl.value" rows="4" aria-label="同步服务地址列表" placeholder="每行一个同步服务地址，例如：&#10;http://127.0.0.1:8787&#10;http://192.168.1.23:8787|令牌&#10;http://[fd00::1234]:8787|令牌" />
