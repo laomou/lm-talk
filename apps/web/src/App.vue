@@ -374,6 +374,7 @@ const autoMailboxTake = ref(true)
 const autoPublishPreKey = ref(true)
 const autoNodeSync = ref(false)
 let nodeSyncTimer: number | undefined
+let lastVisibilityMailboxTakeAt = 0
 const nodeControlStatus = ref('未连接')
 const nodeClosestTarget = ref('')
 const nodeClosestInfoText = ref('')
@@ -475,7 +476,11 @@ onMounted(async () => {
     startNodeSyncLoop()
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && loggedIn.value && nodeEnabled.value && autoMailboxTake.value) {
-        void takeMailboxFromNode()
+        const now = Date.now()
+        if (now - lastVisibilityMailboxTakeAt >= 30_000) {
+          lastVisibilityMailboxTakeAt = now
+          void takeMailboxFromNode()
+        }
       }
     })
     if ('serviceWorker' in navigator) {
