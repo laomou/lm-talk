@@ -81,6 +81,7 @@ const localObjectCount = computed(() =>
         <div class="sync-status">
           <b>运行环境</b>
           <small>{{ ctx.runtimeStatusText.value }}</small>
+          <small>{{ ctx.notificationRuntimePolicyText.value }}</small>
         </div>
         <div class="sync-status">
           <b>PreKey</b>

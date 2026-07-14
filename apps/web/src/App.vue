@@ -350,6 +350,15 @@ let outboxRetryTimer: number | undefined
 let lastDeliveryError = ''
 const notificationPermission = ref(typeof Notification !== 'undefined' ? Notification.permission : 'unsupported')
 const runtimeStatusText = ref('尚未检查')
+const notificationRuntimePolicyText = computed(() => {
+  const permission = notificationPermission.value || 'unknown'
+  if (permission === 'unsupported') return '当前浏览器不支持 Web Notification；后台只能在页面恢复前台后同步。'
+  if (permission === 'denied') return '通知权限已被拒绝；请在浏览器站点设置中重新允许。后台页面可能被暂停，切回前台会触发收取。'
+  if (permission === 'default') return '通知权限尚未开启；只会在页面前台或切回前台后显示同步结果。'
+  const visibility = document.visibilityState === 'visible' ? '前台不弹系统通知' : '后台收到新内容会尝试系统通知'
+  const mailbox = autoMailboxTake.value ? '自动收取已开启，切回前台最多 30 秒触发一次' : '自动收取已关闭，需要手动同步'
+  return `${visibility}；${mailbox}；浏览器可在省电/后台时暂停定时器。`
+})
 const activePeerId = ref('')
 const activeGroupId = ref('')
 
@@ -4541,7 +4550,7 @@ const appContext = {
   goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, myContactCardText, backupText,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, pwaStatusText, webVersionText,
   nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
-  enableNotifications, notificationPermission, runtimeStatusText, refreshRuntimeStatus,
+  enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, createMyDeviceCert, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
