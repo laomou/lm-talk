@@ -97,6 +97,7 @@ Web 当前生成 JSON 文本，顶层字段如下：
 约束：
 
 - 同步服务 URL 不得包含 token、basic auth、一次性凭据或其他认证秘密。
+- 可包含 `token_count` 和 `missing_remote_token_count` 这类非敏感计数，用于排查令牌配置缺口。
 - 如果未来支持带凭据 URL，诊断报告必须只展示 origin 或经过脱敏后的 URL。
 
 ### 本地计数

@@ -249,6 +249,7 @@
    - 允许字段、禁止字段、`diagnostics_version` 和分享前预览确认已整理到 `docs/DIAGNOSTICS_SPEC.md`。
    - Web 已支持可选脱敏账号摘要和同步服务地址。
    - Web 已支持只生成并复制摘要报告。
+   - 诊断报告同步区已导出 token_count / missing_remote_token_count 这类非敏感计数，不导出令牌内容。
 
 9. **可访问性与国际化**
    - Web 已有 `zh-CN` 页面语言、按钮焦点样式、toast `aria-live`、主导航/搜索/消息列表/弹窗基础可访问性语义。
