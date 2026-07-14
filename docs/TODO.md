@@ -88,9 +88,9 @@
    - 不加入摄像头扫码功能；二维码只生成和复制原文。
 
 10. **本地数据安全增强**
-    - 当前 Web IndexedDB 主要是功能可用路径；需要补应用层加密。
-    - 至少加密消息明文、联系人备注、群名、outbox、ratchet session。
-    - 只保留必要索引明文。
+    - Web IndexedDB 已有应用层加密路径，规格见 `docs/STORAGE_SPEC.md`。
+    - 继续补迁移失败恢复、密钥轮换、更多字段覆盖和异常提示。
+    - 定期检查只保留必要索引明文。
 
 ### P1：可用性与可靠性
 
@@ -140,9 +140,9 @@
    - Web 当前存在 wasm-local 可用性路径；生产要重新做浏览器安全加密备份。
    - 支持改提示词、重新导出、备份完整性校验。
 
-5. **安全审计与测试向量**
-   - 补固定协议测试向量。
-   - 补属性测试、跨平台一致性测试、浏览器真实流程 E2E。
+5. **安全审计与测试增强**
+   - 固定协议测试向量、属性测试、跨平台一致性测试、浏览器真实流程 E2E 已建立。
+   - 继续补 fuzz、ratchet replay/window/skipped-key 不变量、压力测试和外部安全审计。
 
 ---
 
@@ -150,7 +150,7 @@
 
 ### 1. 提示词规范
 
-需要定义提示词的输入、归一化和强度规则。
+提示词归一化规则已迁移到 `docs/IDENTITY_SPEC.md`，并由测试向量覆盖。这里仅保留产品策略层面的待决策项。
 
 待决策：
 
@@ -161,52 +161,22 @@
 - 是否做弱密码检测。
 - 错误提示如何展示。
 
-建议规范：
-
-```text
-normalize_passphrase(input):
-1. Unicode NFKC 归一化
-2. 去除首尾空白
-3. 全角空格转半角空格
-4. 连续空白合并为一个空格
-5. 不静默删除用户输入的普通字符
-```
-
-风险：
-
-```text
-如果不同平台归一化不一致，用户可能无法解开身份备份包。
-```
+协议规范：见 `docs/IDENTITY_SPEC.md`。
 
 ---
 
-### 2. 身份备份包最终格式
+### 2. 身份备份包产品策略
 
-当前 `docs/DESIGN.md` 只有 JSON 示例，需确定最终格式。
+身份备份包格式已迁移到 `docs/BACKUP_SPEC.md`。这里仅保留导入/导出产品策略。
 
 待决策：
 
-- 外层使用 JSON、CBOR、postcard 还是自定义二进制。
-- 文件扩展名。
-- MIME type。
 - 是否支持二维码。
 - 是否支持复制粘贴文本形式。
 - 备份包损坏和提示词错误是否区分提示。
+- Web `wasm-local` 备份路径是否需要迁移到生产级浏览器 Argon2id 或其他 KDF。
 
-建议：
-
-```text
-文件扩展名：.lmid
-MIME：application/vnd.lmtalk.identity-backup
-文本前缀：lm-identity-backup-v1:
-```
-
-推荐编码：
-
-```text
-外层可用 JSON 便于调试。
-签名或加密输入必须使用 canonical binary encoding。
-```
+协议规范：见 `docs/BACKUP_SPEC.md`。
 
 ---
 
@@ -342,21 +312,9 @@ PayloadTooLarge
 
 ### 7. 协议对象大小限制
 
-需要防止超大对象导致内存或存储攻击。
+core 已实现主要协议对象大小限制。这里保留 UI 和未来文件协议的产品化事项。
 
-建议 MVP 限制：
-
-```text
-Contact Card：32 KB
-Friend Request：64 KB
-Friend Request note：1 KB
-Direct Message plaintext：64 KB
-Group Message plaintext：64 KB
-Signaling Offer/Answer：256 KB
-Identity Backup：64 KB
-```
-
-待定义：
+待完成：
 
 - 超限时错误码。
 - Web UI 如何提示。
@@ -364,11 +322,11 @@ Identity Backup：64 KB
 
 ---
 
-### 8. 测试向量格式
+### 8. 测试向量维护
 
-协议实现前需要准备固定测试向量。
+固定测试向量已建立，并由 core/wasm 测试覆盖。这里保留后续维护要求。
 
-最低测试向量：
+当前已有：
 
 - identity_seed -> UserID
 - passphrase + backup -> identity_seed
@@ -376,18 +334,12 @@ Identity Backup：64 KB
 - Friend Request 签名与验签
 - 消息加密与解密
 - 篡改密文失败
-- 过期对象拒绝
 
-建议目录：
+后续需要：
 
-```text
-test-vectors/
-  identity_v1.json
-  backup_v1.json
-  contact_card_v1.json
-  friend_request_v1.json
-  message_crypto_v1.json
-```
+- 新协议版本增加测试向量。
+- Ratchet replay/window/skipped-key 不变量增加测试向量或属性测试。
+- 跨语言实现出现后增加兼容性验证。
 
 ---
 
@@ -442,6 +394,8 @@ CREATE TABLE meta (
 
 好友信息可能变化。
 
+基础联系人名片格式见 `docs/CONTACT_SPEC.md`。
+
 允许更新：
 
 - display_name
@@ -466,18 +420,7 @@ CREATE TABLE meta (
 
 ### 12. 信任等级枚举
 
-`contacts.trust_level` 需要明确定义。
-
-建议：
-
-```rust
-pub enum TrustLevel {
-    Imported,
-    LinkImported,
-    QrScanned,
-    FingerprintVerified,
-}
-```
+信任等级枚举已迁移到 `docs/CONTACT_SPEC.md`。
 
 待定义：
 
@@ -489,14 +432,7 @@ pub enum TrustLevel {
 
 ### 13. 安全指纹格式
 
-需要定义好友安全码。
-
-建议：
-
-```text
-fingerprint = blake3(identity_public_key)[0..16]
-显示为：84F2 19AC 77D0 3B91
-```
+基础指纹方案已迁移到 `docs/CONTACT_SPEC.md`。
 
 待定义：
 
@@ -964,25 +900,20 @@ MVP 群聊采用逐个加密。
 
 ---
 
-## 建议拆分的后续规范文件
+## 文档结构
 
-当前 `docs/DESIGN.md` 是总设计文档。后续建议继续拆分：
+当前文档入口是 `docs/README.md`。已拆分：
 
-```text
-docs/
-  DESIGN.md
-  IDENTITY_SPEC.md
-  BACKUP_SPEC.md
-  CONTACT_SPEC.md
-  FRIEND_SPEC.md
-  MESSAGE_SPEC.md
-  GROUP_SPEC.md
-  NETWORK_SPEC.md
-  PUBLIC_PEER_SPEC.md
-  STORAGE_SPEC.md
-  SECURITY_MODEL.md
-  MVP_PLAN.md
-```
+- 架构与计划：`docs/DESIGN.md`、`docs/MVP_PLAN.md`、`docs/TODO.md`
+- 安全与数据：`docs/SECURITY_MODEL.md`、`docs/IDENTITY_SPEC.md`、`docs/BACKUP_SPEC.md`、`docs/STORAGE_SPEC.md`
+- 协议规格：`docs/CONTACT_SPEC.md`、`docs/FRIEND_SPEC.md`、`docs/MESSAGE_SPEC.md`、`docs/GROUP_SPEC.md`、`docs/PUBLIC_PEER_SPEC.md`、`docs/NETWORK_SPEC.md`
+- 节点部署：`docs/NODE_CONFIG.md`、`docs/examples/lm-node.config.example.json`
+
+后续原则：
+
+- `DESIGN.md` 只保留跨模块总览和实现状态。
+- `*_SPEC.md` 维护稳定协议和数据格式。
+- 已完成事项从 `TODO.md` 移出，或改为对应文档引用。
 
 ---
 
@@ -991,14 +922,14 @@ docs/
 建议下一步优先完成：
 
 ```text
-1. Web 正式网络设置区：lm_node URL、启停、连接状态、IndexedDB 持久化。
+1. Web 正式网络设置区：lm_node URL、启停、连接状态。
 2. PreKey 自动发布/拉取/补货：隐藏 JSON 调试细节，保留 private bundle 本地加密保存。
 3. 添加好友后自动 X3DH + Double Ratchet 建链，失败时回退复制粘贴流程。
 4. Mailbox 自动发送、收取、解密、ack、去重和失败重试。
-5. 本地数据应用层加密：消息明文、联系人备注、群名、outbox、ratchet session。
+5. 本地数据应用层加密增强：迁移策略、错误恢复、更多字段覆盖。
 6. Native node 正式持久化：SQLite/SQLCipher 或等价数据库，含过期清理和崩溃恢复测试。
 7. 节点自动同步增强：配置 schema 文档、token 轮换、同步状态指标细化；后续替换为 DHT replication。
 8. Outbox 调度器：指数退避、取消发送、过期、delivery status。
 9. 协议稳定化：错误码、对象大小限制、Contact Card 更新策略、PreKey 轮换策略。
-10. 安全测试增强：proptest/fuzz、跨平台测试向量、ratchet replay/window/skipped-key 不变量。
+10. 安全测试增强：fuzz、ratchet replay/window/skipped-key 不变量、外部安全审计。
 ```
