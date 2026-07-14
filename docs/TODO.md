@@ -59,7 +59,7 @@
    - 设置页已展示 PreKey 自动检查/发布/补货状态和最近失败原因。
    - 设置页在 PreKey 自动检查/发布/补货失败后提供手动重试入口。
    - 设置页 PreKey 摘要已展示 selected one-time key 和 signed record 状态，减少查看原始 JSON 的需求。
-   - 设置页已提供清除 PreKey 原始状态入口，可清空节点返回 JSON、公开 PreKey Bundle、signed OTK、解析 JSON 和 selected record 临时文本。
+   - 设置页已提供清除 PreKey 公开原文入口，可清空节点返回 JSON、公开 PreKey Bundle、signed OTK、解析 JSON 和 selected record 临时文本，同时保留本地加密 private bundle 用于补货。
    - 仍需进一步减少高级 JSON 暴露。
 
 3. **添加好友后的自动安全建链产品化**
