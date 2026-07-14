@@ -153,7 +153,8 @@ test('登录注册、主界面和诊断页是产品化 UI', async ({ page }) => 
   await expect(page.getByRole('heading', { name: '诊断工具' })).toBeVisible()
   await expect(page.getByText('一键诊断')).toBeVisible()
   await page.getByRole('button', { name: '生成诊断报告' }).click()
-  await expect.poll(async () => page.locator('.diagnostic-actions textarea').inputValue()).toContain('service_worker')
+  await page.getByRole('button', { name: '显示预览' }).click()
+  await expect.poll(async () => page.locator('textarea.mono').inputValue()).toContain('service_worker')
 
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', '/manifest.webmanifest')
   const swAvailable = await page.evaluate(() => 'serviceWorker' in navigator)
