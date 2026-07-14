@@ -23,6 +23,7 @@
 | [IDENTITY_SPEC.md](IDENTITY_SPEC.md) | 身份种子、密钥派生、UserID 和提示词归一化。 |
 | [BACKUP_SPEC.md](BACKUP_SPEC.md) | 身份备份包格式、Argon2id 标准路径和 WASM 兼容路径。 |
 | [STORAGE_SPEC.md](STORAGE_SPEC.md) | Web IndexedDB、本地加密字段和迁移要求。 |
+| [DIAGNOSTICS_SPEC.md](DIAGNOSTICS_SPEC.md) | 诊断报告允许字段、禁止字段和用户分享流程。 |
 
 ## 协议规格
 
