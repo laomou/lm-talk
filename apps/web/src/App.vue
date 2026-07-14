@@ -382,6 +382,8 @@ const nodeMailboxTakeUserId = ref('')
 const nodeMailboxTakeInfoText = ref('')
 const mailboxInboxStatus = ref('尚未同步')
 const mailboxInboxErrorText = ref('')
+const mailboxDedupeCount = computed(() => processedMailboxIds.value.length)
+const mailboxDedupeStatusText = computed(() => `本地去重记录 ${mailboxDedupeCount.value}/1000`)
 const nodePreKeyUserId = ref('')
 const nodePreKeyStatusText = ref('')
 const prekeyStatusSummary = ref('尚未发布 PreKey')
@@ -3862,6 +3864,14 @@ function rememberProcessedMailboxId(id: string) {
   processedMailboxIds.value = [id, ...processedMailboxIds.value.filter((x) => x !== id)].slice(0, 1000)
 }
 
+function clearProcessedMailboxIds() {
+  processedMailboxIds.value = []
+  mailboxInboxStatus.value = '已清空本地去重记录'
+  mailboxInboxErrorText.value = ''
+  appendLog('mailbox 本地去重记录已清空')
+  persist()
+}
+
 function processMailboxMessages(messagesFromNode: any[]): string[] {
   let handled = 0
   let duplicate = 0
@@ -4162,7 +4172,7 @@ const appContext = {
   ratchetInfoText, safetyPolicy, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
-  nodeClosestTarget, nodeClosestInfoText, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxInboxErrorText, nodePreKeyUserId, nodePreKeyStatusText,
+  nodeClosestTarget, nodeClosestInfoText, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxInboxErrorText, mailboxDedupeCount, mailboxDedupeStatusText, clearProcessedMailboxIds, nodePreKeyUserId, nodePreKeyStatusText,
   nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, prekeyStatusSummary, createMyPreKeyBundleText, inspectPreKeyBundleText, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
