@@ -12,7 +12,7 @@ const outboxKindLabel = (kind?: string) =>
 function outboxExpiryText(item: any) {
   if (!item.expires_at) return '无过期时间'
   if (Date.now() > item.expires_at) return '已过期'
-  return `过期 ${new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'short', hour12: false }).format(new Date(item.expires_at))}`
+  return `过期 ${props.ctx.formatDateTime(item.expires_at)}`
 }
 const localObjectCount = computed(() =>
   props.ctx.contacts.value.length +
