@@ -166,6 +166,7 @@ function resetRegister() {
           <h2>注册成功</h2>
           <p>身份已保存在本机，也建议下载一份身份文件。</p>
           <small>{{ registeredIdentity.display_name }} · {{ registeredIdentity.user_id }}</small>
+          <p class="backup-warning">请同时保存身份文件和提示词；任意一项丢失都无法恢复这个身份。</p>
           <div v-if="registeredBackupChecksum" class="backup-checksum">
             <span>备份校验码</span>
             <b>{{ registeredBackupChecksum }}</b>
@@ -182,6 +183,7 @@ function resetRegister() {
         <template v-else>
           <label>提示词</label>
           <textarea v-model="passphrase" rows="2" placeholder="设置你的提示词" />
+          <p class="backup-warning">提示词不会上传或找回；注册后请下载身份文件。</p>
           <div class="row auth-actions">
             <button @click="$emit('create')">注册</button>
           </div>
@@ -192,6 +194,7 @@ function resetRegister() {
       <section v-else class="auth-panel import-page">
         <label>提示词</label>
         <textarea v-model="passphrase" rows="2" placeholder="输入身份对应提示词" />
+        <p class="backup-warning">导入需要身份文本和对应提示词；提示词错误或丢失时无法恢复。</p>
         <label>身份文本</label>
         <textarea v-model="backupText" rows="6" placeholder="粘贴导出的身份文本" />
         <div v-if="importBackupChecksum" class="backup-checksum compact-checksum">

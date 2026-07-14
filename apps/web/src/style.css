@@ -236,6 +236,15 @@ button.secondary.danger:hover { background: var(--c-danger-soft); border-color: 
   text-align: center;
 }
 .auth-switch { margin-top: var(--sp-5); color: var(--c-ink-3); text-align: center; font-size: 14px; }
+.backup-warning {
+  color: var(--c-danger);
+  background: var(--c-danger-soft);
+  border: 1px solid rgba(220, 38, 38, .2);
+  border-radius: var(--r-md);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: 13px;
+  line-height: 1.45;
+}
 
 .identity-list { display: grid; gap: var(--sp-2); margin: var(--sp-2) 0 var(--sp-3); }
 .identity-choice {
