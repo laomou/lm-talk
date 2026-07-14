@@ -1660,6 +1660,22 @@ mod tests {
     }
 
     #[test]
+    fn wasm_identity_from_seed_matches_native_user_id() {
+        let seed = [42u8; lm_core::identity::IDENTITY_SEED_LEN];
+        let wasm_identity = wasm_identity_from_seed(seed).unwrap();
+        let native_identity = Identity::from_seed(IdentitySeed::from_bytes(seed)).unwrap();
+        assert_eq!(wasm_identity.user_id(), native_identity.user_id());
+        assert_eq!(
+            wasm_identity.identity_public_key(),
+            native_identity.identity_public_key()
+        );
+        assert_eq!(
+            wasm_identity.x25519_public_key(),
+            native_identity.x25519_public_key()
+        );
+    }
+
+    #[test]
     fn wasm_device_revoke_smoke() {
         let alice = create_identity("alice pass").unwrap();
         let alice_v: Value = serde_json::from_str(&alice).unwrap();

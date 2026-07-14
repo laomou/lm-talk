@@ -989,7 +989,7 @@ MVP 群聊采用逐个加密。
 - Web RNG 可用。
 - Argon2id 参数在浏览器可接受。
 - IndexedDB 存取可用。
-- WASM 与 native 生成一致 UserID。
+- [x] WASM 与 native 生成一致 UserID。
 - WASM 与 native 测试向量一致。
 
 ---
