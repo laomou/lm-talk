@@ -324,6 +324,7 @@ const outbox = ref<OutboxItem[]>([])
 const ratchetSessions = ref<RatchetSessionItem[]>([])
 const processedMailboxIds = ref<string[]>([])
 let outboxRetryTimer: number | undefined
+let lastDeliveryError = ''
 const activePeerId = ref('')
 const activeGroupId = ref('')
 
@@ -1131,6 +1132,18 @@ async function syncNow() {
 }
 
 type NodeEntry = { url: string; token: string }
+class NodeRequestError extends Error {
+  status?: number
+  url?: string
+
+  constructor(message: string, status?: number, url?: string) {
+    super(message)
+    this.name = 'NodeRequestError'
+    this.status = status
+    this.url = url
+  }
+}
+
 function nodeEntries(): NodeEntry[] {
   return nodeControlUrl.value
     .split(/[\n,]+/)
@@ -1256,6 +1269,22 @@ function retryDelayMs(retryCount: number): number {
   return [30_000, 2 * 60_000, 10 * 60_000, 60 * 60_000, 6 * 60 * 60_000][Math.min(retryCount, 4)]
 }
 
+function classifyDeliveryError(e: unknown): string {
+  if (e instanceof NodeRequestError) {
+    if (e.status === 401 || e.status === 403) return '节点拒绝：鉴权失败'
+    if (e.status === 413) return '节点拒绝：载荷过大'
+    if (e.status === 429) return '节点拒绝：请求过于频繁'
+    if (typeof e.status === 'number' && e.status >= 500) return '节点错误'
+    if (typeof e.status === 'number' && e.status >= 400) return '节点拒绝'
+    return '网络失败'
+  }
+  const message = userFacingError(e)
+  if (message.includes('无法连接同步服务') || message.includes('所有同步服务都不可用')) return '网络失败'
+  if (message.includes('过大')) return '载荷过大'
+  if (message.includes('已过期')) return '已过期'
+  return message || '投递失败'
+}
+
 function markOutboxSent(item: OutboxItem) {
   item.status = 'sent'
   const msg = messages.value.find((m) => m.id === item.message_id)
@@ -1263,6 +1292,7 @@ function markOutboxSent(item: OutboxItem) {
 }
 
 async function deliverPayloadToContact(contact: ContactItem, payload: string, label: string, kind: OutboxItem['kind'] = 'direct-envelope'): Promise<'sent' | 'mailbox' | 'queued' | 'failed'> {
+  lastDeliveryError = ''
   try {
     if (dc && dc.readyState === 'open' && activePeerId.value === contact.user_id && kind !== 'group-fanout') {
       sendRtcText(payload, label)
@@ -1274,7 +1304,8 @@ async function deliverPayloadToContact(contact: ContactItem, payload: string, la
     }
     return 'queued'
   } catch (e) {
-    appendLog(`❌ ${label} 投递失败：${String(e)}`)
+    lastDeliveryError = classifyDeliveryError(e)
+    appendLog(`❌ ${label} 投递失败：${lastDeliveryError}`)
     return 'failed'
   }
 }
@@ -1287,9 +1318,9 @@ async function tryMailboxDeliveryForMessage(contact: ContactItem, envelope: stri
   } catch (e) {
     msg.status = 'failed'
     const item = createOutboxItem(contact, envelope, msg.id, 'direct-envelope')
-    item.last_error = String(e)
+    item.last_error = classifyDeliveryError(e)
     outbox.value.push(item)
-    appendLog(`❌ mailbox 投递失败，已加入 outbox：${String(e)}`)
+    appendLog(`❌ mailbox 投递失败，已加入 outbox：${item.last_error}`)
   } finally {
     persist()
   }
@@ -2587,7 +2618,7 @@ async function retryOutboxItem(item: OutboxItem): Promise<boolean> {
     item.last_error = `已达到最大重试次数 ${MAX_OUTBOX_RETRY_COUNT}`
   } else {
     item.next_retry_at = Date.now() + retryDelayMs(item.retry_count)
-    item.last_error = result === 'failed' ? '投递失败' : undefined
+    item.last_error = result === 'failed' ? lastDeliveryError || '投递失败' : undefined
   }
   return false
 }
@@ -3257,18 +3288,24 @@ function nodeControlEndpoint(path: string, baseUrl = primaryNodeUrl()): string {
 
 async function fetchNodeOnce(baseUrl: string, path: string, init?: RequestInit): Promise<any> {
   const token = nodeTokenFor(baseUrl)
-  const res = await fetch(nodeControlEndpoint(path, baseUrl), {
-    ...init,
-    headers: {
-      'content-type': 'application/json',
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-      ...(init?.headers ?? {}),
-    },
-  })
+  const endpoint = nodeControlEndpoint(path, baseUrl)
+  let res: Response
+  try {
+    res = await fetch(endpoint, {
+      ...init,
+      headers: {
+        'content-type': 'application/json',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(init?.headers ?? {}),
+      },
+    })
+  } catch (e) {
+    throw new NodeRequestError(userFacingError(e), undefined, baseUrl)
+  }
   const text = await res.text()
   let body: any = text
   try { body = text ? JSON.parse(text) : {} } catch {}
-  if (!res.ok) throw new Error(typeof body === 'string' ? body : JSON.stringify(body))
+  if (!res.ok) throw new NodeRequestError(typeof body === 'string' ? body : JSON.stringify(body), res.status, baseUrl)
   return body
 }
 
@@ -3287,7 +3324,7 @@ async function nodeFetchJson(path: string, init?: RequestInit): Promise<any> {
       }
       return body
     } catch (e) {
-      errors.push(`${entry.url}: ${String(e).replace(/^Error:\s*/, '')}`)
+      errors.push(`${entry.url}: ${userFacingError(e)}`)
     }
   }
   throw new Error(`所有同步服务都不可用：${errors.join('；')}`)
