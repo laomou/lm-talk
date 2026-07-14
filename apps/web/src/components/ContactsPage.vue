@@ -179,6 +179,7 @@ function openGroupDetail(groupId: string) {
           <div class="detail-hero-text">
             <h2>{{ ctx.activeContact.value.display_name || '未命名' }}</h2>
             <small>{{ stateLabel(ctx.activeContact.value.state) }} · {{ ctx.activeContact.value.user_id }}</small>
+            <small v-if="ctx.activeContact.value.last_friend_request_error" class="danger-text">好友请求失败：{{ ctx.activeContact.value.last_friend_request_error }}</small>
           </div>
         </div>
         <div class="detail-body">

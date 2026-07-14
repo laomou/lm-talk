@@ -109,7 +109,8 @@ function onComposerKeydown(e: KeyboardEvent) {
       </div>
       <div v-else class="notice-text">
         <b>你们还不是好友</b>
-        <span>发送好友请求，对方通过后即可开始聊天。</span>
+        <span v-if="ctx.activeContact.value.last_friend_request_error">上次发送失败：{{ ctx.activeContact.value.last_friend_request_error }}</span>
+        <span v-else>发送好友请求，对方通过后即可开始聊天。</span>
       </div>
       <div class="row compact">
         <button v-if="ctx.activeContact.value.state === 'RequestSent'" class="secondary" @click="ctx.createFriendRequestForActive">重新发送</button>

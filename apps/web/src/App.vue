@@ -115,6 +115,7 @@ type ContactItem = ContactInfo & {
   kind: 'contact' | 'group'
   state: 'LocalOnly' | 'RequestSent' | 'RequestReceived' | 'Friend' | 'Rejected' | 'Blocked'
   pending_request_id?: string
+  last_friend_request_error?: string
   revoked_device_ids?: string[]
   device_certs?: DeviceCertItem[]
   block_reason?: string
@@ -2430,6 +2431,7 @@ function createFriendRequestForActiveLocalOnly() {
     const req = safeJson<any>(inspect_friend_request(friendRequestText.value))
     activeContact.value.state = 'RequestSent'
     activeContact.value.pending_request_id = req.request_id
+    activeContact.value.last_friend_request_error = undefined
     persist()
   })
 }
@@ -2453,6 +2455,7 @@ function createFriendRequestForActive() {
     const contact = activeContact.value
     contact.state = 'RequestSent'
     contact.pending_request_id = req.request_id
+    contact.last_friend_request_error = undefined
     persist()
     void pushMailboxPayload(contact, 'other', friendRequestText.value)
       .then(() => {
@@ -2462,8 +2465,9 @@ function createFriendRequestForActive() {
       .catch((e) => {
         contact.state = 'LocalOnly'
         contact.pending_request_id = undefined
-        persist()
         const message = userFacingError(e)
+        contact.last_friend_request_error = message
+        persist()
         appendLog(`⚠️ 好友请求发送失败：${message}`)
         showAlert('发送失败', message, 'error')
       })
