@@ -496,6 +496,9 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 }
 .request-item b { font-size: 14px; }
 .request-item .row { margin: var(--sp-2) 0 0; }
+.inbox-status-grid { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.inbox-status-grid span { background: var(--c-surface-2); border: 1px solid var(--c-line); border-radius: var(--r-pill); padding: 3px 10px; color: var(--c-ink-2); font-size: 12px; }
+.inbox-status-card small { color: var(--c-ink-3); overflow-wrap: anywhere; }
 .member-picker { display: grid; gap: 2px; max-height: 320px; overflow: auto; margin-top: var(--sp-2); }
 
 .member-list { display: flex; flex-wrap: wrap; gap: var(--sp-2); }

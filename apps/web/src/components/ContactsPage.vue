@@ -53,8 +53,8 @@ function openGroupDetail(groupId: string) {
         <button class="contact" :class="{ active: view === 'requests' }" :aria-current="view === 'requests' ? 'true' : undefined" @click="view = 'requests'">
           <span class="avatar" style="background:#f59e0b">新</span>
           <span class="contact-main">
-            <b>新的朋友 <em v-if="requestCount">{{ requestCount }}</em></b>
-            <small>好友请求 / 群邀请</small>
+            <b>收件箱 <em v-if="requestCount">{{ requestCount }}</em></b>
+            <small>好友请求 / 群邀请 / Mailbox</small>
           </span>
         </button>
 
@@ -97,8 +97,17 @@ function openGroupDetail(groupId: string) {
     <main class="detail-col">
       <!-- 新的朋友 -->
       <section v-if="view === 'requests'" class="detail-scroll">
-        <header class="detail-bar"><h2>新的朋友</h2><button class="secondary" @click="ctx.syncNow">刷新</button></header>
+        <header class="detail-bar"><h2>收件箱</h2><button class="secondary" @click="ctx.syncNow">同步</button></header>
         <div class="detail-body">
+          <section class="home-card inbox-status-card">
+            <h3>Mailbox 状态</h3>
+            <div class="inbox-status-grid">
+              <span>好友请求 {{ ctx.friendRequests.value.length }}</span>
+              <span>群邀请 {{ ctx.groupInvites.value.length }}</span>
+            </div>
+            <small>{{ ctx.mailboxInboxStatus.value }}</small>
+          </section>
+
           <section class="home-card">
             <h3>好友请求</h3>
             <div v-if="ctx.friendRequests.value.length" class="request-grid">

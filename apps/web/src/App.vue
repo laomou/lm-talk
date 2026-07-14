@@ -378,6 +378,7 @@ const nodeClosestTarget = ref('')
 const nodeClosestInfoText = ref('')
 const nodeMailboxTakeUserId = ref('')
 const nodeMailboxTakeInfoText = ref('')
+const mailboxInboxStatus = ref('尚未同步')
 const nodePreKeyUserId = ref('')
 const nodePreKeyStatusText = ref('')
 const nodeSyncPeerUrl = ref('http://127.0.0.1:8788')
@@ -3651,7 +3652,8 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
       if (dedupeId) rememberProcessedMailboxId(dedupeId)
     } else failed += 1
   }
-  appendLog(`mailbox 自动处理完成：收到 ${messagesFromNode.length}，已处理 ${handled}，重复 ${duplicate}，失败 ${failed}`)
+  mailboxInboxStatus.value = `收到 ${messagesFromNode.length}，已处理 ${handled}，重复 ${duplicate}，失败 ${failed}`
+  appendLog(`mailbox 自动处理完成：${mailboxInboxStatus.value}`)
   persist()
   return ackIds
 }
@@ -3673,7 +3675,11 @@ async function takeMailboxFromNode() {
     if (messages.length > 0) {
       const ackIds = processMailboxMessages(messages)
       if (ackIds.length > 0) await ackMailboxToNode(userId, ackIds)
-    } else appendLog('mailbox 没有新消息')
+    } else {
+      mailboxInboxStatus.value = '没有新消息'
+      appendLog('mailbox 没有新消息')
+      persist()
+    }
   })
 }
 
@@ -3870,7 +3876,7 @@ const appContext = {
   ratchetInfoText, safetyPolicy, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
-  nodeClosestTarget, nodeClosestInfoText, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, nodePreKeyUserId, nodePreKeyStatusText,
+  nodeClosestTarget, nodeClosestInfoText, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, nodePreKeyUserId, nodePreKeyStatusText,
   nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, createMyPreKeyBundleText, inspectPreKeyBundleText, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
