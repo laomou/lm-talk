@@ -987,7 +987,7 @@ MVP 群聊采用逐个加密。
 需要验证：
 
 - [x] Web RNG 可用。
-- Argon2id 参数在浏览器可接受。
+- [x] Argon2id 浏览器路径暂不要求：当前 WASM 使用 wasm-local 身份备份，native/core 继续覆盖 Argon2id 备份。
 - [x] IndexedDB 存取可用。
 - [x] WASM 与 native 生成一致 UserID。
 - [x] WASM 与 native 测试向量一致。
