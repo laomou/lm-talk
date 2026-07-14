@@ -5,6 +5,7 @@ const props = defineProps<{ ctx: any }>()
 const diagnosticReport = ref('')
 const redactDiagnosticReport = ref(false)
 const diagnosticSummaryOnly = ref(false)
+const showDiagnosticReport = ref(false)
 
 function redacted(value: string) {
   return value ? '[已脱敏]' : ''
@@ -107,9 +108,10 @@ async function runDiagnostics() {
         <div class="row compact">
           <button @click="runDiagnostics">生成诊断报告</button>
           <button class="secondary" :disabled="!diagnosticReport" @click="ctx.copyText(diagnosticReport, '诊断报告')">复制报告</button>
+          <button class="secondary" :disabled="!diagnosticReport" @click="showDiagnosticReport = !showDiagnosticReport">{{ showDiagnosticReport ? '隐藏预览' : '显示预览' }}</button>
           <button class="secondary" @click="ctx.syncNow">立即同步</button>
         </div>
-        <textarea v-if="diagnosticReport" v-model="diagnosticReport" class="mono" rows="12" readonly />
+        <textarea v-if="diagnosticReport && showDiagnosticReport" v-model="diagnosticReport" class="mono" rows="12" readonly />
       </section>
 
       <section class="home-card">
