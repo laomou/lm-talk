@@ -4215,8 +4215,10 @@ function summarizePreKeyStatus(body: any): string {
   const found = body?.found !== false
   if (!found) return `${userId ? userId + '：' : ''}节点未找到 PreKey，需要发布`
   const keyText = remaining === null ? 'one-time key 数量未知' : `剩余 one-time key ${remaining}`
+  const selected = typeof body?.selected_one_time_prekey_id === 'number' ? `，选中 key ${body.selected_one_time_prekey_id}` : ''
+  const signed = body?.selected_signed_one_time_prekey_record_text ? '，signed record 可用' : ''
   const action = low ? '，需要客户端补货' : '，库存正常'
-  return `${userId ? userId + '：' : ''}${keyText}${action}`
+  return `${userId ? userId + '：' : ''}${keyText}${selected}${signed}${action}`
 }
 
 async function fetchPreKeyFromNode() {
