@@ -1472,6 +1472,14 @@ function nodeEntryLine(e: NodeEntry): string { return e.token ? `${e.url}|${e.to
 function nodeUrlList(): string[] {
   return nodeEntries().map((e) => e.url)
 }
+function isLoopbackNodeUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase()
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]'
+  } catch {
+    return false
+  }
+}
 const nodeSettingsSummaryText = computed(() => {
   let entries: NodeEntry[]
   try {
@@ -1481,7 +1489,8 @@ const nodeSettingsSummaryText = computed(() => {
   }
   if (entries.length === 0) return '未配置同步服务'
   const tokenCount = entries.filter((entry) => entry.token).length
-  return `${entries.length} 个同步服务 · 主节点 ${entries[0].url}${tokenCount ? ` · ${tokenCount} 个已配置令牌` : ''} · 成功节点会自动置顶`
+  const missingRemoteTokens = entries.filter((entry) => !entry.token && !isLoopbackNodeUrl(entry.url)).length
+  return `${entries.length} 个同步服务 · 主节点 ${entries[0].url}${tokenCount ? ` · ${tokenCount} 个已配置令牌` : ''}${missingRemoteTokens ? ` · ${missingRemoteTokens} 个远端缺令牌` : ''} · 成功节点会自动置顶`
 })
 function nodeTokenFor(url: string): string {
   const base = url.replace(/\/$/, '')
