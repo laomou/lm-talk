@@ -1818,6 +1818,16 @@ function rejectInboxRequest(req: FriendRequestItem) {
   persist()
 }
 
+function rejectAllInboxRequests() {
+  run('忽略全部好友请求', () => {
+    const count = friendRequests.value.length
+    if (count === 0) throw new Error('没有好友请求')
+    friendRequests.value = []
+    appendLog(`已忽略好友请求 ${count} 条`)
+    persist()
+  })
+}
+
 
 function selectContact(userId: string) {
   activePeerId.value = userId
@@ -4058,7 +4068,7 @@ const appContext = {
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, createMyDeviceCert, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
   exportFullDataBackup, importFullDataBackup, downloadText, addContactText, addContact, incomingFriendRequestText,
-  addIncomingFriendRequest, friendRequests, acceptInboxRequest, rejectInboxRequest, incomingGroupInviteText, addIncomingGroupInvite,
+  addIncomingFriendRequest, friendRequests, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
   newGroupName, friendContacts, selectedGroupMembers, createGroup, groups, activeGroupId,
   selectGroup, activeContact, activeGroup, activeGroupMembers, blockReason, blockActiveContact,
