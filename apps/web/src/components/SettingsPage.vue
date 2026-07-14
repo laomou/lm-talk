@@ -59,6 +59,20 @@ const localObjectCount = computed(() =>
           <button class="secondary" @click="ctx.saveNetworkSettings">保存</button>
           <button class="secondary" @click="ctx.syncNow">立即同步</button>
         </div>
+        <div class="policy-grid sync-options">
+          <label class="identity-select">
+            <input v-model="ctx.autoPublishPreKey.value" type="checkbox" />
+            <span>登录/同步时发布 PreKey</span>
+          </label>
+          <label class="identity-select">
+            <input v-model="ctx.autoMailboxTake.value" type="checkbox" />
+            <span>自动收取 Mailbox</span>
+          </label>
+          <label class="identity-select">
+            <input v-model="ctx.autoNodeSync.value" type="checkbox" />
+            <span>自动同步节点快照</span>
+          </label>
+        </div>
         <div class="sync-status">
           <b>同步状态</b>
           <small>{{ ctx.nodeControlStatus.value || '未连接' }}</small>
