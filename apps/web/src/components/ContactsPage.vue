@@ -198,6 +198,7 @@ function openGroupDetail(groupId: string) {
             <button v-if="ctx.activeContact.value.state === 'Friend' && ctx.activeContact.value.last_secure_session_error" class="secondary" @click="ctx.retrySecureSessionForActiveContact">重试建链</button>
             <button v-if="ctx.activeContact.value.state === 'Friend' && ctx.activeContact.value.last_secure_session_error" class="secondary" @click="ctx.clearActiveSecureSessionError">清除建链错误</button>
             <button v-if="ctx.activeContact.value.state === 'Friend' && !ctx.activeRatchetSession.value" class="secondary" @click="ctx.recreateActiveRatchetSession">本地建链</button>
+            <button v-if="ctx.activeContact.value.last_friend_request_error" class="secondary" @click="ctx.clearActiveFriendRequestError">清除请求错误</button>
             <button class="secondary" @click="ctx.showQr(ctx.activeContact.value.contact_card_text, '好友身份')">查看名片</button>
             <button v-if="ctx.activeContact.value.state !== 'Blocked'" class="secondary" @click="ctx.blockActiveContact">拉黑</button>
             <button v-else class="secondary" @click="ctx.unblockActiveContact">解除拉黑</button>

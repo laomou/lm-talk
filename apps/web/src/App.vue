@@ -2742,6 +2742,14 @@ function createFriendRequestForActive() {
   })
 }
 
+function clearActiveFriendRequestError() {
+  run('清除好友请求错误', () => {
+    if (!activeContact.value) throw new Error('请选择联系人')
+    activeContact.value.last_friend_request_error = undefined
+    persist()
+  })
+}
+
 function recreateActiveRatchetSession() {
   run('重建 Ratchet 会话', () => {
     if (!activeContact.value) throw new Error('请选择联系人')
@@ -4824,7 +4832,7 @@ const appContext = {
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
   newGroupName, friendContacts, selectedGroupMembers, createGroup, groups, activeGroupId,
   selectGroup, activeContact, activeGroup, activeRatchetSession, activeRatchetStatusText, activeGroupMembers, activeGroupWarningText, blockReason, blockActiveContact,
-  unblockActiveContact, removeActiveContact, clearActiveConversation, createFriendRequestForActive, createInviteForActiveGroup, groupInviteText, groupFanoutJson,
+  unblockActiveContact, removeActiveContact, clearActiveConversation, createFriendRequestForActive, clearActiveFriendRequestError, createInviteForActiveGroup, groupInviteText, groupFanoutJson,
   removeActiveGroup, messages, activeMessages, formatTime, formatDateTime, statusLabel, copyMessageEnvelope, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
