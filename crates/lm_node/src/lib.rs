@@ -16,6 +16,7 @@ use uuid::Uuid;
 
 pub const KADEMLIA_ID_BYTES: usize = 32;
 pub const DEFAULT_K_BUCKET_SIZE: usize = 20;
+pub const DEFAULT_MAX_DHT_RECORDS: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct KademliaNodeId([u8; KADEMLIA_ID_BYTES]);
@@ -231,6 +232,7 @@ impl DhtRecordStore {
         }
         let is_new = !self.records.contains_key(&record.key);
         self.records.insert(record.key, record);
+        self.enforce_capacity(DEFAULT_MAX_DHT_RECORDS);
         is_new
     }
 
@@ -282,6 +284,20 @@ impl DhtRecordStore {
             }
         }
         inserted
+    }
+
+    fn enforce_capacity(&mut self, max_records: usize) {
+        while self.records.len() > max_records {
+            let Some(oldest_key) = self
+                .records
+                .iter()
+                .min_by_key(|(_, record)| (record.expires_at, record.created_at))
+                .map(|(key, _)| *key)
+            else {
+                break;
+            };
+            self.records.remove(&oldest_key);
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -3146,6 +3162,38 @@ mod tests {
         assert_eq!(closest, vec![record_a.clone()]);
         assert_eq!(store.prune_expired(now + 100), 2);
         assert!(store.is_empty());
+    }
+
+    #[test]
+    fn dht_record_store_evicts_earliest_expiring_records_when_full() {
+        let now = current_unix_timestamp();
+        let keep_key = DhtRecordKey::for_public_peer("capacity-keep");
+        let drop_key = DhtRecordKey::for_public_peer("capacity-drop");
+        let mut store = DhtRecordStore::default();
+        store.enforce_capacity(0);
+
+        assert!(store.store(DhtRecord {
+            key: keep_key,
+            kind: DhtRecordKind::PublicPeer,
+            value: "keep".into(),
+            created_at: now,
+            expires_at: now + 200,
+            republish_at: now + 100,
+        }));
+        assert!(store.store(DhtRecord {
+            key: drop_key,
+            kind: DhtRecordKind::PublicPeer,
+            value: "drop".into(),
+            created_at: now,
+            expires_at: now + 10,
+            republish_at: now + 5,
+        }));
+
+        store.enforce_capacity(1);
+
+        assert_eq!(store.len(), 1);
+        assert!(store.find_value(&keep_key).is_some());
+        assert!(store.find_value(&drop_key).is_none());
     }
 
     #[test]
