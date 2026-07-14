@@ -2757,6 +2757,22 @@ function flushOutboxForActive() {
   })
 }
 
+function retryAllOutbox() {
+  run('重发全部待发送队列', () => {
+    let count = 0
+    for (const item of outbox.value) {
+      if (item.status !== 'sent') {
+        item.next_retry_at = Date.now()
+        count += 1
+      }
+    }
+    if (count === 0) throw new Error('没有待发送内容')
+    void retryDueOutbox()
+    appendLog(`已触发全部重发 ${count} 条`)
+    persist()
+  })
+}
+
 function cancelOutboxForActive() {
   run('取消当前联系人待发送队列', () => {
     if (!activeContact.value) throw new Error('请选择联系人')
@@ -4006,7 +4022,7 @@ const appContext = {
   removeActiveGroup, messages, activeMessages, formatTime, statusLabel, copyMessageEnvelope, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
-  flushOutboxForActive, cancelOutboxForActive, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
+  flushOutboxForActive, retryAllOutbox, cancelOutboxForActive, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
   receiveEnvelope, onFileSelected, cancelSelectedFile, selectedFile, formatBytes, isDangerousFileName, createFilePackageForActive, sendFilePackageOverRtc, sendSelectedFile, filePackageText, rtcFileStatus, fileTransferPhase,
   incomingFilePackageText, inspectIncomingFilePackage, decryptIncomingFilePackage, receivedFileUrl, receivedFileName, receivedFileMeta, receivedFileMime, filePackageInfoText,
   createGroupSenderKeyForActiveGroup, groupSenderDistributionText, importGroupSenderKeyForActiveContact, groupSenderEncryptDebug, groupSenderDecryptDebug, createGroupSenderDistributionFanoutForActiveGroup,

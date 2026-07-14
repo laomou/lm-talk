@@ -55,7 +55,8 @@
 
 4. **离线消息 Mailbox 路径增强**
    - 单聊和群 fanout 已能在 WebRTC 不可用且节点启用时通过 `/mailbox/push` 投递，并维护 `queued` / `sent` / `mailbox` / `failed` 状态。
-   - 仍需 outbox 调度器、批量重试、取消发送、失败分类和端到端送达回执。
+   - Web 已有 outbox 定时调度器、当前联系人重发、全部队列重发、取消发送、基础失败分类和端到端送达回执基础路径。
+   - 仍需完善对方未取、ack 丢失恢复、状态合并规范和更细的失败恢复策略。
 
 5. **Mailbox 收取与处理产品化**
    - Web 已能登录后/切回页面/手动同步时调用 `/mailbox/take`，自动处理 direct-envelope、好友请求/响应、群 fanout、文件包和安全会话 offer/response，成功后 `/mailbox/ack`。

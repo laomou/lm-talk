@@ -84,6 +84,7 @@ const localObjectCount = computed(() =>
         </div>
         <div v-else class="empty">没有待发送内容</div>
         <div class="row compact">
+          <button class="secondary" :disabled="pendingOutbox.length === 0" @click="ctx.retryAllOutbox">重试全部</button>
           <button class="secondary" @click="ctx.clearSentOutbox">清理已发送</button>
         </div>
       </section>
