@@ -97,6 +97,7 @@ function onComposerKeydown(e: KeyboardEvent) {
         <small v-if="ctx.activeContact.value.state === 'Friend'">端到端会话：{{ ctx.activeRatchetStatusText.value }}</small>
         <small v-if="ctx.activeContact.value.last_secure_session_attempt_at">最近建链尝试：{{ ctx.formatDateTime(ctx.activeContact.value.last_secure_session_attempt_at) }}</small>
         <small v-if="ctx.activeContact.value.last_secure_session_success_at">最近建链成功：{{ ctx.formatDateTime(ctx.activeContact.value.last_secure_session_success_at) }}</small>
+        <small v-if="ctx.activeContact.value.secure_session_failure_count">连续建链失败：{{ ctx.activeContact.value.secure_session_failure_count }} 次</small>
         <small v-if="ctx.activeContact.value.last_secure_session_error" class="outbox-error">安全建链失败：{{ ctx.activeContact.value.last_secure_session_error }}</small>
       </div>
       <div v-else-if="ctx.activeGroup.value" class="chat-title-block">

@@ -125,6 +125,7 @@ type ContactItem = ContactInfo & {
   last_secure_session_error?: string
   last_secure_session_attempt_at?: number
   last_secure_session_success_at?: number
+  secure_session_failure_count?: number
   revoked_device_ids?: string[]
   device_certs?: DeviceCertItem[]
   block_reason?: string
@@ -1789,6 +1790,7 @@ async function ensureRatchetSessionFromNode(contact: ContactItem): Promise<boole
   try {
     await pushMailboxPayload(contact, 'other', secureSessionResponseText.value)
     contact.last_secure_session_error = undefined
+    contact.secure_session_failure_count = 0
   } catch (e) {
     recordSecureSessionError(contact, e, '⚠️ 安全会话 Response 发送失败')
     throw e
@@ -3052,6 +3054,7 @@ function recreateActiveRatchetSession() {
     saveRatchetSession(activeContact.value.user_id, out.local_state_text)
     activeContact.value.last_secure_session_error = undefined
     activeContact.value.last_secure_session_success_at = Date.now()
+    activeContact.value.secure_session_failure_count = 0
     secureSessionStatusText.value = '已重建本地 Ratchet Session。'
     persist()
   })
@@ -3072,6 +3075,7 @@ function saveRatchetSession(userId: string, stateText: string) {
 function recordSecureSessionError(contact: ContactItem, error: unknown, logPrefix: string) {
   const message = userFacingError(error)
   contact.last_secure_session_error = message
+  contact.secure_session_failure_count = (contact.secure_session_failure_count ?? 0) + 1
   persist()
   appendLog(`${logPrefix}：${message}`)
 }
@@ -3780,6 +3784,7 @@ async function sendSecureSessionOfferToContact(contact: ContactItem) {
   try {
     await pushMailboxPayload(contact, 'other', offer)
     contact.last_secure_session_error = undefined
+    contact.secure_session_failure_count = 0
   } catch (e) {
     recordSecureSessionError(contact, e, '⚠️ 安全会话 Offer 发送失败')
     queueOutboxItem(contact, offer, undefined, 'other')
@@ -3820,6 +3825,7 @@ function clearActiveSecureSessionError() {
   run('清除安全建链错误', () => {
     if (!activeContact.value) throw new Error('请选择联系人')
     activeContact.value.last_secure_session_error = undefined
+    activeContact.value.secure_session_failure_count = 0
     persist()
   })
 }
@@ -3874,6 +3880,7 @@ function applySecureSessionOfferText() {
     saveRatchetSession(offer.from_user_id, stateText)
     contact.last_secure_session_error = undefined
     contact.last_secure_session_success_at = Date.now()
+    contact.secure_session_failure_count = 0
     const response: SecureSessionResponse = {
       type: 'lm-secure-session-response-v1',
       version: 1,
@@ -3927,6 +3934,7 @@ function applySecureSessionResponseText() {
     saveRatchetSession(response.from_user_id, stateText)
     contact.last_secure_session_error = undefined
     contact.last_secure_session_success_at = Date.now()
+    contact.secure_session_failure_count = 0
     secureSessionStatusText.value = '已应用 Response，双方现在应该都有 Ratchet Session。后续聊天会自动优先使用 Double Ratchet。'
     incomingSecureSessionText.value = ''
     inspectRatchetStateText()
