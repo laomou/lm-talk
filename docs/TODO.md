@@ -999,7 +999,7 @@ MVP 群聊采用逐个加密。
 必须确保以下内容跨平台一致：
 
 - [x] passphrase normalization
-- backup decrypt
+- [x] backup decrypt
 - UserID generation
 - Contact Card signature
 - Friend Request signature
