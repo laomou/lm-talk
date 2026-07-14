@@ -1,5 +1,5 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use lm_core::{DirectEnvelope, Identity, MessageBody};
+use lm_core::{ContactCard, DirectEnvelope, Identity, MessageBody};
 use proptest::prelude::*;
 
 fn bounded_text() -> impl Strategy<Value = String> {
@@ -52,5 +52,22 @@ proptest! {
         ciphertext[index] ^= 0x01;
         envelope.ciphertext = BASE64.encode(ciphertext);
         prop_assert!(envelope.decrypt(&bob, &alice.x25519_public_key()).is_err());
+    }
+
+    #[test]
+    fn contact_card_expiration_boundary_is_enforced(offset in -2i64..=2) {
+        let alice = Identity::from_seed(lm_core::IdentitySeed::from_bytes([9u8; 32])).unwrap();
+        let now = lm_core::unix_now();
+        let expires_at = if offset.is_negative() {
+            now.saturating_sub(offset.unsigned_abs())
+        } else {
+            now.saturating_add(offset as u64)
+        };
+        let card = ContactCard::new(&alice, None, Some(expires_at), vec![]).unwrap();
+        if expires_at <= now {
+            prop_assert_eq!(card.verify().unwrap_err(), lm_core::LmError::ExpiredObject);
+        } else {
+            prop_assert!(card.verify().is_ok());
+        }
     }
 }
