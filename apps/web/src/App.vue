@@ -1598,13 +1598,14 @@ async function sendDeliveryAck(sender: ContactItem, messageId?: string) {
   persist()
 }
 
-function resendAckForDuplicateMailboxMessage(message: any) {
+function resendAckForDuplicateMailboxMessage(message: any): boolean {
   const fromUserId = String(message?.from_user_id ?? '')
   const sender = contactByUserId(fromUserId)
   const kind = typeof message?.kind === 'string' ? message.kind.replace(/[-_]/g, '').toLowerCase() : ''
   const ciphertext = String(message?.ciphertext ?? '')
-  if (!sender || kind !== 'directenvelope') return
+  if (!sender || kind !== 'directenvelope') return false
   void sendDeliveryAck(sender, messageProtocolIdFromEnvelope(ciphertext))
+  return true
 }
 
 function retryDelayMs(retryCount: number): number {
@@ -4542,6 +4543,7 @@ function summarizeMailboxFailures(reasons: string[]): string {
 function processMailboxMessages(messagesFromNode: any[]): string[] {
   let handled = 0
   let duplicate = 0
+  let duplicateAckResent = 0
   let failed = 0
   const failureReasons: string[] = []
   const events: MailboxEventKind[] = []
@@ -4552,7 +4554,7 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
     const dedupeId = deliveryId || messageId
     if (dedupeId && hasProcessedMailboxId(dedupeId)) {
       duplicate += 1
-      resendAckForDuplicateMailboxMessage(message)
+      if (resendAckForDuplicateMailboxMessage(message)) duplicateAckResent += 1
       if (deliveryId) ackIds.push(deliveryId)
       continue
     }
@@ -4568,7 +4570,7 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
       if (result.reason) rememberFailedMailboxItem(item, result.reason)
     }
   }
-  mailboxInboxStatus.value = `收到 ${messagesFromNode.length}，已处理 ${handled}，重复 ${duplicate}，失败 ${failed}`
+  mailboxInboxStatus.value = `收到 ${messagesFromNode.length}，已处理 ${handled}，重复 ${duplicate}${duplicateAckResent ? `，补发回执 ${duplicateAckResent}` : ''}，失败 ${failed}`
   mailboxInboxErrorText.value = failureReasons.slice(0, 3).join('\n')
   mailboxFailureSummaryText.value = summarizeMailboxFailures(failureReasons)
   appendLog(`mailbox 自动处理完成：${mailboxInboxStatus.value}`)
