@@ -108,6 +108,7 @@ function openGroupDetail(groupId: string) {
             </div>
             <small>{{ ctx.mailboxInboxStatus.value }}</small>
             <small>{{ ctx.mailboxDedupeStatusText.value }}</small>
+            <small v-if="ctx.mailboxFailureSummaryText.value" class="danger-text">{{ ctx.mailboxFailureSummaryText.value }}</small>
             <small v-if="ctx.mailboxInboxErrorText.value" class="danger-text">{{ ctx.mailboxInboxErrorText.value }}</small>
             <div class="row compact">
               <button class="secondary" :disabled="ctx.mailboxDedupeCount.value === 0" @click="ctx.clearProcessedMailboxIds">清空去重记录</button>

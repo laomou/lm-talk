@@ -388,6 +388,7 @@ const nodeMailboxTakeUserId = ref('')
 const nodeMailboxTakeInfoText = ref('')
 const mailboxInboxStatus = ref('尚未同步')
 const mailboxInboxErrorText = ref('')
+const mailboxFailureSummaryText = ref('')
 const mailboxDedupeCount = computed(() => processedMailboxIds.value.length)
 const mailboxDedupeStatusText = computed(() => `本地去重记录 ${mailboxDedupeCount.value}/1000`)
 const nodePreKeyUserId = ref('')
@@ -3961,8 +3962,19 @@ function clearProcessedMailboxIds() {
   processedMailboxIds.value = []
   mailboxInboxStatus.value = '已清空本地去重记录'
   mailboxInboxErrorText.value = ''
+  mailboxFailureSummaryText.value = ''
   appendLog('mailbox 本地去重记录已清空')
   persist()
+}
+
+function summarizeMailboxFailures(reasons: string[]): string {
+  if (reasons.length === 0) return ''
+  const counts = new Map<string, number>()
+  for (const reason of reasons) {
+    const key = reason.split('：')[0] || reason
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return [...counts.entries()].map(([reason, count]) => `${reason} ${count}`).join('，')
 }
 
 function processMailboxMessages(messagesFromNode: any[]): string[] {
@@ -3994,6 +4006,7 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
   }
   mailboxInboxStatus.value = `收到 ${messagesFromNode.length}，已处理 ${handled}，重复 ${duplicate}，失败 ${failed}`
   mailboxInboxErrorText.value = failureReasons.slice(0, 3).join('\n')
+  mailboxFailureSummaryText.value = summarizeMailboxFailures(failureReasons)
   appendLog(`mailbox 自动处理完成：${mailboxInboxStatus.value}`)
   if (events.length > 0) notifyIfAllowed('LM Talk 收到新内容', mailboxNotificationText(events))
   persist()
@@ -4279,7 +4292,7 @@ const appContext = {
   ratchetInfoText, safetyPolicy, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
-  nodeClosestTarget, nodeClosestInfoText, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxInboxErrorText, mailboxDedupeCount, mailboxDedupeStatusText, clearProcessedMailboxIds, nodePreKeyUserId, nodePreKeyStatusText,
+  nodeClosestTarget, nodeClosestInfoText, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxDedupeStatusText, clearProcessedMailboxIds, nodePreKeyUserId, nodePreKeyStatusText,
   nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, prekeyStatusSummary, createMyPreKeyBundleText, inspectPreKeyBundleText, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
