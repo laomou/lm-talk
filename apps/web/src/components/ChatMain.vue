@@ -112,6 +112,7 @@ function onComposerKeydown(e: KeyboardEvent) {
         <span>发送好友请求，对方通过后即可开始聊天。</span>
       </div>
       <div class="row compact">
+        <button v-if="ctx.activeContact.value.state === 'RequestSent'" class="secondary" @click="ctx.createFriendRequestForActive">重新发送</button>
         <button v-if="ctx.activeContact.value.state !== 'RequestSent' && ctx.activeContact.value.state !== 'Blocked'" @click="ctx.createFriendRequestForActive">发送好友请求</button>
         <button v-if="ctx.activeContact.value.state === 'Blocked'" @click="ctx.unblockActiveContact">解除拉黑</button>
       </div>
