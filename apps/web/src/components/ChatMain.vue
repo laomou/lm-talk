@@ -95,6 +95,7 @@ function onComposerKeydown(e: KeyboardEvent) {
         <small v-else-if="ctx.activeContact.value.state === 'Blocked'">已拉黑</small>
         <small v-else>还不是好友</small>
         <small v-if="ctx.activeContact.value.state === 'Friend'">端到端会话：{{ ctx.activeRatchetStatusText.value }}</small>
+        <small v-if="ctx.activeContact.value.last_secure_session_attempt_at">最近建链尝试：{{ ctx.formatTime(ctx.activeContact.value.last_secure_session_attempt_at) }}</small>
         <small v-if="ctx.activeContact.value.last_secure_session_error" class="outbox-error">安全建链失败：{{ ctx.activeContact.value.last_secure_session_error }}</small>
       </div>
       <div v-else-if="ctx.activeGroup.value" class="chat-title-block">

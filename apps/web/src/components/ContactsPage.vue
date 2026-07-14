@@ -188,6 +188,7 @@ function openGroupDetail(groupId: string) {
             <h2>{{ ctx.activeContact.value.display_name || '未命名' }}</h2>
             <small>{{ stateLabel(ctx.activeContact.value.state) }} · {{ ctx.activeContact.value.user_id }}</small>
             <small v-if="ctx.activeContact.value.state === 'Friend'">端到端会话：{{ ctx.activeRatchetStatusText.value }}</small>
+            <small v-if="ctx.activeContact.value.last_secure_session_attempt_at">最近建链尝试：{{ ctx.formatTime(ctx.activeContact.value.last_secure_session_attempt_at) }}</small>
             <small v-if="ctx.activeContact.value.last_secure_session_error" class="danger-text">安全建链失败：{{ ctx.activeContact.value.last_secure_session_error }}</small>
             <small v-if="ctx.activeContact.value.last_friend_request_error" class="danger-text">好友请求失败：{{ ctx.activeContact.value.last_friend_request_error }}</small>
           </div>

@@ -117,6 +117,7 @@ type ContactItem = ContactInfo & {
   pending_request_id?: string
   last_friend_request_error?: string
   last_secure_session_error?: string
+  last_secure_session_attempt_at?: number
   revoked_device_ids?: string[]
   device_certs?: DeviceCertItem[]
   block_reason?: string
@@ -3641,6 +3642,7 @@ function buildSecureSessionOfferForContact(contact: ContactItem): string {
 
 async function sendSecureSessionOfferToContact(contact: ContactItem) {
   const offer = buildSecureSessionOfferForContact(contact)
+  contact.last_secure_session_attempt_at = Date.now()
   try {
     await pushMailboxPayload(contact, 'other', offer)
     contact.last_secure_session_error = undefined
