@@ -383,6 +383,7 @@ const nodeMailboxTakeInfoText = ref('')
 const mailboxInboxStatus = ref('尚未同步')
 const nodePreKeyUserId = ref('')
 const nodePreKeyStatusText = ref('')
+const prekeyStatusSummary = ref('尚未发布 PreKey')
 const nodeSyncPeerUrl = ref('http://127.0.0.1:8788')
 const nodeSyncSnapshotText = ref('')
 const nodeSyncStatusText = ref('')
@@ -3530,7 +3531,17 @@ async function publishPreKeyToNode() {
       }),
     })
     nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
+    prekeyStatusSummary.value = summarizePreKeyStatus(body)
   })
+}
+
+function summarizePreKeyStatus(body: any): string {
+  const remaining = typeof body?.remaining_one_time_prekeys === 'number' ? body.remaining_one_time_prekeys : null
+  const low = Boolean(body?.low_one_time_prekeys || body?.replenishment_required)
+  const userId = String(body?.user_id ?? identity.value?.user_id ?? '')
+  const keyText = remaining === null ? 'one-time key 数量未知' : `剩余 one-time key ${remaining}`
+  const action = low ? '，需要客户端补货' : '，库存正常'
+  return `${userId ? userId + '：' : ''}已发布，${keyText}${action}`
 }
 
 async function fetchPreKeyFromNode() {
@@ -4057,7 +4068,7 @@ const appContext = {
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
   nodeClosestTarget, nodeClosestInfoText, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, nodePreKeyUserId, nodePreKeyStatusText,
-  nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, createMyPreKeyBundleText, inspectPreKeyBundleText, copyText,
+  nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, prekeyStatusSummary, createMyPreKeyBundleText, inspectPreKeyBundleText, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
   ratchetDhStepText, saveSafetyPolicy, createPeerAnnounceText, inspectPeerAnnounceText, createPublicPeerAnnounceText, inspectPublicPeerAnnounceText,
