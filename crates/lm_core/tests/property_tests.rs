@@ -1,5 +1,7 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use lm_core::{ContactCard, DirectEnvelope, Identity, MessageBody};
+use lm_core::{
+    ContactCard, DirectEnvelope, FriendRequest, Identity, IdentityBackupPackage, MessageBody,
+};
 use proptest::prelude::*;
 
 fn bounded_text() -> impl Strategy<Value = String> {
@@ -69,5 +71,33 @@ proptest! {
         } else {
             prop_assert!(card.verify().is_ok());
         }
+    }
+
+    #[test]
+    fn import_text_size_limits_are_enforced_at_boundaries(extra in 1usize..=8) {
+        let contact = format!(
+            "lm-contact-card-v1:{}",
+            "A".repeat(lm_core::MAX_CONTACT_CARD_TEXT_BYTES + extra)
+        );
+        let friend = format!(
+            "lm-friend-request-v1:{}",
+            "A".repeat(lm_core::MAX_FRIEND_REQUEST_TEXT_BYTES + extra)
+        );
+        let backup = format!(
+            "lm-identity-backup-v1:{}",
+            "A".repeat(lm_core::MAX_IDENTITY_BACKUP_TEXT_BYTES + extra)
+        );
+        prop_assert_eq!(
+            ContactCard::from_export_text(&contact).unwrap_err(),
+            lm_core::LmError::PayloadTooLarge
+        );
+        prop_assert_eq!(
+            FriendRequest::from_export_text(&friend).unwrap_err(),
+            lm_core::LmError::PayloadTooLarge
+        );
+        prop_assert_eq!(
+            IdentityBackupPackage::from_export_text(&backup).unwrap_err(),
+            lm_core::LmError::PayloadTooLarge
+        );
     }
 }
