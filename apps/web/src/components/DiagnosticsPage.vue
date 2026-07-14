@@ -30,6 +30,8 @@ async function runDiagnostics() {
     sync: {
       enabled: props.ctx.nodeEnabled.value,
       services: redactDiagnosticReport.value ? props.ctx.nodeUrlList().map(() => '[已脱敏]') : props.ctx.nodeUrlList(),
+      token_count: props.ctx.nodeTokenCount.value,
+      missing_remote_token_count: props.ctx.nodeMissingRemoteTokenCount.value,
       status: props.ctx.nodeControlStatus.value,
     },
     local_counts: {

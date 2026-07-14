@@ -1495,18 +1495,31 @@ const nodeSettingsSummaryText = computed(() => {
     return userFacingError(e)
   }
   if (entries.length === 0) return '未配置同步服务'
-  const tokenCount = entries.filter((entry) => entry.token).length
-  const missingRemoteTokens = entries.filter((entry) => !entry.token && !isLoopbackNodeUrl(entry.url)).length
+  const tokenCount = nodeTokenCount.value
+  const missingRemoteTokens = nodeMissingRemoteTokenCount.value
   return `${entries.length} 个同步服务 · 主节点 ${entries[0].url}${tokenCount ? ` · ${tokenCount} 个已配置令牌` : ''}${missingRemoteTokens ? ` · ${missingRemoteTokens} 个远端缺令牌` : ''} · 成功节点会自动置顶`
 })
-const nodeTokenStorageText = computed(() => {
-  let entries: NodeEntry[]
+const nodeTokenCount = computed(() => {
   try {
-    entries = nodeEntries()
+    return nodeEntries().filter((entry) => entry.token).length
+  } catch {
+    return 0
+  }
+})
+const nodeMissingRemoteTokenCount = computed(() => {
+  try {
+    return nodeEntries().filter((entry) => !entry.token && !isLoopbackNodeUrl(entry.url)).length
+  } catch {
+    return 0
+  }
+})
+const nodeTokenStorageText = computed(() => {
+  try {
+    nodeEntries()
   } catch {
     return ''
   }
-  const tokenCount = entries.filter((entry) => entry.token).length
+  const tokenCount = nodeTokenCount.value
   return tokenCount ? `已配置 ${tokenCount} 个令牌；令牌只保存在本机浏览器，诊断报告默认不导出。` : ''
 })
 function nodeTokenFor(url: string): string {
@@ -5093,7 +5106,7 @@ function logout() {
 const appContext = {
   goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, pwaStatusText, pwaBackgroundCapabilityText, webVersionText,
-  nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, nodeTokenStorageText, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
+  nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, nodeTokenStorageText, nodeTokenCount, nodeMissingRemoteTokenCount, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
   enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, createMyDeviceCert, myDeviceCertJson,
