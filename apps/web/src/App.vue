@@ -464,7 +464,13 @@ const mailboxInboxErrorText = ref('')
 const mailboxFailureSummaryText = ref('')
 const mailboxDedupeCount = computed(() => processedMailboxIds.value.length)
 const mailboxFailedCount = computed(() => mailboxFailedItems.value.length)
-const mailboxDedupeStatusText = computed(() => `本地去重记录 ${mailboxDedupeCount.value}/${MAILBOX_DEDUPE_MAX_RECORDS}，保留 30 天；失败队列 ${mailboxFailedCount.value}`)
+const mailboxDedupeStatusText = computed(() => {
+  const records = processedMailboxIds.value
+  const range = records.length
+    ? `，最新 ${formatDateTime(records[0].processed_at)}，最旧 ${formatDateTime(records[records.length - 1].processed_at)}`
+    : ''
+  return `本地去重记录 ${mailboxDedupeCount.value}/${MAILBOX_DEDUPE_MAX_RECORDS}，保留 30 天${range}；失败队列 ${mailboxFailedCount.value}`
+})
 const nodePreKeyUserId = ref('')
 const nodePreKeyStatusText = ref('')
 const prekeyStatusSummary = ref('尚未发布 PreKey')
