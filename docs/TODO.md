@@ -955,9 +955,9 @@ MVP 群聊采用逐个加密。
 
 必须覆盖：
 
-- identity create/restore roundtrip
-- wrong passphrase fails
-- backup tamper fails
+- [x] identity create/restore roundtrip
+- [x] wrong passphrase fails
+- [x] backup tamper fails
 - contact card verify
 - invalid contact card rejected
 - friend request verify

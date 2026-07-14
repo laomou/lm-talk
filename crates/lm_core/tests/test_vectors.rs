@@ -57,6 +57,20 @@ fn backup_vector_restores_seed_and_user() {
 }
 
 #[test]
+fn backup_export_text_tamper_is_rejected() {
+    let v = fixture("backup_v1.json");
+    let tampered = mutate_export_text(v["backup_text"].as_str().unwrap());
+    assert!(
+        IdentityBackupPackage::from_export_text(&tampered)
+            .and_then(|backup| Identity::restore_from_backup(
+                &backup,
+                v["passphrase"].as_str().unwrap()
+            ))
+            .is_err()
+    );
+}
+
+#[test]
 fn contact_and_friend_vectors_verify() {
     let contact = fixture("contact_card_v1.json");
     let card =
