@@ -47,6 +47,8 @@ fn real_http_control_plane_syncs_prekeys_and_mailbox_between_nodes() {
     let health = http_request(&base_a, "GET", "/health", "");
     assert_eq!(health.status, 200);
     assert!(health.body.contains("http-node-a"));
+    let health_body: serde_json::Value = serde_json::from_str(&health.body).unwrap();
+    assert_eq!(health_body["dht_record_capacity"].as_u64().unwrap(), 4096);
 
     let cors = http_request(&base_a, "OPTIONS", "/prekey/get", "");
     assert_eq!(cors.status, 200);

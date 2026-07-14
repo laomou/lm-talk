@@ -2167,6 +2167,7 @@ struct HealthResponse<'a> {
     mailbox_deliveries: usize,
     mailbox_bytes: usize,
     dht_records: usize,
+    dht_record_capacity: usize,
     maintenance: NodeMaintenanceStats,
     sync: NodeSyncStatus,
 }
@@ -2332,6 +2333,7 @@ impl NativeNode {
                     mailbox_deliveries: self.mailbox.total_pending(),
                     mailbox_bytes: self.mailbox.total_bytes(),
                     dht_records: self.dht_records.len(),
+                    dht_record_capacity: DEFAULT_MAX_DHT_RECORDS,
                     maintenance: self.maintenance.clone(),
                     sync: self.sync_status.clone(),
                 },
