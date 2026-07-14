@@ -2583,9 +2583,10 @@ function createAddMemberGroupEvent(userId: string) {
 }
 
 function createRemoveMemberGroupEvent(userId: string) {
-  run('生成移除成员事件', () => {
+  run('生成退群事件', () => {
     if (!activeGroup.value) throw new Error('请选择群组')
-    ensureActiveGroupAdmin('移除成员')
+    if (!identity.value) throw new Error('请先登录')
+    if (userId !== identity.value.user_id) throw new Error('群成员只能生成自己的退群事件，不能移除其他成员')
     const sequence = nextGroupSequence(activeGroup.value)
     groupEventText.value = create_group_event(
       backupText.value,
@@ -2720,6 +2721,7 @@ function applyGroupEventRaw(text: string, actorId: string): { group_id: string; 
   } else {
     const admins = group.admin_user_ids ?? []
     const isSelfLeave = info.action.RemoveMember?.user_id === info.actor_user_id
+    if (info.action.RemoveMember && !isSelfLeave) throw new Error('群权限拒绝：成员只能自己退出，不能移除其他成员')
     if (!isSelfLeave && admins.length > 0 && !admins.includes(info.actor_user_id)) throw new Error('群权限拒绝：只有管理员可执行该事件')
     if (info.action.Rename) {
       group.name = info.action.Rename.name

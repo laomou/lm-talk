@@ -314,7 +314,7 @@ impl GroupPolicyState {
             }
             GroupEventAction::RemoveMember { user_id } => {
                 if &event.actor_user_id != user_id {
-                    self.require_admin(&event.actor_user_id)?;
+                    return Err(LmError::InvalidBackupFormat);
                 }
                 if self.admins.contains(user_id) && self.admins.len() == 1 && self.members.len() > 1
                 {
@@ -850,6 +850,35 @@ mod tests {
         state.apply_event(&demote).unwrap();
         assert!(!state.is_admin(alice.user_id()));
         assert!(state.is_admin(bob.user_id()));
+    }
+
+    #[test]
+    fn group_policy_rejects_admin_removing_other_members() {
+        let (alice, _) = Identity::create_with_passphrase("alice").unwrap();
+        let (bob, _) = Identity::create_with_passphrase("bob").unwrap();
+        let group_id = Uuid::new_v4();
+        let mut state = GroupPolicyState::new(
+            group_id,
+            "Test".into(),
+            alice.user_id().clone(),
+            vec![alice.user_id().clone(), bob.user_id().clone()],
+        )
+        .unwrap();
+        let remove_bob = GroupEvent::new(
+            &alice,
+            group_id,
+            1,
+            GroupEventAction::RemoveMember {
+                user_id: bob.user_id().clone(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            state.apply_event(&remove_bob).unwrap_err(),
+            LmError::InvalidBackupFormat
+        );
+        assert!(state.is_member(bob.user_id()));
     }
 
     #[test]
