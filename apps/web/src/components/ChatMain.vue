@@ -142,8 +142,11 @@ function onComposerKeydown(e: KeyboardEvent) {
           <b v-if="ctx.isDangerousFileName(ctx.selectedFile.value.name)">危险类型</b>
         </small>
         <small v-else>{{ ctx.rtcFileStatus.value }}</small>
-        <a v-if="ctx.receivedFileUrl.value" :href="ctx.receivedFileUrl.value" :download="ctx.receivedFileName.value">下载收到的文件：{{ ctx.receivedFileName.value }}</a>
-        <small v-if="ctx.receivedFileMeta.value">{{ ctx.receivedFileMeta.value }}</small>
+        <div v-if="ctx.receivedFileUrl.value" class="received-file-card">
+          <b>{{ ctx.receivedFileName.value }}</b>
+          <small>{{ ctx.receivedFileMeta.value }}</small>
+          <a :href="ctx.receivedFileUrl.value" :download="ctx.receivedFileName.value">下载</a>
+        </div>
       </div>
     </footer>
   </section>

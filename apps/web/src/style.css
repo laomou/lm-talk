@@ -473,6 +473,19 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 .attachment-row small,
 .attachment-row a { grid-column: 1 / -1; color: var(--c-ink-3); font-size: 12px; overflow-wrap: anywhere; }
 .attachment-row b { color: var(--c-danger); margin-left: var(--sp-2); }
+.received-file-card {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-md);
+  background: var(--c-surface-2);
+}
+.received-file-card b { color: var(--c-ink); margin: 0; overflow-wrap: anywhere; }
+.received-file-card small { grid-column: 1; }
+.received-file-card a { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: var(--c-primary-ink); font-weight: 600; }
 
 .chat-empty-state,
 .empty.center { display: grid; place-content: center; width: 100%; color: var(--c-ink-3); text-align: center; flex: 1 1 auto; }
