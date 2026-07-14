@@ -6,7 +6,7 @@ const contactName = (userId: string) => props.ctx.contacts.value.find((c: any) =
 const messageSearch = ref('')
 
 function hmTime(ts: number) {
-  return new Date(ts).toTimeString().slice(0, 5)
+  return new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(ts))
 }
 function dayLabel(ts: number) {
   const d = new Date(ts)

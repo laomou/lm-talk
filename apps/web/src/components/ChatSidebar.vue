@@ -60,7 +60,7 @@ function convTime(ts: number) {
   const d = new Date(ts)
   const now = new Date()
   const sameDay = d.toDateString() === now.toDateString()
-  if (sameDay) return d.toTimeString().slice(0, 5)
+  if (sameDay) return new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }).format(d)
   const yesterday = new Date(now)
   yesterday.setDate(now.getDate() - 1)
   if (d.toDateString() === yesterday.toDateString()) return '昨天'
