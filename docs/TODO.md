@@ -986,7 +986,7 @@ MVP 群聊采用逐个加密。
 
 需要验证：
 
-- Web RNG 可用。
+- [x] Web RNG 可用。
 - Argon2id 参数在浏览器可接受。
 - [x] IndexedDB 存取可用。
 - [x] WASM 与 native 生成一致 UserID。

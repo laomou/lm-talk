@@ -80,6 +80,13 @@ async function createIdentity(page: Page, name: string, passphrase: string) {
   await expect(page.locator('.chat-shell')).toBeVisible()
 }
 
+async function localIdentityRecord(page: Page): Promise<{ user_id: string; backup_text: string }> {
+  return page.evaluate(() => {
+    const records = JSON.parse(localStorage.getItem('lm-talk-local-identities-v1') || '[]') as Array<{ user_id: string; backup_text: string }>
+    return records[0] ?? { user_id: '', backup_text: '' }
+  })
+}
+
 async function copyMyContactCard(page: Page): Promise<string> {
   await page.getByRole('button', { name: '我', exact: true }).click()
   await page.getByRole('button', { name: '我的名片' }).click()
@@ -211,6 +218,22 @@ test('消息同步可完成好友请求和消息收发', async ({ browser }) => 
   await bobContext.close()
 })
 
+test('浏览器注册使用 Web RNG 生成不同身份', async ({ page }) => {
+  await clearBrowserState(page)
+  await createIdentity(page, 'RngA', 'same rng passphrase 2026')
+  const first = await localIdentityRecord(page)
+
+  await clearBrowserState(page)
+  await createIdentity(page, 'RngB', 'same rng passphrase 2026')
+  const second = await localIdentityRecord(page)
+
+  expect(first.backup_text).toContain('lm-identity-backup-v1:')
+  expect(second.backup_text).toContain('lm-identity-backup-v1:')
+  expect(first.user_id).toBeTruthy()
+  expect(second.user_id).toBeTruthy()
+  expect(second.user_id).not.toBe(first.user_id)
+})
+
 test('注册后可在独立导入页导入身份，再回登录页登录', async ({ page }) => {
   await clearBrowserState(page)
   await page.goto('/#/register')
@@ -219,10 +242,7 @@ test('注册后可在独立导入页导入身份，再回登录页登录', async
   await page.getByRole('button', { name: '注册', exact: true }).click({ force: true })
   await expect(page.getByRole('heading', { name: '注册成功' })).toBeVisible()
 
-  const identityText = await page.evaluate(() => {
-    const records = JSON.parse(localStorage.getItem('lm-talk-local-identities-v1') || '[]') as Array<{ backup_text: string }>
-    return records[0]?.backup_text || ''
-  })
+  const identityText = (await localIdentityRecord(page)).backup_text
   expect(identityText).toContain('lm-identity-backup-v1:')
 
   await clearBrowserState(page)
