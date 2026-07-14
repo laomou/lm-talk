@@ -965,7 +965,7 @@ MVP 群聊采用逐个加密。
 - [x] message encrypt/decrypt
 - [x] tampered ciphertext fails
 - [x] blocked sender dropped
-- duplicate message ignored
+- [x] duplicate message ignored
 
 ---
 
