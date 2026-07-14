@@ -963,7 +963,7 @@ MVP 群聊采用逐个加密。
 - [x] friend request verify
 - [x] expired friend request rejected
 - [x] message encrypt/decrypt
-- tampered ciphertext fails
+- [x] tampered ciphertext fails
 - blocked sender dropped
 - duplicate message ignored
 
