@@ -1885,7 +1885,7 @@ function statusLabel(status: MessageStatus) {
   switch (status) {
     case 'queued': return '待发送'
     case 'sent': return '已发送'
-    case 'mailbox': return '已发送'
+    case 'mailbox': return '已投递节点'
     case 'delivered': return '已送达'
     case 'copied': return '待发送'
     case 'received': return '已接收'
