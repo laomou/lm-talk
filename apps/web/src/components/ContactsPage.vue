@@ -240,6 +240,7 @@ function openGroupDetail(groupId: string) {
             <div v-if="ctx.activeGroup.value.last_event_error" class="group-event-summary">
               <b class="danger-text">群事件失败：{{ ctx.activeGroup.value.last_event_error }}</b>
               <small>{{ ctx.formatTime(ctx.activeGroup.value.last_event_error_at || Date.now()) }}</small>
+              <small v-if="ctx.activeGroup.value.last_event_recovery_hint">{{ ctx.activeGroup.value.last_event_recovery_hint }}</small>
               <button class="secondary" @click="ctx.clearActiveGroupEventError">清除错误</button>
             </div>
             <div v-if="ctx.activeGroup.value.last_event_summary" class="group-event-summary">

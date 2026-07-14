@@ -176,6 +176,7 @@ type GroupItem = {
   last_event_at?: number
   last_event_error?: string
   last_event_error_at?: number
+  last_event_recovery_hint?: string
   removed_self_at?: number
   removed_self_by?: string
   last_sender_key_error?: string
@@ -2553,6 +2554,17 @@ function rememberGroupEventError(groupId: string | undefined, reason: string) {
   group.last_event_error_at = Date.now()
 }
 
+function groupEventRecoveryHint(group: GroupItem, eventSequence?: number): string {
+  const current = group.sequence ?? 0
+  if (typeof eventSequence === 'number' && eventSequence > current + 1) {
+    return `本地缺少中间群事件 ${current + 1}..${eventSequence - 1}，请先向其他成员同步缺失事件或群快照后重试。`
+  }
+  if (typeof eventSequence === 'number' && eventSequence <= current) {
+    return `本地群事件序列已到 ${current}，该事件可视为重复或旧事件；确认无误后可清除错误。`
+  }
+  return '请确认事件发起者、群成员和本地群状态后重试。'
+}
+
 function groupIdFromEventText(text: string, actorId: string): string | undefined {
   const actor = actorId === identity.value?.user_id
     ? { contact_card_text: myContactCardText.value }
@@ -2571,6 +2583,7 @@ function clearActiveGroupEventError() {
     if (!activeGroup.value) throw new Error('请选择群组')
     activeGroup.value.last_event_error = undefined
     activeGroup.value.last_event_error_at = undefined
+    activeGroup.value.last_event_recovery_hint = undefined
     persist()
   })
 }
@@ -2590,7 +2603,14 @@ function applyGroupEventRaw(text: string, actorId: string): { group_id: string; 
   }
   const group = groups.value.find((g) => g.group_id === info.group_id)
   if (!group) throw new Error('本地没有这个群')
-  if (info.sequence <= (group.sequence ?? 0)) throw new Error('群事件 sequence 已过期或重复')
+  if (info.sequence > (group.sequence ?? 0) + 1) {
+    group.last_event_recovery_hint = groupEventRecoveryHint(group, info.sequence)
+    throw new Error(`群事件 sequence 乱序：当前 ${group.sequence ?? 0}，收到 ${info.sequence}`)
+  }
+  if (info.sequence <= (group.sequence ?? 0)) {
+    group.last_event_recovery_hint = groupEventRecoveryHint(group, info.sequence)
+    throw new Error(`群事件 sequence 已过期或重复：当前 ${group.sequence ?? 0}，收到 ${info.sequence}`)
+  }
   if (group.policy_state_json) {
     group.policy_state_json = apply_group_policy_event(group.policy_state_json, text, actor.contact_card_text)
     const policy = JSON.parse(group.policy_state_json) as { name: string; members: string[]; admins: string[]; sequence: number }
@@ -2647,6 +2667,7 @@ function applyGroupEventRaw(text: string, actorId: string): { group_id: string; 
   group.last_event_at = Date.now()
   group.last_event_error = undefined
   group.last_event_error_at = undefined
+  group.last_event_recovery_hint = undefined
   const membershipChanged = Boolean(info.action.AddMember || info.action.RemoveMember)
   if (membershipChanged) {
     groupSenderKeys.value = groupSenderKeys.value.filter((k) => k.group_id !== group.group_id || k.sender_user_id === identity.value?.user_id)
