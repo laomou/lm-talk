@@ -32,7 +32,7 @@ impl Default for LocalSafetyPolicy {
 
 impl LocalSafetyPolicy {
     /// Evaluate local-only safety hints for text. This is intentionally not a
-    /// community moderation system: it only helps a user's own device decide
+    /// shared enforcement system: it only helps a user's own device decide
     /// whether to warn, blur/hide, or drop content before display/storage.
     pub fn evaluate_text(&self, text: &str) -> FilterAction {
         if !self.enable_text_filter || self.text_filter_level == FilterLevel::Off {
