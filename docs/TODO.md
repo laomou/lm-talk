@@ -93,7 +93,8 @@
 1. **Outbox 重试机制**
    - 定时重试 WebRTC / Mailbox 投递。
    - 指数退避、最大重试次数、过期时间、当前聊天取消发送和基础失败分类已具备实现。
-   - 仍需把失败分类暴露到正式 Outbox / 收件箱 UI。
+   - 当前聊天头已显示最近 Outbox 失败原因。
+   - 仍需正式 Outbox / 收件箱 UI。
 
 2. **Mailbox 防重复与去重**
    - Web 已本地记录已处理 delivery_id / message_id，并随 IndexedDB meta 持久化。
