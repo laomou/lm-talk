@@ -129,6 +129,7 @@ Web 当前生成 JSON 文本，顶层字段如下：
 约束：
 
 - 单条日志不得包含提示词、备份包、私钥、seed、原始消息明文、附件内容、完整 direct envelope、完整 mailbox payload、完整 Contact Card、完整 Friend Request 或 auth token。
+- 单条日志导出前必须裁剪长度，避免长原文或完整载荷进入报告。
 - 错误对象需要转换为稳定错误类别或短文本，不直接序列化异常对象。
 - 默认最多导出最近 12 条。
 - 仅摘要模式不得包含 `recent_logs`。
