@@ -160,6 +160,9 @@ type GroupItem = {
   policy_state_json?: string
   created_at: number
   sequence?: number
+  last_event_summary?: string
+  last_event_actor_user_id?: string
+  last_event_at?: number
 }
 
 type GroupSenderKeyItem = {
@@ -2233,6 +2236,9 @@ function applyGroupEventRaw(text: string, actorId: string): { group_id: string; 
     group.sequence = info.sequence
   }
   const summary = summarizeGroupEventAction(info.action)
+  group.last_event_summary = summary
+  group.last_event_actor_user_id = info.actor_user_id
+  group.last_event_at = Date.now()
   const membershipChanged = Boolean(info.action.AddMember || info.action.RemoveMember)
   if (membershipChanged) {
     groupSenderKeys.value = groupSenderKeys.value.filter((k) => k.group_id !== group.group_id || k.sender_user_id === identity.value?.user_id)

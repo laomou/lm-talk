@@ -183,9 +183,21 @@ function openGroupDetail(groupId: string) {
         <div class="detail-body">
           <section class="home-card">
             <h3>群成员</h3>
+            <div class="group-state-grid">
+              <span>事件序列 {{ ctx.activeGroup.value.sequence ?? 0 }}</span>
+              <span>管理员 {{ ctx.activeGroup.value.admin_user_ids?.length ?? 0 }}</span>
+            </div>
             <div class="member-list">
               <span v-for="m in ctx.activeGroupMembers.value" :key="m.user_id">{{ m.display_name || m.user_id }}</span>
             </div>
+          </section>
+          <section class="home-card">
+            <h3>最近群事件</h3>
+            <div v-if="ctx.activeGroup.value.last_event_summary" class="group-event-summary">
+              <b>{{ ctx.activeGroup.value.last_event_summary }}</b>
+              <small>{{ ctx.activeGroup.value.last_event_actor_user_id || '未知发起者' }} · {{ ctx.formatTime(ctx.activeGroup.value.last_event_at || Date.now()) }}</small>
+            </div>
+            <div v-else class="empty">暂无群事件</div>
           </section>
           <div class="row detail-actions">
             <button @click="ctx.goChatPage()">进入群聊</button>
