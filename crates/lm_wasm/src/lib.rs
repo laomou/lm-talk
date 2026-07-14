@@ -1676,6 +1676,23 @@ mod tests {
     }
 
     #[test]
+    fn wasm_identity_matches_native_test_vector() {
+        let vector: Value =
+            serde_json::from_str(include_str!("../../../test-vectors/identity_v1.json")).unwrap();
+        let wasm_identity =
+            wasm_identity_from_seed([7u8; lm_core::identity::IDENTITY_SEED_LEN]).unwrap();
+        assert_eq!(wasm_identity.user_id().to_string(), vector["user_id"]);
+        assert_eq!(
+            BASE64.encode(wasm_identity.identity_public_key()),
+            vector["identity_public_key_base64"]
+        );
+        assert_eq!(
+            BASE64.encode(wasm_identity.x25519_public_key()),
+            vector["x25519_public_key_base64"]
+        );
+    }
+
+    #[test]
     fn wasm_device_revoke_smoke() {
         let alice = create_identity("alice pass").unwrap();
         let alice_v: Value = serde_json::from_str(&alice).unwrap();
