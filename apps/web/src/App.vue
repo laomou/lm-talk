@@ -2595,6 +2595,22 @@ function removeActiveContact() {
   persist()
 }
 
+async function clearActiveConversation() {
+  if (!activeContact.value && !activeGroup.value) return
+  const name = activeGroup.value?.name || activeContact.value?.display_name || activeContact.value?.user_id || '当前聊天'
+  const confirmed = await showConfirm('清空聊天记录', `清空「${name}」的本地聊天记录？联系人或群聊不会删除。`, true)
+  if (!confirmed) return
+  if (activeGroup.value) {
+    const groupId = activeGroup.value.group_id
+    messages.value = messages.value.filter((m) => m.group_id !== groupId)
+  } else if (activeContact.value) {
+    const peerId = activeContact.value.user_id
+    messages.value = messages.value.filter((m) => m.peer_user_id !== peerId)
+  }
+  appendLog(`已清空聊天记录：${name}`)
+  persist()
+}
+
 function blockActiveContact() {
   if (!activeContact.value) return
   activeContact.value.state = 'Blocked'
@@ -3888,7 +3904,7 @@ const appContext = {
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
   newGroupName, friendContacts, selectedGroupMembers, createGroup, groups, activeGroupId,
   selectGroup, activeContact, activeGroup, activeGroupMembers, blockReason, blockActiveContact,
-  unblockActiveContact, removeActiveContact, createFriendRequestForActive, createInviteForActiveGroup, groupInviteText, groupFanoutJson,
+  unblockActiveContact, removeActiveContact, clearActiveConversation, createFriendRequestForActive, createInviteForActiveGroup, groupInviteText, groupFanoutJson,
   removeActiveGroup, messages, activeMessages, formatTime, statusLabel, copyMessageEnvelope, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,

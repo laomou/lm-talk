@@ -84,10 +84,11 @@ function onComposerKeydown(e: KeyboardEvent) {
       <div v-else class="chat-title-block">
         <h2>选择一个聊天</h2>
       </div>
-      <div v-if="activePendingOutboxCount" class="chat-header-actions">
+      <div v-if="ctx.activeContact.value || ctx.activeGroup.value" class="chat-header-actions">
         <small v-if="activeOutboxError" class="outbox-error">{{ activeOutboxError }}</small>
-        <button class="secondary" @click="ctx.flushOutboxForActive">重发 {{ activePendingOutboxCount }}</button>
-        <button class="secondary danger" @click="ctx.cancelOutboxForActive">取消发送</button>
+        <button v-if="activePendingOutboxCount" class="secondary" @click="ctx.flushOutboxForActive">重发 {{ activePendingOutboxCount }}</button>
+        <button v-if="activePendingOutboxCount" class="secondary danger" @click="ctx.cancelOutboxForActive">取消发送</button>
+        <button class="secondary danger" @click="ctx.clearActiveConversation">清空聊天</button>
       </div>
     </header>
 
