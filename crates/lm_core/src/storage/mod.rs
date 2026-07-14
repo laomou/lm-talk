@@ -121,4 +121,38 @@ mod tests {
             LmError::DuplicateMessage
         );
     }
+
+    #[test]
+    fn memory_store_drops_messages_from_blocked_sender() {
+        let (alice, _a) = Identity::create_with_passphrase("alice").unwrap();
+        let (bob, _b) = Identity::create_with_passphrase("bob").unwrap();
+        let envelope = DirectEnvelope::encrypt_text(
+            &alice,
+            bob.user_id().clone(),
+            &bob.x25519_public_key(),
+            "conv1".into(),
+            "blocked hello".into(),
+        )
+        .unwrap();
+        let mut store = MemoryStore::new();
+        store.block_user(BlockEntry {
+            user_id: alice.user_id().clone(),
+            reason: Some("spam".into()),
+            created_at: 1,
+        });
+        let message_id = envelope.message_id;
+        let stored = StoredMessage {
+            message_id,
+            conversation_id: "conv1".into(),
+            sender_user_id: alice.user_id().clone(),
+            receiver_user_id: bob.user_id().clone(),
+            envelope,
+            received_at: Some(2),
+        };
+        assert_eq!(
+            store.save_message(stored).unwrap_err(),
+            LmError::BlockedSender
+        );
+        assert!(store.get_message(&message_id).is_none());
+    }
 }

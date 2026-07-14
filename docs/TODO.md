@@ -964,7 +964,7 @@ MVP 群聊采用逐个加密。
 - [x] expired friend request rejected
 - [x] message encrypt/decrypt
 - [x] tampered ciphertext fails
-- blocked sender dropped
+- [x] blocked sender dropped
 - duplicate message ignored
 
 ---
