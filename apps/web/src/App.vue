@@ -386,6 +386,7 @@ const nodePreKeyStatusText = ref('')
 const nodeSyncPeerUrl = ref('http://127.0.0.1:8788')
 const nodeSyncSnapshotText = ref('')
 const nodeSyncStatusText = ref('')
+const storageEstimateText = ref('尚未估算')
 const selectedFile = ref<File | null>(null)
 const filePackageText = ref('')
 const incomingFilePackageText = ref('')
@@ -1107,6 +1108,25 @@ async function clearBrowserCaches() {
   toast('已清理浏览器缓存', 'success')
 }
 
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  let value = bytes
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`
+}
+
+async function refreshStorageEstimate() {
+  const estimate = navigator.storage?.estimate ? await navigator.storage.estimate() : {}
+  const usage = estimate.usage ?? 0
+  const quota = estimate.quota ?? 0
+  const ratio = quota > 0 ? `，${Math.round((usage / quota) * 100)}%` : ''
+  storageEstimateText.value = `已用 ${formatBytes(usage)} / 可用 ${formatBytes(quota)}${ratio}`
+}
 
 function exportFullDataBackup() {
   run('导出完整数据备份', () => {
@@ -3906,7 +3926,7 @@ function logout() {
 }
 const appContext = {
   goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, myContactCardText, backupText,
-  clearBrowserCaches,
+  clearBrowserCaches, refreshStorageEstimate, storageEstimateText,
   nodeControlUrl, nodeUrlList, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
   enableNotifications, notificationPermission,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,

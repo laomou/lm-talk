@@ -9,6 +9,12 @@ const failedOutbox = computed(() => outboxItems.value.filter((item: any) => item
 const contactName = (userId: string) => props.ctx.contacts.value.find((c: any) => c.user_id === userId)?.display_name || userId
 const outboxKindLabel = (kind?: string) =>
   kind === 'group-fanout' ? '群消息' : kind === 'file-package' ? '文件' : kind === 'other' ? '系统消息' : '单聊消息'
+const localObjectCount = computed(() =>
+  props.ctx.contacts.value.length +
+  props.ctx.groups.value.length +
+  props.ctx.messages.value.length +
+  props.ctx.outbox.value.length
+)
 </script>
 
 <template>
@@ -79,6 +85,22 @@ const outboxKindLabel = (kind?: string) =>
         <div v-else class="empty">没有待发送内容</div>
         <div class="row compact">
           <button class="secondary" @click="ctx.clearSentOutbox">清理已发送</button>
+        </div>
+      </section>
+
+      <section class="home-card storage-card">
+        <div class="section-title-row">
+          <h3>本地存储</h3>
+          <button class="secondary" @click="ctx.refreshStorageEstimate">刷新</button>
+        </div>
+        <div class="outbox-summary">
+          <span>对象 {{ localObjectCount }}</span>
+          <span>消息 {{ ctx.messages.value.length }}</span>
+          <span>队列 {{ ctx.outbox.value.length }}</span>
+        </div>
+        <div class="sync-status">
+          <b>浏览器估算</b>
+          <small>{{ ctx.storageEstimateText.value }}</small>
         </div>
       </section>
 
