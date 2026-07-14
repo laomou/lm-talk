@@ -405,6 +405,7 @@ const receivedFileName = ref('')
 const receivedFileUrl = ref('')
 const receivedFileMeta = ref('')
 const receivedFileMime = ref('')
+const receivedFilePreviewKind = ref('')
 const rtcFileStatus = ref('未发送文件')
 const fileTransferPhase = ref('待选择')
 const ratchetStateText = ref('')
@@ -4006,6 +4007,18 @@ function base64ToBytes(value: string): Uint8Array {
   return out
 }
 
+function filePreviewKind(name: string, mime: string): string {
+  const lower = name.toLowerCase()
+  if (mime.startsWith('image/')) return '图片预览'
+  if (mime.startsWith('audio/')) return '音频文件'
+  if (mime.startsWith('video/')) return '视频文件'
+  if (mime === 'application/pdf' || lower.endsWith('.pdf')) return 'PDF 文档'
+  if (/(\.docx?|\.xlsx?|\.pptx?)$/.test(lower)) return 'Office 文档'
+  if (/(\.zip|\.7z|\.rar|\.tar|\.gz)$/.test(lower)) return '压缩包'
+  if (mime.startsWith('text/') || /\.(txt|md|csv|log)$/.test(lower)) return '文本文件'
+  return '普通附件'
+}
+
 function onFileSelected(event: Event) {
   const input = event.target as HTMLInputElement
   selectedFile.value = input.files?.[0] ?? null
@@ -4092,6 +4105,7 @@ function decryptIncomingFilePackage() {
     receivedFileName.value = out.name
     receivedFileMime.value = out.mime_type || 'application/octet-stream'
     receivedFileMeta.value = `${receivedFileMime.value} · ${formatBytes(out.size ?? bytes.length)}`
+    receivedFilePreviewKind.value = filePreviewKind(out.name, receivedFileMime.value)
     if (activeContact.value) {
       messages.value.push({
         id: newId(),
@@ -4220,7 +4234,7 @@ const appContext = {
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
   flushOutboxForActive, retryAllOutbox, cancelOutboxForActive, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
   receiveEnvelope, onFileSelected, cancelSelectedFile, selectedFile, formatBytes, isDangerousFileName, createFilePackageForActive, sendFilePackageOverRtc, sendSelectedFile, filePackageText, rtcFileStatus, fileTransferPhase,
-  incomingFilePackageText, pendingFilePackageText, inspectIncomingFilePackage, decryptIncomingFilePackage, receivedFileUrl, receivedFileName, receivedFileMeta, receivedFileMime, filePackageInfoText,
+  incomingFilePackageText, pendingFilePackageText, inspectIncomingFilePackage, decryptIncomingFilePackage, receivedFileUrl, receivedFileName, receivedFileMeta, receivedFileMime, receivedFilePreviewKind, filePackageInfoText,
   createGroupSenderKeyForActiveGroup, groupSenderDistributionText, importGroupSenderKeyForActiveContact, groupSenderEncryptDebug, groupSenderDecryptDebug, createGroupSenderDistributionFanoutForActiveGroup,
   groupSenderDistributionFanoutJson, groupSenderDistributionFanoutItems, groupSenderEnvelopeText, groupSenderPlainText, groupRenameText, createRenameGroupEvent,
   groupEventText, applyGroupEventText, createGroupEventFanout, groupEventFanoutJson, groupEventFanoutItems, incomingGroupEventText,

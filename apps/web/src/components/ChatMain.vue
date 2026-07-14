@@ -173,6 +173,10 @@ function onComposerKeydown(e: KeyboardEvent) {
             :src="ctx.receivedFileUrl.value"
             :alt="ctx.receivedFileName.value"
           />
+          <div v-else class="received-file-placeholder">
+            <b>{{ ctx.receivedFilePreviewKind.value }}</b>
+            <small>非图片附件不会内联预览，请下载后用本机应用打开。</small>
+          </div>
         </div>
       </div>
     </footer>
