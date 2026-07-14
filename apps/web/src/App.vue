@@ -3299,6 +3299,8 @@ async function sendSecureSessionOfferToContact(contact: ContactItem) {
     contact.last_secure_session_error = undefined
   } catch (e) {
     recordSecureSessionError(contact, e, '⚠️ 安全会话 Offer 发送失败')
+    outbox.value.push(createOutboxItem(contact, offer, undefined, 'other'))
+    appendLog(`安全会话 Offer 已加入 outbox 自动重试：${contact.display_name || contact.user_id}`)
     throw e
   }
   appendLog(`✅ 已向 ${contact.display_name || contact.user_id} 发送安全会话 Offer`)
