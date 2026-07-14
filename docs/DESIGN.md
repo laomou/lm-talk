@@ -106,7 +106,7 @@ Friend Request -> Friend Response
 - 本地过滤
 - 本地拉黑
 - 附件风险提示
-- 可选订阅屏蔽列表
+- 本地手动屏蔽规则
 
 ---
 
