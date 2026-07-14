@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 
 const props = defineProps<{ ctx: any }>()
 const contactName = (userId: string) => props.ctx.contacts.value.find((c: any) => c.user_id === userId)?.display_name || userId
+const messageSearch = ref('')
 
 function hmTime(ts: number) {
   return new Date(ts).toTimeString().slice(0, 5)
@@ -22,7 +23,11 @@ function dayLabel(ts: number) {
 const thread = computed(() => {
   const out: any[] = []
   let lastDay = ''
-  for (const m of props.ctx.activeMessages.value) {
+  const q = messageSearch.value.trim().toLowerCase()
+  const messages = q
+    ? props.ctx.activeMessages.value.filter((m: any) => `${m.text || ''} ${contactName(m.peer_user_id)}`.toLowerCase().includes(q))
+    : props.ctx.activeMessages.value
+  for (const m of messages) {
     const day = new Date(m.created_at).toDateString()
     if (day !== lastDay) {
       out.push({ kind: 'sep', id: `sep-${day}-${m.id}`, label: dayLabel(m.created_at) })
@@ -54,7 +59,7 @@ function scrollToBottom() {
   if (el) el.scrollTop = el.scrollHeight
 }
 watch(
-  () => [props.ctx.activeMessages.value.length, props.ctx.activePeerId?.value, props.ctx.activeGroupId?.value],
+  () => [props.ctx.activeMessages.value.length, props.ctx.activePeerId?.value, props.ctx.activeGroupId?.value, messageSearch.value],
   () => { void nextTick(scrollToBottom) },
   { immediate: true },
 )
@@ -85,6 +90,7 @@ function onComposerKeydown(e: KeyboardEvent) {
         <h2>选择一个聊天</h2>
       </div>
       <div v-if="ctx.activeContact.value || ctx.activeGroup.value" class="chat-header-actions">
+        <input v-model="messageSearch" type="search" aria-label="搜索当前聊天" placeholder="搜索消息" />
         <small v-if="activeOutboxError" class="outbox-error">{{ activeOutboxError }}</small>
         <button v-if="activePendingOutboxCount" class="secondary" @click="ctx.flushOutboxForActive">重发 {{ activePendingOutboxCount }}</button>
         <button v-if="activePendingOutboxCount" class="secondary danger" @click="ctx.cancelOutboxForActive">取消发送</button>
@@ -123,6 +129,7 @@ function onComposerKeydown(e: KeyboardEvent) {
           </div>
         </template>
         <div v-if="ctx.activeMessages.value.length === 0" class="empty center">还没有消息</div>
+        <div v-else-if="thread.length === 0" class="empty center">没有匹配的消息</div>
       </template>
 
       <section v-else class="chat-empty-state">
