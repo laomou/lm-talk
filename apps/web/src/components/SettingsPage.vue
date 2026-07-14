@@ -85,6 +85,8 @@ const localObjectCount = computed(() =>
         <div class="sync-status">
           <b>PreKey</b>
           <small>{{ ctx.prekeyStatusSummary.value }}</small>
+          <small>自动状态：{{ ctx.prekeyAutoStateText.value }}</small>
+          <small v-if="ctx.prekeyAutoErrorText.value" class="danger-text">{{ ctx.prekeyAutoErrorText.value }}</small>
         </div>
         <div class="row compact">
           <button class="secondary" @click="ctx.publishPreKeyToNode">发布 PreKey</button>

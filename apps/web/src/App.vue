@@ -395,6 +395,8 @@ const mailboxDedupeStatusText = computed(() => `本地去重记录 ${mailboxDedu
 const nodePreKeyUserId = ref('')
 const nodePreKeyStatusText = ref('')
 const prekeyStatusSummary = ref('尚未发布 PreKey')
+const prekeyAutoStateText = ref('尚未检查')
+const prekeyAutoErrorText = ref('')
 const nodeSyncPeerUrl = ref('http://127.0.0.1:8788')
 const nodeSyncSnapshotText = ref('')
 const nodeSyncStatusText = ref('')
@@ -3716,20 +3718,32 @@ async function fetchOwnPreKeyStatus(): Promise<any> {
 
 async function ensurePreKeyInventory() {
   if (!identity.value) throw new Error('需要当前身份')
-  const status = await fetchOwnPreKeyStatus()
-  const missing = status?.found === false
-  const low = Boolean(status?.low_one_time_prekeys || status?.replenishment_required)
-  if (!missing && !low) {
-    nodePreKeyStatusText.value = JSON.stringify(status, null, 2)
-    prekeyStatusSummary.value = summarizePreKeyStatus(status)
-    return
+  try {
+    const status = await fetchOwnPreKeyStatus()
+    const missing = status?.found === false
+    const low = Boolean(status?.low_one_time_prekeys || status?.replenishment_required)
+    if (!missing && !low) {
+      nodePreKeyStatusText.value = JSON.stringify(status, null, 2)
+      prekeyStatusSummary.value = summarizePreKeyStatus(status)
+      prekeyAutoStateText.value = '库存正常'
+      prekeyAutoErrorText.value = ''
+      return
+    }
+    if (missing && !prekeyBundleText.value.trim()) createMyPreKeyBundleText()
+    if (low) createMyPreKeyBundleText()
+    const body = await publishPreKeyBundlePayload()
+    nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
+    prekeyStatusSummary.value = `${summarizePreKeyStatus(body)}，${missing ? '已自动发布' : '已自动补货'}`
+    prekeyAutoStateText.value = missing ? '已自动发布' : '已自动补货'
+    prekeyAutoErrorText.value = ''
+    appendLog(missing ? '✅ PreKey 已自动发布到节点' : '✅ PreKey one-time key 已自动补货')
+  } catch (e) {
+    const message = userFacingError(e)
+    prekeyAutoStateText.value = '自动检查失败'
+    prekeyAutoErrorText.value = message
+    appendLog(`❌ PreKey 自动检查/补货失败：${message}`)
+    throw e
   }
-  if (missing && !prekeyBundleText.value.trim()) createMyPreKeyBundleText()
-  if (low) createMyPreKeyBundleText()
-  const body = await publishPreKeyBundlePayload()
-  nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
-  prekeyStatusSummary.value = `${summarizePreKeyStatus(body)}，${missing ? '已自动发布' : '已自动补货'}`
-  appendLog(missing ? '✅ PreKey 已自动发布到节点' : '✅ PreKey one-time key 已自动补货')
 }
 
 async function refreshPreKeyStatusFromNode() {
@@ -3737,6 +3751,8 @@ async function refreshPreKeyStatusFromNode() {
     const body = await fetchOwnPreKeyStatus()
     nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
     prekeyStatusSummary.value = summarizePreKeyStatus(body)
+    prekeyAutoStateText.value = summarizePreKeyStatus(body)
+    prekeyAutoErrorText.value = ''
   })
 }
 
@@ -4369,7 +4385,7 @@ const appContext = {
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
   nodeClosestTarget, nodeClosestInfoText, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxDedupeStatusText, clearProcessedMailboxIds, nodePreKeyUserId, nodePreKeyStatusText,
-  nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, prekeyStatusSummary, createMyPreKeyBundleText, inspectPreKeyBundleText, copyText,
+  nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
   ratchetDhStepText, saveSafetyPolicy, createPeerAnnounceText, inspectPeerAnnounceText, createPublicPeerAnnounceText, inspectPublicPeerAnnounceText,
