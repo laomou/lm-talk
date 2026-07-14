@@ -138,17 +138,17 @@ Friend Request -> Friend Response
 └──────────────────────────────┘
 ```
 
-### 3.1 当前实现状态快照（2026-07-12）
+### 3.1 当前实现状态快照（2026-07-14）
 
 当前仓库已经从纯设计推进到可测试 MVP scaffold。非 Web 部分状态如下：
 
 | 模块 | 当前状态 | 完整性判断 |
 |---|---|---|
-| `lm_core` | 已实现身份、备份、Contact Card、好友请求/响应、DirectEnvelope、X3DH PreKey、Double Ratchet 状态与 envelope、群 Sender Key、群权限状态、文件分片加密包、本地安全策略、Outbox、MemoryStore、大小限制、测试向量 | 核心协议层已具备 MVP 主干，约 75-85% MVP 完整；仍需生产级审计、持久化接口、属性/模糊测试、多设备完整流程 |
+| `lm_core` | 已实现身份、备份、Contact Card、好友请求/响应、DirectEnvelope、X3DH PreKey、Double Ratchet 状态与 envelope、群 Sender Key、群权限状态、文件分片加密包、本地安全策略、Outbox、MemoryStore、大小限制、属性测试、跨平台测试向量 | 核心协议层已具备 MVP 主干，约 75-85% MVP 完整；仍需生产级审计、持久化接口、模糊测试、多设备完整流程 |
 | `lm_wasm` | 已暴露大部分 core API，覆盖身份、联系人、好友、消息、PreKey/X3DH、Ratchet、群、文件、Public Peer、Mailbox、Signaling | 绑定层覆盖较全，约 70-80% MVP 完整；仍需随 core API 稳定后整理命名、错误码和兼容策略 |
 | `lm_node` | 已实现控制面 HTTP scaffold、Public Peer announce、Kademlia ID/XOR distance/closest peers、DHT record key/value scaffold 与控制面 store/find/closest、DHT RPC 消息/本地处理 scaffold 与 `POST /dht/rpc` 入口、closest-k replication plan 与 routing refresh target plan 及控制面 plan 端点、control-peer StoreRecord replication runner、control-peer FindNode routing refresh runner、可信返回节点合并及其 stats/metrics、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、独立 signed one-time prekey records 发布/同步/消费、PreKey 过期清理/轮换重置/低水位提示、snapshot sync/import、serve-control 定时 snapshot sync、控制面 token/CORS 基础安全、控制面 per-client IP 基础限流、`/control/stats` JSON 运行指标、`/control/metrics` OpenMetrics 文本导出、DHT replication/routing refresh runner 指标、过期清理维护统计、状态文件原子保存、mailbox state-file 崩溃恢复测试 | 可支撑节点辅助 PreKey + Mailbox + 粗粒度同步 demo，约 71-75% MVP 完整；不是生产 DHT/relay 节点 |
 | CLI / 运维 | 已有 `announce`、`inspect-public`、`distance`、`run`、`serve-control`、`--config-file`、`--control-token`、`--control-token-file`、`--cors-allow-origin`、`--rate-limit-*`、DHT runner 配置项，以及 `docs/NODE_CONFIG.md` / `docs/examples/lm-node.config.example.json` | 调试和基础部署可用；仍缺 TLS 文档、日志、数据库、后台任务 |
-| 测试 | `scripts/test.sh all` 覆盖 Rust fmt/test、core e2e、node e2e、HTTP control flow、WASM smoke、Web build/e2e | 基础回归较好；仍需 proptest/fuzz、跨实现向量、真实网络故障/压力测试 |
+| 测试 | `scripts/test.sh all` 覆盖 Rust fmt/test、core e2e、node e2e、HTTP control flow、WASM smoke、Web build/e2e；测试计划已补齐单元、属性、WASM Web RNG/IndexedDB 和跨平台向量覆盖 | 基础回归较好；仍需 fuzz、真实网络故障/压力测试和外部安全审计 |
 
 重要边界：
 
@@ -322,7 +322,7 @@ UserID = hash(identity_public_key)
 3. 从 identity_seed 派生身份密钥对
 4. 生成 identity_public_key
 5. 根据 identity_public_key 生成 UserID
-6. 用提示词通过 Argon2id 派生 backup_key
+6. Native/core 路径用提示词通过 Argon2id 派生 backup_key
 7. 用 backup_key 加密 identity_seed
 8. 导出身份备份包
 9. 创建本地加密数据库
@@ -335,13 +335,15 @@ UserID = hash(identity_public_key)
 ```text
 1. 用户导入身份备份包
 2. 用户输入提示词
-3. 客户端用 Argon2id 派生 backup_key
+3. 客户端按备份格式派生 backup_key
 4. 解密 identity_seed
 5. 重新派生身份密钥对
 6. 重新计算 UserID
 7. 校验 UserID 是否与备份包一致
 8. 恢复成功
 ```
+
+浏览器 WASM 当前为可用性保留一个 `lm-identity-backup-v1:wasm-local:` 备份子格式：身份种子仍由 Web RNG 生成，备份加密使用归一化提示词参与的 wasm-local key derivation 和 AEAD；native/core 的标准导出备份继续使用 Argon2id。浏览器路径暂不把 Argon2id 作为上线阻塞项，后续生产级 Web 备份方案需要单独评估性能、兼容性和参数。
 
 ---
 
@@ -384,6 +386,8 @@ lm-identity-backup-v1
   "created_at": 1783670400
 }
 ```
+
+兼容说明：标准 `lm-identity-backup-v1:<base64url-json>` 包使用 Argon2id + XChaCha20-Poly1305；浏览器 WASM 当前还接受 `lm-identity-backup-v1:wasm-local:<base64url-json>` 本地备份包，用于避开部分浏览器/wasm 优化组合下的 Argon2id trap。`restore_identity` 必须同时识别这两种前缀，并校验恢复出的 UserID 与包内 UserID 一致。
 
 ---
 
@@ -1441,7 +1445,7 @@ canonical binary encoding
 
 ### 17.1 KDF
 
-身份备份包加密使用：
+标准 native/core 身份备份包加密使用：
 
 ```text
 Argon2id
@@ -1496,6 +1500,8 @@ crypto.getRandomValues
 ```
 
 Rust WASM 需要正确配置 `getrandom` 的 JS 支持。
+
+当前浏览器注册 E2E 已验证连续注册会生成不同 UserID，并能产生可恢复的身份备份文本。浏览器 WASM 身份备份暂走 `wasm-local` 子格式，不要求 Argon2id 参数在所有浏览器中可接受；生产级 Web 备份若恢复 Argon2id，需要重新做浏览器性能和兼容测试。
 
 ---
 
@@ -1939,14 +1945,15 @@ Public Peer：
 当前 `scripts/test.sh all` / `scripts/test.sh e2e` 覆盖：
 
 - `cargo fmt --check`、workspace Rust 单元测试和 doc-test。
-- `lm_core` 身份、Contact Card、好友请求/确认、大小限制、测试向量、DirectEnvelope、X3DH、Double Ratchet、群 Sender Key、文件包、Outbox、MemoryStore。
+- `lm_core` 身份、Contact Card、好友请求/确认、大小限制、属性测试、跨平台测试向量、DirectEnvelope、X3DH、Double Ratchet、群 Sender Key、文件包、Outbox、MemoryStore。
 - core e2e：两用户好友流程、X3DH shared secret、Double Ratchet 双向消息。
 - `lm_node`：Public Peer announce、Kademlia closest、Mailbox push/take/ack、PreKey bundle + signed one-time-prekey records publish/get、snapshot roundtrip/import、serve-control 自动 snapshot sync。
 - node e2e：节点 PreKey/signed OTK 同步 + Mailbox 携带 ratchet envelope + 接收方解密。
 - HTTP control flow：真实 `serve-control` 进程之间同步 PreKey/Mailbox，并覆盖 config-file、token/CORS 基础安全、控制面基础限流、`/control/stats` JSON 指标和 `/control/metrics` OpenMetrics 导出。
 - `lm_wasm` smoke：身份、联系人、好友、消息、PreKey/X3DH、Ratchet、群、文件、Public Peer、Mailbox、Signaling。
+- Web E2E：产品化登录注册、同步好友请求和消息收发、IndexedDB 加密消息持久化、Web RNG 生成不同身份、独立导入页恢复身份。
 
-仍需补齐：proptest/fuzz、跨语言/跨平台测试向量、真实网络延迟/丢包/重连/压力测试、持久化崩溃恢复测试。
+仍需补齐：fuzz、真实网络延迟/丢包/重连/压力测试、持久化崩溃恢复测试、外部安全审计。
 
 
 ## 附录：群聊 Sender Key 实验路径
