@@ -9,6 +9,11 @@ const failedOutbox = computed(() => outboxItems.value.filter((item: any) => item
 const contactName = (userId: string) => props.ctx.contacts.value.find((c: any) => c.user_id === userId)?.display_name || userId
 const outboxKindLabel = (kind?: string) =>
   kind === 'group-fanout' ? '群消息' : kind === 'file-package' ? '文件' : kind === 'other' ? '系统消息' : '单聊消息'
+function outboxExpiryText(item: any) {
+  if (!item.expires_at) return '无过期时间'
+  if (Date.now() > item.expires_at) return '已过期'
+  return `过期 ${new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'short', hour12: false }).format(new Date(item.expires_at))}`
+}
 const localObjectCount = computed(() =>
   props.ctx.contacts.value.length +
   props.ctx.groups.value.length +
@@ -88,6 +93,7 @@ const localObjectCount = computed(() =>
           <div v-for="item in pendingOutbox.slice(0, 6)" :key="item.id" class="outbox-row">
             <b>{{ contactName(item.peer_user_id) }}</b>
             <small>{{ outboxKindLabel(item.kind) }} · 重试 {{ item.retry_count }}</small>
+            <small>{{ outboxExpiryText(item) }}</small>
             <small v-if="item.last_error" class="danger-text">{{ item.last_error }}</small>
           </div>
         </div>
