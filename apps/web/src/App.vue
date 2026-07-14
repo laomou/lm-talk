@@ -394,6 +394,7 @@ const filePackageInfoText = ref('')
 const receivedFileName = ref('')
 const receivedFileUrl = ref('')
 const receivedFileMeta = ref('')
+const receivedFileMime = ref('')
 const rtcFileStatus = ref('未发送文件')
 const fileTransferPhase = ref('待选择')
 const ratchetStateText = ref('')
@@ -3879,7 +3880,8 @@ function decryptIncomingFilePackage() {
     const blob = new Blob([new Uint8Array(bytes)], { type: out.mime_type || 'application/octet-stream' })
     receivedFileUrl.value = URL.createObjectURL(blob)
     receivedFileName.value = out.name
-    receivedFileMeta.value = `${out.mime_type || 'application/octet-stream'} · ${formatBytes(out.size ?? bytes.length)}`
+    receivedFileMime.value = out.mime_type || 'application/octet-stream'
+    receivedFileMeta.value = `${receivedFileMime.value} · ${formatBytes(out.size ?? bytes.length)}`
     if (activeContact.value) {
       messages.value.push({
         id: newId(),
@@ -4006,7 +4008,7 @@ const appContext = {
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
   flushOutboxForActive, cancelOutboxForActive, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
   receiveEnvelope, onFileSelected, cancelSelectedFile, selectedFile, formatBytes, isDangerousFileName, createFilePackageForActive, sendFilePackageOverRtc, sendSelectedFile, filePackageText, rtcFileStatus, fileTransferPhase,
-  incomingFilePackageText, inspectIncomingFilePackage, decryptIncomingFilePackage, receivedFileUrl, receivedFileName, receivedFileMeta, filePackageInfoText,
+  incomingFilePackageText, inspectIncomingFilePackage, decryptIncomingFilePackage, receivedFileUrl, receivedFileName, receivedFileMeta, receivedFileMime, filePackageInfoText,
   createGroupSenderKeyForActiveGroup, groupSenderDistributionText, importGroupSenderKeyForActiveContact, groupSenderEncryptDebug, groupSenderDecryptDebug, createGroupSenderDistributionFanoutForActiveGroup,
   groupSenderDistributionFanoutJson, groupSenderDistributionFanoutItems, groupSenderEnvelopeText, groupSenderPlainText, groupRenameText, createRenameGroupEvent,
   groupEventText, applyGroupEventText, createGroupEventFanout, groupEventFanoutJson, groupEventFanoutItems, incomingGroupEventText,

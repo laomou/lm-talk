@@ -147,6 +147,12 @@ function onComposerKeydown(e: KeyboardEvent) {
           <b>{{ ctx.receivedFileName.value }}</b>
           <small>{{ ctx.receivedFileMeta.value }}</small>
           <a :href="ctx.receivedFileUrl.value" :download="ctx.receivedFileName.value">下载</a>
+          <img
+            v-if="ctx.receivedFileMime.value.startsWith('image/')"
+            class="received-file-preview"
+            :src="ctx.receivedFileUrl.value"
+            :alt="ctx.receivedFileName.value"
+          />
         </div>
       </div>
     </footer>
