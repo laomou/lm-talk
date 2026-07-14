@@ -11,6 +11,10 @@ function redacted(value: string) {
   return value ? '[已脱敏]' : ''
 }
 
+function diagnosticLogLine(value: string) {
+  return value.length > 160 ? `${value.slice(0, 160)}…[已截断]` : value
+}
+
 async function runDiagnostics() {
   const nav = navigator as Navigator & { serviceWorker?: ServiceWorkerContainer }
   const registrations = nav.serviceWorker?.getRegistrations ? await nav.serviceWorker.getRegistrations().catch(() => []) : []
@@ -51,7 +55,7 @@ async function runDiagnostics() {
       user_id: redactDiagnosticReport.value ? redacted(props.ctx.identity.value?.user_id ?? '') : props.ctx.identity.value?.user_id ?? '',
       display_name: redactDiagnosticReport.value ? redacted(props.ctx.displayName.value ?? '') : props.ctx.displayName.value ?? '',
     }
-    report.recent_logs = props.ctx.log.value.slice(0, 12)
+    report.recent_logs = props.ctx.log.value.slice(0, 12).map(diagnosticLogLine)
   }
   diagnosticReport.value = JSON.stringify(report, null, 2)
 }
@@ -119,7 +123,7 @@ async function runDiagnostics() {
       <section class="home-card">
         <h3>最近记录</h3>
         <div v-if="ctx.log.value.length" class="diagnostic-log">
-          <div v-for="line in ctx.log.value.slice(0, 8)" :key="line">{{ line }}</div>
+          <div v-for="line in ctx.log.value.slice(0, 8).map(diagnosticLogLine)" :key="line">{{ line }}</div>
         </div>
         <div v-else class="empty">暂无记录</div>
       </section>
