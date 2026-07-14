@@ -64,6 +64,7 @@ import init, {
   ratchet_dh_step,
   ratchet_encrypt_text_message,
   ratchet_decrypt_text_message,
+  reencrypt_identity_backup,
   restore_identity,
 } from './wasm/lm_wasm.js'
 
@@ -78,6 +79,11 @@ type RestoreOutput = {
   user_id: string
   identity_public_key: string
   x25519_public_key: string
+}
+
+type ReencryptIdentityBackupOutput = {
+  user_id: string
+  backup_text: string
 }
 
 type DeviceOutput = {
@@ -342,6 +348,7 @@ const GROUP_EVENT_PAYLOAD_PREFIX = 'lm-group-event-message-v1:'
 const GROUP_SENDER_KEY_PAYLOAD_PREFIX = 'lm-group-sender-key-message-v1:'
 
 const passphrase = ref('')
+const newIdentityPassphrase = ref('')
 const backupText = ref('')
 const identity = ref<(IdentityOutput | RestoreOutput) | null>(null)
 const displayName = ref('Me')
@@ -1854,6 +1861,27 @@ function refreshMyContactCard() {
     if (identity.value) rememberLocalIdentity(identity.value.user_id, displayName.value || 'Me', backupText.value)
     persist()
     appendLog('✅ 我的 Contact Card 已更新，可重新发布/发送给好友')
+  })
+}
+
+function reencryptCurrentIdentityBackup() {
+  run('重加密身份备份', () => {
+    if (!identity.value) throw new Error('请先登录')
+    if (!backupText.value || !passphrase.value) throw new Error('需要当前身份备份和当前提示词')
+    if (!newIdentityPassphrase.value.trim()) throw new Error('请输入新提示词')
+    const out = safeJson<ReencryptIdentityBackupOutput>(reencrypt_identity_backup(
+      backupText.value,
+      passphrase.value,
+      newIdentityPassphrase.value,
+    ))
+    if (out.user_id !== identity.value.user_id) throw new Error('重加密后的身份不匹配')
+    backupText.value = out.backup_text
+    passphrase.value = newIdentityPassphrase.value
+    newIdentityPassphrase.value = ''
+    rememberLocalIdentity(out.user_id, displayName.value || 'Me', out.backup_text)
+    persist()
+    appendLog('✅ 已用新提示词重加密身份备份')
+    toast('身份备份已重加密，请重新导出保存', 'success')
   })
 }
 
@@ -5000,7 +5028,7 @@ function logout() {
   void router.push('/login')
 }
 const appContext = {
-  goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, myContactCardText, backupText,
+  goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, pwaStatusText, pwaBackgroundCapabilityText, webVersionText,
   nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
   enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,

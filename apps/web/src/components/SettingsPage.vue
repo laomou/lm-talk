@@ -54,6 +54,12 @@ const hasRawSyncStatus = computed(() => syncStatusText.value.includes('\n') || s
           <input id="display-name-input" v-model="ctx.displayName.value" aria-label="显示名" @change="ctx.refreshMyContactCard" />
           <button @click="ctx.refreshMyContactCard">保存</button>
         </div>
+        <label for="new-identity-passphrase">新提示词</label>
+        <div class="inline-field">
+          <input id="new-identity-passphrase" v-model="ctx.newIdentityPassphrase.value" type="password" aria-label="新身份备份提示词" autocomplete="new-password" placeholder="重新加密身份备份" />
+          <button class="secondary" :disabled="!ctx.newIdentityPassphrase.value.trim()" @click="ctx.reencryptCurrentIdentityBackup">重加密身份</button>
+        </div>
+        <small>重加密后请重新导出身份；本机保存的登录入口会同步更新。</small>
       </section>
 
       <section class="home-card sync-card">
