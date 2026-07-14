@@ -5049,6 +5049,14 @@ function decryptIncomingFilePackage() {
   })
 }
 
+function markReceivedFileDownloaded() {
+  if (!receivedFileName.value) return
+  fileTransferPhase.value = '已下载'
+  rtcFileStatus.value = `已触发下载：${receivedFileName.value}`
+  fileProgressText.value = receivedFileMeta.value ? `下载文件 · ${receivedFileMeta.value}` : '下载文件'
+  appendLog(`已触发文件下载：${receivedFileName.value}`)
+}
+
 function sendFilePackageOverRtc() {
   run('发送文件包', () => {
     if (!activeContact.value) throw new Error('请选择联系人')
@@ -5178,7 +5186,7 @@ const appContext = {
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
   flushOutboxForActive, retryAllOutbox, cancelOutboxForActive, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
   receiveEnvelope, onFileSelected, cancelSelectedFile, selectedFile, formatBytes, isDangerousFileName, createFilePackageForActive, sendFilePackageOverRtc, sendSelectedFile, filePackageText, rtcFileStatus, fileTransferPhase, fileProgressText,
-  incomingFilePackageText, pendingFilePackageText, pendingFileMeta, inspectIncomingFilePackage, decryptIncomingFilePackage, receivedFileUrl, receivedFileName, receivedFileMeta, receivedFileMime, receivedFilePreviewKind, filePackageInfoText,
+  incomingFilePackageText, pendingFilePackageText, pendingFileMeta, inspectIncomingFilePackage, decryptIncomingFilePackage, markReceivedFileDownloaded, receivedFileUrl, receivedFileName, receivedFileMeta, receivedFileMime, receivedFilePreviewKind, filePackageInfoText,
   createGroupSenderKeyForActiveGroup, groupSenderDistributionText, importGroupSenderKeyForActiveContact, groupSenderEncryptDebug, groupSenderDecryptDebug, createGroupSenderDistributionFanoutForActiveGroup,
   groupSenderDistributionFanoutJson, groupSenderDistributionFanoutItems, groupSenderEnvelopeText, groupSenderPlainText, groupRenameText, createRenameGroupEvent,
   groupEventText, applyGroupEventText, createGroupEventFanout, groupEventFanoutJson, groupEventFanoutItems, incomingGroupEventText, clearActiveGroupEventError,

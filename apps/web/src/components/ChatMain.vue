@@ -216,7 +216,7 @@ function onComposerKeydown(e: KeyboardEvent) {
         <div v-if="ctx.receivedFileUrl.value" class="received-file-card">
           <b>{{ ctx.receivedFileName.value }}</b>
           <small>{{ ctx.receivedFileMeta.value }}</small>
-          <a :href="ctx.receivedFileUrl.value" :download="ctx.receivedFileName.value">下载</a>
+          <a :href="ctx.receivedFileUrl.value" :download="ctx.receivedFileName.value" @click="ctx.markReceivedFileDownloaded">下载</a>
           <img
             v-if="ctx.receivedFileMime.value.startsWith('image/')"
             class="received-file-preview"
