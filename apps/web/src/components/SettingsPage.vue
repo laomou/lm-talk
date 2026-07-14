@@ -49,9 +49,9 @@ const hasRawSyncStatus = computed(() => syncStatusText.value.includes('\n') || s
 
       <section class="home-card">
         <h3>我的资料</h3>
-        <label>显示名</label>
+        <label for="display-name-input">显示名</label>
         <div class="inline-field">
-          <input v-model="ctx.displayName.value" @change="ctx.refreshMyContactCard" />
+          <input id="display-name-input" v-model="ctx.displayName.value" aria-label="显示名" @change="ctx.refreshMyContactCard" />
           <button @click="ctx.refreshMyContactCard">保存</button>
         </div>
       </section>
@@ -61,8 +61,8 @@ const hasRawSyncStatus = computed(() => syncStatusText.value.includes('\n') || s
           <h3>消息同步</h3>
           <span class="sync-pill" :class="{ on: ctx.nodeEnabled.value }">{{ ctx.nodeEnabled.value ? '已开启' : '未开启' }}</span>
         </div>
-        <label>同步服务</label>
-        <textarea v-model="ctx.nodeControlUrl.value" rows="4" placeholder="每行一个同步服务地址，例如：&#10;http://127.0.0.1:8787&#10;http://192.168.1.23:8787|令牌&#10;http://[fd00::1234]:8787|令牌" />
+        <label for="sync-service-input">同步服务</label>
+        <textarea id="sync-service-input" v-model="ctx.nodeControlUrl.value" rows="4" aria-label="同步服务地址列表" placeholder="每行一个同步服务地址，例如：&#10;http://127.0.0.1:8787&#10;http://192.168.1.23:8787|令牌&#10;http://[fd00::1234]:8787|令牌" />
         <small>{{ ctx.nodeSettingsSummaryText.value }}</small>
         <small>{{ ctx.syncTriggerPolicyText.value }}</small>
         <small>开启后可自动收发好友请求和离线消息。支持局域网 IPv4/IPv6，可填多个。<br>跨设备访问时节点需设 <code>--control-token</code>，在地址后用 <code>|令牌</code> 附上（与节点一致）；仅本机(127.0.0.1)可不填令牌。</small>

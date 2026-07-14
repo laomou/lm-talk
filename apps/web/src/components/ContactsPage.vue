@@ -261,8 +261,8 @@ function openGroupDetail(groupId: string) {
         <header class="detail-bar"><h2>添加好友</h2></header>
         <div class="detail-body narrow">
           <section class="home-card">
-            <label>对方名片</label>
-            <textarea v-model="ctx.addContactText.value" rows="6" placeholder="粘贴对方发来的名片文本" />
+            <label for="contact-card-input">对方名片</label>
+            <textarea id="contact-card-input" v-model="ctx.addContactText.value" rows="6" aria-label="对方名片文本" placeholder="粘贴对方发来的名片文本" />
             <div class="row"><button @click="ctx.addContact">添加好友</button></div>
           </section>
         </div>
@@ -273,8 +273,8 @@ function openGroupDetail(groupId: string) {
         <header class="detail-bar"><h2>发起群聊</h2></header>
         <div class="detail-body narrow">
           <section class="home-card">
-            <label>群名</label>
-            <input v-model="ctx.newGroupName.value" placeholder="例如：项目讨论组" />
+            <label for="new-group-name">群名</label>
+            <input id="new-group-name" v-model="ctx.newGroupName.value" aria-label="群名" placeholder="例如：项目讨论组" />
             <label>选择好友</label>
             <div v-if="ctx.friendContacts.value.length" class="member-picker">
               <label v-for="c in ctx.friendContacts.value" :key="c.user_id" class="check-row">
