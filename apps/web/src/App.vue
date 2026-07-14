@@ -4582,11 +4582,11 @@ function cancelSelectedFile() {
   rtcFileStatus.value = '未发送文件'
 }
 
-function clearSelectedFileDraft() {
+function clearSelectedFileDraft(keepProgress = false) {
   selectedFile.value = null
   filePackageText.value = ''
   filePackageInfoText.value = ''
-  fileProgressText.value = ''
+  if (!keepProgress) fileProgressText.value = ''
 }
 
 async function readFileWithProgress(file: File): Promise<Uint8Array> {
@@ -4717,14 +4717,18 @@ function sendFilePackageOverRtc() {
       created_at: Date.now(),
     }
     fileTransferPhase.value = '投递中'
+    const packageBytes = new TextEncoder().encode(filePackageText.value).byteLength
+    fileProgressText.value = `投递加密包 ${formatBytes(packageBytes)}`
     if (dc && dc.readyState === 'open') {
+      fileProgressText.value = `WebRTC 投递 ${formatBytes(packageBytes)}`
       sendRtcText(filePackageText.value, '文件包')
       msg.status = 'sent'
       fileTransferPhase.value = '已发送'
       rtcFileStatus.value = `已通过 WebRTC 发送：${info.manifest.name}`
-      clearSelectedFileDraft()
+      clearSelectedFileDraft(true)
     } else if (nodeEnabled.value) {
       rtcFileStatus.value = `正在通过 Mailbox 发送：${info.manifest.name}`
+      fileProgressText.value = `Mailbox 投递 ${formatBytes(packageBytes)}`
       const payload = filePackageText.value
       const contact = activeContact.value
       void deliverPayloadToContact(contact, payload, '文件包', 'file-package')
@@ -4733,14 +4737,20 @@ function sendFilePackageOverRtc() {
           if (result === 'queued' || result === 'failed') outbox.value.push(createOutboxItem(contact, payload, msg.id, 'file-package'))
           fileTransferPhase.value = result === 'failed' ? '失败' : result === 'queued' ? '已入队' : '已发送'
           rtcFileStatus.value = result === 'mailbox' ? `已通过 Mailbox 发送：${info.manifest.name}` : `文件投递状态：${result}`
-          if (result !== 'failed') clearSelectedFileDraft()
+          fileProgressText.value = result === 'failed'
+            ? `投递失败 · ${formatBytes(packageBytes)}`
+            : result === 'queued'
+              ? `已入队 · ${formatBytes(packageBytes)}`
+              : `投递完成 · ${formatBytes(packageBytes)}`
+          if (result !== 'failed') clearSelectedFileDraft(true)
           persist()
         })
     } else {
       outbox.value.push(createOutboxItem(activeContact.value, filePackageText.value, msg.id, 'file-package'))
       fileTransferPhase.value = '已入队'
       rtcFileStatus.value = `文件已加入 outbox：${info.manifest.name}`
-      clearSelectedFileDraft()
+      fileProgressText.value = `已入队 · ${formatBytes(packageBytes)}`
+      clearSelectedFileDraft(true)
     }
     messages.value.push(msg)
     persist()
