@@ -6,5 +6,8 @@
 /.tools/
 .DS_Store
 *.log
+lm-node-state.prd.sqlite3
+lm-node-state.prd.sqlite3-*
+lm-node-state.prd.json
 
 /apps/web/test-results/
