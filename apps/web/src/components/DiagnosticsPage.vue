@@ -35,7 +35,9 @@ async function runDiagnostics() {
       contacts: props.ctx.contacts.value.length,
       groups: props.ctx.groups.value.length,
       friend_requests: props.ctx.friendRequests.value.length,
+      quarantined_friend_requests: props.ctx.quarantinedFriendRequests.value.length,
       group_invites: props.ctx.groupInvites.value.length,
+      mailbox_dedupe_records: props.ctx.mailboxDedupeCount.value,
       outbox: props.ctx.outbox.value.length,
       pending_outbox: props.ctx.outbox.value.filter((x: any) => x.status !== 'sent').length,
       messages: props.ctx.messages.value.length,
@@ -81,8 +83,13 @@ async function runDiagnostics() {
         </div>
         <div class="diagnostic-card">
           <span>新朋友</span>
-          <b>{{ ctx.friendRequests.value.length }}</b>
+          <b>{{ ctx.visibleFriendRequests.value.length }}</b>
           <small>群邀请 {{ ctx.groupInvites.value.length }}</small>
+        </div>
+        <div class="diagnostic-card">
+          <span>垃圾请求</span>
+          <b>{{ ctx.quarantinedFriendRequests.value.length }}</b>
+          <small>去重记录 {{ ctx.mailboxDedupeCount.value }}</small>
         </div>
       </section>
 
