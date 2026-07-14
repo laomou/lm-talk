@@ -1003,7 +1003,7 @@ MVP 群聊采用逐个加密。
 - [x] UserID generation
 - [x] Contact Card signature
 - [x] Friend Request signature
-- message encryption
+- [x] message encryption
 
 ---
 
