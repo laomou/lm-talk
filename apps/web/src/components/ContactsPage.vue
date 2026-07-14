@@ -227,6 +227,10 @@ function openGroupDetail(groupId: string) {
               <b class="danger-text">你已被移出群聊</b>
               <small>{{ ctx.activeGroup.value.removed_self_by || '未知发起者' }} · {{ ctx.formatTime(ctx.activeGroup.value.removed_self_at) }}</small>
             </div>
+            <div v-if="ctx.activeGroup.value.last_sender_key_error" class="group-event-summary">
+              <b class="danger-text">Sender Key 异常：{{ ctx.activeGroup.value.last_sender_key_error }}</b>
+              <small>{{ ctx.formatTime(ctx.activeGroup.value.last_sender_key_error_at || Date.now()) }}</small>
+            </div>
             <div class="member-list">
               <span v-for="m in ctx.activeGroupMembers.value" :key="m.user_id">{{ m.display_name || m.user_id }}</span>
             </div>

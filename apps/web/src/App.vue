@@ -178,6 +178,8 @@ type GroupItem = {
   last_event_error_at?: number
   removed_self_at?: number
   removed_self_by?: string
+  last_sender_key_error?: string
+  last_sender_key_error_at?: number
 }
 
 type GroupSenderKeyItem = {
@@ -567,6 +569,7 @@ const activeGroupWarningText = computed(() => {
   if (notFriend.length > 0) warnings.push(`非好友成员：${notFriend.join(', ')}`)
   if (blocked.length > 0) warnings.push(`已拉黑成员：${blocked.join(', ')}`)
   if (!getGroupSenderKey(activeGroup.value.group_id, identity.value.user_id)) warnings.push('未启用本群 Sender Key，将回退逐个加密')
+  if (activeGroup.value.last_sender_key_error) warnings.push(`Sender Key 异常：${activeGroup.value.last_sender_key_error}`)
   return warnings.join('；')
 })
 const fanoutItems = computed(() => {
@@ -2202,6 +2205,18 @@ function saveGroupSenderKey(item: GroupSenderKeyItem) {
   const index = groupSenderKeys.value.findIndex((k) => k.key_id === item.key_id)
   if (index >= 0) groupSenderKeys.value[index] = item
   else groupSenderKeys.value.push(item)
+  const group = groups.value.find((g) => g.group_id === item.group_id)
+  if (group) {
+    group.last_sender_key_error = undefined
+    group.last_sender_key_error_at = undefined
+  }
+}
+
+function rememberGroupSenderKeyError(groupId: string | undefined, reason: string) {
+  const group = groupId ? groups.value.find((item) => item.group_id === groupId) : activeGroup.value
+  if (!group) return
+  group.last_sender_key_error = reason
+  group.last_sender_key_error_at = Date.now()
 }
 
 function createGroupSenderDistributionFanout(group: GroupItem, distributionText: string) {
@@ -2235,7 +2250,16 @@ function rotateMyGroupSenderKey(group: GroupItem, reason: string) {
     updated_at: Date.now(),
   })
   groupSenderDistributionText.value = out.distribution_text
-  createGroupSenderDistributionFanout(group, out.distribution_text)
+  try {
+    createGroupSenderDistributionFanout(group, out.distribution_text)
+    group.last_sender_key_error = undefined
+    group.last_sender_key_error_at = undefined
+  } catch (e) {
+    const reason = userFacingError(e)
+    rememberGroupSenderKeyError(group.group_id, `轮换后分发失败：${reason}`)
+    appendLog(`⚠️ Sender Key 轮换后分发失败：${reason}`)
+    return
+  }
   appendLog(`🔄 已轮换本群 Sender Key：${reason}；已生成新的 distribution fanout`)
 }
 
@@ -2309,8 +2333,19 @@ function tryDecryptGroupSenderEnvelope(envelopeText: string): { text: string; gr
   try { parsed = JSON.parse(envelopeText) } catch { return null }
   if (parsed?.type !== 'lm-group-sender-envelope-v1') return null
   const key = getGroupSenderKey(String(parsed.group_id), String(parsed.sender_user_id))
-  if (!key) throw new Error('收到 Sender Key 群消息，但本地没有该 sender key')
-  const out = JSON.parse(group_sender_decrypt_text(key.state_json, envelopeText)) as { state_json: string; plain_json: string }
+  if (!key) {
+    const reason = `缺少 ${parsed.sender_user_id} 的 Sender Key Distribution`
+    rememberGroupSenderKeyError(String(parsed.group_id), reason)
+    throw new Error(reason)
+  }
+  let out: { state_json: string; plain_json: string }
+  try {
+    out = JSON.parse(group_sender_decrypt_text(key.state_json, envelopeText)) as { state_json: string; plain_json: string }
+  } catch (e) {
+    const reason = userFacingError(e)
+    rememberGroupSenderKeyError(String(parsed.group_id), `解密失败：${reason}`)
+    throw e
+  }
   key.state_json = out.state_json
   key.updated_at = Date.now()
   const plain = JSON.parse(out.plain_json) as { text: string; group_id: string; sender_user_id: string }
