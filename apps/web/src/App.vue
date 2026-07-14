@@ -550,6 +550,16 @@ const activeRatchetStatusText = computed(() => {
   if (activeContact.value.state !== 'Friend') return '未建链'
   return activeRatchetSession.value ? '已建链' : '未建链'
 })
+const activeSecureSessionOutboxCount = computed(() => {
+  const peerId = activeContact.value?.user_id
+  if (!peerId) return 0
+  return outbox.value.filter((item) =>
+    item.peer_user_id === peerId
+    && item.kind === 'other'
+    && item.status !== 'sent'
+    && /"lm-secure-session-(offer|response)-v1"/.test(item.envelope_json || '')
+  ).length
+})
 const activeMessages = computed(() => activeGroup.value
   ? messages.value.filter((m) => m.group_id === activeGroup.value?.group_id)
   : messages.value.filter((m) => m.peer_user_id === activePeerId.value)
@@ -5161,7 +5171,7 @@ const appContext = {
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
   newGroupName, friendContacts, selectedGroupMembers, createGroup, groups, activeGroupId,
-  selectGroup, activeContact, activeGroup, activeRatchetSession, activeRatchetStatusText, activeGroupMembers, activeGroupWarningText, blockReason, blockActiveContact,
+  selectGroup, activeContact, activeGroup, activeRatchetSession, activeRatchetStatusText, activeSecureSessionOutboxCount, activeGroupMembers, activeGroupWarningText, blockReason, blockActiveContact,
   unblockActiveContact, removeActiveContact, clearActiveConversation, createFriendRequestForActive, clearActiveFriendRequestError, createInviteForActiveGroup, groupInviteText, groupFanoutJson,
   removeActiveGroup, leaveActiveGroupWithNotice, messages, activeMessages, formatTime, formatDateTime, statusLabel, copyMessageEnvelope, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,

@@ -192,6 +192,7 @@ function openGroupDetail(groupId: string) {
             <small v-if="ctx.activeContact.value.last_secure_session_attempt_at">最近建链尝试：{{ ctx.formatDateTime(ctx.activeContact.value.last_secure_session_attempt_at) }}</small>
             <small v-if="ctx.activeContact.value.last_secure_session_success_at">最近建链成功：{{ ctx.formatDateTime(ctx.activeContact.value.last_secure_session_success_at) }}</small>
             <small v-if="ctx.activeContact.value.secure_session_failure_count">连续建链失败：{{ ctx.activeContact.value.secure_session_failure_count }} 次</small>
+            <small v-if="ctx.activeSecureSessionOutboxCount.value">安全建链待重试：{{ ctx.activeSecureSessionOutboxCount.value }} 条</small>
             <small v-if="ctx.activeContact.value.last_secure_session_error" class="danger-text">安全建链失败：{{ ctx.activeContact.value.last_secure_session_error }}</small>
             <small v-if="ctx.activeContact.value.last_friend_request_error" class="danger-text">好友请求失败：{{ ctx.activeContact.value.last_friend_request_error }}</small>
           </div>
