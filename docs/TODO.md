@@ -165,7 +165,8 @@
    - Web 已有基础通知权限入口、页面后台消息/文件/好友请求/好友通过/群邀请/安全会话通知和同步失败通知。
    - 设置页已展示在线/离线、前台/后台和低电量状态，用于解释自动同步限制。
    - 设置页已展示通知权限、前后台通知行为、自动收取开关和浏览器后台暂停限制。
-   - 仍需把 PWA 后台策略扩展到 Service Worker push/periodic sync 能力探测。
+   - 设置页已展示 Push API 和 Periodic Background Sync 能力探测，用于解释 PWA 后台能力边界。
+   - 仍需把 PWA 后台策略扩展到真实 Service Worker push/periodic sync 流程。
 
 #### P1
 
