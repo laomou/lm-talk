@@ -213,6 +213,17 @@ type OutboxItem = {
   last_error?: string
 }
 
+type MailboxFailedItem = {
+  id: string
+  delivery_id?: string
+  message_id?: string
+  message: any
+  reason: string
+  first_failed_at: number
+  last_failed_at: number
+  retry_count: number
+}
+
 type PersistedState = {
   backupText: string
   contacts: ContactItem[]
@@ -236,6 +247,7 @@ type PersistedState = {
   autoPublishPreKey?: boolean
   autoNodeSync?: boolean
   processedMailboxIds?: string[]
+  mailboxFailedItems?: MailboxFailedItem[]
 }
 
 type PersistedMeta = {
@@ -253,6 +265,7 @@ type PersistedMeta = {
   autoPublishPreKey?: boolean
   autoNodeSync?: boolean
   processedMailboxIds?: string[]
+  mailboxFailedItems?: MailboxFailedItem[]
   schemaVersion: number
 }
 
@@ -330,6 +343,7 @@ const messages = ref<ChatMessage[]>([])
 const outbox = ref<OutboxItem[]>([])
 const ratchetSessions = ref<RatchetSessionItem[]>([])
 const processedMailboxIds = ref<string[]>([])
+const mailboxFailedItems = ref<MailboxFailedItem[]>([])
 let outboxRetryTimer: number | undefined
 let lastDeliveryError = ''
 const notificationPermission = ref(typeof Notification !== 'undefined' ? Notification.permission : 'unsupported')
@@ -392,7 +406,8 @@ const mailboxInboxStatus = ref('尚未同步')
 const mailboxInboxErrorText = ref('')
 const mailboxFailureSummaryText = ref('')
 const mailboxDedupeCount = computed(() => processedMailboxIds.value.length)
-const mailboxDedupeStatusText = computed(() => `本地去重记录 ${mailboxDedupeCount.value}/1000`)
+const mailboxFailedCount = computed(() => mailboxFailedItems.value.length)
+const mailboxDedupeStatusText = computed(() => `本地去重记录 ${mailboxDedupeCount.value}/1000，失败队列 ${mailboxFailedCount.value}`)
 const nodePreKeyUserId = ref('')
 const nodePreKeyStatusText = ref('')
 const prekeyStatusSummary = ref('尚未发布 PreKey')
@@ -920,6 +935,7 @@ function currentPersistedState(): PersistedState {
     autoPublishPreKey: autoPublishPreKey.value,
     autoNodeSync: autoNodeSync.value,
     processedMailboxIds: processedMailboxIds.value,
+    mailboxFailedItems: mailboxFailedItems.value,
   }
 }
 
@@ -939,6 +955,7 @@ function persistedMeta(): PersistedMeta {
     autoPublishPreKey: autoPublishPreKey.value,
     autoNodeSync: autoNodeSync.value,
     processedMailboxIds: processedMailboxIds.value,
+    mailboxFailedItems: mailboxFailedItems.value,
     schemaVersion: 3,
   }
 }
@@ -1019,6 +1036,7 @@ async function writeStateToTables(state: PersistedState) {
   autoPublishPreKey.value = state.autoPublishPreKey ?? true
   autoNodeSync.value = state.autoNodeSync ?? false
   processedMailboxIds.value = state.processedMailboxIds ?? []
+  mailboxFailedItems.value = state.mailboxFailedItems ?? []
   await persistStateTables()
 }
 
@@ -1041,6 +1059,7 @@ async function loadStateFromTables(): Promise<boolean> {
   autoPublishPreKey.value = meta.autoPublishPreKey ?? true
   autoNodeSync.value = meta.autoNodeSync ?? false
   processedMailboxIds.value = meta.processedMailboxIds ?? []
+  mailboxFailedItems.value = meta.mailboxFailedItems ?? []
   const prefix = ownerPrefix()
   contacts.value = await Promise.all((await idbTableGetAllByPrefix<any>(TABLES.contacts, prefix)).map((c: any) => decryptContactFromStore(c, key)))
   friendRequests.value = await idbTableGetAllByPrefix<FriendRequestItem>(TABLES.friendRequests, prefix)
@@ -1095,6 +1114,7 @@ function resetAccountScopedState() {
   outbox.value = []
   ratchetSessions.value = []
   processedMailboxIds.value = []
+  mailboxFailedItems.value = []
   activePeerId.value = ''
   activeGroupId.value = ''
   myContactCardText.value = ''
@@ -1139,6 +1159,7 @@ async function clearPersisted() {
   outbox.value = []
   ratchetSessions.value = []
   processedMailboxIds.value = []
+  mailboxFailedItems.value = []
   myContactCardText.value = ''
   myDeviceCertJson.value = ''
   myDeviceId.value = ''
@@ -4055,12 +4076,54 @@ function rememberProcessedMailboxId(id: string) {
   processedMailboxIds.value = [id, ...processedMailboxIds.value.filter((x) => x !== id)].slice(0, 1000)
 }
 
+function mailboxFailedItemId(deliveryId: string, messageId: string): string {
+  return deliveryId || messageId || `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function rememberFailedMailboxItem(item: any, reason: string) {
+  const { deliveryId, message } = unwrapMailboxDelivery(item)
+  const messageId = String(message?.message_id ?? '')
+  const id = mailboxFailedItemId(deliveryId || '', messageId)
+  const existing = mailboxFailedItems.value.find((failed) => failed.id === id)
+  const now = Date.now()
+  if (existing) {
+    existing.reason = reason
+    existing.last_failed_at = now
+    return
+  }
+  mailboxFailedItems.value = [{
+    id,
+    delivery_id: deliveryId,
+    message_id: messageId || undefined,
+    message,
+    reason,
+    first_failed_at: now,
+    last_failed_at: now,
+    retry_count: 0,
+  }, ...mailboxFailedItems.value].slice(0, 100)
+}
+
+async function acknowledgeMailboxDeliveries(deliveryIds: string[]) {
+  const userId = nodeMailboxTakeUserId.value.trim() || identity.value?.user_id
+  if (!userId) throw new Error('需要 UserID')
+  await ackMailboxToNode(userId, deliveryIds)
+}
+
 function clearProcessedMailboxIds() {
   processedMailboxIds.value = []
   mailboxInboxStatus.value = '已清空本地去重记录'
   mailboxInboxErrorText.value = ''
   mailboxFailureSummaryText.value = ''
   appendLog('mailbox 本地去重记录已清空')
+  persist()
+}
+
+function clearFailedMailboxItems() {
+  mailboxFailedItems.value = []
+  mailboxInboxStatus.value = '已清空失败队列'
+  mailboxInboxErrorText.value = ''
+  mailboxFailureSummaryText.value = ''
+  appendLog('mailbox 失败队列已清空')
   persist()
 }
 
@@ -4099,6 +4162,7 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
     } else {
       failed += 1
       if (result.reason) failureReasons.push(result.reason)
+      if (result.reason) rememberFailedMailboxItem(item, result.reason)
     }
   }
   mailboxInboxStatus.value = `收到 ${messagesFromNode.length}，已处理 ${handled}，重复 ${duplicate}，失败 ${failed}`
@@ -4108,6 +4172,48 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
   if (events.length > 0) notifyIfAllowed('LM Talk 收到新内容', mailboxNotificationText(events))
   persist()
   return ackIds
+}
+
+async function retryFailedMailboxItems() {
+  await runAsync('重试 mailbox 失败队列', async () => {
+    const items = [...mailboxFailedItems.value]
+    if (items.length === 0) {
+      mailboxInboxStatus.value = '失败队列为空'
+      return
+    }
+    let handled = 0
+    let failed = 0
+    const ackIds: string[] = []
+    const handledItemIds: string[] = []
+    const failureReasons: string[] = []
+    for (const failedItem of items) {
+      failedItem.retry_count += 1
+      const result = handleMailboxPayload({
+        delivery_id: failedItem.delivery_id,
+        message: failedItem.message,
+      })
+      if (result.handled) {
+        handled += 1
+        const dedupeId = failedItem.delivery_id || failedItem.message_id || result.deliveryId
+        if (dedupeId) rememberProcessedMailboxId(dedupeId)
+        if (failedItem.delivery_id) ackIds.push(failedItem.delivery_id)
+        handledItemIds.push(failedItem.id)
+      } else {
+        failed += 1
+        const reason = result.reason || failedItem.reason
+        failedItem.reason = reason
+        failedItem.last_failed_at = Date.now()
+        failureReasons.push(reason)
+      }
+    }
+    if (ackIds.length > 0) await acknowledgeMailboxDeliveries(ackIds)
+    mailboxFailedItems.value = mailboxFailedItems.value.filter((item) => !handledItemIds.includes(item.id))
+    mailboxInboxStatus.value = `失败队列重试：成功 ${handled}，失败 ${failed}`
+    mailboxInboxErrorText.value = failureReasons.slice(0, 3).join('\n')
+    mailboxFailureSummaryText.value = summarizeMailboxFailures(failureReasons)
+    appendLog(`mailbox 失败队列重试完成：${mailboxInboxStatus.value}`)
+    persist()
+  })
 }
 
 function processMailboxTakeInfoText() {
@@ -4431,7 +4537,7 @@ const appContext = {
   ratchetInfoText, safetyPolicy, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
-  nodeClosestTarget, nodeClosestInfoText, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxDedupeStatusText, clearProcessedMailboxIds, nodePreKeyUserId, nodePreKeyStatusText,
+  nodeClosestTarget, nodeClosestInfoText, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
   nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,

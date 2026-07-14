@@ -112,6 +112,8 @@ function openGroupDetail(groupId: string) {
             <small v-if="ctx.mailboxInboxErrorText.value" class="danger-text">{{ ctx.mailboxInboxErrorText.value }}</small>
             <div class="row compact">
               <button class="secondary" :disabled="ctx.mailboxDedupeCount.value === 0" @click="ctx.clearProcessedMailboxIds">清空去重记录</button>
+              <button class="secondary" :disabled="ctx.mailboxFailedCount.value === 0" @click="ctx.retryFailedMailboxItems">重试失败</button>
+              <button class="secondary danger" :disabled="ctx.mailboxFailedCount.value === 0" @click="ctx.clearFailedMailboxItems">清空失败</button>
             </div>
           </section>
 
