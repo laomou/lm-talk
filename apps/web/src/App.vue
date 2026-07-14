@@ -1820,11 +1820,12 @@ function acceptInboxRequest(req: FriendRequestItem) {
         .then(() => {
           appendLog('✅ 已通过好友请求')
           toast('已添加好友', 'success')
+          return sendSecureSessionOfferToContact(contact)
         })
         .catch((e) => {
           const message = userFacingError(e)
           appendLog(`⚠️ 好友确认发送失败：${message}`)
-          showAlert('已添加好友，但通知对方失败', message, 'warning')
+          showAlert('已添加好友，但自动建链失败', message, 'warning')
         })
     } else {
       toast('已添加好友', 'success')
@@ -3074,30 +3075,41 @@ type SecureSessionResponse = {
   created_at: number
 }
 
+function buildSecureSessionOfferForContact(contact: ContactItem): string {
+  if (!identity.value) throw new Error('请先登录')
+  if (!prekeyBundleText.value.trim() || !prekeyPrivateBundleJson.value.trim()) {
+    createMyPreKeyBundleText()
+  }
+  const pair = JSON.parse(create_ratchet_dh_keypair()) as { private_key: string; public_key: string }
+  ratchetLocalDhKeyPairJson.value = JSON.stringify(pair, null, 2)
+  ratchetRemoteDhPublicKeyForInit.value = ''
+  ratchetInitRole.value = 'Responder'
+  const offer: SecureSessionOffer = {
+    type: 'lm-secure-session-offer-v1',
+    version: 1,
+    from_user_id: identity.value.user_id,
+    to_user_id: contact.user_id,
+    prekey_bundle_text: prekeyBundleText.value,
+    signed_one_time_prekey_record_texts: prekeySignedOneTimeRecordTexts.value,
+    ratchet_dh_public_key: pair.public_key,
+    created_at: Date.now(),
+  }
+  secureSessionOfferText.value = JSON.stringify(offer, null, 2)
+  secureSessionStatusText.value = '已创建 Offer：把它发给对方；对方应用后会返回 Response。Private PreKey 和 DH private_key 已留在本机。'
+  persist()
+  return secureSessionOfferText.value
+}
+
+async function sendSecureSessionOfferToContact(contact: ContactItem) {
+  const offer = buildSecureSessionOfferForContact(contact)
+  await pushMailboxPayload(contact, 'other', offer)
+  appendLog(`✅ 已向 ${contact.display_name || contact.user_id} 发送安全会话 Offer`)
+}
+
 function createSecureSessionOfferText() {
   run('创建安全会话 Offer', () => {
-    if (!identity.value) throw new Error('请先登录')
     if (!activeContact.value) throw new Error('请先选择联系人')
-    if (!prekeyBundleText.value.trim() || !prekeyPrivateBundleJson.value.trim()) {
-      createMyPreKeyBundleText()
-    }
-    const pair = JSON.parse(create_ratchet_dh_keypair()) as { private_key: string; public_key: string }
-    ratchetLocalDhKeyPairJson.value = JSON.stringify(pair, null, 2)
-    ratchetRemoteDhPublicKeyForInit.value = ''
-    ratchetInitRole.value = 'Responder'
-    const offer: SecureSessionOffer = {
-      type: 'lm-secure-session-offer-v1',
-      version: 1,
-      from_user_id: identity.value.user_id,
-      to_user_id: activeContact.value.user_id,
-      prekey_bundle_text: prekeyBundleText.value,
-      signed_one_time_prekey_record_texts: prekeySignedOneTimeRecordTexts.value,
-      ratchet_dh_public_key: pair.public_key,
-      created_at: Date.now(),
-    }
-    secureSessionOfferText.value = JSON.stringify(offer, null, 2)
-    secureSessionStatusText.value = '已创建 Offer：把它发给对方；对方应用后会返回 Response。Private PreKey 和 DH private_key 已留在本机。'
-    persist()
+    buildSecureSessionOfferForContact(activeContact.value)
   })
 }
 
