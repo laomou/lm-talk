@@ -1001,7 +1001,7 @@ MVP 群聊采用逐个加密。
 - [x] passphrase normalization
 - [x] backup decrypt
 - [x] UserID generation
-- Contact Card signature
+- [x] Contact Card signature
 - Friend Request signature
 - message encryption
 
