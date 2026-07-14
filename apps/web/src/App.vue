@@ -1360,6 +1360,11 @@ async function importFullDataBackup() {
   try {
     if (!backupText.value || !passphrase.value) throw new Error('需要当前身份备份包和提示词')
     if (!dataBackupText.value.trim()) throw new Error('请粘贴完整数据备份')
+    const hasLocalData = contacts.value.length + groups.value.length + messages.value.length + outbox.value.length > 0
+    if (hasLocalData) {
+      const ok = await showConfirm('导入完整数据备份', '导入会覆盖当前身份的本地联系人、群聊、消息和待发送队列。继续导入？', true)
+      if (!ok) return
+    }
     const json = import_data_backup(backupText.value, passphrase.value, dataBackupText.value)
     const state = JSON.parse(json) as PersistedState
     await writeStateToTables(state)
