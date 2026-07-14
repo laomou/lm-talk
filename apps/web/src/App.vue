@@ -1147,7 +1147,9 @@ async function syncNow() {
     await takeMailboxFromNode()
     appendLog('✅ 消息同步完成')
   } catch (e) {
-    appendLog(`❌ 消息同步失败：${userFacingError(e)}`)
+    const message = userFacingError(e)
+    appendLog(`❌ 消息同步失败：${message}`)
+    notifyIfAllowed('LM Talk 同步失败', message)
     throw e
   }
 }
