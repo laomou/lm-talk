@@ -597,6 +597,14 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 .me-hero-text small { display: block; margin-top: var(--sp-1); overflow-wrap: anywhere; }
 .me-hero-actions { grid-area: actions; margin: var(--sp-2) 0 0; }
 .inline-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-2); }
+.policy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--sp-3);
+  align-items: center;
+}
+.policy-grid label:not(.identity-select) { display: grid; gap: var(--sp-1); font-size: 13px; color: var(--c-ink-2); }
+.policy-grid select { min-width: 0; }
 .settings-rows { display: grid; }
 .settings-row {
   display: flex; align-items: center; justify-content: space-between;

@@ -114,6 +114,40 @@ const localObjectCount = computed(() =>
       </section>
 
       <section class="home-card">
+        <div class="section-title-row">
+          <h3>本地安全策略</h3>
+          <button class="secondary" @click="ctx.saveSafetyPolicy">保存</button>
+        </div>
+        <label class="identity-select">
+          <input v-model="ctx.safetyPolicy.value.enableTextFilter" type="checkbox" />
+          <span>启用文本过滤</span>
+        </label>
+        <div class="policy-grid">
+          <label>
+            <span>过滤级别</span>
+            <select v-model="ctx.safetyPolicy.value.textFilterLevel">
+              <option value="Off">关闭</option>
+              <option value="Relaxed">宽松</option>
+              <option value="Standard">标准</option>
+              <option value="Strict">严格</option>
+            </select>
+          </label>
+          <label class="identity-select">
+            <input v-model="ctx.safetyPolicy.value.warnExternalLinks" type="checkbox" />
+            <span>提示外部链接</span>
+          </label>
+          <label class="identity-select">
+            <input v-model="ctx.safetyPolicy.value.warnExecutableFiles" type="checkbox" />
+            <span>提示可执行文件</span>
+          </label>
+          <label class="identity-select">
+            <input v-model="ctx.safetyPolicy.value.dropFilteredIncoming" type="checkbox" />
+            <span>丢弃高风险入站消息</span>
+          </label>
+        </div>
+      </section>
+
+      <section class="home-card">
         <h3>账号与高级</h3>
         <div class="settings-rows">
           <button class="settings-row" @click="ctx.goDiagnosticsPage">
