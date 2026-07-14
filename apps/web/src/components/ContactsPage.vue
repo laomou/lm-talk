@@ -254,8 +254,9 @@ function openGroupDetail(groupId: string) {
           <div class="row detail-actions">
             <button @click="ctx.goChatPage()">进入群聊</button>
             <button class="secondary" @click="ctx.leaveActiveGroupWithNotice">通知退群</button>
-            <button class="secondary danger" @click="ctx.removeActiveGroup">退出群聊</button>
+            <button class="secondary danger" @click="ctx.removeActiveGroup">仅本机退出</button>
           </div>
+          <small class="sync-note">通知退群会向其他成员发送退群事件；仅本机退出不会通知其他成员。</small>
         </div>
       </section>
 
