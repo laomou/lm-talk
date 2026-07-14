@@ -1302,7 +1302,8 @@ async function refreshPwaStatus() {
   const controller = swSupported && nav.serviceWorker?.controller ? '已接管' : registrations.length ? '已注册' : swSupported ? '未注册' : '不支持'
   const pushSupported = swSupported && 'PushManager' in window
   const periodicSyncSupported = swSupported && 'PeriodicSyncManager' in window
-  pwaStatusText.value = `${controller} · 缓存 ${cacheKeys.length} · ${webVersionText}`
+  const appCaches = cacheKeys.filter((key) => key.startsWith('lm-talk-pwa-'))
+  pwaStatusText.value = `${controller} · 缓存 ${cacheKeys.length}${appCaches[0] ? ` · 固定缓存 ${appCaches[0]}` : ''} · ${webVersionText}`
   pwaBackgroundCapabilityText.value = `Push ${pushSupported ? '可探测' : '不可用'} · Periodic Sync ${periodicSyncSupported ? '可探测' : '不可用'}`
 }
 
