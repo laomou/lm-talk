@@ -88,7 +88,10 @@ const filteredSyncRecoveryHistory = computed(() => {
           <small>{{ ctx.syncRecoveryStatusText.value }}</small>
           <input v-if="ctx.syncRecoveryHistory.value.length" v-model="syncRecoveryQuery" type="search" aria-label="筛选同步恢复历史" placeholder="筛选恢复历史" />
           <small v-if="filteredSyncRecoveryHistory.length">历史：{{ filteredSyncRecoveryHistory.join(' ｜ ') }}</small>
-          <button v-if="ctx.syncRecoveryHistory.value.length" class="secondary" @click="ctx.exportSyncRecoveryHistory">导出恢复历史</button>
+          <div v-if="ctx.syncRecoveryHistory.value.length" class="row compact">
+            <button class="secondary" @click="ctx.exportSyncRecoveryHistory">导出恢复历史</button>
+            <button class="secondary danger" @click="ctx.clearSyncRecoveryHistory">清空恢复历史</button>
+          </div>
           <button v-if="ctx.syncFailureSummaryText.value !== '暂无同步失败'" class="secondary" @click="ctx.recoverSyncFailures">恢复同步失败</button>
         </div>
         <div class="sync-status">

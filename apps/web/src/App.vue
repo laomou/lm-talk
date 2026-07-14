@@ -1340,6 +1340,13 @@ function exportSyncRecoveryHistory() {
   downloadText(text, `lm-talk-sync-recovery-${Date.now()}.json`)
 }
 
+function clearSyncRecoveryHistory() {
+  syncRecoveryHistory.value = []
+  syncRecoveryStatusText.value = '已清空恢复历史'
+  appendLog('已清空跨触发器恢复历史')
+  persist()
+}
+
 
 async function afterLoginAutomation() {
   if (!nodeEnabled.value) return
@@ -4634,7 +4641,7 @@ function logout() {
 const appContext = {
   goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, myContactCardText, backupText,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, pwaStatusText, pwaBackgroundCapabilityText, webVersionText,
-  nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
+  nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
   enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, createMyDeviceCert, myDeviceCertJson,
