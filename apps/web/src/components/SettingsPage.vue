@@ -84,7 +84,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
         <div class="row compact">
           <button class="secondary" @click="showSyncServiceEditor = !showSyncServiceEditor">{{ showSyncEditor ? '隐藏地址/令牌' : '编辑地址/令牌' }}</button>
           <button @click="ctx.toggleNodeEnabled">{{ ctx.nodeEnabled.value ? '关闭同步' : '开启同步' }}</button>
-          <button class="secondary" @click="ctx.saveNetworkSettings">保存</button>
+          <button v-if="showSyncEditor" class="secondary" @click="ctx.saveNetworkSettings">保存</button>
           <button class="secondary" @click="ctx.syncNow">立即同步</button>
         </div>
         <div class="policy-grid sync-options">
