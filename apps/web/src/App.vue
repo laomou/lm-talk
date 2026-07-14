@@ -150,6 +150,8 @@ type FriendRequestItem = {
   expires_at: number
   request_text: string
   from_contact_card_text: string
+  quarantined?: boolean
+  quarantine_reason?: string
 }
 
 type GroupItem = {
@@ -445,6 +447,8 @@ const activeMessages = computed(() => activeGroup.value
   : messages.value.filter((m) => m.peer_user_id === activePeerId.value)
 )
 const friendContacts = computed(() => contacts.value.filter((c) => c.state === 'Friend'))
+const visibleFriendRequests = computed(() => friendRequests.value.filter((req) => !req.quarantined))
+const quarantinedFriendRequests = computed(() => friendRequests.value.filter((req) => req.quarantined))
 const activeGroupMembers = computed(() => activeGroup.value
   ? activeGroup.value.member_user_ids.map((id) => contacts.value.find((c) => c.user_id === id)).filter(Boolean) as ContactItem[]
   : []
@@ -1793,15 +1797,18 @@ function addIncomingFriendRequest() {
     if (identity.value && info.to_user_id !== identity.value.user_id) {
       throw new Error('这个好友请求不是发给当前身份的')
     }
+    const repeatedPendingCount = friendRequests.value.filter((req) => req.from_user_id === info.from_user_id && req.request_id !== info.request_id).length
     const item: FriendRequestItem = {
       ...info,
       request_text: incomingFriendRequestText.value,
+      quarantined: repeatedPendingCount >= 1,
+      quarantine_reason: repeatedPendingCount >= 1 ? `同一来源已有 ${repeatedPendingCount} 条未处理请求` : undefined,
     }
     const index = friendRequests.value.findIndex((r) => r.request_id === item.request_id)
     if (index >= 0) friendRequests.value[index] = item
     else friendRequests.value.unshift(item)
     incomingFriendRequestText.value = ''
-    toast('收到新的好友请求', 'info')
+    toast(item.quarantined ? '好友请求已隔离' : '收到新的好友请求', item.quarantined ? 'warning' : 'info')
     persist()
   })
 }
@@ -1843,9 +1850,9 @@ function rejectInboxRequest(req: FriendRequestItem) {
 
 function rejectAllInboxRequests() {
   run('忽略全部好友请求', () => {
-    const count = friendRequests.value.length
+    const count = visibleFriendRequests.value.length
     if (count === 0) throw new Error('没有好友请求')
-    friendRequests.value = []
+    friendRequests.value = friendRequests.value.filter((req) => req.quarantined)
     appendLog(`已忽略好友请求 ${count} 条`)
     persist()
   })
@@ -1853,7 +1860,7 @@ function rejectAllInboxRequests() {
 
 function blockAllInboxRequests() {
   run('拉黑全部好友请求来源', () => {
-    const requests = [...friendRequests.value]
+    const requests = [...visibleFriendRequests.value]
     if (requests.length === 0) throw new Error('没有好友请求')
     let blocked = 0
     for (const req of requests) {
@@ -1869,6 +1876,29 @@ function blockAllInboxRequests() {
     }
     friendRequests.value = []
     appendLog(`已拉黑好友请求来源 ${blocked} 个，清空请求 ${requests.length} 条`)
+    persist()
+  })
+}
+
+function restoreQuarantinedFriendRequest(req: FriendRequestItem) {
+  run('恢复好友请求', () => {
+    const index = friendRequests.value.findIndex((item) => item.request_id === req.request_id)
+    if (index < 0) throw new Error('找不到好友请求')
+    friendRequests.value[index] = {
+      ...friendRequests.value[index],
+      quarantined: false,
+      quarantine_reason: undefined,
+    }
+    persist()
+  })
+}
+
+function clearQuarantinedFriendRequests() {
+  run('清空垃圾请求', () => {
+    const count = quarantinedFriendRequests.value.length
+    if (count === 0) throw new Error('没有垃圾请求')
+    friendRequests.value = friendRequests.value.filter((req) => !req.quarantined)
+    appendLog(`已清空垃圾请求 ${count} 条`)
     persist()
   })
 }
@@ -4179,7 +4209,8 @@ const appContext = {
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, createMyDeviceCert, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
   exportFullDataBackup, importFullDataBackup, downloadText, addContactText, addContact, incomingFriendRequestText,
-  addIncomingFriendRequest, friendRequests, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests, incomingGroupInviteText, addIncomingGroupInvite,
+  addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
+  restoreQuarantinedFriendRequest, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
   newGroupName, friendContacts, selectedGroupMembers, createGroup, groups, activeGroupId,
   selectGroup, activeContact, activeGroup, activeGroupMembers, activeGroupWarningText, blockReason, blockActiveContact,

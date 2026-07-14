@@ -102,7 +102,8 @@ function openGroupDetail(groupId: string) {
           <section class="home-card inbox-status-card">
             <h3>Mailbox 状态</h3>
             <div class="inbox-status-grid">
-              <span>好友请求 {{ ctx.friendRequests.value.length }}</span>
+              <span>好友请求 {{ ctx.visibleFriendRequests.value.length }}</span>
+              <span>垃圾请求 {{ ctx.quarantinedFriendRequests.value.length }}</span>
               <span>群邀请 {{ ctx.groupInvites.value.length }}</span>
             </div>
             <small>{{ ctx.mailboxInboxStatus.value }}</small>
@@ -116,13 +117,13 @@ function openGroupDetail(groupId: string) {
           <section class="home-card">
             <div class="section-title-row">
               <h3>好友请求</h3>
-              <div v-if="ctx.friendRequests.value.length" class="row compact">
+              <div v-if="ctx.visibleFriendRequests.value.length" class="row compact">
                 <button class="secondary" @click="ctx.rejectAllInboxRequests">全部忽略</button>
                 <button class="secondary danger" @click="ctx.blockAllInboxRequests">全部拉黑</button>
               </div>
             </div>
-            <div v-if="ctx.friendRequests.value.length" class="request-grid">
-              <div v-for="req in ctx.friendRequests.value" :key="req.request_id" class="request-item">
+            <div v-if="ctx.visibleFriendRequests.value.length" class="request-grid">
+              <div v-for="req in ctx.visibleFriendRequests.value" :key="req.request_id" class="request-item">
                 <b>{{ req.from_user_id }}</b>
                 <small>{{ req.note || '无备注' }}</small>
                 <div class="row compact">
@@ -132,6 +133,25 @@ function openGroupDetail(groupId: string) {
               </div>
             </div>
             <div v-else class="empty">暂无好友请求</div>
+          </section>
+
+          <section class="home-card">
+            <div class="section-title-row">
+              <h3>垃圾请求</h3>
+              <button v-if="ctx.quarantinedFriendRequests.value.length" class="secondary danger" @click="ctx.clearQuarantinedFriendRequests">清空</button>
+            </div>
+            <div v-if="ctx.quarantinedFriendRequests.value.length" class="request-grid">
+              <div v-for="req in ctx.quarantinedFriendRequests.value" :key="req.request_id" class="request-item">
+                <b>{{ req.from_user_id }}</b>
+                <small>{{ req.quarantine_reason || '本地规则隔离' }}</small>
+                <small>{{ req.note || '无备注' }}</small>
+                <div class="row compact">
+                  <button class="secondary" @click="ctx.restoreQuarantinedFriendRequest(req)">恢复</button>
+                  <button class="secondary danger" @click="ctx.rejectInboxRequest(req)">忽略</button>
+                </div>
+              </div>
+            </div>
+            <div v-else class="empty">暂无垃圾请求</div>
           </section>
 
           <section class="home-card">
