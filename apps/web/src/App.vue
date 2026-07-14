@@ -1311,6 +1311,12 @@ function nodeEntryLine(e: NodeEntry): string { return e.token ? `${e.url}|${e.to
 function nodeUrlList(): string[] {
   return nodeEntries().map((e) => e.url)
 }
+const nodeSettingsSummaryText = computed(() => {
+  const entries = nodeEntries()
+  if (entries.length === 0) return '未配置同步服务'
+  const tokenCount = entries.filter((entry) => entry.token).length
+  return `${entries.length} 个同步服务 · 主节点 ${entries[0].url}${tokenCount ? ` · ${tokenCount} 个已配置令牌` : ''}`
+})
 function nodeTokenFor(url: string): string {
   const base = url.replace(/\/$/, '')
   return nodeEntries().find((e) => e.url.replace(/\/$/, '') === base)?.token || ''
@@ -4291,7 +4297,7 @@ function logout() {
 const appContext = {
   goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, myContactCardText, backupText,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, pwaStatusText, webVersionText,
-  nodeControlUrl, nodeUrlList, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
+  nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
   enableNotifications, notificationPermission, runtimeStatusText, refreshRuntimeStatus,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, createMyDeviceCert, myDeviceCertJson,
