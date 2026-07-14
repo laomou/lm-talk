@@ -100,6 +100,7 @@ function onComposerKeydown(e: KeyboardEvent) {
         <small v-if="activeOutboxError" class="outbox-error">{{ activeOutboxError }}</small>
         <button v-if="activePendingOutboxCount" class="secondary" @click="ctx.flushOutboxForActive">重发 {{ activePendingOutboxCount }}</button>
         <button v-if="activePendingOutboxCount" class="secondary danger" @click="ctx.cancelOutboxForActive">取消发送</button>
+        <button v-if="ctx.activeContact.value?.state === 'Friend' && ctx.activeContact.value.last_secure_session_error" class="secondary" @click="ctx.retrySecureSessionForActiveContact">重试建链</button>
         <button v-if="ctx.activeContact.value?.state === 'Friend' && !ctx.activeRatchetSession.value" class="secondary" @click="ctx.recreateActiveRatchetSession">本地建链</button>
         <button class="secondary danger" @click="ctx.clearActiveConversation">清空聊天</button>
       </div>

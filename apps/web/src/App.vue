@@ -3240,6 +3240,25 @@ async function sendSecureSessionOfferToContact(contact: ContactItem) {
   persist()
 }
 
+function retrySecureSessionForActiveContact() {
+  run('重试安全建链', () => {
+    if (!activeContact.value) throw new Error('请选择联系人')
+    if (activeContact.value.state !== 'Friend') throw new Error('联系人还不是 Friend')
+    if (!nodeEnabled.value) {
+      showAlert('请先开启消息同步', '安全建链重试需要通过消息同步发送。请到“我 → 消息同步”开启后重试。', 'warning')
+      return
+    }
+    const contact = activeContact.value
+    void sendSecureSessionOfferToContact(contact)
+      .then(() => {
+        toast('安全建链已重试', 'success')
+      })
+      .catch((e) => {
+        showAlert('安全建链重试失败', userFacingError(e), 'error')
+      })
+  })
+}
+
 function createSecureSessionOfferText() {
   run('创建安全会话 Offer', () => {
     if (!activeContact.value) throw new Error('请先选择联系人')
@@ -4387,7 +4406,7 @@ const appContext = {
   nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
   enableNotifications, notificationPermission, runtimeStatusText, refreshRuntimeStatus,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
-  secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, createMyDeviceCert, myDeviceCertJson,
+  secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, createMyDeviceCert, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
   exportFullDataBackup, importFullDataBackup, downloadText, addContactText, addContact, incomingFriendRequestText,
   addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
