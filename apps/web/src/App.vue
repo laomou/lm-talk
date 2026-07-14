@@ -3788,6 +3788,13 @@ function onFileSelected(event: Event) {
   }
 }
 
+function cancelSelectedFile() {
+  selectedFile.value = null
+  filePackageText.value = ''
+  filePackageInfoText.value = ''
+  rtcFileStatus.value = '未发送文件'
+}
+
 async function createFilePackageForActive() {
   await runAsync('生成文件包', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
@@ -3950,7 +3957,7 @@ const appContext = {
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
   flushOutboxForActive, cancelOutboxForActive, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
-  receiveEnvelope, onFileSelected, selectedFile, formatBytes, isDangerousFileName, createFilePackageForActive, sendFilePackageOverRtc, filePackageText, rtcFileStatus,
+  receiveEnvelope, onFileSelected, cancelSelectedFile, selectedFile, formatBytes, isDangerousFileName, createFilePackageForActive, sendFilePackageOverRtc, filePackageText, rtcFileStatus,
   incomingFilePackageText, inspectIncomingFilePackage, decryptIncomingFilePackage, receivedFileUrl, receivedFileName, filePackageInfoText,
   createGroupSenderKeyForActiveGroup, groupSenderDistributionText, importGroupSenderKeyForActiveContact, groupSenderEncryptDebug, groupSenderDecryptDebug, createGroupSenderDistributionFanoutForActiveGroup,
   groupSenderDistributionFanoutJson, groupSenderDistributionFanoutItems, groupSenderEnvelopeText, groupSenderPlainText, groupRenameText, createRenameGroupEvent,
