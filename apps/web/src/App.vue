@@ -4372,10 +4372,13 @@ async function retryPreKeyAutoPublish() {
 function clearPreKeyRawState() {
   run('清除 PreKey 原始状态', () => {
     nodePreKeyStatusText.value = ''
+    prekeyBundleText.value = ''
+    prekeySignedOneTimeRecordTexts.value = []
     prekeyInfoText.value = ''
     x3dhInitialMessageJson.value = ''
     selectedSignedOneTimePreKeyRecordText.value = ''
     selectedOneTimePreKeyId.value = null
+    prekeyStatusSummary.value = '已清除原始 PreKey 文本，需要时会重新生成'
     persist()
   })
 }
