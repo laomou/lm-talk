@@ -413,6 +413,15 @@ const nodeClosestTarget = ref('')
 const nodeClosestInfoText = ref('')
 const nodeMailboxTakeUserId = ref('')
 const nodeMailboxTakeInfoText = ref('')
+const syncTriggerPolicyText = computed(() => {
+  const parts = ['立即同步优先执行']
+  if (autoPublishPreKey.value) parts.push('登录/手动同步先检查 PreKey')
+  if (autoMailboxTake.value) parts.push('登录/切回前台收取 Mailbox，前台触发 30 秒节流')
+  else parts.push('Mailbox 自动收取关闭')
+  parts.push('Outbox 每 30 秒重试到期项')
+  if (autoNodeSync.value) parts.push('节点快照每 60 秒同步')
+  return parts.join('；')
+})
 const mailboxInboxStatus = ref('尚未同步')
 const mailboxInboxErrorText = ref('')
 const mailboxFailureSummaryText = ref('')
@@ -4561,7 +4570,7 @@ function logout() {
 const appContext = {
   goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, myContactCardText, backupText,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, pwaStatusText, pwaBackgroundCapabilityText, webVersionText,
-  nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
+  nodeControlUrl, nodeUrlList, nodeSettingsSummaryText, syncTriggerPolicyText, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
   enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, createMyDeviceCert, myDeviceCertJson,
