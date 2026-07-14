@@ -805,7 +805,7 @@ function utf8Bytes(value: string): number {
 
 function ensureUiTextSize(label: string, value: string, max: number) {
   const size = utf8Bytes(value)
-  if (size > max) throw new Error(`${label} 过大：${size} bytes > ${max} bytes`)
+  if (size > max) throw new Error(`${label} 过大：${formatBytes(size)} > ${formatBytes(max)}`)
 }
 
 function safeJson<T>(value: string): T {
