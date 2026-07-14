@@ -96,8 +96,9 @@
    - 仍需更细的失败分类。
 
 2. **Mailbox 防重复与去重**
-   - 本地记录已处理 delivery_id / message_id。
-   - 重复拉取不重复显示消息。
+   - Web 已本地记录已处理 delivery_id / message_id，并随 IndexedDB meta 持久化。
+   - 重复拉取会跳过重复处理并继续 ack 对应 delivery。
+   - 仍需长期 dedupe 保留策略和跨设备合并策略。
 
 3. **节点同步自动化**
    - [x] `serve-control --sync-peer http://host:port --sync-interval-seconds N` 可定时拉取 peer snapshot 并 merge。
