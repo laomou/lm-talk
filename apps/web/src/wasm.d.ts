@@ -2,6 +2,7 @@ declare module './wasm/lm_wasm.js' {
   export default function init(input?: RequestInfo | URL | Response | BufferSource | WebAssembly.Module): Promise<void>
   export function normalize_passphrase(input: string): string
   export function create_identity(passphrase: string): string
+  export function reencrypt_identity_backup(backupText: string, oldPassphrase: string, newPassphrase: string): string
   export function export_data_backup(identityBackupText: string, passphrase: string, dataJson: string): string
   export function import_data_backup(identityBackupText: string, passphrase: string, dataBackupText: string): string
   export function restore_identity(backupText: string, passphrase: string): string

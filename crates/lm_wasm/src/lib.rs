@@ -165,7 +165,6 @@ fn wasm_identity_backup_key(passphrase: &str, salt: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-#[cfg(target_arch = "wasm32")]
 fn wasm_identity_backup_text(
     identity: &Identity,
     seed: &[u8; lm_core::identity::IDENTITY_SEED_LEN],
@@ -285,6 +284,12 @@ struct CreateIdentityOutput {
     backup_text: String,
 }
 
+#[derive(Serialize)]
+struct ReencryptIdentityBackupOutput {
+    user_id: String,
+    backup_text: String,
+}
+
 #[wasm_bindgen]
 pub fn normalize_passphrase(input: &str) -> String {
     lm_core::normalize_passphrase(input)
@@ -322,6 +327,38 @@ pub fn create_identity(_passphrase: &str) -> Result<String, JsValue> {
         };
         to_json_string(&out)
     }
+}
+
+#[wasm_bindgen]
+pub fn reencrypt_identity_backup(
+    backup_text: &str,
+    old_passphrase: &str,
+    new_passphrase: &str,
+) -> Result<String, JsValue> {
+    ensure_js_len(backup_text, lm_core::limits::MAX_IDENTITY_BACKUP_TEXT_BYTES)?;
+    if new_passphrase.trim().is_empty() {
+        return Err(JsValue::from_str("new passphrase is required"));
+    }
+    if let Some((expected_user_id, seed)) = restore_wasm_identity_backup(backup_text, old_passphrase)? {
+        let identity = wasm_identity_from_seed(seed)?;
+        if identity.user_id().to_string() != expected_user_id {
+            return Err(JsValue::from_str("backup user_id mismatch"));
+        }
+        let backup_text = wasm_identity_backup_text(&identity, &seed, new_passphrase)?;
+        return to_json_string(&ReencryptIdentityBackupOutput {
+            user_id: identity.user_id().to_string(),
+            backup_text,
+        });
+    }
+
+    let backup = IdentityBackupPackage::from_export_text(backup_text).map_err(to_js_error)?;
+    let seed = backup.decrypt_seed(old_passphrase).map_err(to_js_error)?;
+    let identity = Identity::from_seed(seed).map_err(to_js_error)?;
+    let backup = IdentityBackupPackage::encrypt(&identity, new_passphrase).map_err(to_js_error)?;
+    to_json_string(&ReencryptIdentityBackupOutput {
+        user_id: identity.user_id().to_string(),
+        backup_text: backup.to_export_text().map_err(to_js_error)?,
+    })
 }
 
 #[derive(Serialize)]
@@ -1673,6 +1710,22 @@ mod tests {
             wasm_identity.x25519_public_key(),
             native_identity.x25519_public_key()
         );
+    }
+
+    #[test]
+    fn wasm_identity_backup_can_be_reencrypted_with_new_passphrase() {
+        let alice = create_identity("old pass").unwrap();
+        let alice_v: Value = serde_json::from_str(&alice).unwrap();
+        let old_backup = alice_v["backup_text"].as_str().unwrap();
+        let reencrypted = reencrypt_identity_backup(old_backup, "old pass", "new pass").unwrap();
+        let reencrypted_v: Value = serde_json::from_str(&reencrypted).unwrap();
+        let new_backup = reencrypted_v["backup_text"].as_str().unwrap();
+
+        assert_eq!(alice_v["user_id"], reencrypted_v["user_id"]);
+        assert_ne!(old_backup, new_backup);
+        let restored = restore_identity(new_backup, "new pass").unwrap();
+        let restored_v: Value = serde_json::from_str(&restored).unwrap();
+        assert_eq!(alice_v["user_id"], restored_v["user_id"]);
     }
 
     #[test]
