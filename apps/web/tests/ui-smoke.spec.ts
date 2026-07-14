@@ -19,7 +19,9 @@ async function clearBrowserState(page: Page) {
 }
 
 function fieldAfterLabel(page: Page, labelText: string, tag = 'textarea'): Locator {
-  return page.locator(`label:has-text("${labelText}") + ${tag}`).first()
+  return page
+    .locator(`label:has-text("${labelText}") + ${tag}, label:has-text("${labelText}") + .inline-field ${tag}`)
+    .first()
 }
 
 type MockMailboxMessage = { delivery_id: string; message: any }
@@ -73,8 +75,9 @@ async function createIdentity(page: Page, name: string, passphrase: string) {
   await page.getByRole('button', { name: '我', exact: true }).click()
   await fieldAfterLabel(page, '显示名', 'input').fill(name)
   await page.locator('.home-card').filter({ hasText: '显示名' }).getByRole('button', { name: '保存' }).click()
+  await expect(page.locator('.rail-avatar')).toHaveText(name.slice(0, 1).toUpperCase())
   await page.getByRole('button', { name: '聊天', exact: true }).click()
-  await expect(page.locator('.me h2')).toHaveText(name)
+  await expect(page.locator('.chat-shell')).toBeVisible()
 }
 
 async function copyMyContactCard(page: Page): Promise<string> {
@@ -169,6 +172,7 @@ test('消息同步可完成好友请求和消息收发', async ({ browser }) => 
   await enableSync(bob)
 
   await alice.getByRole('button', { name: '通讯录', exact: true }).click()
+  await alice.getByRole('button', { name: '添加' }).click()
   await fieldAfterLabel(alice, '对方名片').fill(bobCard)
   await alice.getByRole('button', { name: '添加好友' }).click()
   await alice.getByRole('button', { name: '聊天', exact: true }).click()
@@ -176,12 +180,14 @@ test('消息同步可完成好友请求和消息收发', async ({ browser }) => 
   await expect(alice.locator('.contact').filter({ hasText: '等待通过' })).toBeVisible()
 
   await bob.getByRole('button', { name: '通讯录', exact: true }).click()
+  await bob.getByRole('button', { name: /新的朋友/ }).click()
   await bob.getByRole('button', { name: '刷新' }).click()
   await expect(bob.getByRole('button', { name: '接受' })).toBeVisible()
   await bob.getByRole('button', { name: '接受' }).click()
-  await expect(bob.locator('.contact-detail-card')).toContainText('Alice')
+  await expect(bob.locator('.contact').filter({ hasText: 'Alice' })).toBeVisible()
 
   await alice.getByRole('button', { name: '通讯录', exact: true }).click()
+  await alice.getByRole('button', { name: /新的朋友/ }).click()
   await alice.getByRole('button', { name: '刷新' }).click()
   await alice.getByRole('button', { name: '聊天', exact: true }).click()
   await alice.locator('.contact').filter({ hasText: 'Bob' }).click()
