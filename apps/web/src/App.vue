@@ -2693,7 +2693,7 @@ function createDemoteAdminGroupEvent(userId: string) {
 function summarizeGroupEventAction(action: any): string {
   if (action.Rename) return `改名为 ${action.Rename.name}`
   if (action.AddMember) return `加入成员 ${action.AddMember.user_id}`
-  if (action.RemoveMember) return `移除成员 ${action.RemoveMember.user_id}`
+  if (action.RemoveMember) return `成员退出 ${action.RemoveMember.user_id}`
   if (action.PromoteAdmin) return `提升管理员 ${action.PromoteAdmin.user_id}`
   if (action.DemoteAdmin) return `取消管理员 ${action.DemoteAdmin.user_id}`
   return '未知事件'
