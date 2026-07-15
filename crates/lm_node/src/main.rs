@@ -2129,6 +2129,20 @@ impl ControlRuntimeStats {
             &mut out,
             "lm_node_routing_peer_rejections_total",
             "reason",
+            "too_many_addresses",
+            maintenance.routing_peer_rejects.too_many_addresses,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_routing_peer_rejections_total",
+            "reason",
+            "address_too_large",
+            maintenance.routing_peer_rejects.address_too_large,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_routing_peer_rejections_total",
+            "reason",
             "all",
             maintenance.routing_peer_rejects.total(),
         );
@@ -7145,6 +7159,8 @@ connection: close
                 routing_peer_rejects: lm_node::RoutingPeerRejectStats {
                     mismatched_node_id: 2,
                     invalid_signature: 3,
+                    too_many_addresses: 4,
+                    address_too_large: 5,
                     ..Default::default()
                 },
                 last_pruned_at: Some(1234),
@@ -7297,7 +7313,15 @@ connection: close
             metrics
                 .contains("lm_node_routing_peer_rejections_total{reason=\"invalid_signature\"} 3")
         );
-        assert!(metrics.contains("lm_node_routing_peer_rejections_total{reason=\"all\"} 5"));
+        assert!(
+            metrics
+                .contains("lm_node_routing_peer_rejections_total{reason=\"too_many_addresses\"} 4")
+        );
+        assert!(
+            metrics
+                .contains("lm_node_routing_peer_rejections_total{reason=\"address_too_large\"} 5")
+        );
+        assert!(metrics.contains("lm_node_routing_peer_rejections_total{reason=\"all\"} 14"));
         assert!(metrics.contains("lm_node_state_db_pages{kind=\"total\"} 10"));
         assert!(metrics.contains("lm_node_state_db_pages{kind=\"free\"} 2"));
         assert!(metrics.contains("lm_node_state_db_page_size_bytes 4096"));

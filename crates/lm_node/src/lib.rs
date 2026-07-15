@@ -6,6 +6,9 @@
 //! announcements, an in-memory routing table, and an optional mailbox queue.
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+pub const MAX_ROUTING_PEER_ADDRESSES: usize = 16;
+pub const MAX_ROUTING_PEER_ADDRESS_BYTES: usize = 512;
+
 use lm_core::{
     Identity, IdentityBackupPackage, LmError, MailboxMessage, PreKeyBundle, PublicPeerAnnounce,
     PublicPeerCapability, Result, SignedOneTimePreKeyRecord, UserId,
@@ -1768,6 +1771,10 @@ pub struct RoutingPeerRejectStats {
     pub missing_identity_public_key: u64,
     pub invalid_identity_public_key: u64,
     pub invalid_signature: u64,
+    #[serde(default)]
+    pub too_many_addresses: u64,
+    #[serde(default)]
+    pub address_too_large: u64,
 }
 
 impl RoutingPeerRejectStats {
@@ -1778,6 +1785,8 @@ impl RoutingPeerRejectStats {
             .saturating_add(self.missing_identity_public_key)
             .saturating_add(self.invalid_identity_public_key)
             .saturating_add(self.invalid_signature)
+            .saturating_add(self.too_many_addresses)
+            .saturating_add(self.address_too_large)
     }
 }
 
@@ -1789,6 +1798,8 @@ enum RoutingPeerRejectReason {
     MissingIdentityPublicKey,
     InvalidIdentityPublicKey,
     InvalidSignature,
+    TooManyAddresses,
+    AddressTooLarge,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -2206,6 +2217,12 @@ impl NativeNode {
             RoutingPeerRejectReason::InvalidSignature => {
                 stats.invalid_signature = stats.invalid_signature.saturating_add(1)
             }
+            RoutingPeerRejectReason::TooManyAddresses => {
+                stats.too_many_addresses = stats.too_many_addresses.saturating_add(1)
+            }
+            RoutingPeerRejectReason::AddressTooLarge => {
+                stats.address_too_large = stats.address_too_large.saturating_add(1)
+            }
         }
     }
 
@@ -2216,6 +2233,17 @@ impl NativeNode {
     ) -> Option<RoutingPeerRejectReason> {
         if peer.announce.expires_at <= now {
             return Some(RoutingPeerRejectReason::Expired);
+        }
+        if peer.announce.addresses.len() > MAX_ROUTING_PEER_ADDRESSES {
+            return Some(RoutingPeerRejectReason::TooManyAddresses);
+        }
+        if peer
+            .announce
+            .addresses
+            .iter()
+            .any(|address| address.len() > MAX_ROUTING_PEER_ADDRESS_BYTES)
+        {
+            return Some(RoutingPeerRejectReason::AddressTooLarge);
         }
         let expected_node_id = KademliaNodeId::from_peer_id(&peer.announce.peer_id);
         if peer.node_id != expected_node_id {
@@ -4077,6 +4105,51 @@ mod tests {
         assert_eq!(node.maintenance.routing_peer_rejects.mismatched_node_id, 1);
         assert_eq!(node.maintenance.routing_peer_rejects.expired, 1);
         assert_eq!(node.maintenance.routing_peer_rejects.local_node, 1);
+    }
+
+    #[test]
+    fn merge_verified_routing_peers_rejects_address_abuse() {
+        let (identity, _) = Identity::create_with_passphrase("routing address limits").unwrap();
+        let too_many_announce = NodeConfig {
+            peer_id: "too-many-addresses-peer".into(),
+            addresses: (0..=MAX_ROUTING_PEER_ADDRESSES)
+                .map(|index| format!("transport://too-many-{index}"))
+                .collect(),
+            ..Default::default()
+        }
+        .create_announce(&identity)
+        .unwrap();
+        let oversized_announce = NodeConfig {
+            peer_id: "oversized-address-peer".into(),
+            addresses: vec![format!(
+                "transport://{}",
+                "a".repeat(MAX_ROUTING_PEER_ADDRESS_BYTES)
+            )],
+            ..Default::default()
+        }
+        .create_announce(&identity)
+        .unwrap();
+        let make_peer = |announce: PublicPeerAnnounce| RoutingPeer {
+            node_id: KademliaNodeId::from_peer_id(&announce.peer_id),
+            announce,
+            identity_public_key: Some(BASE64.encode(identity.identity_public_key())),
+            last_seen_at: current_unix_timestamp(),
+        };
+        let mut node = NativeNode::new(NodeConfig {
+            peer_id: "routing-address-limit-local".into(),
+            ..Default::default()
+        });
+        assert_eq!(
+            node.merge_verified_routing_peers(vec![
+                make_peer(too_many_announce),
+                make_peer(oversized_announce),
+            ]),
+            0
+        );
+        assert!(node.kademlia.is_empty());
+        assert_eq!(node.maintenance.routing_peer_rejects.too_many_addresses, 1);
+        assert_eq!(node.maintenance.routing_peer_rejects.address_too_large, 1);
+        assert_eq!(node.maintenance.routing_peer_rejects.total(), 2);
     }
 
     #[test]
