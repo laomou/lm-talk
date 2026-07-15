@@ -109,6 +109,7 @@ function openGroupDetail(groupId: string) {
             </div>
             <small v-if="ctx.friendRequestRateSummaryText.value" class="danger-text">请求频率：{{ ctx.friendRequestRateSummaryText.value }}</small>
             <small>{{ ctx.mailboxInboxStatus.value }}</small>
+            <small>{{ ctx.mailboxQuotaStatusText.value }}</small>
             <small>{{ ctx.mailboxDedupeStatusText.value }}</small>
             <small v-if="ctx.mailboxFailureSummaryText.value" class="danger-text">{{ ctx.mailboxFailureSummaryText.value }}</small>
             <small v-if="ctx.mailboxInboxErrorText.value" class="danger-text">{{ ctx.mailboxInboxErrorText.value }}</small>

@@ -480,6 +480,7 @@ const syncTriggerPolicyText = computed(() => {
   return parts.join('；')
 })
 const mailboxInboxStatus = ref('尚未同步')
+const mailboxQuotaStatusText = ref('Mailbox 容量：尚未查询')
 const mailboxInboxErrorText = ref('')
 const mailboxFailureSummaryText = ref('')
 const mailboxDedupeCount = computed(() => processedMailboxIds.value.length)
@@ -1830,6 +1831,22 @@ async function syncNow() {
   }
 }
 
+
+function mailboxQuotaTextFromResponse(body: any): string {
+  const used = Number(body?.pending_bytes ?? body?.summary?.bytes ?? 0)
+  const maxRaw = body?.max_bytes_per_user
+  const max = maxRaw === null || maxRaw === undefined ? null : Number(maxRaw)
+  if (!Number.isFinite(used) || used < 0) return ''
+  if (!max || !Number.isFinite(max) || max <= 0) return `Mailbox 容量：${formatBytes(used)} / 未设置上限`
+  const ratio = Math.min(100, Math.round((used / max) * 100))
+  return `Mailbox 容量：${formatBytes(used)} / ${formatBytes(max)} (${ratio}%)`
+}
+
+function updateMailboxQuotaStatus(body: any) {
+  const text = mailboxQuotaTextFromResponse(body)
+  if (text) mailboxQuotaStatusText.value = text
+}
+
 async function refreshOutgoingMailboxDeliveryStatusesFromNode() {
   if (!nodeEnabled.value || !identity.value) return
   const candidates = messages.value.filter((message) =>
@@ -1844,6 +1861,7 @@ async function refreshOutgoingMailboxDeliveryStatusesFromNode() {
   for (const message of candidates) {
     try {
       const body = await nodeFetchJson(`/mailbox/status?user_id=${encodeURIComponent(message.peer_user_id)}&delivery_id=${encodeURIComponent(message.mailbox_delivery_id || '')}`)
+      updateMailboxQuotaStatus(body)
       const status = String(body?.delivery?.status ?? '')
       if ((status === 'delivered_unacked' || status === 'acked') && message.status !== 'read') {
         if (message.status !== 'delivered') updated += 1
@@ -2009,6 +2027,7 @@ async function pushMailboxPayload(to: ContactItem, kind: string, payload: string
     }),
   })
   nodeControlStatus.value = JSON.stringify(body, null, 2)
+  updateMailboxQuotaStatus(body)
   return String(body.delivery_id ?? '')
 }
 
@@ -4884,6 +4903,7 @@ async function ackMailboxToNode(userId: string, deliveryIds: string[]) {
     }),
   })
   nodeControlStatus.value = JSON.stringify(body, null, 2)
+  updateMailboxQuotaStatus(body)
 }
 
 
@@ -5464,6 +5484,7 @@ async function takeMailboxFromNode() {
     for (let page = 0; page < maxPages; page += 1) {
       const body = await nodeFetchJson(`/mailbox/take?user_id=${encodeURIComponent(userId)}&limit=${pageLimit}`)
       pages.push(body)
+      updateMailboxQuotaStatus(body)
       const messages = Array.isArray(body.messages) ? body.messages : []
       if (messages.length === 0) break
       totalMessages += messages.length
@@ -5475,6 +5496,8 @@ async function takeMailboxFromNode() {
       if (!body.more || ackIds.length === 0) break
       hasMoreAfterMaxPages = page === maxPages - 1 && Boolean(body.more)
     }
+    const lastPage = pages[pages.length - 1]
+    if (lastPage) updateMailboxQuotaStatus(lastPage)
     nodeMailboxTakeInfoText.value = JSON.stringify(pages.length === 1 ? pages[0] : { pages }, null, 2)
     if (totalMessages === 0) {
       mailboxInboxStatus.value = '没有新消息'
@@ -5854,7 +5877,7 @@ const appContext = {
   ratchetInfoText, safetyPolicy, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
-  nodeClosestTarget, nodeClosestInfoText, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
+  nodeClosestTarget, nodeClosestInfoText, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
   nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, clearPreKeyRawState, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,

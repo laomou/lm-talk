@@ -45,13 +45,13 @@ async function installMockSyncNode(context: BrowserContext, mailboxes: Map<strin
     if (url.pathname === '/mailbox/ack') {
       const body = req.postDataJSON() as { user_id?: string; delivery_ids?: string[] }
       for (const id of body.delivery_ids ?? []) deliveryStatus.set(`${body.user_id || ''}:${id}`, 'acked')
-      return route.fulfill({ json: { ok: true } })
+      return route.fulfill({ json: { ok: true, pending_bytes: 0, max_bytes_per_user: 2097152 } })
     }
     if (url.pathname === '/mailbox/status') {
       const userId = url.searchParams.get('user_id') || ''
       const deliveryId = url.searchParams.get('delivery_id') || ''
       const status = deliveryStatus.get(`${userId}:${deliveryId}`) || 'absent_or_expired'
-      return route.fulfill({ json: { user_id: userId, summary: {}, delivery: { delivery_id: deliveryId, status } } })
+      return route.fulfill({ json: { user_id: userId, summary: { bytes: 1024 }, max_bytes_per_user: 2097152, delivery: { delivery_id: deliveryId, status } } })
     }
     if (url.pathname === '/mailbox/push') {
       const body = req.postDataJSON() as { message_text: string }
@@ -69,7 +69,7 @@ async function installMockSyncNode(context: BrowserContext, mailboxes: Map<strin
         deliveryStatus.set(`${key}:${redeliveryId}`, 'pending')
       }
       mailboxes.set(key, queue)
-      return route.fulfill({ json: { delivery_id: deliveryId } })
+      return route.fulfill({ json: { delivery_id: deliveryId, pending_bytes: queue.length * 1024, max_bytes_per_user: 2097152 } })
     }
     if (url.pathname === '/mailbox/take') {
       const userId = url.searchParams.get('user_id') || ''
@@ -78,7 +78,7 @@ async function installMockSyncNode(context: BrowserContext, mailboxes: Map<strin
       const messages = queued.slice(0, limit)
       for (const item of messages) deliveryStatus.set(`${userId}:${item.delivery_id}`, 'delivered_unacked')
       mailboxes.set(userId, queued.slice(limit))
-      return route.fulfill({ json: { messages, returned: messages.length, pending: queued.length, more: queued.length > messages.length } })
+      return route.fulfill({ json: { messages, returned: messages.length, pending: queued.length, pending_bytes: queued.slice(limit).length * 1024, max_bytes_per_user: 2097152, more: queued.length > messages.length } })
     }
     return route.fulfill({ json: { ok: true } })
   })
@@ -335,6 +335,7 @@ test('消息同步可完成好友请求和消息收发', async ({ browser }) => 
 
   await bob.goto('/#/contacts')
   await bob.getByRole('button', { name: '同步' }).click()
+  await expect(bob.getByText(/Mailbox 容量：/)).toBeVisible()
   await expect.poll(async () => bob.locator('.contact').filter({ hasText: 'Alice' }).count(), { timeout: 15_000 }).toBeGreaterThan(0)
   await bob.goto('/#/contacts')
   await bob.getByRole('button', { name: '同步' }).click()
