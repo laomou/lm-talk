@@ -990,6 +990,7 @@ struct DhtFindValueRunStats {
     closer_nodes_returned: usize,
     closer_nodes_merged: usize,
     closer_nodes_rejected_non_closer: usize,
+    closer_nodes_rejected_duplicate: usize,
     peers_quarantined: usize,
     quarantine_threshold: u32,
     query_rounds: usize,
@@ -1157,6 +1158,7 @@ struct ControlRuntimeStats {
     dht_find_value_closer_nodes_returned: u64,
     dht_find_value_closer_nodes_merged: u64,
     dht_find_value_closer_nodes_rejected_non_closer: u64,
+    dht_find_value_closer_nodes_rejected_duplicate: u64,
     dht_find_value_peers_quarantined: u64,
     dht_find_value_query_rounds: u64,
     dht_find_value_alpha_max: usize,
@@ -1226,6 +1228,7 @@ impl ControlRuntimeStats {
             dht_find_value_closer_nodes_returned: 0,
             dht_find_value_closer_nodes_merged: 0,
             dht_find_value_closer_nodes_rejected_non_closer: 0,
+            dht_find_value_closer_nodes_rejected_duplicate: 0,
             dht_find_value_peers_quarantined: 0,
             dht_find_value_query_rounds: 0,
             dht_find_value_alpha_max: 0,
@@ -1651,6 +1654,13 @@ impl ControlRuntimeStats {
             "kind",
             "rejected_non_closer",
             self.dht_find_value_closer_nodes_rejected_non_closer,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_dht_find_value_closer_nodes_total",
+            "kind",
+            "rejected_duplicate",
+            self.dht_find_value_closer_nodes_rejected_duplicate,
         );
         push_metric_help(
             &mut out,
@@ -2332,6 +2342,9 @@ impl ControlRuntimeStats {
         self.dht_find_value_closer_nodes_rejected_non_closer = self
             .dht_find_value_closer_nodes_rejected_non_closer
             .saturating_add(stats.closer_nodes_rejected_non_closer as u64);
+        self.dht_find_value_closer_nodes_rejected_duplicate = self
+            .dht_find_value_closer_nodes_rejected_duplicate
+            .saturating_add(stats.closer_nodes_rejected_duplicate as u64);
         self.dht_find_value_peers_quarantined = self
             .dht_find_value_peers_quarantined
             .saturating_add(stats.peers_quarantined as u64);
@@ -3946,6 +3959,10 @@ fn dht_find_value_with_transport(
         ..Default::default()
     };
     let mut queue = peers.iter().take(max_peers).cloned().collect::<Vec<_>>();
+    let mut queued = queue
+        .iter()
+        .map(dht_query_peer_dedup_key)
+        .collect::<HashSet<_>>();
     let mut seen = HashSet::new();
     let mut index = 0usize;
     let mut found = false;
@@ -4012,6 +4029,7 @@ fn dht_find_value_with_transport(
                     merge_find_value_closer_results(
                         node,
                         &mut queue,
+                        &mut queued,
                         &seen,
                         &mut stats,
                         key,
@@ -4045,6 +4063,7 @@ fn dht_find_value_with_transport(
 fn merge_find_value_closer_results(
     node: &mut NativeNode,
     queue: &mut Vec<SyncPeerConfig>,
+    queued: &mut HashSet<(String, Option<String>)>,
     seen: &HashSet<(String, Option<String>)>,
     stats: &mut DhtFindValueRunStats,
     key: lm_node::DhtRecordKey,
@@ -4078,18 +4097,40 @@ fn merge_find_value_closer_results(
     closer_nodes.sort_by_key(|peer| peer.node_id.xor_distance(&target_node_id));
     for closer_node in closer_nodes {
         let candidate = sync_peer_config_from_routing_peer_for_seed(seed_peer, &closer_node);
+        let Some(candidate) = candidate else {
+            let merged = node.merge_verified_routing_peers(vec![closer_node]);
+            stats.closer_nodes_merged = stats.closer_nodes_merged.saturating_add(merged);
+            continue;
+        };
+        let candidate_key = dht_query_peer_dedup_key(&candidate);
+        if candidate_is_seed_peer(seed_peer, &candidate)
+            || seen.contains(&candidate_key)
+            || queued.contains(&candidate_key)
+        {
+            stats.closer_nodes_rejected_duplicate =
+                stats.closer_nodes_rejected_duplicate.saturating_add(1);
+            continue;
+        }
         let merged = node.merge_verified_routing_peers(vec![closer_node]);
         stats.closer_nodes_merged = stats.closer_nodes_merged.saturating_add(merged);
-        if merged > 0 {
-            if let Some(candidate) = candidate {
-                if !seen.contains(&(candidate.url.clone(), candidate.peer_id.clone()))
-                    && queue.len() < max_peers
-                {
-                    queue.push(candidate);
-                }
-            }
+        if merged > 0 && queue.len() < max_peers && queued.insert(candidate_key) {
+            queue.push(candidate);
         }
     }
+}
+
+fn dht_query_peer_dedup_key(peer: &SyncPeerConfig) -> (String, Option<String>) {
+    (peer.url.clone(), peer.peer_id.clone())
+}
+
+fn candidate_is_seed_peer(seed_peer: &SyncPeerConfig, candidate: &SyncPeerConfig) -> bool {
+    candidate.url == seed_peer.url
+        || candidate
+            .peer_id
+            .as_deref()
+            .zip(seed_peer.peer_id.as_deref())
+            .map(|(candidate, seed)| candidate == seed)
+            .unwrap_or(false)
 }
 
 fn routing_peer_makes_find_value_progress(
@@ -5288,6 +5329,60 @@ mod tests {
         assert_eq!(requests.len(), 2);
         assert_eq!(requests[0].0, "transport://seed");
         assert_eq!(requests[1].0, "transport://iterative-closer");
+    }
+
+    #[test]
+    fn dht_find_value_rejects_duplicate_closer_nodes_before_queueing() {
+        let (identity, _) = Identity::create_with_passphrase("duplicate closer identity").unwrap();
+        let (target_user, _) = Identity::create_with_passphrase("duplicate closer target").unwrap();
+        let key = DhtRecordKey::for_mailbox_hint(target_user.user_id());
+        let closer_announce = NodeConfig {
+            peer_id: "duplicate-closer-peer".into(),
+            addresses: vec!["transport://duplicate-closer-peer".into()],
+            ..Default::default()
+        }
+        .create_announce(&identity)
+        .unwrap();
+        let closer_peer = lm_node::RoutingPeer {
+            node_id: lm_node::KademliaNodeId::from_peer_id(&closer_announce.peer_id),
+            announce: closer_announce,
+            identity_public_key: Some(BASE64.encode(identity.identity_public_key())),
+            last_seen_at: current_unix_timestamp(),
+        };
+        let seed_peer = SyncPeerConfig {
+            url: "transport://duplicate-seed".into(),
+            token: None,
+            // Leave peer_id unknown so this test focuses on duplicate queue
+            // filtering rather than the progress filter.
+            peer_id: None,
+        };
+        let transport = FakeDhtTransport {
+            responses: Mutex::new(vec![
+                DhtRpcResponse::Value {
+                    request_id: "duplicate-second".into(),
+                    record: None,
+                    closer_records: Vec::new(),
+                    closer_nodes: Vec::new(),
+                },
+                DhtRpcResponse::Value {
+                    request_id: "duplicate-first".into(),
+                    record: None,
+                    closer_records: Vec::new(),
+                    closer_nodes: vec![closer_peer.clone(), closer_peer],
+                },
+            ]),
+            ..Default::default()
+        };
+        let mut node = NativeNode::new(NodeConfig::default());
+        let stats =
+            dht_find_value_with_transport(&mut node, &[seed_peer], key, 8, 3, 1, &transport);
+        assert_eq!(stats.attempts, 2);
+        assert_eq!(stats.closer_nodes_returned, 2);
+        assert_eq!(stats.closer_nodes_merged, 1);
+        assert_eq!(stats.closer_nodes_rejected_duplicate, 1);
+        let requests = transport.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[1].0, "transport://duplicate-closer-peer");
     }
 
     #[test]
@@ -6801,6 +6896,7 @@ connection: close
                 closer_nodes_returned: 5,
                 closer_nodes_merged: 2,
                 closer_nodes_rejected_non_closer: 4,
+                closer_nodes_rejected_duplicate: 6,
                 peers_quarantined: 1,
                 exhausted: true,
                 ..Default::default()
@@ -6813,6 +6909,7 @@ connection: close
         assert_eq!(stats.dht_find_value_failures, 1);
         assert_eq!(stats.dht_find_value_found_records, 1);
         assert_eq!(stats.dht_find_value_closer_nodes_rejected_non_closer, 4);
+        assert_eq!(stats.dht_find_value_closer_nodes_rejected_duplicate, 6);
         assert_eq!(stats.dht_find_value_peers_quarantined, 1);
         assert_eq!(stats.dht_find_value_query_rounds, 0);
         assert_eq!(stats.dht_find_value_alpha_max, 0);
@@ -6930,6 +7027,11 @@ connection: close
         assert!(
             metrics.contains(
                 "lm_node_dht_find_value_closer_nodes_total{kind=\"rejected_non_closer\"} 4"
+            )
+        );
+        assert!(
+            metrics.contains(
+                "lm_node_dht_find_value_closer_nodes_total{kind=\"rejected_duplicate\"} 6"
             )
         );
         assert!(metrics.contains("lm_node_dht_find_value_peers_quarantined_total 1"));
