@@ -32,6 +32,13 @@ updates:
     commit-message:
       prefix: "deps"
       include: "scope"
+    ignore:
+      # Frontend toolchain semver-major updates can break vue-tsc/Vite compatibility
+      # (TypeScript 7 removed package subpaths used by current vue-tsc). Keep
+      # patch/minor updates automated, but migrate majors on a compatibility branch.
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
 
   - package-ecosystem: "github-actions"
     directory: "/"
