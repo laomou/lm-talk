@@ -74,7 +74,7 @@ jobs:
           if [[ "${{ matrix.target }}" == *"windows"* || "${{ matrix.target }}" == *"msvc"* ]]; then
             BIN="${BIN}.exe"
           fi
-          "$BIN" > lm_node_help.txt
+          "$BIN" > lm_node_help.txt 2>&1
           grep -q "LM Talk" lm_node_help.txt
 
       - name: Package native node
