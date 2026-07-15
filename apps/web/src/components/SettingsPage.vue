@@ -125,6 +125,16 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
               <button class="secondary" @click="ctx.resetDhtPeerHealth(peer.url)">重置 {{ peer.url }}</button>
             </div>
           </div>
+          <label for="dht-key-value-input">DHT key 派生</label>
+          <div class="inline-field">
+            <select v-model="ctx.nodeDhtKeyKind.value" aria-label="DHT key 类型">
+              <option value="prekey">PreKey(UserID)</option>
+              <option value="mailbox-hint">MailboxHint(UserID)</option>
+              <option value="public-peer">PublicPeer(peer_id)</option>
+            </select>
+            <input id="dht-key-value-input" v-model="ctx.nodeDhtKeyValue.value" aria-label="DHT key 输入值" placeholder="UserID 或 peer_id" />
+            <button class="secondary" @click="ctx.deriveDhtKeyForFindValue">派生 key</button>
+          </div>
           <label for="dht-find-key-input">DHT record key</label>
           <div class="inline-field">
             <input id="dht-find-key-input" v-model="ctx.nodeDhtFindValueKey.value" aria-label="DHT record key" placeholder="64 位十六进制 key" />
