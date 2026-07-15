@@ -3,7 +3,7 @@ use libp2p::{
     Multiaddr, PeerId, StreamProtocol, connection_limits, noise, request_response,
     swarm::NetworkBehaviour, tcp, yamux,
 };
-use lm_core::PublicPeerAnnounce;
+use lm_core::{PublicPeerAnnounce, UserId};
 use lm_node::{
     ConsumedOneTimePreKey, ControlRequest, DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES,
     DhtRecord, DhtRecordReplicationPlan, DhtRpcRequest, DhtRpcResponse, MailboxDelivery,
@@ -4804,12 +4804,9 @@ fn handle_control_dht_find_value_run(
     path: &str,
     runtime_stats: Option<&mut ControlRuntimeStats>,
 ) -> ControlHttpResponse {
-    let Some(key_hex) = query_param_value(path, "key") else {
-        return ControlHttpResponse::text(400, "missing key");
-    };
-    let key = match lm_node::DhtRecordKey::from_hex(&key_hex) {
+    let key = match dht_record_key_from_find_value_query(path) {
         Ok(key) => key,
-        Err(err) => return ControlHttpResponse::text(400, err.to_string()),
+        Err(err) => return ControlHttpResponse::text(400, err),
     };
     let limit = query_param_value(path, "limit")
         .and_then(|value| value.parse::<usize>().ok())
@@ -4864,6 +4861,30 @@ fn handle_control_dht_find_value_run(
             stats,
         },
     )
+}
+
+fn dht_record_key_from_find_value_query(path: &str) -> Result<lm_node::DhtRecordKey, String> {
+    if let Some(key_hex) = query_param_value(path, "key") {
+        return lm_node::DhtRecordKey::from_hex(&key_hex).map_err(|err| err.to_string());
+    }
+    let kind = query_param_value(path, "kind").ok_or_else(|| "missing key or kind".to_string())?;
+    let value = query_param_value(path, "value").ok_or_else(|| "missing value".to_string())?;
+    let value = value.trim();
+    if value.is_empty() {
+        return Err("missing value".into());
+    }
+    match kind.trim().to_ascii_lowercase().as_str() {
+        "public-peer" | "public_peer" | "peer" => Ok(lm_node::DhtRecordKey::for_public_peer(value)),
+        "prekey" | "pre-key" => {
+            let user_id = UserId::from_raw(value.to_string()).map_err(|err| err.to_string())?;
+            Ok(lm_node::DhtRecordKey::for_prekey(&user_id))
+        }
+        "mailbox-hint" | "mailbox_hint" | "mailbox" => {
+            let user_id = UserId::from_raw(value.to_string()).map_err(|err| err.to_string())?;
+            Ok(lm_node::DhtRecordKey::for_mailbox_hint(&user_id))
+        }
+        _ => Err("unsupported dht key kind; expected public-peer, prekey, or mailbox-hint".into()),
+    }
 }
 
 fn query_param_value(path: &str, name: &str) -> Option<String> {
@@ -6060,6 +6081,26 @@ mod tests {
         assert_eq!(body["stats"]["attempts"], 0);
         assert_eq!(body["stats"]["alpha"], 3);
         assert_eq!(body["stats"]["exhausted"], true);
+
+        let (target_identity, _) =
+            Identity::create_with_passphrase("find value query key").unwrap();
+        let derived = handle_control_dht_find_value_run(
+            &mut node,
+            &[],
+            DhtRunnerConfig::default(),
+            &format!(
+                "/dht/find-value?kind=mailbox-hint&value={}&limit=8&max_peers=2",
+                target_identity.user_id()
+            ),
+            None,
+        );
+        assert_eq!(derived.status, 200, "{}", derived.body);
+        let body: serde_json::Value = serde_json::from_str(&derived.body).unwrap();
+        assert_eq!(
+            body["key"],
+            DhtRecordKey::for_mailbox_hint(target_identity.user_id()).to_hex()
+        );
+        assert_eq!(body["found"], false);
 
         for failure in 0..DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES {
             node.sync_status.record_failure(
