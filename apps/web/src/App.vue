@@ -5118,6 +5118,21 @@ async function publishPreKeyToNode() {
   })
 }
 
+async function publishAndCheckMyPreKeyDht() {
+  await runAsync('发布并检查我的 PreKey DHT', async () => {
+    if (!identity.value?.user_id) throw new Error('需要先登录身份')
+    if (!prekeyBundleText.value.trim()) createMyPreKeyBundleText()
+    if (!prekeyBundleText.value.trim()) throw new Error('请先生成 PreKey Bundle')
+    const body = await publishPreKeyBundlePayload()
+    nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
+    prekeyStatusSummary.value = `${summarizePreKeyStatus(body)}，已发布，正在检查 DHT`
+    fillDhtKeyInput('prekey', identity.value.user_id)
+    const keyPayload = await deriveDhtKeyPayload()
+    await runDhtFindValueForKey(String(keyPayload.key || nodeDhtFindValueKey.value).trim())
+    prekeyStatusSummary.value = `${summarizePreKeyStatus(body)}，已发布并完成 DHT 查找`
+  })
+}
+
 async function publishPreKeyBundlePayload(): Promise<any> {
   return nodeFetchJson('/prekey/publish', {
     method: 'POST',
@@ -6079,7 +6094,7 @@ const appContext = {
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
   nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, fillCurrentPublicPeerDhtKeyInput, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, runDhtFindValueNow, runDhtRoutingRefreshNow, runDhtReplicationNow, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
-  nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, clearPreKeyRawState, copyText,
+  nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, publishAndCheckMyPreKeyDht, clearPreKeyRawState, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
   ratchetDhStepText, saveSafetyPolicy, createPeerAnnounceText, inspectPeerAnnounceText, createPublicPeerAnnounceText, inspectPublicPeerAnnounceText,

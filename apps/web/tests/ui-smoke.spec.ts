@@ -344,6 +344,8 @@ test('消息同步可完成好友请求和消息收发', async ({ browser }) => 
   await expect(bob.getByText(/DHT 复制：peer 2，records 4，尝试 2，成功 2/)).toBeVisible()
   await bob.getByRole('button', { name: '刷新 DHT 路由' }).click()
   await expect(bob.getByText(/DHT 路由刷新：peer 2，尝试 2，成功 2/)).toBeVisible()
+  await bob.getByRole('button', { name: '发布并查 DHT' }).click()
+  await expect(bob.getByText(/已发布并完成 DHT 查找/)).toBeVisible()
   await bob.getByLabel('当前会话自动发送已读回执').check()
 
   await alice.goto('/#/contacts')
