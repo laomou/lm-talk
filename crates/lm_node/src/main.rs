@@ -344,6 +344,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .map(|value| value.parse::<u32>())
                     .transpose()?
                     .or(file_config.mailbox_global_rate_limit_max_messages);
+            let max_mailbox_bytes_per_user = optional_arg(&args, "--max-mailbox-bytes-per-user")?
+                .or_else(|| env::var("LM_NODE_MAX_MAILBOX_BYTES_PER_USER").ok())
+                .map(|value| value.parse::<u64>())
+                .transpose()?
+                .or(file_config.max_mailbox_bytes_per_user)
+                .or(lm_node::NodeConfig::default().max_mailbox_bytes_per_user);
             let control_token_direct = optional_arg(&args, "--control-token")?
                 .or_else(|| env::var("LM_NODE_CONTROL_TOKEN").ok())
                 .or(file_config.control_token);
@@ -377,6 +383,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         mailbox_sender_rate_limit_max_messages,
                         mailbox_global_rate_limit_window_seconds,
                         mailbox_global_rate_limit_max_messages,
+                        max_mailbox_bytes_per_user,
                         dht_peer_quarantine_consecutive_failures,
                         ..Default::default()
                     })
@@ -389,6 +396,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         mailbox_sender_rate_limit_max_messages,
                         mailbox_global_rate_limit_window_seconds,
                         mailbox_global_rate_limit_max_messages,
+                        max_mailbox_bytes_per_user,
                         dht_peer_quarantine_consecutive_failures,
                         ..Default::default()
                     })
@@ -400,6 +408,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     mailbox_sender_rate_limit_max_messages,
                     mailbox_global_rate_limit_window_seconds,
                     mailbox_global_rate_limit_max_messages,
+                    max_mailbox_bytes_per_user,
                     dht_peer_quarantine_consecutive_failures,
                     ..Default::default()
                 })
@@ -412,6 +421,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 mailbox_global_rate_limit_window_seconds;
             node.config.mailbox_global_rate_limit_max_messages =
                 mailbox_global_rate_limit_max_messages;
+            node.config.max_mailbox_bytes_per_user = max_mailbox_bytes_per_user;
             node.config.dht_peer_quarantine_consecutive_failures =
                 dht_peer_quarantine_consecutive_failures;
             serve_control(
@@ -2731,6 +2741,7 @@ struct ServeControlConfigFile {
     mailbox_sender_rate_limit_max_messages: Option<u32>,
     mailbox_global_rate_limit_window_seconds: Option<u64>,
     mailbox_global_rate_limit_max_messages: Option<u32>,
+    max_mailbox_bytes_per_user: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -7614,6 +7625,7 @@ connection: close
                 "mailbox_sender_rate_limit_max_messages": 20,
                 "mailbox_global_rate_limit_window_seconds": 60,
                 "mailbox_global_rate_limit_max_messages": 200,
+                "max_mailbox_bytes_per_user": 123456,
                 "sync_peers": [
                     { "url": "http://127.0.0.1:8787", "peer_id": "peer-8787", "token": "peer-token", "token_file": "peer.secret" },
                     { "url": "http://127.0.0.1:8788", "peer_id": "peer-8788", "token_file": "peer-8788.secret" }
@@ -7649,6 +7661,7 @@ connection: close
         assert_eq!(config.mailbox_sender_rate_limit_max_messages, Some(20));
         assert_eq!(config.mailbox_global_rate_limit_window_seconds, Some(60));
         assert_eq!(config.mailbox_global_rate_limit_max_messages, Some(200));
+        assert_eq!(config.max_mailbox_bytes_per_user, Some(123456));
         let sync_peers = config.sync_peers.unwrap();
         assert_eq!(sync_peers.len(), 2);
         let peer = &sync_peers[0];

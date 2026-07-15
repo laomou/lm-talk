@@ -949,7 +949,7 @@ MVP 群聊采用逐个加密。
 
 2. **Mailbox 生命周期**
    - [x] TTL 过期清理（push/take/restore/merge 路径会清理过期 delivery）。
-   - [x] 基础 per-user / per-node quota（`max_mailbox_messages_per_user` / `max_mailbox_bytes`）。
+   - [x] 基础 per-user / per-node quota（`max_mailbox_messages_per_user` / `max_mailbox_bytes_per_user` / `max_mailbox_bytes`）。
    - [x] 基础 message_id 去重；delivery_id 去重保留在 snapshot merge 路径。
    - [x] 持久化 quota/TTL/去重索引到正式数据库：SQLite `mailbox_deliveries` 表包含 `expires_at`、`to_user_id`、`message_id` 唯一索引。
    - [x] state-file crash recovery 覆盖 mailbox push 后崩溃、take 未 ack 后崩溃、ack 后崩溃。

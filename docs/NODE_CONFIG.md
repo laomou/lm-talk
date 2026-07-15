@@ -45,6 +45,7 @@ CLI 参数 > 环境变量 > config file > 默认值
 | `log_format` | string | `text` | 控制面 stdout 日志格式；可选 `text` 或 `json`。`json` 会输出单行 JSON，字段包含 `ts`、`level`、`event`、`message`、`fields`。 |
 | `mailbox_global_rate_limit_window_seconds` | integer/null | `null` | Mailbox `push` 全局限流窗口；与 `mailbox_global_rate_limit_max_messages` 同时配置且均大于 0 才启用。 |
 | `mailbox_global_rate_limit_max_messages` | integer/null | `null` | 节点在窗口内最多可成功保存的 MailboxMessage 总数；超限返回 `429`。 |
+| `max_mailbox_bytes_per_user` | integer/null | `2097152` | 每个收件用户最多保留的未 ACK MailboxMessage 估算字节数；超限返回 `400` / `PayloadTooLarge`。 |
 | `mailbox_sender_rate_limit_window_seconds` | integer/null | `null` | Mailbox `push` 按发送者 UserID 的限流窗口；与 `mailbox_sender_rate_limit_max_messages` 同时配置且均大于 0 才启用。 |
 | `mailbox_sender_rate_limit_max_messages` | integer/null | `null` | 每个发送者在窗口内最多可 `push` 的 MailboxMessage 数；超限返回 `429`。 |
 
@@ -87,6 +88,7 @@ CLI 参数 > 环境变量 > config file > 默认值
 | `log_format` | `--log-format` | `LM_NODE_LOG_FORMAT` |
 | `mailbox_global_rate_limit_window_seconds` | `--mailbox-global-rate-limit-window-seconds` | `LM_NODE_MAILBOX_GLOBAL_RATE_LIMIT_WINDOW_SECONDS` |
 | `mailbox_global_rate_limit_max_messages` | `--mailbox-global-rate-limit-max-messages` | `LM_NODE_MAILBOX_GLOBAL_RATE_LIMIT_MAX_MESSAGES` |
+| `max_mailbox_bytes_per_user` | `--max-mailbox-bytes-per-user` | `LM_NODE_MAX_MAILBOX_BYTES_PER_USER` |
 | `mailbox_sender_rate_limit_window_seconds` | `--mailbox-sender-rate-limit-window-seconds` | `LM_NODE_MAILBOX_SENDER_RATE_LIMIT_WINDOW_SECONDS` |
 | `mailbox_sender_rate_limit_max_messages` | `--mailbox-sender-rate-limit-max-messages` | `LM_NODE_MAILBOX_SENDER_RATE_LIMIT_MAX_MESSAGES` |
 
@@ -123,7 +125,7 @@ SQLite `state_db` 中对应表：
 - 生产环境必须配置 `control_token` 或 `control_token_file`；未配置 token 时非 `/health` API 仅允许 loopback 客户端。
 - Bearer token、同步 peer token 建议使用 secret 文件或环境变量注入。
 - 当前控制面内置 HTTP，不直接提供 TLS；公网部署应放在 TLS 反向代理后。
-- 面向不完全可信客户端开放 Mailbox 时，建议同时启用控制面 per-client IP 限流、mailbox 全局限流和 mailbox sender 限流，例如 `rate_limit_*` + `mailbox_global_rate_limit_*` + `mailbox_sender_rate_limit_*`。
+- 面向不完全可信客户端开放 Mailbox 时，建议同时启用控制面 per-client IP 限流、mailbox 全局限流、mailbox sender 限流和 per-recipient 字节配额，例如 `rate_limit_*` + `mailbox_global_rate_limit_*` + `mailbox_sender_rate_limit_*` + `max_mailbox_bytes_per_user`。
 - Mailbox `push` 拒绝原因会累计到 `maintenance.mailbox_push_rejects`，并通过 `/control/metrics` 的 `lm_node_mailbox_push_rejections_total{reason=...}` 暴露，便于观察异常 payload、重复消息和限流命中。
 - Mailbox `ack` 拒绝原因会累计到 `maintenance.mailbox_ack_rejects`，并通过 `/control/metrics` 的 `lm_node_mailbox_ack_rejections_total{reason=...}` 暴露，便于观察异常 ACK 批次、无效 user_id 或超长 delivery id；`/health` 会暴露 Mailbox take/ack 上限、控制面入站/peer 超时、control-peer 响应上限和 libp2p DHT RPC request/response/concurrency 上限和 libp2p DHT 连接数上限，便于确认反滥用参数。
 - `GET /mailbox/status?user_id=...&delivery_id=...` 返回该用户邮箱的 `summary` 和可选 delivery 状态：`pending`（尚未被 take）、`delivered_unacked`（已被 take 但未 ack）、`acked`（节点已收到 ACK，并在短期 tombstone 内保留）、`absent_or_expired`（不存在或 tombstone/消息已过期清理）。该端点用于客户端区分“对方未取”“已取但 ACK 未完成”和“ACK 已完成”。
@@ -176,6 +178,7 @@ SQLite `state_db` 中对应表：
   "rate_limit_max_requests": 600,
   "mailbox_global_rate_limit_window_seconds": 60,
   "mailbox_global_rate_limit_max_messages": 1000,
+  "max_mailbox_bytes_per_user": 2097152,
   "mailbox_sender_rate_limit_window_seconds": 60,
   "mailbox_sender_rate_limit_max_messages": 120
 }

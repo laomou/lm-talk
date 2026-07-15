@@ -22,6 +22,7 @@ pub const DEFAULT_K_BUCKET_SIZE: usize = 20;
 pub const DEFAULT_MAX_DHT_RECORDS: usize = 4096;
 pub const DEFAULT_MAX_DHT_RECORD_VALUE_BYTES: usize = 256 * 1024;
 pub const DEFAULT_MAX_DHT_RECORD_TTL_SECONDS: u64 = 30 * 24 * 60 * 60;
+pub const DEFAULT_MAX_MAILBOX_BYTES_PER_USER: u64 = 2 * 1024 * 1024;
 pub const DEFAULT_MAX_MAILBOX_ACK_IDS: usize = 2048;
 pub const DEFAULT_MAX_MAILBOX_ACK_ID_BYTES: usize = 128;
 pub const DEFAULT_MAX_MAILBOX_TAKE_LIMIT: usize = 200;
@@ -598,6 +599,8 @@ pub struct NodeConfig {
     pub capabilities: Vec<PublicPeerCapability>,
     pub max_mailbox_bytes: Option<u64>,
     pub max_message_ttl_seconds: Option<u64>,
+    #[serde(default = "default_max_mailbox_bytes_per_user")]
+    pub max_mailbox_bytes_per_user: Option<u64>,
     #[serde(default = "default_max_mailbox_messages_per_user")]
     pub max_mailbox_messages_per_user: Option<usize>,
     #[serde(default)]
@@ -612,6 +615,10 @@ pub struct NodeConfig {
     pub dht_peer_quarantine_consecutive_failures: u32,
     pub max_relay_bandwidth_kbps: Option<u64>,
     pub announce_ttl_seconds: u64,
+}
+
+fn default_max_mailbox_bytes_per_user() -> Option<u64> {
+    Some(DEFAULT_MAX_MAILBOX_BYTES_PER_USER)
 }
 
 fn default_max_mailbox_messages_per_user() -> Option<usize> {
@@ -630,6 +637,7 @@ impl Default for NodeConfig {
             capabilities: vec![PublicPeerCapability::Bootstrap, PublicPeerCapability::Dht],
             max_mailbox_bytes: Some(10 * 1024 * 1024),
             max_message_ttl_seconds: Some(24 * 3600),
+            max_mailbox_bytes_per_user: default_max_mailbox_bytes_per_user(),
             max_mailbox_messages_per_user: default_max_mailbox_messages_per_user(),
             mailbox_sender_rate_limit_window_seconds: None,
             mailbox_sender_rate_limit_max_messages: None,
@@ -797,7 +805,7 @@ impl MailboxStore {
         message: MailboxMessage,
         from_identity_public_key: &[u8; 32],
     ) -> Result<String> {
-        self.push_verified_with_limits(message, from_identity_public_key, None, None, None)
+        self.push_verified_with_limits(message, from_identity_public_key, None, None, None, None)
     }
 
     pub fn push_verified_with_limits(
@@ -805,6 +813,7 @@ impl MailboxStore {
         message: MailboxMessage,
         from_identity_public_key: &[u8; 32],
         max_total_bytes: Option<u64>,
+        max_bytes_per_user: Option<u64>,
         max_messages_per_user: Option<usize>,
         max_message_ttl_seconds: Option<u64>,
     ) -> Result<String> {
@@ -825,6 +834,15 @@ impl MailboxStore {
         let message_bytes = mailbox_delivery_size_bytes(&message);
         if let Some(max_total_bytes) = max_total_bytes {
             if self.total_bytes().saturating_add(message_bytes) > max_total_bytes as usize {
+                return Err(LmError::PayloadTooLarge);
+            }
+        }
+        if let Some(max_bytes_per_user) = max_bytes_per_user {
+            if self
+                .bytes_for(&message.to_user_id)
+                .saturating_add(message_bytes)
+                > max_bytes_per_user as usize
+            {
                 return Err(LmError::PayloadTooLarge);
             }
         }
@@ -968,6 +986,18 @@ impl MailboxStore {
             .flat_map(|deliveries| deliveries.iter())
             .map(|delivery| mailbox_delivery_size_bytes(&delivery.message))
             .sum()
+    }
+
+    pub fn bytes_for(&self, user_id: &UserId) -> usize {
+        self.deliveries
+            .get(user_id)
+            .map(|deliveries| {
+                deliveries
+                    .iter()
+                    .map(|delivery| mailbox_delivery_size_bytes(&delivery.message))
+                    .sum()
+            })
+            .unwrap_or(0)
     }
 
     pub fn prune_expired(&mut self, now: u64) -> usize {
@@ -3046,6 +3076,7 @@ impl NativeNode {
             message.clone(),
             &public_key,
             self.config.max_mailbox_bytes,
+            self.config.max_mailbox_bytes_per_user,
             self.config.max_mailbox_messages_per_user,
             self.config.max_message_ttl_seconds,
         ) {
@@ -3693,6 +3724,7 @@ mod tests {
                     Some(1),
                     None,
                     None,
+                    None,
                 )
                 .unwrap_err(),
             LmError::PayloadTooLarge
@@ -3704,13 +3736,34 @@ mod tests {
                     &alice.identity_public_key(),
                     None,
                     None,
+                    None,
                     Some(1),
                 )
                 .unwrap_err(),
             LmError::PayloadTooLarge
         );
+        assert_eq!(
+            mailbox
+                .push_verified_with_limits(
+                    message.clone(),
+                    &alice.identity_public_key(),
+                    None,
+                    Some(1),
+                    None,
+                    None,
+                )
+                .unwrap_err(),
+            LmError::PayloadTooLarge
+        );
         mailbox
-            .push_verified_with_limits(message, &alice.identity_public_key(), None, Some(1), None)
+            .push_verified_with_limits(
+                message.clone(),
+                &alice.identity_public_key(),
+                None,
+                None,
+                Some(1),
+                None,
+            )
             .unwrap();
         let second = MailboxMessage::new(
             &alice,
@@ -3725,6 +3778,7 @@ mod tests {
                 .push_verified_with_limits(
                     second,
                     &alice.identity_public_key(),
+                    None,
                     None,
                     Some(1),
                     None,
