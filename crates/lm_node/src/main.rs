@@ -539,7 +539,7 @@ struct SyncPeerConfig {
     peer_id: Option<String>,
 }
 
-trait DhtTransport {
+trait DhtTransport: Sync {
     fn send_dht_rpc(
         &self,
         peer: &SyncPeerConfig,
@@ -3885,10 +3885,10 @@ fn dht_find_value_with_transport(
     let mut queue = peers.iter().take(max_peers).cloned().collect::<Vec<_>>();
     let mut seen = HashSet::new();
     let mut index = 0usize;
-    while index < queue.len() && stats.attempts < max_peers {
-        stats.query_rounds = stats.query_rounds.saturating_add(1);
-        let round_end = (index + alpha).min(queue.len());
-        while index < round_end && stats.attempts < max_peers {
+    let mut found = false;
+    while index < queue.len() && stats.attempts < max_peers && !found {
+        let mut round_peers = Vec::new();
+        while index < queue.len() && round_peers.len() < alpha && stats.attempts < max_peers {
             let peer = queue[index].clone();
             index += 1;
             let peer_key = (peer.url.clone(), peer.peer_id.clone());
@@ -3896,7 +3896,41 @@ fn dht_find_value_with_transport(
                 continue;
             }
             stats.attempts = stats.attempts.saturating_add(1);
-            match send_dht_find_value(&peer, key, limit, transport) {
+            round_peers.push(peer);
+        }
+        if round_peers.is_empty() {
+            continue;
+        }
+        stats.query_rounds = stats.query_rounds.saturating_add(1);
+        let round_results = std::thread::scope(|scope| {
+            let handles = round_peers
+                .iter()
+                .map(|peer| {
+                    scope.spawn(move || {
+                        let response = send_dht_find_value(peer, key, limit, transport)
+                            .map_err(|err| err.to_string());
+                        (peer.clone(), response)
+                    })
+                })
+                .collect::<Vec<_>>();
+            handles
+                .into_iter()
+                .map(|handle| {
+                    handle.join().unwrap_or_else(|_| {
+                        (
+                            SyncPeerConfig {
+                                url: "thread-panic".into(),
+                                token: None,
+                                peer_id: None,
+                            },
+                            Err("dht find-value worker panicked".into()),
+                        )
+                    })
+                })
+                .collect::<Vec<_>>()
+        });
+        for (peer, response) in round_results {
+            match response {
                 Ok(DhtRpcResponse::Value {
                     record,
                     closer_records,
@@ -3907,42 +3941,22 @@ fn dht_find_value_with_transport(
                     if let Some(record) = record {
                         if node.accept_dht_record_from_peer(record) {
                             stats.found_records = stats.found_records.saturating_add(1);
+                            found = true;
                             break;
                         }
                     }
-                    let closer_records = closer_records
-                        .into_iter()
-                        .take(dht_response_record_limit(limit))
-                        .collect::<Vec<_>>();
-                    stats.closer_records = stats
-                        .closer_records
-                        .saturating_add(node.merge_dht_records_from_peer(closer_records));
-                    let mut closer_nodes = closer_nodes
-                        .into_iter()
-                        .take(dht_response_node_limit(limit))
-                        .collect::<Vec<_>>();
-                    let target_node_id = key.to_node_id();
-                    closer_nodes.sort_by_key(|peer| peer.node_id.xor_distance(&target_node_id));
-                    stats.closer_nodes_returned = stats
-                        .closer_nodes_returned
-                        .saturating_add(closer_nodes.len());
-                    for closer_node in closer_nodes {
-                        let candidate =
-                            sync_peer_config_from_routing_peer_for_seed(&peer, &closer_node);
-                        let merged = node.merge_verified_routing_peers(vec![closer_node]);
-                        stats.closer_nodes_merged =
-                            stats.closer_nodes_merged.saturating_add(merged);
-                        if merged > 0 {
-                            if let Some(candidate) = candidate {
-                                if !seen
-                                    .contains(&(candidate.url.clone(), candidate.peer_id.clone()))
-                                    && queue.len() < max_peers
-                                {
-                                    queue.push(candidate);
-                                }
-                            }
-                        }
-                    }
+                    merge_find_value_closer_results(
+                        node,
+                        &mut queue,
+                        &seen,
+                        &mut stats,
+                        key,
+                        limit,
+                        max_peers,
+                        &peer,
+                        closer_records,
+                        closer_nodes,
+                    );
                 }
                 Ok(_) | Err(_) => {
                     stats.failures = stats.failures.saturating_add(1);
@@ -3952,6 +3966,51 @@ fn dht_find_value_with_transport(
     }
     stats.exhausted = stats.found_records == 0 && index >= queue.len();
     stats
+}
+
+#[allow(clippy::too_many_arguments)]
+fn merge_find_value_closer_results(
+    node: &mut NativeNode,
+    queue: &mut Vec<SyncPeerConfig>,
+    seen: &HashSet<(String, Option<String>)>,
+    stats: &mut DhtFindValueRunStats,
+    key: lm_node::DhtRecordKey,
+    limit: usize,
+    max_peers: usize,
+    seed_peer: &SyncPeerConfig,
+    closer_records: Vec<DhtRecord>,
+    closer_nodes: Vec<RoutingPeer>,
+) {
+    let closer_records = closer_records
+        .into_iter()
+        .take(dht_response_record_limit(limit))
+        .collect::<Vec<_>>();
+    stats.closer_records = stats
+        .closer_records
+        .saturating_add(node.merge_dht_records_from_peer(closer_records));
+    let mut closer_nodes = closer_nodes
+        .into_iter()
+        .take(dht_response_node_limit(limit))
+        .collect::<Vec<_>>();
+    let target_node_id = key.to_node_id();
+    closer_nodes.sort_by_key(|peer| peer.node_id.xor_distance(&target_node_id));
+    stats.closer_nodes_returned = stats
+        .closer_nodes_returned
+        .saturating_add(closer_nodes.len());
+    for closer_node in closer_nodes {
+        let candidate = sync_peer_config_from_routing_peer_for_seed(seed_peer, &closer_node);
+        let merged = node.merge_verified_routing_peers(vec![closer_node]);
+        stats.closer_nodes_merged = stats.closer_nodes_merged.saturating_add(merged);
+        if merged > 0 {
+            if let Some(candidate) = candidate {
+                if !seen.contains(&(candidate.url.clone(), candidate.peer_id.clone()))
+                    && queue.len() < max_peers
+                {
+                    queue.push(candidate);
+                }
+            }
+        }
+    }
 }
 
 fn sync_peer_config_from_routing_peer_for_seed(
@@ -4685,16 +4744,19 @@ mod tests {
         DhtRecord, DhtRecordKey, DhtRecordKind, DhtRecordRejectStats, DhtRpcRequest,
         DhtRpcResponse, MailboxPushRejectStats, NativeNode, NodeConfig, NodeSyncStatus,
     };
-    use std::cell::RefCell;
     use std::collections::HashSet;
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
+    use std::sync::{
+        Barrier, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    };
     use std::time::Duration;
 
     #[derive(Default)]
     struct FakeDhtTransport {
-        requests: RefCell<Vec<(String, DhtRpcRequest)>>,
-        responses: RefCell<Vec<DhtRpcResponse>>,
+        requests: Mutex<Vec<(String, DhtRpcRequest)>>,
+        responses: Mutex<Vec<DhtRpcResponse>>,
     }
 
     impl DhtTransport for FakeDhtTransport {
@@ -4704,10 +4766,12 @@ mod tests {
             request: &DhtRpcRequest,
         ) -> Result<DhtRpcResponse, Box<dyn std::error::Error>> {
             self.requests
-                .borrow_mut()
+                .lock()
+                .unwrap()
                 .push((peer.url.clone(), request.clone()));
             self.responses
-                .borrow_mut()
+                .lock()
+                .unwrap()
                 .pop()
                 .ok_or_else(|| "fake DHT response exhausted".into())
         }
@@ -5007,7 +5071,7 @@ mod tests {
             peer_id: None,
         };
         let transport = FakeDhtTransport {
-            responses: RefCell::new(vec![DhtRpcResponse::Value {
+            responses: Mutex::new(vec![DhtRpcResponse::Value {
                 request_id: "fake-find-value".into(),
                 record: Some(invalid_record),
                 closer_records: invalid_closer_records,
@@ -5055,7 +5119,7 @@ mod tests {
             peer_id: None,
         };
         let transport = FakeDhtTransport {
-            responses: RefCell::new(vec![DhtRpcResponse::Nodes {
+            responses: Mutex::new(vec![DhtRpcResponse::Nodes {
                 request_id: "fake-find-node".into(),
                 nodes: noisy_nodes,
             }]),
@@ -5097,7 +5161,7 @@ mod tests {
             peer_id: None,
         };
         let transport = FakeDhtTransport {
-            responses: RefCell::new(vec![
+            responses: Mutex::new(vec![
                 DhtRpcResponse::Value {
                     request_id: "iterative-second".into(),
                     record: Some(found_record.clone()),
@@ -5125,7 +5189,7 @@ mod tests {
             node.dht_records.find_value(&key).unwrap().value,
             found_record.value
         );
-        let requests = transport.requests.borrow();
+        let requests = transport.requests.lock().unwrap();
         assert_eq!(requests.len(), 2);
         assert_eq!(requests[0].0, "transport://seed");
         assert_eq!(requests[1].0, "transport://iterative-closer");
@@ -5169,7 +5233,7 @@ mod tests {
             peer_id: None,
         };
         let transport = FakeDhtTransport {
-            responses: RefCell::new(vec![
+            responses: Mutex::new(vec![
                 DhtRpcResponse::Value {
                     request_id: "ordered-second".into(),
                     record: Some(found_record.clone()),
@@ -5197,7 +5261,7 @@ mod tests {
             node.dht_records.find_value(&key).unwrap().value,
             found_record.value
         );
-        let requests = transport.requests.borrow();
+        let requests = transport.requests.lock().unwrap();
         assert_eq!(
             requests[1].0,
             format!("transport://{}", nearer.announce.peer_id)
@@ -5286,7 +5350,7 @@ mod tests {
             peer_id: None,
         };
         let transport = FakeDhtTransport {
-            responses: RefCell::new(vec![
+            responses: Mutex::new(vec![
                 DhtRpcResponse::Value {
                     request_id: "unused-second".into(),
                     record: None,
@@ -5313,7 +5377,75 @@ mod tests {
             node.dht_records.find_value(&key).unwrap().value,
             found_record.value
         );
-        assert_eq!(transport.requests.borrow().len(), 1);
+        assert_eq!(transport.requests.lock().unwrap().len(), 1);
+    }
+
+    struct ConcurrentProbeDhtTransport {
+        barrier: Barrier,
+        in_flight: AtomicUsize,
+        max_in_flight: AtomicUsize,
+        requests: Mutex<Vec<String>>,
+    }
+
+    impl DhtTransport for ConcurrentProbeDhtTransport {
+        fn send_dht_rpc(
+            &self,
+            peer: &SyncPeerConfig,
+            _request: &DhtRpcRequest,
+        ) -> Result<DhtRpcResponse, Box<dyn std::error::Error>> {
+            self.requests.lock().unwrap().push(peer.url.clone());
+            let current = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+            let mut observed = self.max_in_flight.load(Ordering::SeqCst);
+            while current > observed {
+                match self.max_in_flight.compare_exchange(
+                    observed,
+                    current,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                ) {
+                    Ok(_) => break,
+                    Err(next) => observed = next,
+                }
+            }
+            self.barrier.wait();
+            self.in_flight.fetch_sub(1, Ordering::SeqCst);
+            Ok(DhtRpcResponse::Value {
+                request_id: "concurrent-probe".into(),
+                record: None,
+                closer_records: Vec::new(),
+                closer_nodes: Vec::new(),
+            })
+        }
+    }
+
+    #[test]
+    fn dht_find_value_uses_alpha_parallelism_within_round() {
+        let (target_identity, _) = Identity::create_with_passphrase("alpha target").unwrap();
+        let key = DhtRecordKey::for_mailbox_hint(target_identity.user_id());
+        let peers = (0..3)
+            .map(|index| SyncPeerConfig {
+                url: format!("transport://alpha-{index}"),
+                token: None,
+                peer_id: Some(format!("alpha-peer-{index}")),
+            })
+            .collect::<Vec<_>>();
+        let transport = ConcurrentProbeDhtTransport {
+            barrier: Barrier::new(3),
+            in_flight: AtomicUsize::new(0),
+            max_in_flight: AtomicUsize::new(0),
+            requests: Mutex::new(Vec::new()),
+        };
+        let mut node = NativeNode::new(NodeConfig::default());
+        let stats = dht_find_value_with_transport(&mut node, &peers, key, 8, 3, 3, &transport);
+        assert_eq!(stats.attempts, 3);
+        assert_eq!(stats.query_rounds, 1);
+        assert_eq!(stats.successes, 3);
+        assert!(stats.exhausted);
+        assert_eq!(transport.requests.lock().unwrap().len(), 3);
+        assert!(
+            transport.max_in_flight.load(Ordering::SeqCst) > 1,
+            "alpha=3 should issue more than one FindValue request concurrently"
+        );
     }
 
     #[test]
@@ -5371,7 +5503,7 @@ mod tests {
             peer_id: None,
         };
         let transport = FakeDhtTransport {
-            responses: RefCell::new(vec![
+            responses: Mutex::new(vec![
                 DhtRpcResponse::Nodes {
                     request_id: "fake-refresh".into(),
                     nodes: Vec::new(),
@@ -5434,7 +5566,7 @@ mod tests {
         assert_eq!(refresh.attempts, 1);
         assert_eq!(refresh.successes, 1);
 
-        let requests = transport.requests.borrow();
+        let requests = transport.requests.lock().unwrap();
         assert_eq!(requests.len(), 3);
         assert!(matches!(requests[0].1, DhtRpcRequest::StoreRecord { .. }));
         assert!(matches!(requests[1].1, DhtRpcRequest::FindValue { .. }));
