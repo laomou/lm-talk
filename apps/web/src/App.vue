@@ -481,6 +481,7 @@ const syncTriggerPolicyText = computed(() => {
 })
 const mailboxInboxStatus = ref('尚未同步')
 const mailboxQuotaStatusText = ref('Mailbox 容量：尚未查询')
+const mailboxQuotaPressureLevel = ref<'ok' | 'warning' | 'danger'>('ok')
 const mailboxInboxErrorText = ref('')
 const mailboxFailureSummaryText = ref('')
 const mailboxDedupeCount = computed(() => processedMailboxIds.value.length)
@@ -1832,19 +1833,37 @@ async function syncNow() {
 }
 
 
-function mailboxQuotaTextFromResponse(body: any): string {
+function mailboxQuotaStatusFromResponse(body: any): { text: string; level: 'ok' | 'warning' | 'danger' } {
   const used = Number(body?.pending_bytes ?? body?.summary?.bytes ?? 0)
   const maxRaw = body?.max_bytes_per_user
   const max = maxRaw === null || maxRaw === undefined ? null : Number(maxRaw)
-  if (!Number.isFinite(used) || used < 0) return ''
-  if (!max || !Number.isFinite(max) || max <= 0) return `Mailbox 容量：${formatBytes(used)} / 未设置上限`
-  const ratio = Math.min(100, Math.round((used / max) * 100))
-  return `Mailbox 容量：${formatBytes(used)} / ${formatBytes(max)} (${ratio}%)`
+  if (!Number.isFinite(used) || used < 0) return { text: '', level: 'ok' }
+  if (!max || !Number.isFinite(max) || max <= 0) {
+    return { text: `Mailbox 容量：${formatBytes(used)} / 未设置上限`, level: 'ok' }
+  }
+  const ratio = Math.max(0, Math.round((used / max) * 100))
+  const cappedRatio = Math.min(100, ratio)
+  if (ratio >= 100) {
+    return {
+      text: `Mailbox 容量：${formatBytes(used)} / ${formatBytes(max)} (${cappedRatio}%)，已达上限，请同步或清理`,
+      level: 'danger',
+    }
+  }
+  if (ratio >= 80) {
+    return {
+      text: `Mailbox 容量：${formatBytes(used)} / ${formatBytes(max)} (${cappedRatio}%)，接近上限`,
+      level: 'warning',
+    }
+  }
+  return { text: `Mailbox 容量：${formatBytes(used)} / ${formatBytes(max)} (${cappedRatio}%)`, level: 'ok' }
 }
 
 function updateMailboxQuotaStatus(body: any) {
-  const text = mailboxQuotaTextFromResponse(body)
-  if (text) mailboxQuotaStatusText.value = text
+  const status = mailboxQuotaStatusFromResponse(body)
+  if (status.text) {
+    mailboxQuotaStatusText.value = status.text
+    mailboxQuotaPressureLevel.value = status.level
+  }
 }
 
 async function refreshOutgoingMailboxDeliveryStatusesFromNode() {
@@ -5877,7 +5896,7 @@ const appContext = {
   ratchetInfoText, safetyPolicy, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
-  nodeClosestTarget, nodeClosestInfoText, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
+  nodeClosestTarget, nodeClosestInfoText, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
   nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, clearPreKeyRawState, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
