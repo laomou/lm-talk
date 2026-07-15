@@ -472,6 +472,7 @@ const nodePeerHealthPeers = ref<Array<{ url: string; consecutive_failures: numbe
 const nodeClosestTarget = ref('')
 const nodeClosestInfoText = ref('')
 const nodeRoutingRefreshStatusText = ref('DHT 路由刷新：尚未运行')
+const nodeDhtReplicationStatusText = ref('DHT 复制：尚未运行')
 const nodeMailboxTakeUserId = ref('')
 const nodeMailboxTakeInfoText = ref('')
 const syncTriggerPolicyText = computed(() => {
@@ -4973,6 +4974,20 @@ async function submitPublicPeerToNode() {
   })
 }
 
+function dhtReplicationSummary(body: any): string {
+  const stats = body?.stats ?? {}
+  return `DHT 复制：peer ${Number(body?.peers ?? 0)}，records ${Number(stats.records ?? body?.records ?? 0)}，尝试 ${Number(stats.attempts ?? 0)}，成功 ${Number(stats.successes ?? 0)}，失败 ${Number(stats.failures ?? 0)}，隔离 ${Number(stats.peers_quarantined ?? 0)}`
+}
+
+async function runDhtReplicationNow() {
+  await runAsync('手动复制 DHT 记录', async () => {
+    const body = await nodeFetchJson('/dht/replicate?factor=3')
+    nodeDhtReplicationStatusText.value = dhtReplicationSummary(body)
+    nodeClosestInfoText.value = JSON.stringify(body, null, 2)
+    await checkNodeHealth()
+  })
+}
+
 function dhtRoutingRefreshSummary(body: any): string {
   const stats = body?.stats ?? {}
   return `DHT 路由刷新：peer ${Number(body?.peers ?? 0)}，尝试 ${Number(stats.attempts ?? 0)}，成功 ${Number(stats.successes ?? 0)}，失败 ${Number(stats.failures ?? 0)}，返回 ${Number(stats.nodes_returned ?? 0)}，合并 ${Number(stats.nodes_merged ?? 0)}，隔离 ${Number(stats.peers_quarantined ?? 0)}`
@@ -5995,7 +6010,7 @@ const appContext = {
   ratchetInfoText, safetyPolicy, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
-  nodeClosestTarget, nodeClosestInfoText, nodeRoutingRefreshStatusText, runDhtRoutingRefreshNow, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
+  nodeClosestTarget, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, runDhtRoutingRefreshNow, runDhtReplicationNow, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
   nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, clearPreKeyRawState, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
