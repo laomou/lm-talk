@@ -2016,6 +2016,17 @@ impl NodeSyncStatus {
         self.peer_entry(url).next_attempt_at = Some(next_attempt_at);
     }
 
+    pub fn reset_peer_health(&mut self, url: &str) -> bool {
+        let Some(entry) = self.peers.get_mut(url) else {
+            return false;
+        };
+        entry.consecutive_failures = 0;
+        entry.last_error = None;
+        entry.last_error_at = None;
+        entry.next_attempt_at = None;
+        true
+    }
+
     fn peer_entry(&mut self, url: &str) -> &mut NodeSyncPeerStatus {
         self.peers
             .entry(url.to_string())
@@ -2772,6 +2783,18 @@ struct MailboxAckRequest {
     delivery_ids: Vec<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct ResetSyncPeerHealthRequest {
+    url: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ResetSyncPeerHealthResponse {
+    url: String,
+    reset: bool,
+    status: Option<NodeSyncPeerStatus>,
+}
+
 #[derive(Debug, Serialize)]
 struct MailboxAckResponse {
     user_id: String,
@@ -2959,6 +2982,7 @@ impl NativeNode {
             ("GET", "/dht/routing-refresh-plan") => self.handle_control_dht_routing_refresh_plan(),
             ("GET", "/sync/snapshot") => ControlResponse::json(200, &self.to_state_snapshot()),
             ("GET", "/sync/status") => ControlResponse::json(200, &self.sync_status),
+            ("POST", "/sync/peer/reset") => self.handle_control_sync_peer_reset(&request.body),
             ("POST", "/sync/import") => self.handle_control_sync_import(&request.body),
             (
                 _,
@@ -2980,6 +3004,7 @@ impl NativeNode {
                 | "/dht/routing-refresh-plan"
                 | "/sync/snapshot"
                 | "/sync/status"
+                | "/sync/peer/reset"
                 | "/sync/import",
             ) => ControlResponse::text(405, "method not allowed"),
             _ => ControlResponse::text(404, "not found"),
@@ -3470,6 +3495,26 @@ impl NativeNode {
             &ClosestDhtRecordsResponse {
                 target: target.to_hex(),
                 records,
+            },
+        )
+    }
+
+    fn handle_control_sync_peer_reset(&mut self, body: &str) -> ControlResponse {
+        let req: ResetSyncPeerHealthRequest = match serde_json::from_str(body) {
+            Ok(v) => v,
+            Err(e) => return ControlResponse::text(400, format!("invalid json: {e}")),
+        };
+        let url = req.url.trim().trim_end_matches('/').to_string();
+        if url.is_empty() {
+            return ControlResponse::text(400, "missing sync peer url");
+        }
+        let reset = self.sync_status.reset_peer_health(&url);
+        ControlResponse::json(
+            200,
+            &ResetSyncPeerHealthResponse {
+                status: self.sync_status.peers.get(&url).cloned(),
+                url,
+                reset,
             },
         )
     }
@@ -5399,6 +5444,50 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn control_plane_sync_peer_reset_clears_quarantine_state() {
+        let mut node = NativeNode::new(NodeConfig::default());
+        let url = "http://peer-reset.example";
+        for idx in 0..DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES {
+            node.sync_status
+                .record_failure(url, format!("synthetic failure {idx}"));
+        }
+        node.sync_status
+            .record_next_attempt(url, current_unix_timestamp().saturating_add(600));
+        assert!(
+            node.sync_status
+                .peers
+                .get(url)
+                .unwrap()
+                .consecutive_failures
+                >= DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES
+        );
+
+        let response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/sync/peer/reset".into(),
+            body: serde_json::json!({ "url": url }).to_string(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 200, "{}", response.body);
+        let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(body["reset"], true);
+        assert_eq!(body["status"]["consecutive_failures"], 0);
+        assert!(body["status"]["last_error"].is_null());
+        assert!(body["status"]["next_attempt_at"].is_null());
+
+        let response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/sync/peer/reset".into(),
+            body: serde_json::json!({ "url": "http://missing-peer.example" }).to_string(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 200, "{}", response.body);
+        let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(body["reset"], false);
+        assert!(body["status"].is_null());
     }
 
     #[test]
