@@ -116,6 +116,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
           <b>同步状态</b>
           <small>{{ showRawSyncStatus ? syncStatusText : syncStatusSummary }}</small>
           <small>{{ ctx.nodeHealthSummaryText.value }}</small>
+          <small :class="{ 'danger-text': ctx.nodePeerHealthRiskLevel.value !== 'ok' }">{{ ctx.nodePeerHealthStatusText.value }}</small>
           <button v-if="hasRawSyncStatus" class="secondary" @click="showRawSyncStatus = !showRawSyncStatus">{{ showRawSyncStatus ? '隐藏原始状态' : '显示原始状态' }}</button>
           <small :class="{ 'danger-text': ctx.syncFailureSummaryText.value !== '暂无同步失败' }">{{ ctx.syncFailureSummaryText.value }}</small>
           <small>{{ ctx.syncRecoveryStatusText.value }}</small>

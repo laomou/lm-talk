@@ -42,6 +42,7 @@ async function installMockSyncNode(context: BrowserContext, mailboxes: Map<strin
     if (url.hostname !== 'sync.test') return route.continue()
     if (url.pathname === '/health') return route.fulfill({ json: { ok: true, peers: 2, prekeys: 1, mailbox_deliveries: 0, mailbox_bytes: 0, mailbox_max_bytes: 10485760, mailbox_max_bytes_per_user: 2097152, mailbox_max_messages_per_user: 1000 } })
     if (url.pathname === '/prekey/publish') return route.fulfill({ json: { ok: true } })
+    if (url.pathname === '/sync/status') return route.fulfill({ json: { peers: { 'http://peer-ok': { url: 'http://peer-ok', consecutive_failures: 0, failures: 0 }, 'http://peer-bad': { url: 'http://peer-bad', consecutive_failures: 5, failures: 5, next_attempt_at: Math.floor(Date.now() / 1000) + 600 } } } })
     if (url.pathname === '/mailbox/ack') {
       const body = req.postDataJSON() as { user_id?: string; delivery_ids?: string[] }
       for (const id of body.delivery_ids ?? []) deliveryStatus.set(`${body.user_id || ''}:${id}`, 'acked')
@@ -307,6 +308,7 @@ test('消息同步可完成好友请求和消息收发', async ({ browser }) => 
   await enableSync(alice)
   await enableSync(bob)
   await expect(bob.getByText(/节点健康：.*Mailbox/)).toBeVisible()
+  await expect(bob.getByText(/DHT peer：2 个，失败 1，隔离 1/)).toBeVisible()
   await bob.getByLabel('当前会话自动发送已读回执').check()
 
   await alice.goto('/#/contacts')

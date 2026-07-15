@@ -466,6 +466,8 @@ let nodeSyncTimer: number | undefined
 let lastVisibilityMailboxTakeAt = 0
 const nodeControlStatus = ref('未连接')
 const nodeHealthSummaryText = ref('节点健康：尚未检查')
+const nodePeerHealthStatusText = ref('DHT peer：尚未检查')
+const nodePeerHealthRiskLevel = ref<'ok' | 'warning' | 'danger'>('ok')
 const nodeClosestTarget = ref('')
 const nodeClosestInfoText = ref('')
 const nodeMailboxTakeUserId = ref('')
@@ -4855,6 +4857,24 @@ async function nodeFetchJson(path: string, init?: RequestInit): Promise<any> {
   throw new Error(`所有同步服务都不可用：${errors.join('；')}`)
 }
 
+function nodePeerHealthSummaryFromSyncStatus(status: any): { text: string; level: 'ok' | 'warning' | 'danger' } {
+  const peers = status?.peers && typeof status.peers === 'object' ? Object.values(status.peers) as any[] : []
+  if (peers.length === 0) return { text: 'DHT peer：暂无同步 peer 健康记录', level: 'ok' }
+  const failed = peers.filter((peer: any) => Number(peer?.consecutive_failures ?? 0) > 0)
+  const quarantined = peers.filter((peer: any) => {
+    const next = Number(peer?.next_attempt_at ?? 0)
+    return Number(peer?.consecutive_failures ?? 0) >= 5 && (!Number.isFinite(next) || next * 1000 > Date.now())
+  })
+  const worst = peers.reduce((max, peer: any) => Math.max(max, Number(peer?.consecutive_failures ?? 0)), 0)
+  const level: 'ok' | 'warning' | 'danger' = quarantined.length > 0 ? 'danger' : failed.length > 0 ? 'warning' : 'ok'
+  const suffix = quarantined.length > 0
+    ? '，存在隔离 peer'
+    : failed.length > 0
+      ? '，存在失败 peer'
+      : '，全部健康'
+  return { text: `DHT peer：${peers.length} 个，失败 ${failed.length}，隔离 ${quarantined.length}，最高连续失败 ${worst}${suffix}`, level }
+}
+
 function nodeHealthSummaryFromResponse(health: any): string {
   const parts: string[] = []
   const peers = Number(health?.peers ?? 0)
@@ -4890,15 +4910,22 @@ async function checkNodeHealth() {
     })
     // /health 免鉴权，会掩盖令牌问题。再探测一个需要鉴权的接口，避免误报"已连接"。
     try {
-      await nodeFetchJson('/sync/status')
+      const syncStatus = await nodeFetchJson('/sync/status')
+      const peerHealth = nodePeerHealthSummaryFromSyncStatus(syncStatus)
+      nodePeerHealthStatusText.value = peerHealth.text
+      nodePeerHealthRiskLevel.value = peerHealth.level
       nodeControlStatus.value = `已连接（鉴权通过）\n${JSON.stringify(health, null, 2)}`
     } catch (e) {
       const msg = String(e)
       if (/401|unauthorized/i.test(msg)) {
         nodeHealthSummaryText.value = `${nodeHealthSummaryText.value} · 鉴权失败`
+        nodePeerHealthStatusText.value = 'DHT peer：鉴权失败，无法读取健康记录'
+        nodePeerHealthRiskLevel.value = 'danger'
         nodeControlStatus.value = `节点在线，但鉴权失败（401）。\n若节点启用了 --control-token，请在地址后追加 " | 令牌"（与节点令牌一致）。\n\n${msg}`
       } else {
         nodeHealthSummaryText.value = `${nodeHealthSummaryText.value} · 控制接口异常`
+        nodePeerHealthStatusText.value = 'DHT peer：控制接口异常，无法读取健康记录'
+        nodePeerHealthRiskLevel.value = 'warning'
         nodeControlStatus.value = `节点在线，但控制接口异常。\n\n${msg}`
       }
     }
@@ -5903,7 +5930,7 @@ const appContext = {
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, registerPeriodicMailboxSync, pwaStatusText, pwaBackgroundCapabilityText, pwaLastBackgroundEventText, pwaBackgroundEventHistory, webVersionText,
   nodeControlUrl, nodeUrlList, nodeEntrySummaries, nodeSettingsSummaryText, nodeTokenStorageText, nodeTokenCount, nodeMissingRemoteTokenCount, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake, autoReadReceipts,
   enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,
-  autoPublishPreKey, autoNodeSync, nodeControlStatus, nodeHealthSummaryText, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
+  autoPublishPreKey, autoNodeSync, nodeControlStatus, nodeHealthSummaryText, nodePeerHealthStatusText, nodePeerHealthRiskLevel, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
   exportFullDataBackup, importFullDataBackup, importFullDataBackupMerge, downloadText, addContactText, addContact, incomingFriendRequestText,
