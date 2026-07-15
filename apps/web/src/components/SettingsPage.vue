@@ -117,6 +117,14 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
           <small>{{ showRawSyncStatus ? syncStatusText : syncStatusSummary }}</small>
           <small>{{ ctx.nodeHealthSummaryText.value }}</small>
           <small :class="{ 'danger-text': ctx.nodePeerHealthRiskLevel.value !== 'ok' }">{{ ctx.nodePeerHealthStatusText.value }}</small>
+          <div v-if="ctx.nodePeerHealthPeers.value.length" class="outbox-list">
+            <div v-for="peer in ctx.nodePeerHealthPeers.value.filter((p: any) => p.consecutive_failures > 0 || p.quarantined).slice(0, 4)" :key="peer.url" class="outbox-row">
+              <b>{{ peer.url }}</b>
+              <small :class="{ 'danger-text': peer.quarantined }">连续失败 {{ peer.consecutive_failures }} · 累计失败 {{ peer.failures }}{{ peer.quarantined ? ' · 已隔离' : '' }}</small>
+              <small v-if="peer.last_error" class="danger-text">{{ peer.last_error }}</small>
+              <button class="secondary" @click="ctx.resetDhtPeerHealth(peer.url)">重置 {{ peer.url }}</button>
+            </div>
+          </div>
           <div class="row compact">
             <button class="secondary" @click="ctx.checkNodeHealth">刷新节点健康</button>
             <button v-if="hasRawSyncStatus" class="secondary" @click="showRawSyncStatus = !showRawSyncStatus">{{ showRawSyncStatus ? '隐藏原始状态' : '显示原始状态' }}</button>
