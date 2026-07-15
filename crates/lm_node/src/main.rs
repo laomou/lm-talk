@@ -3359,7 +3359,7 @@ fn serve_control(
     );
     logger.info(
         "control.endpoints",
-        "endpoints: GET /health, GET /control/stats, GET /control/metrics, POST /announce, GET /peers/closest, POST /mailbox/push, GET /mailbox/take, GET /mailbox/status, POST /mailbox/ack, POST /prekey/publish, GET /prekey/get, GET /prekey/status, POST/GET /dht/record, GET /dht/closest, POST /dht/rpc, GET /dht/find-value, GET /dht/replicate, GET /dht/routing-refresh, GET /dht/replication-plan, GET /dht/routing-refresh-plan, GET /sync/snapshot, GET /sync/status, POST /sync/peer/reset, POST /sync/import"
+        "endpoints: GET /health, GET /control/stats, GET /control/metrics, POST /announce, GET /peers/closest, POST /mailbox/push, GET /mailbox/take, GET /mailbox/status, POST /mailbox/ack, POST /prekey/publish, GET /prekey/get, GET /prekey/status, GET /dht/key, POST/GET /dht/record, GET /dht/closest, POST /dht/rpc, GET /dht/find-value, GET /dht/replicate, GET /dht/routing-refresh, GET /dht/replication-plan, GET /dht/routing-refresh-plan, GET /sync/snapshot, GET /sync/status, POST /sync/peer/reset, POST /sync/import"
             .to_string(),
         serde_json::Value::Null,
     );

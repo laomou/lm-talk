@@ -2901,6 +2901,13 @@ struct ClosestDhtRecordsResponse {
     records: Vec<DhtRecord>,
 }
 
+#[derive(Debug, Serialize)]
+struct DhtKeyResponse {
+    kind: DhtRecordKind,
+    value: String,
+    key: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct ImportSnapshotRequest {
     snapshot: NodeStateSnapshot,
@@ -2973,6 +2980,7 @@ impl NativeNode {
             ("GET", "/prekey/get") => self.handle_control_prekey_get(&request.path),
             ("GET", "/prekey/status") => self.handle_control_prekey_status(&request.path),
             ("POST", "/dht/record") => self.handle_control_dht_record_store(&request.body),
+            ("GET", "/dht/key") => self.handle_control_dht_key(&request.path),
             ("GET", "/dht/record") => self.handle_control_dht_record_get(&request.path),
             ("GET", "/dht/closest") => self.handle_control_dht_closest(&request.path),
             ("POST", "/dht/rpc") => self.handle_control_dht_rpc(&request.body),
@@ -2996,6 +3004,7 @@ impl NativeNode {
                 | "/prekey/publish"
                 | "/prekey/get"
                 | "/prekey/status"
+                | "/dht/key"
                 | "/dht/record"
                 | "/dht/closest"
                 | "/dht/rpc"
@@ -3452,6 +3461,58 @@ impl NativeNode {
                 inserted,
                 key,
                 records: self.dht_records.len(),
+            },
+        )
+    }
+
+    fn handle_control_dht_key(&mut self, path: &str) -> ControlResponse {
+        let query = query_params(path);
+        let Some(kind) = query.get("kind") else {
+            return ControlResponse::text(400, "missing kind");
+        };
+        let Some(value) = query.get("value") else {
+            return ControlResponse::text(400, "missing value");
+        };
+        let normalized_kind = kind.trim().to_ascii_lowercase();
+        let value = value.trim();
+        if value.is_empty() {
+            return ControlResponse::text(400, "missing value");
+        }
+        let (kind, key) = match normalized_kind.as_str() {
+            "public-peer" | "public_peer" | "peer" => (
+                DhtRecordKind::PublicPeer,
+                DhtRecordKey::for_public_peer(value),
+            ),
+            "prekey" | "pre-key" => {
+                let user_id = match UserId::from_raw(value.to_string()) {
+                    Ok(user_id) => user_id,
+                    Err(err) => return ControlResponse::text(400, err.to_string()),
+                };
+                (DhtRecordKind::PreKey, DhtRecordKey::for_prekey(&user_id))
+            }
+            "mailbox-hint" | "mailbox_hint" | "mailbox" => {
+                let user_id = match UserId::from_raw(value.to_string()) {
+                    Ok(user_id) => user_id,
+                    Err(err) => return ControlResponse::text(400, err.to_string()),
+                };
+                (
+                    DhtRecordKind::MailboxHint,
+                    DhtRecordKey::for_mailbox_hint(&user_id),
+                )
+            }
+            _ => {
+                return ControlResponse::text(
+                    400,
+                    "unsupported dht key kind; expected public-peer, prekey, or mailbox-hint",
+                );
+            }
+        };
+        ControlResponse::json(
+            200,
+            &DhtKeyResponse {
+                kind,
+                value: value.to_string(),
+                key: key.to_hex(),
             },
         )
     }
@@ -4663,6 +4724,53 @@ mod tests {
         assert_ne!(
             node.kademlia.local_id(),
             KademliaNodeId::from_user_id(local_identity.user_id())
+        );
+    }
+
+    #[test]
+    fn control_plane_derives_dht_record_keys() {
+        let (identity, _) = Identity::create_with_passphrase("dht key derive user").unwrap();
+        let mut node = NativeNode::new(NodeConfig::default());
+        let prekey = node.handle_control_request(ControlRequest {
+            method: "GET".into(),
+            path: format!("/dht/key?kind=prekey&value={}", identity.user_id()),
+            body: String::new(),
+            headers: Vec::new(),
+        });
+        assert_eq!(prekey.status, 200, "{}", prekey.body);
+        let body: serde_json::Value = serde_json::from_str(&prekey.body).unwrap();
+        assert_eq!(body["kind"], "PreKey");
+        assert_eq!(
+            body["key"],
+            DhtRecordKey::for_prekey(identity.user_id()).to_hex()
+        );
+
+        let mailbox = node.handle_control_request(ControlRequest {
+            method: "GET".into(),
+            path: format!("/dht/key?kind=mailbox-hint&value={}", identity.user_id()),
+            body: String::new(),
+            headers: Vec::new(),
+        });
+        assert_eq!(mailbox.status, 200, "{}", mailbox.body);
+        let body: serde_json::Value = serde_json::from_str(&mailbox.body).unwrap();
+        assert_eq!(body["kind"], "MailboxHint");
+        assert_eq!(
+            body["key"],
+            DhtRecordKey::for_mailbox_hint(identity.user_id()).to_hex()
+        );
+
+        let peer = node.handle_control_request(ControlRequest {
+            method: "GET".into(),
+            path: "/dht/key?kind=public-peer&value=peer-a".into(),
+            body: String::new(),
+            headers: Vec::new(),
+        });
+        assert_eq!(peer.status, 200, "{}", peer.body);
+        let body: serde_json::Value = serde_json::from_str(&peer.body).unwrap();
+        assert_eq!(body["kind"], "PublicPeer");
+        assert_eq!(
+            body["key"],
+            DhtRecordKey::for_public_peer("peer-a").to_hex()
         );
     }
 
