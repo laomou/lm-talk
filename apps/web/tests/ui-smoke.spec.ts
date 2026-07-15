@@ -50,6 +50,7 @@ async function installMockSyncNode(context: BrowserContext, mailboxes: Map<strin
     if (url.pathname === '/health') return route.fulfill({ json: { ok: true, peers: 2, prekeys: 1, mailbox_deliveries: 0, mailbox_bytes: 0, mailbox_max_bytes: 10485760, mailbox_max_bytes_per_user: 2097152, mailbox_max_messages_per_user: 1000 } })
     if (url.pathname === '/prekey/publish') return route.fulfill({ json: { ok: true } })
     if (url.pathname === '/sync/status') return route.fulfill({ json: syncPeerHealth })
+    if (url.pathname === '/dht/find-value') return route.fulfill({ json: { key: url.searchParams.get('key'), found: true, records: 1, stats: { attempts: 2, successes: 2, failures: 0, found_records: 1, closer_records: 0, peers_quarantined: 0 } } })
     if (url.pathname === '/dht/replicate') return route.fulfill({ json: { peers: 2, records: 4, stats: { records: 4, attempts: 2, successes: 2, failures: 0, peers_quarantined: 0 } } })
     if (url.pathname === '/dht/routing-refresh') return route.fulfill({ json: { peers: 2, routing_peers: 3, stats: { targets: 8, attempts: 2, successes: 2, failures: 0, nodes_returned: 3, nodes_merged: 1, peers_quarantined: 0 } } })
     if (url.pathname === '/sync/peer/reset') {
@@ -333,6 +334,9 @@ test('消息同步可完成好友请求和消息收发', async ({ browser }) => 
   await expect(bob.getByText(/DHT peer：2 个，失败 0，隔离 0/)).toBeVisible()
   await bob.getByRole('button', { name: '刷新节点健康' }).click()
   await expect(bob.getByText(/节点健康：.*Mailbox/)).toBeVisible()
+  await bob.getByLabel('DHT record key').fill('a'.repeat(64))
+  await bob.getByRole('button', { name: '查找 DHT 记录' }).click()
+  await expect(bob.getByText(/DHT 查找：找到，peer 尝试 2，成功 2/)).toBeVisible()
   await bob.getByRole('button', { name: '复制 DHT 记录' }).click()
   await expect(bob.getByText(/DHT 复制：peer 2，records 4，尝试 2，成功 2/)).toBeVisible()
   await bob.getByRole('button', { name: '刷新 DHT 路由' }).click()

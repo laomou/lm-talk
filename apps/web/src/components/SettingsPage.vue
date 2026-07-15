@@ -125,12 +125,18 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
               <button class="secondary" @click="ctx.resetDhtPeerHealth(peer.url)">重置 {{ peer.url }}</button>
             </div>
           </div>
+          <label for="dht-find-key-input">DHT record key</label>
+          <div class="inline-field">
+            <input id="dht-find-key-input" v-model="ctx.nodeDhtFindValueKey.value" aria-label="DHT record key" placeholder="64 位十六进制 key" />
+            <button class="secondary" @click="ctx.runDhtFindValueNow">查找 DHT 记录</button>
+          </div>
           <div class="row compact">
             <button class="secondary" @click="ctx.checkNodeHealth">刷新节点健康</button>
             <button class="secondary" @click="ctx.runDhtReplicationNow">复制 DHT 记录</button>
             <button class="secondary" @click="ctx.runDhtRoutingRefreshNow">刷新 DHT 路由</button>
             <button v-if="hasRawSyncStatus" class="secondary" @click="showRawSyncStatus = !showRawSyncStatus">{{ showRawSyncStatus ? '隐藏原始状态' : '显示原始状态' }}</button>
           </div>
+          <small>{{ ctx.nodeDhtFindValueStatusText.value }}</small>
           <small>{{ ctx.nodeDhtReplicationStatusText.value }}</small>
           <small>{{ ctx.nodeRoutingRefreshStatusText.value }}</small>
           <small :class="{ 'danger-text': ctx.syncFailureSummaryText.value !== '暂无同步失败' }">{{ ctx.syncFailureSummaryText.value }}</small>
