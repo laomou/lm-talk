@@ -1041,6 +1041,13 @@ struct DhtFindValueRunResponse {
 }
 
 #[derive(Debug, Serialize)]
+struct DhtReplicationRunResponse {
+    peers: usize,
+    records: usize,
+    stats: DhtReplicationRunStats,
+}
+
+#[derive(Debug, Serialize)]
 struct DhtRoutingRefreshRunResponse {
     peers: usize,
     routing_peers: usize,
@@ -3352,7 +3359,7 @@ fn serve_control(
     );
     logger.info(
         "control.endpoints",
-        "endpoints: GET /health, GET /control/stats, GET /control/metrics, POST /announce, GET /peers/closest, POST /mailbox/push, GET /mailbox/take, GET /mailbox/status, POST /mailbox/ack, POST /prekey/publish, GET /prekey/get, GET /prekey/status, POST/GET /dht/record, GET /dht/closest, POST /dht/rpc, GET /dht/find-value, GET /dht/routing-refresh, GET /dht/replication-plan, GET /dht/routing-refresh-plan, GET /sync/snapshot, GET /sync/status, POST /sync/peer/reset, POST /sync/import"
+        "endpoints: GET /health, GET /control/stats, GET /control/metrics, POST /announce, GET /peers/closest, POST /mailbox/push, GET /mailbox/take, GET /mailbox/status, POST /mailbox/ack, POST /prekey/publish, GET /prekey/get, GET /prekey/status, POST/GET /dht/record, GET /dht/closest, POST /dht/rpc, GET /dht/find-value, GET /dht/replicate, GET /dht/routing-refresh, GET /dht/replication-plan, GET /dht/routing-refresh-plan, GET /sync/snapshot, GET /sync/status, POST /sync/peer/reset, POST /sync/import"
             .to_string(),
         serde_json::Value::Null,
     );
@@ -4661,6 +4668,14 @@ fn handle_stream(
             &request.path,
             Some(runtime_stats),
         )
+    } else if request.method == "GET" && request.path.starts_with("/dht/replicate") {
+        handle_control_dht_replication_run(
+            node,
+            dht_configured_peers,
+            dht_runner,
+            &request.path,
+            Some(runtime_stats),
+        )
     } else if request.method == "GET" && request.path.starts_with("/dht/routing-refresh") {
         handle_control_dht_routing_refresh_run(
             node,
@@ -4703,6 +4718,42 @@ fn handle_stream(
     let allow_origin = security.access_control_origin(origin.as_deref());
     stream.write_all(response.to_http_string(&allow_origin).as_bytes())?;
     Ok(())
+}
+
+fn handle_control_dht_replication_run(
+    node: &mut NativeNode,
+    dht_configured_peers: &[SyncPeerConfig],
+    dht_runner: DhtRunnerConfig,
+    path: &str,
+    runtime_stats: Option<&mut ControlRuntimeStats>,
+) -> ControlHttpResponse {
+    let replication_factor = query_param_value(path, "factor")
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(dht_runner.replication_factor)
+        .clamp(1, 64);
+    let (peers, peers_quarantined) = dht_runner_peer_configs_with_quarantine_count(
+        node,
+        dht_configured_peers,
+        dht_runner.transport,
+        dht_runner.peer_quarantine_consecutive_failures,
+    );
+    let config = DhtRunnerConfig {
+        replication_factor,
+        ..dht_runner
+    };
+    let mut stats = run_dht_replication_with_logger(node, &peers, config, None);
+    stats.peers_quarantined = peers_quarantined;
+    if let Some(runtime_stats) = runtime_stats {
+        runtime_stats.record_dht_replication_run(stats, current_unix_timestamp());
+    }
+    ControlHttpResponse::json(
+        200,
+        &DhtReplicationRunResponse {
+            peers: peers.len(),
+            records: node.dht_records.len(),
+            stats,
+        },
+    )
 }
 
 fn handle_control_dht_routing_refresh_run(
@@ -5115,9 +5166,10 @@ mod tests {
         configure_control_peer_stream, connect_control_peer, control_error_http_response,
         current_unix_timestamp, dht_find_value_with_transport, dht_runner_peer_configs,
         dht_runner_peer_configs_with_quarantine_count, dial_libp2p_bootstrap_peers,
-        handle_control_dht_find_value_run, handle_control_dht_routing_refresh_run,
-        handle_libp2p_dht_rpc_request, handle_libp2p_dht_server_event, http_control_request,
-        libp2p_dht_rpc_behaviour, libp2p_dht_swarm, load_node_state_db, open_state_db,
+        handle_control_dht_find_value_run, handle_control_dht_replication_run,
+        handle_control_dht_routing_refresh_run, handle_libp2p_dht_rpc_request,
+        handle_libp2p_dht_server_event, http_control_request, libp2p_dht_rpc_behaviour,
+        libp2p_dht_swarm, load_node_state_db, open_state_db,
         parse_content_length_and_validate_headers, parse_dht_transport_kind,
         parse_libp2p_bootstrap_peers, parse_libp2p_dht_peer, parse_log_format, read_secret_file,
         request_is_authorized, run_dht_replication, run_dht_replication_with_transport,
@@ -5889,6 +5941,57 @@ mod tests {
             requests[1].0,
             format!("transport://{}", nearer.announce.peer_id)
         );
+    }
+
+    #[test]
+    fn control_dht_replication_run_reports_empty_and_quarantine_stats() {
+        let mut node = NativeNode::new(NodeConfig::default());
+        let empty = handle_control_dht_replication_run(
+            &mut node,
+            &[],
+            DhtRunnerConfig::default(),
+            "/dht/replicate?factor=2",
+            None,
+        );
+        assert_eq!(empty.status, 200, "{}", empty.body);
+        let body: serde_json::Value = serde_json::from_str(&empty.body).unwrap();
+        assert_eq!(body["peers"], 0);
+        assert_eq!(body["stats"]["records"], 0);
+        assert_eq!(body["stats"]["attempts"], 0);
+
+        let now = current_unix_timestamp();
+        assert!(node.dht_records.store(DhtRecord {
+            key: DhtRecordKey::for_public_peer("manual-replication-record"),
+            kind: DhtRecordKind::PublicPeer,
+            value: "manual-replication-value".into(),
+            created_at: now,
+            expires_at: now.saturating_add(60),
+            republish_at: now,
+        }));
+        for failure in 0..DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES {
+            node.sync_status.record_failure(
+                "http://replication-quarantined",
+                format!("failure-{failure}"),
+            );
+        }
+        let peers = vec![SyncPeerConfig {
+            url: "http://replication-quarantined".into(),
+            token: None,
+            peer_id: None,
+        }];
+        let quarantined = handle_control_dht_replication_run(
+            &mut node,
+            &peers,
+            DhtRunnerConfig::default(),
+            "/dht/replicate?factor=2",
+            None,
+        );
+        assert_eq!(quarantined.status, 200, "{}", quarantined.body);
+        let body: serde_json::Value = serde_json::from_str(&quarantined.body).unwrap();
+        assert_eq!(body["peers"], 0);
+        assert_eq!(body["records"], 1);
+        assert_eq!(body["stats"]["peers_quarantined"], 1);
+        assert_eq!(body["stats"]["attempts"], 0);
     }
 
     #[test]

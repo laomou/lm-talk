@@ -3000,6 +3000,7 @@ impl NativeNode {
                 | "/dht/closest"
                 | "/dht/rpc"
                 | "/dht/find-value"
+                | "/dht/replicate"
                 | "/dht/replication-plan"
                 | "/dht/routing-refresh-plan"
                 | "/sync/snapshot"
