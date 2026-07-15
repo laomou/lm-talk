@@ -133,6 +133,9 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
               <option value="public-peer">PublicPeer(peer_id)</option>
             </select>
             <input id="dht-key-value-input" v-model="ctx.nodeDhtKeyValue.value" aria-label="DHT key 输入值" placeholder="UserID 或 peer_id" />
+            <button class="secondary" @click="ctx.fillMyPreKeyDhtKeyInput">我的 PreKey</button>
+            <button class="secondary" @click="ctx.fillMyMailboxHintDhtKeyInput">我的 MailboxHint</button>
+            <button class="secondary" @click="ctx.fillCurrentPublicPeerDhtKeyInput">当前 PublicPeer</button>
             <button class="secondary" @click="ctx.deriveDhtKeyForFindValue">派生 key</button>
           </div>
           <label for="dht-find-key-input">DHT record key</label>

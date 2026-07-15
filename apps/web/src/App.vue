@@ -4982,6 +4982,26 @@ function dhtKeyKindLabel(kind: string): string {
   return kind === 'public-peer' ? 'PublicPeer' : kind === 'mailbox-hint' ? 'MailboxHint' : 'PreKey'
 }
 
+function fillDhtKeyInput(kind: 'prekey' | 'mailbox-hint' | 'public-peer', value: string) {
+  nodeDhtKeyKind.value = kind
+  nodeDhtKeyValue.value = value
+  nodeDhtFindValueStatusText.value = `DHT key：已填入 ${dhtKeyKindLabel(kind)}，点击“派生 key”生成查询 key`
+}
+
+function fillMyPreKeyDhtKeyInput() {
+  if (!identity.value?.user_id) throw new Error('需要先登录身份')
+  fillDhtKeyInput('prekey', identity.value.user_id)
+}
+
+function fillMyMailboxHintDhtKeyInput() {
+  if (!identity.value?.user_id) throw new Error('需要先登录身份')
+  fillDhtKeyInput('mailbox-hint', identity.value.user_id)
+}
+
+function fillCurrentPublicPeerDhtKeyInput() {
+  fillDhtKeyInput('public-peer', publicPeerId.value.trim() || `public-${identity.value?.user_id.slice(0, 12) || 'peer'}`)
+}
+
 async function deriveDhtKeyForFindValue() {
   await runAsync('派生 DHT key', async () => {
     const value = nodeDhtKeyValue.value.trim()
@@ -6045,7 +6065,7 @@ const appContext = {
   ratchetInfoText, safetyPolicy, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
-  nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, deriveDhtKeyForFindValue, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, runDhtFindValueNow, runDhtRoutingRefreshNow, runDhtReplicationNow, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
+  nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, fillCurrentPublicPeerDhtKeyInput, deriveDhtKeyForFindValue, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, runDhtFindValueNow, runDhtRoutingRefreshNow, runDhtReplicationNow, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
   nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, clearPreKeyRawState, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
