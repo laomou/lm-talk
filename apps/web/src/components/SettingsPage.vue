@@ -137,6 +137,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
             <button class="secondary" @click="ctx.fillMyMailboxHintDhtKeyInput">我的 MailboxHint</button>
             <button class="secondary" @click="ctx.fillCurrentPublicPeerDhtKeyInput">当前 PublicPeer</button>
             <button class="secondary" @click="ctx.deriveDhtKeyForFindValue">派生 key</button>
+            <button class="secondary" @click="ctx.deriveAndFindDhtValueNow">派生并查找</button>
           </div>
           <label for="dht-find-key-input">DHT record key</label>
           <div class="inline-field">

@@ -5002,15 +5002,18 @@ function fillCurrentPublicPeerDhtKeyInput() {
   fillDhtKeyInput('public-peer', publicPeerId.value.trim() || `public-${identity.value?.user_id.slice(0, 12) || 'peer'}`)
 }
 
+async function deriveDhtKeyPayload(): Promise<any> {
+  const value = nodeDhtKeyValue.value.trim()
+  if (!value) throw new Error('请输入 peer_id 或 UserID')
+  const body = await nodeFetchJson(`/dht/key?kind=${encodeURIComponent(nodeDhtKeyKind.value)}&value=${encodeURIComponent(value)}`)
+  nodeDhtFindValueKey.value = String(body.key || '')
+  nodeDhtFindValueStatusText.value = `DHT key：${dhtKeyKindLabel(nodeDhtKeyKind.value)} ${value} → ${nodeDhtFindValueKey.value}`
+  nodeClosestInfoText.value = JSON.stringify(body, null, 2)
+  return body
+}
+
 async function deriveDhtKeyForFindValue() {
-  await runAsync('派生 DHT key', async () => {
-    const value = nodeDhtKeyValue.value.trim()
-    if (!value) throw new Error('请输入 peer_id 或 UserID')
-    const body = await nodeFetchJson(`/dht/key?kind=${encodeURIComponent(nodeDhtKeyKind.value)}&value=${encodeURIComponent(value)}`)
-    nodeDhtFindValueKey.value = String(body.key || '')
-    nodeDhtFindValueStatusText.value = `DHT key：${dhtKeyKindLabel(nodeDhtKeyKind.value)} ${value} → ${nodeDhtFindValueKey.value}`
-    nodeClosestInfoText.value = JSON.stringify(body, null, 2)
-  })
+  await runAsync('派生 DHT key', async () => { await deriveDhtKeyPayload() })
 }
 
 function dhtFindValueSummary(body: any): string {
@@ -5018,14 +5021,24 @@ function dhtFindValueSummary(body: any): string {
   return `DHT 查找：${body?.found ? '找到' : '未找到'}，peer 尝试 ${Number(stats.attempts ?? 0)}，成功 ${Number(stats.successes ?? 0)}，失败 ${Number(stats.failures ?? 0)}，found ${Number(stats.found_records ?? 0)}，closer ${Number(stats.closer_records ?? 0)}，隔离 ${Number(stats.peers_quarantined ?? 0)}`
 }
 
+async function runDhtFindValueForKey(key: string) {
+  if (!/^[0-9a-fA-F]{64}$/.test(key)) throw new Error('请输入 64 位十六进制 DHT key')
+  const body = await nodeFetchJson(`/dht/find-value?key=${encodeURIComponent(key)}&limit=8&max_peers=8&alpha=3`)
+  nodeDhtFindValueStatusText.value = dhtFindValueSummary(body)
+  nodeClosestInfoText.value = JSON.stringify(body, null, 2)
+  await checkNodeHealth()
+}
+
 async function runDhtFindValueNow() {
   await runAsync('手动查找 DHT 记录', async () => {
-    const key = nodeDhtFindValueKey.value.trim()
-    if (!/^[0-9a-fA-F]{64}$/.test(key)) throw new Error('请输入 64 位十六进制 DHT key')
-    const body = await nodeFetchJson(`/dht/find-value?key=${encodeURIComponent(key)}&limit=8&max_peers=8&alpha=3`)
-    nodeDhtFindValueStatusText.value = dhtFindValueSummary(body)
-    nodeClosestInfoText.value = JSON.stringify(body, null, 2)
-    await checkNodeHealth()
+    await runDhtFindValueForKey(nodeDhtFindValueKey.value.trim())
+  })
+}
+
+async function deriveAndFindDhtValueNow() {
+  await runAsync('派生并查找 DHT 记录', async () => {
+    const keyPayload = await deriveDhtKeyPayload()
+    await runDhtFindValueForKey(String(keyPayload.key || nodeDhtFindValueKey.value).trim())
   })
 }
 
@@ -6065,7 +6078,7 @@ const appContext = {
   ratchetInfoText, safetyPolicy, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
-  nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, fillCurrentPublicPeerDhtKeyInput, deriveDhtKeyForFindValue, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, runDhtFindValueNow, runDhtRoutingRefreshNow, runDhtReplicationNow, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
+  nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, fillCurrentPublicPeerDhtKeyInput, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, runDhtFindValueNow, runDhtRoutingRefreshNow, runDhtReplicationNow, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
   nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, clearPreKeyRawState, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
