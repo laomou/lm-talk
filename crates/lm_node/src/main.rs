@@ -4026,13 +4026,12 @@ fn run_dht_routing_refresh_with_transport(
             };
             match transport.send_dht_rpc(peer, &request) {
                 Ok(DhtRpcResponse::Nodes { nodes, .. }) => {
-                    stats.successes = stats.successes.saturating_add(1);
-                    record_dht_peer_success(node, peer);
                     let nodes = nodes
                         .into_iter()
                         .take(dht_response_node_limit(limit))
                         .collect::<Vec<_>>();
-                    stats.nodes_returned = stats.nodes_returned.saturating_add(nodes.len());
+                    let returned = nodes.len();
+                    stats.nodes_returned = stats.nodes_returned.saturating_add(returned);
                     let (nodes, rejected_non_closer, rejected_duplicate) =
                         filter_routing_refresh_nodes(
                             peer,
@@ -4048,6 +4047,19 @@ fn run_dht_routing_refresh_with_transport(
                         .saturating_add(rejected_duplicate);
                     let merged = node.merge_verified_routing_peers(nodes);
                     stats.nodes_merged = stats.nodes_merged.saturating_add(merged);
+                    stats.successes = stats.successes.saturating_add(1);
+                    if returned > 0
+                        && rejected_non_closer.saturating_add(rejected_duplicate) > 0
+                        && rejected_non_closer.saturating_add(rejected_duplicate) == returned
+                    {
+                        record_dht_peer_failure(
+                            node,
+                            peer,
+                            "DHT FindNode response contained only non-progressing or duplicate nodes",
+                        );
+                    } else {
+                        record_dht_peer_success(node, peer);
+                    }
                 }
                 Ok(response) => {
                     stats.failures = stats.failures.saturating_add(1);
@@ -4170,27 +4182,60 @@ fn dht_find_value_with_transport(
                     ..
                 }) => {
                     stats.successes = stats.successes.saturating_add(1);
-                    record_dht_peer_success(node, &peer);
+                    let mut useful_response = false;
                     if let Some(record) = record {
                         if node.accept_dht_record_from_peer(record) {
                             stats.found_records = stats.found_records.saturating_add(1);
+                            useful_response = true;
                             found = true;
-                            break;
                         }
                     }
-                    merge_find_value_closer_results(
-                        node,
-                        &mut queue,
-                        &mut queued,
-                        &seen,
-                        &mut stats,
-                        key,
-                        limit,
-                        max_peers,
-                        &peer,
-                        closer_records,
-                        closer_nodes,
-                    );
+                    let before_closer_records = stats.closer_records;
+                    let before_closer_nodes_returned = stats.closer_nodes_returned;
+                    let before_closer_nodes_merged = stats.closer_nodes_merged;
+                    let before_rejected_non_closer = stats.closer_nodes_rejected_non_closer;
+                    let before_rejected_duplicate = stats.closer_nodes_rejected_duplicate;
+                    if !found {
+                        merge_find_value_closer_results(
+                            node,
+                            &mut queue,
+                            &mut queued,
+                            &seen,
+                            &mut stats,
+                            key,
+                            limit,
+                            max_peers,
+                            &peer,
+                            closer_records,
+                            closer_nodes,
+                        );
+                    }
+                    useful_response = useful_response
+                        || stats.closer_records > before_closer_records
+                        || stats.closer_nodes_merged > before_closer_nodes_merged;
+                    let returned = stats
+                        .closer_nodes_returned
+                        .saturating_sub(before_closer_nodes_returned);
+                    let rejected = stats
+                        .closer_nodes_rejected_non_closer
+                        .saturating_sub(before_rejected_non_closer)
+                        .saturating_add(
+                            stats
+                                .closer_nodes_rejected_duplicate
+                                .saturating_sub(before_rejected_duplicate),
+                        );
+                    if returned > 0 && rejected == returned && !useful_response {
+                        record_dht_peer_failure(
+                            node,
+                            &peer,
+                            "DHT FindValue response contained only non-progressing or duplicate closer nodes",
+                        );
+                    } else {
+                        record_dht_peer_success(node, &peer);
+                    }
+                    if found {
+                        break;
+                    }
                 }
                 Ok(response) => {
                     stats.failures = stats.failures.saturating_add(1);
@@ -5486,7 +5531,7 @@ mod tests {
         let transport = FakeDhtTransport {
             responses: Mutex::new(vec![DhtRpcResponse::Nodes {
                 request_id: "refresh-filter".into(),
-                nodes: vec![closer_peer.clone(), farther_peer, closer_peer],
+                nodes: vec![closer_peer.clone(), farther_peer.clone(), closer_peer],
             }]),
             ..Default::default()
         };
@@ -5508,6 +5553,35 @@ mod tests {
         assert_eq!(
             node.kademlia.all_peers()[0].announce.peer_id,
             closer_peer_id
+        );
+
+        let mut all_filtered_node = NativeNode::new(NodeConfig::default());
+        let transport = FakeDhtTransport {
+            responses: Mutex::new(vec![DhtRpcResponse::Nodes {
+                request_id: "refresh-filter-all".into(),
+                nodes: vec![farther_peer],
+            }]),
+            ..Default::default()
+        };
+        let stats = run_dht_routing_refresh_with_transport(
+            &mut all_filtered_node,
+            std::slice::from_ref(&seed_peer),
+            8,
+            1,
+            None,
+            &transport,
+        );
+        assert_eq!(stats.nodes_returned, 1);
+        assert_eq!(stats.nodes_rejected_non_closer, 1);
+        assert_eq!(stats.nodes_merged, 0);
+        assert_eq!(
+            all_filtered_node
+                .sync_status
+                .peers
+                .get(&seed_peer.url)
+                .unwrap()
+                .consecutive_failures,
+            1
         );
     }
 
@@ -5678,6 +5752,14 @@ mod tests {
         assert_eq!(stats.closer_nodes_rejected_non_closer, 1);
         assert_eq!(stats.closer_nodes_merged, 0);
         assert!(node.kademlia.all_peers().is_empty());
+        assert_eq!(
+            node.sync_status
+                .peers
+                .get("transport://known-seed")
+                .unwrap()
+                .consecutive_failures,
+            1
+        );
     }
 
     #[test]
