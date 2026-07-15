@@ -2701,6 +2701,9 @@ struct HealthResponse<'a> {
     prekeys: usize,
     mailbox_deliveries: usize,
     mailbox_bytes: usize,
+    mailbox_max_bytes: Option<u64>,
+    mailbox_max_bytes_per_user: Option<u64>,
+    mailbox_max_messages_per_user: Option<usize>,
     mailbox_take_limit: usize,
     mailbox_ack_max_ids: usize,
     mailbox_ack_id_max_bytes: usize,
@@ -2905,6 +2908,9 @@ impl NativeNode {
                     prekeys: self.prekeys.len(),
                     mailbox_deliveries: self.mailbox.total_pending(),
                     mailbox_bytes: self.mailbox.total_bytes(),
+                    mailbox_max_bytes: self.config.max_mailbox_bytes,
+                    mailbox_max_bytes_per_user: self.config.max_mailbox_bytes_per_user,
+                    mailbox_max_messages_per_user: self.config.max_mailbox_messages_per_user,
                     mailbox_take_limit: DEFAULT_MAX_MAILBOX_TAKE_LIMIT,
                     mailbox_ack_max_ids: DEFAULT_MAX_MAILBOX_ACK_IDS,
                     mailbox_ack_id_max_bytes: DEFAULT_MAX_MAILBOX_ACK_ID_BYTES,
@@ -4540,6 +4546,18 @@ mod tests {
         assert_eq!(response.status, 200);
         let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
         assert_eq!(body["mailbox_take_limit"], DEFAULT_MAX_MAILBOX_TAKE_LIMIT);
+        assert_eq!(
+            body["mailbox_max_bytes"],
+            NodeConfig::default().max_mailbox_bytes.unwrap()
+        );
+        assert_eq!(
+            body["mailbox_max_bytes_per_user"],
+            DEFAULT_MAX_MAILBOX_BYTES_PER_USER
+        );
+        assert_eq!(
+            body["mailbox_max_messages_per_user"],
+            NodeConfig::default().max_mailbox_messages_per_user.unwrap()
+        );
         assert_eq!(body["mailbox_ack_max_ids"], DEFAULT_MAX_MAILBOX_ACK_IDS);
         assert_eq!(
             body["mailbox_ack_id_max_bytes"],

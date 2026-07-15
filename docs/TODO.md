@@ -967,7 +967,7 @@ MVP 群聊采用逐个加密。
    - [x] Mailbox `ack` 异常 payload / 拒绝原因统计：`maintenance.mailbox_ack_rejects` 与 OpenMetrics `lm_node_mailbox_ack_rejections_total{reason=...}`，覆盖 invalid_json、invalid_user_id、too_many_ids、empty_id 和 id_too_large。
    - [x] `GET /mailbox/status` 返回 per-user summary 与单个 delivery 的 `pending` / `delivered_unacked` / `acked` / `absent_or_expired` 状态，并将 ACK receipt/tombstone 纳入 snapshot 与 SQLite state_db 持久化，为“对方未取”“已取未 ACK”和“ACK 已完成”的客户端恢复逻辑提供节点端基础。
    - [x] 增加节点 Mailbox 压力/故障自动化测试：批量写入 120 条、分页 take、部分 ACK、查询 acked/delivered_unacked 状态，并通过 snapshot 恢复验证 ACK tombstone 与未 ACK delivery 均保留。
-   - [x] `/health` 暴露 Mailbox take 默认上限、ack delivery id 数量上限、单个 id 长度上限、控制面入站/peer 超时和 control-peer 响应大小上限，便于部署确认反滥用参数。
+   - [x] `/health` 暴露 Mailbox take 默认上限、ack delivery id 数量上限、单个 id 长度上限、Mailbox 总字节/每用户字节/每用户消息数配额、控制面入站/peer 超时和 control-peer 响应大小上限，便于部署确认反滥用参数。
 
 3. **PreKey 生命周期**
    - [x] signed prekey 轮换时重置旧 one-time prekey 消费记录。
