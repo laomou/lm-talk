@@ -11,6 +11,15 @@ updates:
     commit-message:
       prefix: "deps"
       include: "scope"
+    ignore:
+      # Crypto/protocol major-version upgrades must be migrated deliberately.
+      # Dependabot PRs for chacha20poly1305 0.11 and sha2 0.11 broke the
+      # release gate by mixing digest/crypto-common generations with hkdf 0.12.
+      # Keep patch/minor updates automated, but require a planned compatibility
+      # branch and protocol-vector review for semver-major Cargo upgrades.
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
 
   - package-ecosystem: "npm"
     directory: "/apps/web"
