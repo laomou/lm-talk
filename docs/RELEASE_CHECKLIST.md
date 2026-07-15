@@ -37,6 +37,37 @@ The script currently covers:
 - Fuzz harness compile checks for `core_imports`, `node_dht_rpc`, and `node_control_request`; `fuzz-smoke` mode also starts each target for a short run.
 - Web typecheck, production build, and Playwright e2e.
 
+
+## Tag-based native node artifacts
+
+Native `lm_node` binaries are built by `.github/workflows/release-node.yml` when a Git tag matching `v*` is pushed, or when the workflow is manually dispatched with a tag name. The workflow builds and publishes:
+
+- `lm_node-linux-x86_64.tar.gz`
+- `lm_node-macos-x86_64.tar.gz`
+- `lm_node-macos-arm64.tar.gz`
+- `lm_node-windows-x86_64.zip`
+
+Each archive includes the `lm_node` binary, key deployment/security docs, and `RELEASE_INFO.txt` with the source commit, build time, Rust toolchain details, and binary SHA256. The GitHub Release also includes per-artifact `.sha256` files and a combined `SHA256SUMS.txt`.
+
+To cut a release candidate from the current commit:
+
+```bash
+git tag -a v0.1.0 -m "LM Talk node v0.1.0"
+git push origin v0.1.0
+```
+
+For local artifact smoke checks on Linux after building the target:
+
+```bash
+cargo build --locked --release -p lm_node --target x86_64-unknown-linux-gnu
+python3 scripts/package-node-release.py \
+  --target x86_64-unknown-linux-gnu \
+  --package-name lm_node-linux-x86_64 \
+  --out-dir dist
+```
+
+Current trust caveat: the automated artifacts are not yet macOS-notarized or Windows-code-signed. Treat signing/notarization as required before a production-trust distribution channel.
+
 ## Manual release blockers still open
 
 Do not mark the project production-ready until these are explicitly completed and evidenced:

@@ -318,6 +318,7 @@
    - 已补核心导入解析的 fuzz-like malformed 输入属性测试，覆盖 Contact/Friend/Backup/PreKey/Signal/DHT/Mailbox/Group/Ratchet/File/Device revoke 等文本入口；附件 Manifest、Chunk JSON、Chunk ciphertext decode 前检查和 Device revoke import 也有显式长度上限。
    - 已新增 `fuzz/` cargo-fuzz/libFuzzer harness：`core_imports`、`node_dht_rpc`、`node_control_request`；运行方式见 `docs/FUZZING.md`。
    - 已新增 `scripts/release-check.sh`、`scripts/fuzz-smoke.sh` 和 `docs/RELEASE_CHECKLIST.md`，将 fmt、Rust core/node、node e2e、fuzz harness compile check、可选 fuzz smoke、Web build/e2e 串成发布候选自动化门禁；GitHub Actions CI 会运行 `release-check quick`，新增 `dependency-audit` job 执行 `cargo audit` 与 runtime/build-toolchain `npm audit`，并在 PR 上运行 `dependency-review` 阻止高危依赖变更。
+   - 已新增 tag 触发的 native node release workflow，会为 Linux x86_64、macOS Intel/Apple Silicon、Windows x86_64 构建 `lm_node` 归档并发布 SHA256/构建信息；仍需补 macOS notarization、Windows Authenticode/code signing 和签名 provenance。
    - 已新增仓库级 `SECURITY.md`，说明私下漏洞报告流程、敏感材料脱敏要求和已知非生产阻塞项。
    - 继续补长时间 fuzz 运行记录、持续语料回归、AFL/独立 fuzz、真实网络压力测试和外部安全审计。
 
