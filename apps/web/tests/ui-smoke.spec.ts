@@ -51,7 +51,8 @@ async function installMockSyncNode(context: BrowserContext, mailboxes: Map<strin
     if (url.pathname === '/prekey/publish') return route.fulfill({ json: { ok: true } })
     if (url.pathname === '/sync/status') return route.fulfill({ json: syncPeerHealth })
     if (url.pathname === '/dht/key') {
-      const kind = url.searchParams.get('kind') === 'mailbox-hint' ? 'MailboxHint' : 'PreKey'
+      const requested = url.searchParams.get('kind')
+      const kind = requested === 'mailbox-hint' ? 'MailboxHint' : requested === 'public-peer' ? 'PublicPeer' : 'PreKey'
       return route.fulfill({ json: { kind, value: url.searchParams.get('value'), key: 'b'.repeat(64) } })
     }
     if (url.pathname === '/dht/record') return route.fulfill({ json: { stored: true, inserted: true, key: 'b'.repeat(64), records: 1 } })
@@ -352,6 +353,8 @@ test('消息同步可完成好友请求和消息收发', async ({ browser }) => 
   await expect(bob.getByText(/已发布并完成 DHT 查找/)).toBeVisible()
   await bob.getByRole('button', { name: '发布并查 MailboxHint' }).click()
   await expect(bob.getByText(/MailboxHint 已发布并完成 DHT 查找/)).toBeVisible()
+  await bob.getByRole('button', { name: '发布并查 PublicPeer' }).click()
+  await expect(bob.getByText(/PublicPeer 已发布并完成 DHT 查找/)).toBeVisible()
   await bob.getByLabel('当前会话自动发送已读回执').check()
 
   await alice.goto('/#/contacts')
