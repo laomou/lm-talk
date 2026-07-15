@@ -16,6 +16,8 @@ Run dependency vulnerability checks separately (the GitHub Actions `dependency-a
 ./scripts/audit.sh
 ```
 
+Current audit exceptions in `scripts/audit.sh` are intentionally narrow: `hickory-proto` advisories are ignored because they are pulled into `Cargo.lock` by unused optional `libp2p` DNS/mDNS dependency metadata, while LM Talk only enables TCP/noise/yamux/request-response; `paste` is ignored as a transitive Linux netlink proc-macro warning via `libp2p-tcp`. Revisit these exceptions whenever `libp2p` is upgraded or DNS/mDNS features are enabled.
+
 For a slower local gate that also runs the full Cargo workspace test suite:
 
 ```bash

@@ -13,7 +13,10 @@ if [[ "${SKIP_CARGO_AUDIT:-0}" != "1" ]]; then
     exit 127
   fi
   section "cargo audit"
-  cargo audit --deny warnings
+  cargo audit --deny warnings \
+    --ignore RUSTSEC-2026-0118 \
+    --ignore RUSTSEC-2026-0119 \
+    --ignore RUSTSEC-2024-0436
 else
   section "cargo audit skipped"
 fi

@@ -26,8 +26,8 @@ getrandom = { version = "0.2", features = ["js"] }
 getrandom04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
 futures = "0.3"
 hkdf = "0.13"
-libp2p = { version = "0.56", features = ["macros", "noise", "request-response", "json", "tcp", "tokio", "yamux"] }
-postcard = { version = "1", features = ["alloc"] }
+libp2p = { version = "0.56", default-features = false, features = ["macros", "noise", "request-response", "json", "tcp", "tokio", "yamux"] }
+postcard = { version = "1", default-features = false, features = ["alloc"] }
 proptest = "1"
 rand_core = "0.10"
 serde = { version = "1", features = ["derive"] }
