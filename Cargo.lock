@@ -1757,7 +1757,7 @@ dependencies = [
  "js-sys",
  "postcard",
  "proptest",
- "rand_core 0.6.4",
+ "rand_core 0.10.1",
  "serde",
  "serde_json",
  "sha2",
