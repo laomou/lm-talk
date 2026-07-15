@@ -977,6 +977,8 @@ struct DhtRoutingRefreshRunStats {
     failures: usize,
     nodes_returned: usize,
     nodes_merged: usize,
+    nodes_rejected_non_closer: usize,
+    nodes_rejected_duplicate: usize,
     peers_quarantined: usize,
 }
 
@@ -1147,6 +1149,8 @@ struct ControlRuntimeStats {
     dht_routing_refresh_failures: u64,
     dht_routing_refresh_nodes_returned: u64,
     dht_routing_refresh_nodes_merged: u64,
+    dht_routing_refresh_nodes_rejected_non_closer: u64,
+    dht_routing_refresh_nodes_rejected_duplicate: u64,
     dht_routing_refresh_peers_quarantined: u64,
     last_dht_routing_refresh_at: Option<u64>,
     dht_find_value_runs: u64,
@@ -1217,6 +1221,8 @@ impl ControlRuntimeStats {
             dht_routing_refresh_failures: 0,
             dht_routing_refresh_nodes_returned: 0,
             dht_routing_refresh_nodes_merged: 0,
+            dht_routing_refresh_nodes_rejected_non_closer: 0,
+            dht_routing_refresh_nodes_rejected_duplicate: 0,
             dht_routing_refresh_peers_quarantined: 0,
             last_dht_routing_refresh_at: None,
             dht_find_value_runs: 0,
@@ -1537,6 +1543,30 @@ impl ControlRuntimeStats {
             &mut out,
             "lm_node_dht_routing_refresh_nodes_merged_total",
             self.dht_routing_refresh_nodes_merged,
+        );
+        push_metric_help(
+            &mut out,
+            "lm_node_dht_routing_refresh_nodes_rejected_total",
+            "Routing peers rejected from DHT FindNode refresh responses before merge.",
+        );
+        push_metric_type(
+            &mut out,
+            "lm_node_dht_routing_refresh_nodes_rejected_total",
+            "counter",
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_dht_routing_refresh_nodes_rejected_total",
+            "reason",
+            "non_closer",
+            self.dht_routing_refresh_nodes_rejected_non_closer,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_dht_routing_refresh_nodes_rejected_total",
+            "reason",
+            "duplicate",
+            self.dht_routing_refresh_nodes_rejected_duplicate,
         );
         push_metric_help(
             &mut out,
@@ -2310,6 +2340,12 @@ impl ControlRuntimeStats {
         self.dht_routing_refresh_nodes_merged = self
             .dht_routing_refresh_nodes_merged
             .saturating_add(stats.nodes_merged as u64);
+        self.dht_routing_refresh_nodes_rejected_non_closer = self
+            .dht_routing_refresh_nodes_rejected_non_closer
+            .saturating_add(stats.nodes_rejected_non_closer as u64);
+        self.dht_routing_refresh_nodes_rejected_duplicate = self
+            .dht_routing_refresh_nodes_rejected_duplicate
+            .saturating_add(stats.nodes_rejected_duplicate as u64);
         self.dht_routing_refresh_peers_quarantined = self
             .dht_routing_refresh_peers_quarantined
             .saturating_add(stats.peers_quarantined as u64);
@@ -3811,6 +3847,50 @@ fn replication_control_peers_for_plan<'a>(
         .collect()
 }
 
+fn filter_routing_refresh_nodes(
+    seed_peer: &SyncPeerConfig,
+    target: lm_node::KademliaNodeId,
+    nodes: Vec<RoutingPeer>,
+    seen_returned_peer_ids: &mut HashSet<String>,
+) -> (Vec<RoutingPeer>, usize, usize) {
+    let mut out = Vec::new();
+    let mut rejected_non_closer = 0usize;
+    let mut rejected_duplicate = 0usize;
+    for node in nodes {
+        if routing_peer_is_seed_peer(seed_peer, &node)
+            || !seen_returned_peer_ids.insert(node.announce.peer_id.clone())
+        {
+            rejected_duplicate = rejected_duplicate.saturating_add(1);
+            continue;
+        }
+        if !routing_peer_makes_find_node_progress(seed_peer, &node, target) {
+            rejected_non_closer = rejected_non_closer.saturating_add(1);
+            continue;
+        }
+        out.push(node);
+    }
+    (out, rejected_non_closer, rejected_duplicate)
+}
+
+fn routing_peer_makes_find_node_progress(
+    seed_peer: &SyncPeerConfig,
+    candidate: &RoutingPeer,
+    target_node_id: lm_node::KademliaNodeId,
+) -> bool {
+    let Some(seed_peer_id) = seed_peer.peer_id.as_deref() else {
+        return true;
+    };
+    let seed_node_id = lm_node::KademliaNodeId::from_peer_id(seed_peer_id);
+    candidate.node_id.xor_distance(&target_node_id) < seed_node_id.xor_distance(&target_node_id)
+}
+
+fn routing_peer_is_seed_peer(seed_peer: &SyncPeerConfig, candidate: &RoutingPeer) -> bool {
+    candidate.announce.peer_id == seed_peer.peer_id.as_deref().unwrap_or_default()
+        || sync_peer_config_from_routing_peer_for_seed(seed_peer, candidate)
+            .map(|candidate_config| candidate_config.url == seed_peer.url)
+            .unwrap_or(false)
+}
+
 #[cfg(test)]
 fn run_dht_routing_refresh(
     node: &mut NativeNode,
@@ -3877,6 +3957,7 @@ fn run_dht_routing_refresh_with_transport(
         targets: targets.len(),
         ..Default::default()
     };
+    let mut seen_returned_peer_ids = HashSet::new();
     for (target_index, target) in targets.into_iter().enumerate() {
         for peer in peers {
             stats.attempts = stats.attempts.saturating_add(1);
@@ -3894,6 +3975,19 @@ fn run_dht_routing_refresh_with_transport(
                         .take(dht_response_node_limit(limit))
                         .collect::<Vec<_>>();
                     stats.nodes_returned = stats.nodes_returned.saturating_add(nodes.len());
+                    let (nodes, rejected_non_closer, rejected_duplicate) =
+                        filter_routing_refresh_nodes(
+                            peer,
+                            target,
+                            nodes,
+                            &mut seen_returned_peer_ids,
+                        );
+                    stats.nodes_rejected_non_closer = stats
+                        .nodes_rejected_non_closer
+                        .saturating_add(rejected_non_closer);
+                    stats.nodes_rejected_duplicate = stats
+                        .nodes_rejected_duplicate
+                        .saturating_add(rejected_duplicate);
                     let merged = node.merge_verified_routing_peers(nodes);
                     stats.nodes_merged = stats.nodes_merged.saturating_add(merged);
                 }
@@ -5267,6 +5361,96 @@ mod tests {
         assert_eq!(stats.successes, 1);
         assert_eq!(stats.nodes_returned, 8);
         assert_eq!(stats.nodes_merged, 0);
+    }
+
+    #[test]
+    fn dht_routing_refresh_filters_non_closer_and_duplicate_nodes() {
+        let (identity, _) = Identity::create_with_passphrase("refresh filter identity").unwrap();
+        let mut node = NativeNode::new(NodeConfig::default());
+        let target = node.plan_dht_routing_refresh().targets[0];
+        let seed_peer_id = (0..10_000)
+            .map(|index| format!("refresh-filter-seed-{index}"))
+            .find(|peer_id| {
+                let seed_distance =
+                    lm_node::KademliaNodeId::from_peer_id(peer_id).xor_distance(&target);
+                (0..10_000).any(|candidate_index| {
+                    lm_node::KademliaNodeId::from_peer_id(&format!(
+                        "refresh-filter-closer-{candidate_index}"
+                    ))
+                    .xor_distance(&target)
+                        < seed_distance
+                }) && (0..10_000).any(|candidate_index| {
+                    lm_node::KademliaNodeId::from_peer_id(&format!(
+                        "refresh-filter-farther-{candidate_index}"
+                    ))
+                    .xor_distance(&target)
+                        >= seed_distance
+                })
+            })
+            .expect("test should find seed peer id");
+        let seed_distance =
+            lm_node::KademliaNodeId::from_peer_id(&seed_peer_id).xor_distance(&target);
+        let closer_peer_id = (0..10_000)
+            .map(|index| format!("refresh-filter-closer-{index}"))
+            .find(|peer_id| {
+                lm_node::KademliaNodeId::from_peer_id(peer_id).xor_distance(&target) < seed_distance
+            })
+            .expect("test should find closer peer id");
+        let farther_peer_id = (0..10_000)
+            .map(|index| format!("refresh-filter-farther-{index}"))
+            .find(|peer_id| {
+                lm_node::KademliaNodeId::from_peer_id(peer_id).xor_distance(&target)
+                    >= seed_distance
+            })
+            .expect("test should find non-closer peer id");
+        let make_peer = |peer_id: String| {
+            let announce = NodeConfig {
+                peer_id: peer_id.clone(),
+                addresses: vec![format!("transport://{peer_id}")],
+                ..Default::default()
+            }
+            .create_announce(&identity)
+            .unwrap();
+            lm_node::RoutingPeer {
+                node_id: lm_node::KademliaNodeId::from_peer_id(&announce.peer_id),
+                announce,
+                identity_public_key: Some(BASE64.encode(identity.identity_public_key())),
+                last_seen_at: current_unix_timestamp(),
+            }
+        };
+        let closer_peer = make_peer(closer_peer_id.clone());
+        let farther_peer = make_peer(farther_peer_id);
+        let seed_peer = SyncPeerConfig {
+            url: "transport://refresh-filter-seed".into(),
+            token: None,
+            peer_id: Some(seed_peer_id),
+        };
+        let transport = FakeDhtTransport {
+            responses: Mutex::new(vec![DhtRpcResponse::Nodes {
+                request_id: "refresh-filter".into(),
+                nodes: vec![closer_peer.clone(), farther_peer, closer_peer],
+            }]),
+            ..Default::default()
+        };
+        let stats = run_dht_routing_refresh_with_transport(
+            &mut node,
+            std::slice::from_ref(&seed_peer),
+            8,
+            1,
+            None,
+            &transport,
+        );
+        assert_eq!(stats.attempts, 1);
+        assert_eq!(stats.successes, 1);
+        assert_eq!(stats.nodes_returned, 3);
+        assert_eq!(stats.nodes_merged, 1);
+        assert_eq!(stats.nodes_rejected_non_closer, 1);
+        assert_eq!(stats.nodes_rejected_duplicate, 1);
+        assert_eq!(node.kademlia.all_peers().len(), 1);
+        assert_eq!(
+            node.kademlia.all_peers()[0].announce.peer_id,
+            closer_peer_id
+        );
     }
 
     #[test]
@@ -6873,6 +7057,8 @@ connection: close
                 failures: 1,
                 nodes_returned: 7,
                 nodes_merged: 2,
+                nodes_rejected_non_closer: 4,
+                nodes_rejected_duplicate: 5,
                 peers_quarantined: 3,
             },
             789,
@@ -6884,6 +7070,8 @@ connection: close
         assert_eq!(stats.dht_routing_refresh_failures, 1);
         assert_eq!(stats.dht_routing_refresh_nodes_returned, 7);
         assert_eq!(stats.dht_routing_refresh_nodes_merged, 2);
+        assert_eq!(stats.dht_routing_refresh_nodes_rejected_non_closer, 4);
+        assert_eq!(stats.dht_routing_refresh_nodes_rejected_duplicate, 5);
         assert_eq!(stats.dht_routing_refresh_peers_quarantined, 3);
         assert_eq!(stats.last_dht_routing_refresh_at, Some(789));
         stats.record_dht_find_value_run(
@@ -7015,6 +7203,16 @@ connection: close
         );
         assert!(metrics.contains("lm_node_dht_routing_refresh_nodes_returned_total 7"));
         assert!(metrics.contains("lm_node_dht_routing_refresh_nodes_merged_total 2"));
+        assert!(
+            metrics.contains(
+                "lm_node_dht_routing_refresh_nodes_rejected_total{reason=\"non_closer\"} 4"
+            )
+        );
+        assert!(
+            metrics.contains(
+                "lm_node_dht_routing_refresh_nodes_rejected_total{reason=\"duplicate\"} 5"
+            )
+        );
         assert!(metrics.contains("lm_node_dht_routing_refresh_peers_quarantined_total 3"));
         assert!(metrics.contains("lm_node_dht_routing_refresh_last_run_at 789"));
         assert!(metrics.contains("lm_node_dht_find_value_runs_total 1"));

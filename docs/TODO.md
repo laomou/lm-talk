@@ -1013,7 +1013,7 @@ MVP 群聊采用逐个加密。
    - [x] serve-control 同步周期后可对 due-for-republish records 向已配置 control peers 执行 `StoreRecord` replication scaffold。
    - [x] `/control/stats` 与 `/control/metrics` 暴露 DHT replication runner 的 runs、records、attempts、successes、failures 和 last run 时间。
    - [x] serve-control 同步周期后可执行 bounded control-peer `FindNode` routing refresh runner scaffold，并统计返回节点数量。
-   - [x] routing refresh runner 可合并来自已配置 control peers 的可信返回节点：过滤过期、node_id/peer_id 不匹配和本机节点，并写入 routing table。
+   - [x] routing refresh runner 可合并来自已配置 control peers 的可信返回节点：过滤过期、node_id/peer_id 不匹配、本机节点、FindNode 返回中的自引用/重复节点，以及已知响应 peer id 时未比响应 peer 更接近 refresh target 的节点，并写入 routing table，同时在运行统计/OpenMetrics 中暴露 rejected non-closer/duplicate routing nodes。
    - [x] `RoutingPeer` 返回节点可携带 identity public key；verified merge 路径会校验 public peer announce 签名，snapshot / SQLite state_db 会持久化该字段。
    - [x] DHT record 拒绝统计覆盖控制面 store、DHT RPC StoreRecord、sync snapshot 导入和 FindValue found/closer records，避免查询路径静默丢弃无效记录而无法观测攻击/故障。
    - [x] HTTP/libp2p DHT transport 校验响应体 logical `request_id` 与请求一致，并将 DHT `Error` 响应视为失败，降低异常/恶意 peer 串扰响应被上层误用的风险。
