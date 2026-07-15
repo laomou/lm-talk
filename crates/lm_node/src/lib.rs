@@ -797,6 +797,7 @@ pub struct MailboxUserDeliverySummary {
     pub total: usize,
     pub undelivered: usize,
     pub delivered_unacked: usize,
+    pub bytes: usize,
 }
 
 impl MailboxStore {
@@ -934,6 +935,7 @@ impl MailboxStore {
             total: deliveries.len(),
             undelivered: deliveries.len().saturating_sub(delivered_unacked),
             delivered_unacked,
+            bytes: self.bytes_for(user_id),
         }
     }
 
@@ -2746,6 +2748,8 @@ struct MailboxPushResponse {
     delivery_id: String,
     to_user_id: String,
     pending: usize,
+    pending_bytes: usize,
+    max_bytes_per_user: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -2754,6 +2758,8 @@ struct MailboxTakeResponse {
     messages: Vec<MailboxDelivery>,
     returned: usize,
     pending: usize,
+    pending_bytes: usize,
+    max_bytes_per_user: Option<u64>,
     more: bool,
 }
 
@@ -2768,12 +2774,15 @@ struct MailboxAckResponse {
     user_id: String,
     removed: usize,
     pending: usize,
+    pending_bytes: usize,
+    max_bytes_per_user: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
 struct MailboxStatusResponse {
     user_id: String,
     summary: MailboxUserDeliverySummary,
+    max_bytes_per_user: Option<u64>,
     delivery: Option<MailboxDeliveryStatus>,
 }
 
@@ -3097,6 +3106,8 @@ impl NativeNode {
                 delivery_id,
                 to_user_id: message.to_user_id.to_string(),
                 pending: self.mailbox.pending_for(&message.to_user_id),
+                pending_bytes: self.mailbox.bytes_for(&message.to_user_id),
+                max_bytes_per_user: self.config.max_mailbox_bytes_per_user,
             },
         )
     }
@@ -3125,6 +3136,8 @@ impl NativeNode {
                 messages,
                 returned,
                 pending,
+                pending_bytes: self.mailbox.bytes_for(&user_id),
+                max_bytes_per_user: self.config.max_mailbox_bytes_per_user,
                 more: pending > returned,
             },
         )
@@ -3156,6 +3169,7 @@ impl NativeNode {
             &MailboxStatusResponse {
                 user_id: user_id.to_string(),
                 summary: self.mailbox.delivery_summary_for(&user_id),
+                max_bytes_per_user: self.config.max_mailbox_bytes_per_user,
                 delivery,
             },
         )
@@ -3199,6 +3213,8 @@ impl NativeNode {
                 user_id: user_id.to_string(),
                 removed,
                 pending: self.mailbox.pending_for(&user_id),
+                pending_bytes: self.mailbox.bytes_for(&user_id),
+                max_bytes_per_user: self.config.max_mailbox_bytes_per_user,
             },
         )
     }
@@ -4952,6 +4968,11 @@ mod tests {
         assert_eq!(status_body["summary"]["total"], 1);
         assert_eq!(status_body["summary"]["undelivered"], 1);
         assert_eq!(status_body["summary"]["delivered_unacked"], 0);
+        assert!(status_body["summary"]["bytes"].as_u64().unwrap() > 0);
+        assert_eq!(
+            status_body["max_bytes_per_user"],
+            DEFAULT_MAX_MAILBOX_BYTES_PER_USER
+        );
         assert_eq!(status_body["delivery"]["status"], "pending");
         let response = node.handle_control_request(ControlRequest {
             method: "GET".into(),
@@ -4963,6 +4984,11 @@ mod tests {
         assert!(response.body.contains("ciphertext"));
         assert_eq!(node.mailbox.pending_for(bob.user_id()), 1);
         let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(
+            body["max_bytes_per_user"],
+            DEFAULT_MAX_MAILBOX_BYTES_PER_USER
+        );
+        assert!(body["pending_bytes"].as_u64().unwrap() > 0);
         let delivery_id = body["messages"][0]["delivery_id"]
             .as_str()
             .unwrap()
@@ -4983,6 +5009,7 @@ mod tests {
         assert_eq!(status_body["summary"]["total"], 1);
         assert_eq!(status_body["summary"]["undelivered"], 0);
         assert_eq!(status_body["summary"]["delivered_unacked"], 1);
+        assert!(status_body["summary"]["bytes"].as_u64().unwrap() > 0);
         assert_eq!(status_body["delivery"]["status"], "delivered_unacked");
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
@@ -4995,6 +5022,12 @@ mod tests {
             headers: Vec::new(),
         });
         assert_eq!(response.status, 200);
+        let ack_body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(ack_body["pending_bytes"], 0);
+        assert_eq!(
+            ack_body["max_bytes_per_user"],
+            DEFAULT_MAX_MAILBOX_BYTES_PER_USER
+        );
         assert_eq!(node.mailbox.pending_for(bob.user_id()), 0);
         let response = node.handle_control_request(ControlRequest {
             method: "GET".into(),
@@ -5009,6 +5042,7 @@ mod tests {
         assert_eq!(response.status, 200, "{}", response.body);
         let status_body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
         assert_eq!(status_body["summary"]["total"], 0);
+        assert_eq!(status_body["summary"]["bytes"], 0);
         assert_eq!(status_body["delivery"]["status"], "acked");
         assert!(status_body["delivery"]["acked_at"].as_u64().is_some());
     }
