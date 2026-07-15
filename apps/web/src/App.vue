@@ -20,6 +20,7 @@ import init, {
   create_identity,
   create_file_package,
   create_mailbox_message,
+  create_message_receipt,
   create_peer_announce,
   create_prekey_bundle,
   create_public_peer_announce,
@@ -46,6 +47,7 @@ import init, {
   import_group_sender_key,
   apply_group_policy_event,
   inspect_mailbox_message,
+  inspect_message_receipt,
   inspect_peer_announce,
   inspect_prekey_bundle,
   inspect_public_peer_announce,
@@ -129,6 +131,7 @@ type ContactItem = ContactInfo & {
   revoked_device_ids?: string[]
   device_certs?: DeviceCertItem[]
   block_reason?: string
+  read_receipts?: 'default' | 'enabled' | 'disabled'
 }
 
 type FilterLevel = 'Off' | 'Relaxed' | 'Standard' | 'Strict'
@@ -201,7 +204,7 @@ type GroupSenderKeyItem = {
   updated_at: number
 }
 
-type MessageStatus = 'queued' | 'sent' | 'mailbox' | 'delivered' | 'copied' | 'received' | 'failed'
+type MessageStatus = 'queued' | 'sent' | 'mailbox' | 'delivered' | 'read' | 'copied' | 'received' | 'failed'
 
 type ChatMessage = {
   id: string
@@ -212,6 +215,9 @@ type ChatMessage = {
   text: string
   envelope_json?: string
   protocol_message_id?: string
+  mailbox_delivery_id?: string
+  delivered_at?: number
+  read_at?: number
   file_downloaded_at?: number
   status: MessageStatus
   created_at: number
@@ -228,7 +234,7 @@ type OutboxItem = {
   peer_user_id: string
   envelope_json: string
   message_id?: string
-  kind?: 'direct-envelope' | 'group-fanout' | 'file-package' | 'other'
+  kind?: 'direct-envelope' | 'group-fanout' | 'file-package' | 'delivery-receipt' | 'read-receipt' | 'other'
   status: 'queued' | 'sent' | 'failed'
   created_at: number
   retry_count: number
@@ -270,14 +276,16 @@ type PersistedState = {
   prekeyPrivateBundleJson?: string | EncryptedStringV1
   prekeySignedOneTimeRecordTexts?: string[]
   safetyPolicy?: SafetyPolicy
-  nodeControlUrl?: string
+  nodeControlUrl?: string | EncryptedStringV1
   nodeEnabled?: boolean
   autoMailboxTake?: boolean
+  autoReadReceipts?: boolean
   autoPublishPreKey?: boolean
   autoNodeSync?: boolean
   processedMailboxIds?: Array<string | ProcessedMailboxRecord>
   mailboxFailedItems?: MailboxFailedItem[]
   syncRecoveryHistory?: string[]
+  pwaBackgroundEventHistory?: string[]
   friendRequestRateRecords?: FriendRequestRateRecord[]
 }
 
@@ -290,14 +298,16 @@ type PersistedMeta = {
   prekeyPrivateBundleJson?: string | EncryptedStringV1
   prekeySignedOneTimeRecordTexts?: string[]
   safetyPolicy?: SafetyPolicy
-  nodeControlUrl?: string
+  nodeControlUrl?: string | EncryptedStringV1
   nodeEnabled?: boolean
   autoMailboxTake?: boolean
+  autoReadReceipts?: boolean
   autoPublishPreKey?: boolean
   autoNodeSync?: boolean
   processedMailboxIds?: Array<string | ProcessedMailboxRecord>
   mailboxFailedItems?: MailboxFailedItem[]
   syncRecoveryHistory?: string[]
+  pwaBackgroundEventHistory?: string[]
   friendRequestRateRecords?: FriendRequestRateRecord[]
   schemaVersion: number
 }
@@ -347,6 +357,12 @@ const MAX_SIGNAL_BYTES = 256 * 1024
 const MAX_FILE_BYTES = 16 * 1024 * 1024
 const MAX_RTC_TEXT_BYTES = MAX_FILE_BYTES * 3
 const MAX_OUTBOX_RETRY_COUNT = 5
+const NODE_FETCH_TIMEOUT_MS = 10_000
+
+function nodeFetchTimeoutMs(): number {
+  const override = typeof window !== 'undefined' ? Number((window as any).nodeFetchTimeoutMsForTests) : 0
+  return Number.isFinite(override) && override > 0 ? override : NODE_FETCH_TIMEOUT_MS
+}
 const GROUP_EVENT_PAYLOAD_PREFIX = 'lm-group-event-message-v1:'
 const GROUP_SENDER_KEY_PAYLOAD_PREFIX = 'lm-group-sender-key-message-v1:'
 
@@ -443,6 +459,7 @@ const mailboxMessageInfoText = ref('')
 const nodeControlUrl = ref('http://127.0.0.1:8787')
 const nodeEnabled = ref(false)
 const autoMailboxTake = ref(true)
+const autoReadReceipts = ref(false)
 const autoPublishPreKey = ref(true)
 const autoNodeSync = ref(false)
 let nodeSyncTimer: number | undefined
@@ -457,6 +474,7 @@ const syncTriggerPolicyText = computed(() => {
   if (autoPublishPreKey.value) parts.push('登录/手动同步先检查 PreKey')
   if (autoMailboxTake.value) parts.push('登录/切回前台收取 Mailbox，前台触发 30 秒节流')
   else parts.push('Mailbox 自动收取关闭')
+  parts.push(autoReadReceipts.value ? '当前会话可见时自动发送已读回执' : '已读回执关闭')
   parts.push('Outbox 每 30 秒重试到期项')
   if (autoNodeSync.value) parts.push('节点快照每 60 秒同步')
   return parts.join('；')
@@ -496,6 +514,8 @@ const storageEstimateText = ref('尚未估算')
 const webVersionText = `v${__APP_VERSION__} (${__BUILD_REF__})`
 const pwaStatusText = ref('尚未检查')
 const pwaBackgroundCapabilityText = ref('尚未检查')
+const pwaLastBackgroundEventText = ref('尚未收到后台事件')
+const pwaBackgroundEventHistory = ref<string[]>([])
 const selectedFile = ref<File | null>(null)
 const filePackageText = ref('')
 const incomingFilePackageText = ref('')
@@ -651,6 +671,9 @@ onMounted(async () => {
     })
     window.addEventListener('online', refreshRuntimeStatus)
     window.addEventListener('offline', refreshRuntimeStatus)
+    navigator.serviceWorker?.addEventListener?.('message', (event: MessageEvent) => {
+      handlePwaBackgroundSyncMessage(event.data)
+    })
     void refreshRuntimeStatus()
     if ('serviceWorker' in navigator) {
       const swUrl = new URL('sw.js', import.meta.env.BASE_URL ? new URL(import.meta.env.BASE_URL, window.location.origin) : window.location.origin)
@@ -804,6 +827,7 @@ function userFacingError(e: unknown): string {
   if (raw.includes('backup user_id mismatch')) return '身份文本校验失败。'
   if (raw.includes('请粘贴身份文本')) return '请粘贴身份文本。'
   if (raw.includes('请输入提示词')) return '请输入提示词。'
+  if (raw.includes('AbortError') || raw.includes('同步服务请求超时')) return '同步服务请求超时，请稍后重试或切换同步服务。'
   if (raw.includes('Failed to fetch')) return '无法连接同步服务。请确认 lm_node 已启动；如果在 GitHub Pages 上连接 127.0.0.1 或局域网 IP，请确认 lm_node 已启动、地址可访问，并使用最新 lm_node（已支持浏览器 HTTPS 访问本机/局域网服务所需的权限头）。IPv6 地址请写成 http://[fd00::1234]:8787 这种带方括号的形式。'
   return raw.replace(/^Error:\s*/, '')
 }
@@ -997,6 +1021,78 @@ async function decryptOutboxFromStore(item: any, key: CryptoKey | null): Promise
   return { ...item, status: item.status ?? 'queued', retry_count: item.retry_count ?? 0, envelope_json: await decryptLocalString(item.envelope_json, key) }
 }
 
+async function encryptFriendRequestForStore(item: FriendRequestItem, key: CryptoKey | null): Promise<any> {
+  return {
+    ...item,
+    note: item.note ? await encryptLocalString(item.note, key) : item.note,
+    request_text: await encryptLocalString(item.request_text, key),
+    from_contact_card_text: await encryptLocalString(item.from_contact_card_text, key),
+    quarantine_reason: item.quarantine_reason ? await encryptLocalString(item.quarantine_reason, key) : item.quarantine_reason,
+  }
+}
+
+async function decryptFriendRequestFromStore(item: any, key: CryptoKey | null): Promise<FriendRequestItem> {
+  return {
+    ...item,
+    note: item.note ? await decryptLocalString(item.note, key) : item.note,
+    request_text: await decryptLocalString(item.request_text, key),
+    from_contact_card_text: await decryptLocalString(item.from_contact_card_text, key),
+    quarantine_reason: item.quarantine_reason ? await decryptLocalString(item.quarantine_reason, key) : item.quarantine_reason,
+  }
+}
+
+async function encryptGroupInviteForStore(item: GroupInviteItem, key: CryptoKey | null): Promise<any> {
+  return {
+    ...item,
+    group_name: await encryptLocalString(item.group_name, key),
+    invite_text: await encryptLocalString(item.invite_text, key),
+  }
+}
+
+async function decryptGroupInviteFromStore(item: any, key: CryptoKey | null): Promise<GroupInviteItem> {
+  return {
+    ...item,
+    group_name: await decryptLocalString(item.group_name, key),
+    invite_text: await decryptLocalString(item.invite_text, key),
+  }
+}
+
+async function encryptGroupSenderKeyForStore(item: GroupSenderKeyItem, key: CryptoKey | null): Promise<any> {
+  return {
+    ...item,
+    state_json: await encryptLocalString(item.state_json, key),
+    distribution_text: item.distribution_text ? await encryptLocalString(item.distribution_text, key) : item.distribution_text,
+  }
+}
+
+async function decryptGroupSenderKeyFromStore(item: any, key: CryptoKey | null): Promise<GroupSenderKeyItem> {
+  return {
+    ...item,
+    state_json: await decryptLocalString(item.state_json, key),
+    distribution_text: item.distribution_text ? await decryptLocalString(item.distribution_text, key) : item.distribution_text,
+  }
+}
+
+async function encryptMailboxFailedItemForStore(item: MailboxFailedItem, key: CryptoKey | null): Promise<any> {
+  return {
+    ...item,
+    message: await encryptLocalString(JSON.stringify(item.message ?? null), key),
+    reason: await encryptLocalString(item.reason, key),
+  }
+}
+
+async function decryptMailboxFailedItemFromStore(item: any, key: CryptoKey | null): Promise<MailboxFailedItem> {
+  const messageText = await decryptLocalString(item.message, key)
+  let message: any = null
+  try { message = messageText ? JSON.parse(messageText) : null } catch { message = item.message }
+  return {
+    ...item,
+    message,
+    reason: await decryptLocalString(item.reason, key),
+    retry_count: item.retry_count ?? 0,
+  }
+}
+
 function normalizeProcessedMailboxRecords(records: Array<string | ProcessedMailboxRecord> | undefined): ProcessedMailboxRecord[] {
   const now = Date.now()
   const seen = new Set<string>()
@@ -1026,9 +1122,13 @@ async function decryptSensitiveStateInMemory() {
   const key = await localStorageCryptoKey()
   if (!key) return
   contacts.value = await Promise.all(contacts.value.map((c: any) => decryptContactFromStore(c, key)))
+  friendRequests.value = await Promise.all(friendRequests.value.map((r: any) => decryptFriendRequestFromStore(r, key)))
   groups.value = await Promise.all(groups.value.map((g: any) => decryptGroupFromStore(g, key)))
+  groupInvites.value = await Promise.all(groupInvites.value.map((g: any) => decryptGroupInviteFromStore(g, key)))
+  groupSenderKeys.value = await Promise.all(groupSenderKeys.value.map((g: any) => decryptGroupSenderKeyFromStore(g, key)))
   messages.value = await Promise.all(messages.value.map((m: any) => decryptMessageFromStore(m, key)))
   outbox.value = await Promise.all(outbox.value.map((o: any) => decryptOutboxFromStore(o, key)))
+  mailboxFailedItems.value = await Promise.all(mailboxFailedItems.value.map((m: any) => decryptMailboxFailedItemFromStore(m, key)))
   ratchetSessions.value = await Promise.all(ratchetSessions.value.map((r: any) => decryptRatchetFromStore(r, key)))
 }
 
@@ -1053,11 +1153,13 @@ function currentPersistedState(): PersistedState {
     nodeControlUrl: nodeControlUrl.value,
     nodeEnabled: nodeEnabled.value,
     autoMailboxTake: autoMailboxTake.value,
+    autoReadReceipts: autoReadReceipts.value,
     autoPublishPreKey: autoPublishPreKey.value,
     autoNodeSync: autoNodeSync.value,
     processedMailboxIds: processedMailboxIds.value,
     mailboxFailedItems: mailboxFailedItems.value,
     syncRecoveryHistory: syncRecoveryHistory.value,
+    pwaBackgroundEventHistory: pwaBackgroundEventHistory.value,
     friendRequestRateRecords: friendRequestRateRecords.value,
   }
 }
@@ -1075,11 +1177,13 @@ function persistedMeta(): PersistedMeta {
     nodeControlUrl: nodeControlUrl.value,
     nodeEnabled: nodeEnabled.value,
     autoMailboxTake: autoMailboxTake.value,
+    autoReadReceipts: autoReadReceipts.value,
     autoPublishPreKey: autoPublishPreKey.value,
     autoNodeSync: autoNodeSync.value,
     processedMailboxIds: processedMailboxIds.value,
     mailboxFailedItems: mailboxFailedItems.value,
     syncRecoveryHistory: syncRecoveryHistory.value,
+    pwaBackgroundEventHistory: pwaBackgroundEventHistory.value,
     friendRequestRateRecords: friendRequestRateRecords.value,
     schemaVersion: 3,
   }
@@ -1097,23 +1201,69 @@ function ownerPrefix(): string {
   return `${ownerId()}::`
 }
 
+function accountPrefix(userId: string): string {
+  return `${userId}::`
+}
+
+async function purgeAccountTables(userId: string) {
+  const prefix = accountPrefix(userId)
+  await Promise.all(Object.values(TABLES).map((table) => idbTableReplaceByPrefix(table, prefix, [])))
+}
+
+type TableLoadResult<T> = {
+  items: T[]
+  failed: number
+}
+
+function recordTableLoadFailure(table: string, error: unknown) {
+  appendLog(`⚠️ IndexedDB ${table} 部分记录加载失败：${userFacingError(error)}`)
+}
+
+async function loadTableByPrefixSafe<T>(table: typeof TABLES[keyof typeof TABLES], prefix: string, decode: (value: any) => Promise<T>): Promise<TableLoadResult<T>> {
+  const rows = await idbTableGetAllByPrefix<any>(table, prefix)
+  const items: T[] = []
+  let failed = 0
+  for (const row of rows) {
+    try {
+      items.push(await decode(row))
+    } catch (e) {
+      failed += 1
+      recordTableLoadFailure(table, e)
+    }
+  }
+  return { items, failed }
+}
+
+function summarizePartialLoadFailures(failures: Array<[string, number]>) {
+  const parts = failures.filter(([, count]) => count > 0).map(([name, count]) => `${name} ${count}`)
+  if (parts.length === 0) return
+  appendLog(`⚠️ 已跳过损坏的本地记录：${parts.join('，')}；其余数据已加载，请从备份或同步服务恢复缺失内容`)
+  toast('已跳过损坏的本地记录，其余数据已加载', 'warning')
+}
+
 async function persistStateTables() {
   if (!identity.value) return
   const key = await localStorageCryptoKey()
   const storedContacts = await Promise.all(contacts.value.map((c) => encryptContactForStore(c, key)))
+  const storedFriendRequests = await Promise.all(friendRequests.value.map((r) => encryptFriendRequestForStore(r, key)))
   const storedGroups = await Promise.all(groups.value.map((g) => encryptGroupForStore(g, key)))
+  const storedGroupInvites = await Promise.all(groupInvites.value.map((g) => encryptGroupInviteForStore(g, key)))
+  const storedGroupSenderKeys = await Promise.all(groupSenderKeys.value.map((g) => encryptGroupSenderKeyForStore(g, key)))
   const storedMessages = await Promise.all(messages.value.map((m) => encryptMessageForStore(m, key)))
   const storedOutbox = await Promise.all(outbox.value.map((o) => encryptOutboxForStore(o, key)))
   const storedRatchets = await Promise.all(ratchetSessions.value.map((r) => encryptRatchetForStore(r, key)))
+  const storedMailboxFailedItems = await Promise.all(mailboxFailedItems.value.map((m) => encryptMailboxFailedItemForStore(m, key)))
   const meta = persistedMeta()
+  meta.nodeControlUrl = await encryptLocalString(nodeControlUrl.value, key)
   meta.prekeyPrivateBundleJson = await encryptLocalString(prekeyPrivateBundleJson.value, key)
+  meta.mailboxFailedItems = storedMailboxFailedItems
   const prefix = ownerPrefix()
   await idbTableReplaceByPrefix(TABLES.meta, prefix, [[ownerKey('main'), meta]])
   await idbTableReplaceByPrefix(TABLES.contacts, prefix, storedContacts.map((c) => [ownerKey(c.user_id), c]))
-  await idbTableReplaceByPrefix(TABLES.friendRequests, prefix, friendRequests.value.map((r) => [ownerKey(r.request_id), r]))
+  await idbTableReplaceByPrefix(TABLES.friendRequests, prefix, storedFriendRequests.map((r) => [ownerKey(r.request_id), r]))
   await idbTableReplaceByPrefix(TABLES.groups, prefix, storedGroups.map((g) => [ownerKey(g.group_id), g]))
-  await idbTableReplaceByPrefix(TABLES.groupInvites, prefix, groupInvites.value.map((g) => [ownerKey(g.invite_id), g]))
-  await idbTableReplaceByPrefix(TABLES.groupSenderKeys, prefix, groupSenderKeys.value.map((k) => [ownerKey(k.key_id), k]))
+  await idbTableReplaceByPrefix(TABLES.groupInvites, prefix, storedGroupInvites.map((g) => [ownerKey(g.invite_id), g]))
+  await idbTableReplaceByPrefix(TABLES.groupSenderKeys, prefix, storedGroupSenderKeys.map((k) => [ownerKey(k.key_id), k]))
   await idbTableReplaceByPrefix(TABLES.messages, prefix, storedMessages.map((m) => [ownerKey(m.id), m]))
   await idbTableReplaceByPrefix(TABLES.outbox, prefix, storedOutbox.map((o) => [ownerKey(o.id), o]))
   await idbTableReplaceByPrefix(TABLES.ratchetSessions, prefix, storedRatchets.map((r) => [ownerKey(r.peer_user_id), r]))
@@ -1135,16 +1285,19 @@ async function flushPersistForTests() {
 
 if (typeof window !== 'undefined') {
   ;(window as any).flushPersistForTests = flushPersistForTests
+  ;(window as any).appendLogForTests = appendLog
+  ;(window as any).mergeMessagesForTests = mergeMessagesForState
+  ;(window as any).handlePwaBackgroundSyncForTests = handlePwaBackgroundSyncMessage
 }
 
 async function writeStateToTables(state: PersistedState) {
   backupText.value = state.backupText ?? ''
   const key = await localStorageCryptoKey()
   contacts.value = await Promise.all((state.contacts ?? []).map((c: any) => decryptContactFromStore(c, key)))
-  friendRequests.value = state.friendRequests ?? []
+  friendRequests.value = await Promise.all((state.friendRequests ?? []).map((r: any) => decryptFriendRequestFromStore(r, key)))
   groups.value = await Promise.all((state.groups ?? []).map((g: any) => decryptGroupFromStore(g, key)))
-  groupInvites.value = state.groupInvites ?? []
-  groupSenderKeys.value = state.groupSenderKeys ?? []
+  groupInvites.value = await Promise.all((state.groupInvites ?? []).map((g: any) => decryptGroupInviteFromStore(g, key)))
+  groupSenderKeys.value = await Promise.all((state.groupSenderKeys ?? []).map((g: any) => decryptGroupSenderKeyFromStore(g, key)))
   messages.value = await Promise.all((state.messages ?? []).map((m: any) => decryptMessageFromStore(m, key)))
   outbox.value = await Promise.all((state.outbox ?? []).map((o: any) => decryptOutboxFromStore(o, key)))
   ratchetSessions.value = await Promise.all((state.ratchetSessions ?? []).map((r: any) => decryptRatchetFromStore(r, key)))
@@ -1155,14 +1308,17 @@ async function writeStateToTables(state: PersistedState) {
   prekeyPrivateBundleJson.value = state.prekeyPrivateBundleJson ? await decryptLocalString(state.prekeyPrivateBundleJson, key) : ''
   prekeySignedOneTimeRecordTexts.value = state.prekeySignedOneTimeRecordTexts ?? []
   safetyPolicy.value = { ...safetyPolicy.value, ...(state.safetyPolicy ?? {}) }
-  nodeControlUrl.value = state.nodeControlUrl ?? nodeControlUrl.value
+  nodeControlUrl.value = state.nodeControlUrl ? await decryptLocalString(state.nodeControlUrl, key) : nodeControlUrl.value
   nodeEnabled.value = state.nodeEnabled ?? false
   autoMailboxTake.value = state.autoMailboxTake ?? true
+  autoReadReceipts.value = state.autoReadReceipts ?? false
   autoPublishPreKey.value = state.autoPublishPreKey ?? true
   autoNodeSync.value = state.autoNodeSync ?? false
   processedMailboxIds.value = normalizeProcessedMailboxRecords(state.processedMailboxIds)
-  mailboxFailedItems.value = state.mailboxFailedItems ?? []
+  mailboxFailedItems.value = await Promise.all((state.mailboxFailedItems ?? []).map((m: any) => decryptMailboxFailedItemFromStore(m, key)))
   syncRecoveryHistory.value = state.syncRecoveryHistory ?? []
+  pwaBackgroundEventHistory.value = state.pwaBackgroundEventHistory ?? []
+  pwaLastBackgroundEventText.value = pwaBackgroundEventHistory.value[0] ?? '尚未收到后台事件'
   friendRequestRateRecords.value = state.friendRequestRateRecords ?? []
   await persistStateTables()
 }
@@ -1180,30 +1336,52 @@ async function loadStateFromTables(): Promise<boolean> {
   prekeyPrivateBundleJson.value = meta.prekeyPrivateBundleJson ? await decryptLocalString(meta.prekeyPrivateBundleJson, key) : ''
   prekeySignedOneTimeRecordTexts.value = meta.prekeySignedOneTimeRecordTexts ?? []
   safetyPolicy.value = { ...safetyPolicy.value, ...(meta.safetyPolicy ?? {}) }
-  nodeControlUrl.value = meta.nodeControlUrl ?? nodeControlUrl.value
+  nodeControlUrl.value = meta.nodeControlUrl ? await decryptLocalString(meta.nodeControlUrl, key) : nodeControlUrl.value
   nodeEnabled.value = meta.nodeEnabled ?? false
   autoMailboxTake.value = meta.autoMailboxTake ?? true
+  autoReadReceipts.value = meta.autoReadReceipts ?? false
   autoPublishPreKey.value = meta.autoPublishPreKey ?? true
   autoNodeSync.value = meta.autoNodeSync ?? false
   processedMailboxIds.value = normalizeProcessedMailboxRecords(meta.processedMailboxIds)
-  mailboxFailedItems.value = meta.mailboxFailedItems ?? []
+  mailboxFailedItems.value = await Promise.all((meta.mailboxFailedItems ?? []).map((m: any) => decryptMailboxFailedItemFromStore(m, key)))
   syncRecoveryHistory.value = meta.syncRecoveryHistory ?? []
+  pwaBackgroundEventHistory.value = meta.pwaBackgroundEventHistory ?? []
+  pwaLastBackgroundEventText.value = pwaBackgroundEventHistory.value[0] ?? '尚未收到后台事件'
   friendRequestRateRecords.value = meta.friendRequestRateRecords ?? []
   const prefix = ownerPrefix()
-  contacts.value = await Promise.all((await idbTableGetAllByPrefix<any>(TABLES.contacts, prefix)).map((c: any) => decryptContactFromStore(c, key)))
-  friendRequests.value = await idbTableGetAllByPrefix<FriendRequestItem>(TABLES.friendRequests, prefix)
-  groups.value = await Promise.all((await idbTableGetAllByPrefix<any>(TABLES.groups, prefix)).map((g: any) => decryptGroupFromStore(g, key)))
-  groupInvites.value = await idbTableGetAllByPrefix<GroupInviteItem>(TABLES.groupInvites, prefix)
-  groupSenderKeys.value = await idbTableGetAllByPrefix<GroupSenderKeyItem>(TABLES.groupSenderKeys, prefix)
-  messages.value = await Promise.all((await idbTableGetAllByPrefix<any>(TABLES.messages, prefix)).map((m: any) => decryptMessageFromStore(m, key)))
-  outbox.value = await Promise.all((await idbTableGetAllByPrefix<any>(TABLES.outbox, prefix)).map((o: any) => decryptOutboxFromStore(o, key)))
-  ratchetSessions.value = await Promise.all((await idbTableGetAllByPrefix<any>(TABLES.ratchetSessions, prefix)).map((r: any) => decryptRatchetFromStore(r, key)))
+  const loadedContacts = await loadTableByPrefixSafe(TABLES.contacts, prefix, (c) => decryptContactFromStore(c, key))
+  const loadedFriendRequests = await loadTableByPrefixSafe(TABLES.friendRequests, prefix, (r) => decryptFriendRequestFromStore(r, key))
+  const loadedGroups = await loadTableByPrefixSafe(TABLES.groups, prefix, (g) => decryptGroupFromStore(g, key))
+  const loadedGroupInvites = await loadTableByPrefixSafe(TABLES.groupInvites, prefix, (g) => decryptGroupInviteFromStore(g, key))
+  const loadedGroupSenderKeys = await loadTableByPrefixSafe(TABLES.groupSenderKeys, prefix, (g) => decryptGroupSenderKeyFromStore(g, key))
+  const loadedMessages = await loadTableByPrefixSafe(TABLES.messages, prefix, (m) => decryptMessageFromStore(m, key))
+  const loadedOutbox = await loadTableByPrefixSafe(TABLES.outbox, prefix, (o) => decryptOutboxFromStore(o, key))
+  const loadedRatchets = await loadTableByPrefixSafe(TABLES.ratchetSessions, prefix, (r) => decryptRatchetFromStore(r, key))
+  contacts.value = loadedContacts.items
+  friendRequests.value = loadedFriendRequests.items
+  groups.value = loadedGroups.items
+  groupInvites.value = loadedGroupInvites.items
+  groupSenderKeys.value = loadedGroupSenderKeys.items
+  messages.value = loadedMessages.items
+  outbox.value = loadedOutbox.items
+  ratchetSessions.value = loadedRatchets.items
+  summarizePartialLoadFailures([
+    ['联系人', loadedContacts.failed],
+    ['好友请求', loadedFriendRequests.failed],
+    ['群', loadedGroups.failed],
+    ['群邀请', loadedGroupInvites.failed],
+    ['Sender Key', loadedGroupSenderKeys.failed],
+    ['消息', loadedMessages.failed],
+    ['Outbox', loadedOutbox.failed],
+    ['Ratchet', loadedRatchets.failed],
+  ])
   if (backupText.value && myContactCardText.value) {
     try {
       const info = safeJson<ContactInfo>(inspect_contact_card(myContactCardText.value))
       rememberLocalIdentity(info.user_id, info.display_name || displayName.value, backupText.value)
     } catch { /* ignore old/incomplete local identity */ }
   }
+  appendLog('✅ 本地状态已加载；若存在损坏记录已自动跳过')
   return true
 }
 
@@ -1214,12 +1392,12 @@ async function loadPersistedState() {
     let state = await idbGet<PersistedState>('chat-state-v1')
 
     // One-time migration from the old localStorage demo state.
+    let migratedFromLocalStorage = false
     if (!state) {
       const raw = localStorage.getItem('lm-talk-chat-state-v1')
       if (raw) {
         state = JSON.parse(raw) as PersistedState
-        localStorage.removeItem('lm-talk-chat-state-v1')
-        appendLog('✅ 已从 localStorage 迁移到 IndexedDB 分表')
+        migratedFromLocalStorage = true
       }
     } else {
       appendLog('✅ 已从旧 IndexedDB 单对象迁移到分表')
@@ -1227,6 +1405,10 @@ async function loadPersistedState() {
 
     if (!state) return
     await writeStateToTables(state)
+    if (migratedFromLocalStorage) {
+      localStorage.removeItem('lm-talk-chat-state-v1')
+      appendLog('✅ 已从 localStorage 迁移到 IndexedDB 分表')
+    }
     await idbDel('chat-state-v1')
   } catch (e) {
     appendLog(`❌ IndexedDB 加载失败：${String(e)}`)
@@ -1245,6 +1427,8 @@ function resetAccountScopedState() {
   processedMailboxIds.value = []
   mailboxFailedItems.value = []
   syncRecoveryHistory.value = []
+  pwaBackgroundEventHistory.value = []
+  pwaLastBackgroundEventText.value = '尚未收到后台事件'
   friendRequestRateRecords.value = []
   activePeerId.value = ''
   activeGroupId.value = ''
@@ -1265,6 +1449,7 @@ function resetAccountScopedState() {
   }
   nodeEnabled.value = false
   autoMailboxTake.value = true
+  autoReadReceipts.value = false
   autoPublishPreKey.value = true
   autoNodeSync.value = false
   nodeControlStatus.value = '未连接'
@@ -1292,6 +1477,8 @@ async function clearPersisted() {
   processedMailboxIds.value = []
   mailboxFailedItems.value = []
   syncRecoveryHistory.value = []
+  pwaBackgroundEventHistory.value = []
+  pwaLastBackgroundEventText.value = '尚未收到后台事件'
   friendRequestRateRecords.value = []
   myContactCardText.value = ''
   myDeviceCertJson.value = ''
@@ -1310,11 +1497,23 @@ async function clearPersisted() {
   }
   nodeEnabled.value = false
   autoMailboxTake.value = true
+  autoReadReceipts.value = false
   autoPublishPreKey.value = true
   autoNodeSync.value = false
   nodeControlStatus.value = '未连接'
   loggedIn.value = false
   appendLog('已清空本地状态')
+}
+
+
+function handlePwaBackgroundSyncMessage(data: any) {
+  if (data?.type !== 'lm-talk-background-sync') return false
+  const tag = String(data.tag || 'unknown')
+  pwaLastBackgroundEventText.value = `${formatDateTime(Date.now())} · ${tag} · 已提示打开应用同步`
+  pwaBackgroundEventHistory.value = [pwaLastBackgroundEventText.value, ...pwaBackgroundEventHistory.value].slice(0, 5)
+  appendLog('PWA 后台同步事件：请打开应用完成 Mailbox 同步')
+  notifyIfAllowed('LM Talk 后台同步提示', '请打开应用完成端到端加密 Mailbox 同步。')
+  return true
 }
 
 async function clearBrowserCaches() {
@@ -1337,10 +1536,49 @@ async function refreshPwaStatus() {
   const cacheKeys = typeof caches !== 'undefined' ? await caches.keys().catch(() => []) : []
   const controller = swSupported && nav.serviceWorker?.controller ? '已接管' : registrations.length ? '已注册' : swSupported ? '未注册' : '不支持'
   const pushSupported = swSupported && 'PushManager' in window
+  const backgroundSyncSupported = swSupported && 'SyncManager' in window
   const periodicSyncSupported = swSupported && 'PeriodicSyncManager' in window
+  const registration = registrations[0] as any
+  let backgroundState = backgroundSyncSupported ? '可探测' : '不可用'
+  if (backgroundSyncSupported && registration?.sync?.getTags) {
+    const tags = await registration.sync.getTags().catch(() => [])
+    backgroundState = tags.includes('lm-talk-mailbox-sync') ? '已注册' : '可探测'
+  }
+  let periodicState = periodicSyncSupported ? '可探测' : '不可用'
+  if (periodicSyncSupported && registration?.periodicSync?.getTags) {
+    const tags = await registration.periodicSync.getTags().catch(() => [])
+    periodicState = tags.includes('lm-talk-periodic-mailbox-sync') ? '已注册' : '可探测'
+  }
   const appCaches = cacheKeys.filter((key) => key.startsWith('lm-talk-pwa-'))
   pwaStatusText.value = `${controller} · 缓存 ${cacheKeys.length}${appCaches[0] ? ` · 固定缓存 ${appCaches[0]}` : ''} · ${webVersionText}`
-  pwaBackgroundCapabilityText.value = `Push ${pushSupported ? '可探测' : '不可用'} · Periodic Sync ${periodicSyncSupported ? '可探测' : '不可用'}`
+  pwaBackgroundCapabilityText.value = `Push ${pushSupported ? '可探测' : '不可用'} · Background Sync ${backgroundState} · Periodic Sync ${periodicState} · 后台事件只提示打开应用，不读取密钥或消息`
+}
+
+async function registerPeriodicMailboxSync() {
+  const nav = navigator as Navigator & { serviceWorker?: ServiceWorkerContainer }
+  if (!nav.serviceWorker?.ready) return
+  const registration = await nav.serviceWorker.ready.catch(() => null) as any
+  let registered = 0
+  if ('SyncManager' in window && registration?.sync?.register) {
+    try {
+      await registration.sync.register('lm-talk-mailbox-sync')
+      registered += 1
+      appendLog('PWA Background Sync 已注册：后台仅提示打开应用完成同步')
+    } catch (e) {
+      appendLog(`PWA Background Sync 注册失败：${userFacingError(e)}`)
+    }
+  }
+  if ('PeriodicSyncManager' in window && registration?.periodicSync?.register) {
+    try {
+      await registration.periodicSync.register('lm-talk-periodic-mailbox-sync', { minInterval: 60 * 60 * 1000 })
+      registered += 1
+      appendLog('PWA Periodic Sync 已注册：后台仅提示打开应用完成同步')
+    } catch (e) {
+      appendLog(`PWA Periodic Sync 注册失败：${userFacingError(e)}`)
+    }
+  }
+  if (registered === 0) appendLog('当前浏览器不支持可注册的 PWA Background/Periodic Sync')
+  await refreshPwaStatus()
 }
 
 function formatBytes(bytes: number): string {
@@ -1405,8 +1643,134 @@ async function importFullDataBackup() {
     const state = JSON.parse(json) as PersistedState
     await writeStateToTables(state)
     appendLog('✅ 已导入完整数据备份')
+    toast('完整数据备份已导入', 'success')
   } catch (e) {
     appendLog(`❌ 导入完整数据备份失败：${String(e)}`)
+  }
+}
+
+function mergeUniqueBy<T>(current: T[], incoming: T[], keyOf: (item: T) => string | undefined): { items: T[]; added: number; skipped: number } {
+  const seen = new Set(current.map(keyOf).filter(Boolean) as string[])
+  const items = [...current]
+  let added = 0
+  let skipped = 0
+  for (const item of incoming) {
+    const key = keyOf(item)
+    if (!key) { skipped += 1; continue }
+    if (seen.has(key)) { skipped += 1; continue }
+    seen.add(key)
+    items.push(item)
+    added += 1
+  }
+  return { items, added, skipped }
+}
+
+
+function messageStateRank(message: ChatMessage): number {
+  if (message.status === 'read' || message.read_at) return 5
+  if (message.status === 'delivered' || message.delivered_at) return 4
+  if (message.status === 'mailbox') return 3
+  if (message.status === 'sent') return 2
+  if (message.status === 'failed') return 1
+  return 0
+}
+
+function messageMergeKey(message: ChatMessage): string | undefined {
+  if (message.protocol_message_id && message.peer_user_id) return `protocol:${message.peer_user_id}:${message.protocol_message_id}`
+  if (message.id) return `id:${message.id}`
+  return undefined
+}
+
+function mergeMessageStateInto(target: ChatMessage, incoming: ChatMessage): boolean {
+  let changed = false
+  const targetRank = messageStateRank(target)
+  const incomingRank = messageStateRank(incoming)
+  if (incomingRank > targetRank) {
+    target.status = incoming.status
+    changed = true
+  }
+  if (!target.delivered_at && incoming.delivered_at) { target.delivered_at = incoming.delivered_at; changed = true }
+  if (!target.read_at && incoming.read_at) { target.read_at = incoming.read_at; changed = true }
+  if (!target.mailbox_delivery_id && incoming.mailbox_delivery_id) { target.mailbox_delivery_id = incoming.mailbox_delivery_id; changed = true }
+  if (!target.protocol_message_id && incoming.protocol_message_id) { target.protocol_message_id = incoming.protocol_message_id; changed = true }
+  if (target.read_at && target.status !== 'read') { target.status = 'read'; changed = true }
+  else if (target.delivered_at && messageStateRank(target) < 4) { target.status = 'delivered'; changed = true }
+  return changed
+}
+
+function mergeMessagesForState(current: ChatMessage[], incoming: ChatMessage[]): { items: ChatMessage[]; added: number; merged: number; skipped: number } {
+  const items = [...current]
+  const byKey = new Map<string, ChatMessage>()
+  for (const item of items) {
+    const key = messageMergeKey(item)
+    if (key) byKey.set(key, item)
+    if (item.id) byKey.set(`id:${item.id}`, item)
+  }
+  let added = 0
+  let merged = 0
+  let skipped = 0
+  for (const item of incoming) {
+    const key = messageMergeKey(item)
+    const existing = key ? byKey.get(key) : item.id ? byKey.get(`id:${item.id}`) : undefined
+    if (existing) {
+      if (mergeMessageStateInto(existing, item)) merged += 1
+      else skipped += 1
+      continue
+    }
+    if (!key && !item.id) { skipped += 1; continue }
+    items.push(item)
+    if (key) byKey.set(key, item)
+    if (item.id) byKey.set(`id:${item.id}`, item)
+    added += 1
+  }
+  return { items, added, merged, skipped }
+}
+
+function mergeProcessedMailboxRecords(current: ProcessedMailboxRecord[], incoming: Array<string | ProcessedMailboxRecord> | undefined): ProcessedMailboxRecord[] {
+  return normalizeProcessedMailboxRecords([...current, ...normalizeProcessedMailboxRecords(incoming)])
+}
+
+async function importFullDataBackupMerge() {
+  try {
+    if (!backupText.value || !passphrase.value) throw new Error('需要当前身份备份包和提示词')
+    if (!dataBackupText.value.trim()) throw new Error('请粘贴完整数据备份')
+    const json = import_data_backup(backupText.value, passphrase.value, dataBackupText.value)
+    const state = JSON.parse(json) as PersistedState
+    const contactMerge = mergeUniqueBy(contacts.value, state.contacts ?? [], (x) => x.user_id)
+    const requestMerge = mergeUniqueBy(friendRequests.value, state.friendRequests ?? [], (x) => x.request_id)
+    const groupMerge = mergeUniqueBy(groups.value, state.groups ?? [], (x) => x.group_id)
+    const inviteMerge = mergeUniqueBy(groupInvites.value, state.groupInvites ?? [], (x) => x.invite_id)
+    const senderKeyMerge = mergeUniqueBy(groupSenderKeys.value, state.groupSenderKeys ?? [], (x) => x.key_id)
+    const messageMerge = mergeMessagesForState(messages.value, state.messages ?? [])
+    const outboxMerge = mergeUniqueBy(outbox.value, state.outbox ?? [], (x) => x.id)
+    const ratchetMerge = mergeUniqueBy(ratchetSessions.value, state.ratchetSessions ?? [], (x) => x.peer_user_id)
+    contacts.value = contactMerge.items
+    friendRequests.value = requestMerge.items
+    groups.value = groupMerge.items
+    groupInvites.value = inviteMerge.items
+    groupSenderKeys.value = senderKeyMerge.items
+    messages.value = messageMerge.items
+    outbox.value = outboxMerge.items
+    ratchetSessions.value = ratchetMerge.items
+    processedMailboxIds.value = mergeProcessedMailboxRecords(processedMailboxIds.value, state.processedMailboxIds)
+    mailboxFailedItems.value = mergeUniqueBy(mailboxFailedItems.value, state.mailboxFailedItems ?? [], (x) => x.id).items
+    syncRecoveryHistory.value = [...new Set([...syncRecoveryHistory.value, ...(state.syncRecoveryHistory ?? [])])].slice(0, 5)
+    pwaBackgroundEventHistory.value = [...new Set([...pwaBackgroundEventHistory.value, ...(state.pwaBackgroundEventHistory ?? [])])].slice(0, 5)
+    pwaLastBackgroundEventText.value = pwaBackgroundEventHistory.value[0] ?? '尚未收到后台事件'
+    friendRequestRateRecords.value = mergeUniqueBy(friendRequestRateRecords.value, state.friendRequestRateRecords ?? [], (x) => x.from_user_id).items
+    if (!myDeviceCertJson.value && state.myDeviceCertJson) myDeviceCertJson.value = state.myDeviceCertJson
+    if (!myDeviceId.value && state.myDeviceId) myDeviceId.value = state.myDeviceId
+    if (!prekeyBundleText.value && state.prekeyBundleText) prekeyBundleText.value = state.prekeyBundleText
+    if (!prekeyPrivateBundleJson.value && typeof state.prekeyPrivateBundleJson === 'string') prekeyPrivateBundleJson.value = state.prekeyPrivateBundleJson
+    if (prekeySignedOneTimeRecordTexts.value.length === 0 && state.prekeySignedOneTimeRecordTexts) prekeySignedOneTimeRecordTexts.value = state.prekeySignedOneTimeRecordTexts
+    const added = contactMerge.added + requestMerge.added + groupMerge.added + inviteMerge.added + senderKeyMerge.added + messageMerge.added + outboxMerge.added + ratchetMerge.added
+    const skipped = contactMerge.skipped + requestMerge.skipped + groupMerge.skipped + inviteMerge.skipped + senderKeyMerge.skipped + messageMerge.skipped + outboxMerge.skipped + ratchetMerge.skipped
+    persist()
+    appendLog(`✅ 已合并完整数据备份：新增 ${added}，保留本机冲突 ${skipped}`)
+    toast(`完整数据备份已合并：新增 ${added}`, 'success')
+  } catch (e) {
+    appendLog(`❌ 合并完整数据备份失败：${String(e)}`)
+    showAlert('合并完整数据备份失败', userFacingError(e), 'error')
   }
 }
 
@@ -1454,13 +1818,48 @@ async function syncNow() {
   appendLog('🔄 开始消息同步')
   try {
     if (autoPublishPreKey.value) await ensurePreKeyInventory()
+    await refreshOutgoingMailboxDeliveryStatusesFromNode()
     await takeMailboxFromNode()
+    await refreshOutgoingMailboxDeliveryStatusesFromNode()
     appendLog('✅ 消息同步完成')
   } catch (e) {
     const message = userFacingError(e)
     appendLog(`❌ 消息同步失败：${message}`)
     notifyIfAllowed('LM Talk 同步失败', message)
     throw e
+  }
+}
+
+async function refreshOutgoingMailboxDeliveryStatusesFromNode() {
+  if (!nodeEnabled.value || !identity.value) return
+  const candidates = messages.value.filter((message) =>
+    message.direction === 'out'
+    && message.mailbox_delivery_id
+    && message.peer_user_id
+    && (message.status === 'mailbox' || message.status === 'delivered')
+  )
+  if (candidates.length === 0) return
+  let updated = 0
+  let failed = 0
+  for (const message of candidates) {
+    try {
+      const body = await nodeFetchJson(`/mailbox/status?user_id=${encodeURIComponent(message.peer_user_id)}&delivery_id=${encodeURIComponent(message.mailbox_delivery_id || '')}`)
+      const status = String(body?.delivery?.status ?? '')
+      if ((status === 'delivered_unacked' || status === 'acked') && message.status !== 'read') {
+        if (message.status !== 'delivered') updated += 1
+        message.status = 'delivered'
+        message.delivered_at = message.delivered_at || Date.now()
+      } else if (status === 'pending' && message.status !== 'read') {
+        message.status = 'mailbox'
+      }
+    } catch (e) {
+      failed += 1
+      appendLog(`⚠️ 查询 Mailbox 投递状态失败：${userFacingError(e)}`)
+    }
+  }
+  if (updated > 0 || failed > 0) {
+    appendLog(`Mailbox 投递状态刷新：更新 ${updated}，失败 ${failed}`)
+    persist()
   }
 }
 
@@ -1650,9 +2049,24 @@ function queueOutboxItem(contact: ContactItem, payload: string, messageId?: stri
 
 function mailboxKindForOutboxKind(kind: OutboxItem['kind']): string {
   if (kind === 'group-fanout') return 'group-fanout'
+  if (kind === 'delivery-receipt') return 'delivery-receipt'
+  if (kind === 'read-receipt') return 'read-receipt'
   if (kind === 'file-package') return 'other'
   if (kind === 'other') return 'other'
   return 'direct-envelope'
+}
+
+function readReceiptsEnabledFor(contact: ContactItem): boolean {
+  if (contact.read_receipts === 'enabled') return true
+  if (contact.read_receipts === 'disabled') return false
+  return autoReadReceipts.value
+}
+
+function setActiveContactReadReceipts(value: 'default' | 'enabled' | 'disabled') {
+  if (!activeContact.value) return
+  activeContact.value.read_receipts = value
+  appendLog(`已更新联系人已读回执策略：${value === 'default' ? '跟随全局' : value === 'enabled' ? '始终开启' : '关闭'}`)
+  persist()
 }
 
 function messageProtocolIdFromEnvelope(envelope: string): string | undefined {
@@ -1662,40 +2076,88 @@ function messageProtocolIdFromEnvelope(envelope: string): string | undefined {
   } catch { return undefined }
 }
 
-function createDeliveryAckPayload(messageId: string): string {
-  return JSON.stringify({
-    type: 'lm-delivery-ack-v1',
-    version: 1,
-    message_id: messageId,
-    from_user_id: identity.value?.user_id,
-    created_at: Date.now(),
-  })
+function conversationIdFromEnvelope(envelope: string): string | undefined {
+  try {
+    const parsed = JSON.parse(envelope) as { conversation_id?: string }
+    return typeof parsed.conversation_id === 'string' ? parsed.conversation_id : undefined
+  } catch { return undefined }
 }
 
 function applyDeliveryAck(messageId: string, fromUserId: string) {
   const msg = messages.value.find((m) => m.direction === 'out' && m.protocol_message_id === messageId && m.peer_user_id === fromUserId)
   if (msg) {
-    msg.status = 'delivered'
+    if (msg.status !== 'read') msg.status = 'delivered'
+    msg.delivered_at = msg.delivered_at || Date.now()
     appendLog(`✅ 收到送达回执：${fromUserId}`)
     persist()
   }
 }
 
-async function sendDeliveryAck(sender: ContactItem, messageId?: string) {
+function applyMessageReceiptText(receiptText: string, sender: ContactItem): 'delivery-ack' | 'read-receipt' {
+  const info = JSON.parse(inspect_message_receipt(receiptText, sender.identity_public_key)) as {
+    from_user_id: string
+    to_user_id: string
+    target_message_id: string
+    kind: 'Delivered' | 'Read'
+  }
+  if (identity.value && info.to_user_id !== identity.value.user_id) throw new Error('回执不是发给当前身份的')
+  if (info.from_user_id !== sender.user_id) throw new Error('回执发送者与 Mailbox 发送者不一致')
+  if (info.kind === 'Read') {
+    const msg = messages.value.find((m) => m.direction === 'out' && m.protocol_message_id === info.target_message_id && m.peer_user_id === sender.user_id)
+    if (msg) {
+      msg.status = 'read'
+      msg.delivered_at = msg.delivered_at || Date.now()
+      msg.read_at = msg.read_at || Date.now()
+      appendLog(`✅ 收到已读回执：${sender.display_name || sender.user_id}`)
+      persist()
+    }
+  } else {
+    applyDeliveryAck(info.target_message_id, sender.user_id)
+  }
+  return info.kind === 'Read' ? 'read-receipt' : 'delivery-ack'
+}
+
+async function sendDeliveryAck(sender: ContactItem, messageId?: string, conversationId?: string, mailboxDeliveryId?: string) {
   if (!messageId || !identity.value) return
-  const ack = createDeliveryAckPayload(messageId)
-  const result = await deliverPayloadToContact(sender, ack, '送达回执', 'other')
-  if (result === 'queued' || result === 'failed') queueOutboxItem(sender, ack, undefined, 'other')
+  const ack = create_message_receipt(
+    backupText.value,
+    passphrase.value,
+    sender.user_id,
+    messageId,
+    conversationId || `conv-${sender.user_id}`,
+    mailboxDeliveryId || undefined,
+    'delivered',
+    BigInt(24 * 3600),
+  )
+  const result = await deliverPayloadToContact(sender, ack, '送达回执', 'delivery-receipt')
+  if (result === 'queued' || result === 'failed') queueOutboxItem(sender, ack, undefined, 'delivery-receipt')
   persist()
 }
 
-function resendAckForDuplicateMailboxMessage(message: any): boolean {
+async function sendReadReceipt(sender: ContactItem, messageId?: string, conversationId?: string, mailboxDeliveryId?: string) {
+  if (!messageId || !identity.value || !readReceiptsEnabledFor(sender)) return
+  const receipt = create_message_receipt(
+    backupText.value,
+    passphrase.value,
+    sender.user_id,
+    messageId,
+    conversationId || `conv-${sender.user_id}`,
+    mailboxDeliveryId || undefined,
+    'read',
+    BigInt(24 * 3600),
+  )
+  const result = await deliverPayloadToContact(sender, receipt, '已读回执', 'read-receipt')
+  if (result === 'queued' || result === 'failed') queueOutboxItem(sender, receipt, undefined, 'read-receipt')
+  persist()
+}
+
+function resendAckForDuplicateMailboxMessage(message: any, deliveryId?: string): boolean {
   const fromUserId = String(message?.from_user_id ?? '')
   const sender = contactByUserId(fromUserId)
   const kind = typeof message?.kind === 'string' ? message.kind.replace(/[-_]/g, '').toLowerCase() : ''
   const ciphertext = String(message?.ciphertext ?? '')
   if (!sender || kind !== 'directenvelope') return false
-  void sendDeliveryAck(sender, messageProtocolIdFromEnvelope(ciphertext))
+  void sendDeliveryAck(sender, messageProtocolIdFromEnvelope(ciphertext), conversationIdFromEnvelope(ciphertext), deliveryId)
   return true
 }
 
@@ -1748,6 +2210,7 @@ async function tryMailboxDeliveryForMessage(contact: ContactItem, envelope: stri
   try {
     const deliveryId = await pushMailboxPayload(contact, 'direct-envelope', envelope)
     msg.status = 'mailbox'
+    if (deliveryId) msg.mailbox_delivery_id = deliveryId
     appendLog(`✅ 已通过 mailbox 投递${deliveryId ? '：' + deliveryId : ''}`)
   } catch (e) {
     msg.status = 'failed'
@@ -1819,16 +2282,17 @@ async function removeLocalIdentity(id: string) {
   if (!item) return
   const ok = await showConfirm(
     '删除本地身份',
-    `删除本地身份「${item.display_name || item.user_id}」？这只会删除本机保存的登录入口，请确认你已保存身份文件。`,
+    `删除本地身份「${item.display_name || item.user_id}」？这会删除本机保存的登录入口和该身份在本浏览器中的加密联系人、群聊、消息、待发送队列与设置。请确认你已保存身份文件和必要的数据备份。`,
     true,
   )
   if (!ok) return
+  await purgeAccountTables(item.user_id)
   localIdentities.value = localIdentities.value.filter((x) => x.id !== id)
   if (selectedLocalIdentityId.value === id) selectedLocalIdentityId.value = localIdentities.value[0]?.id ?? ''
   if (lastRegisteredIdentity.value?.id === id) lastRegisteredIdentity.value = null
   saveLocalIdentityList()
-  appendLog('✅ 已删除本地身份')
-  toast('已删除本地身份', 'success')
+  appendLog('✅ 已删除本地身份及本机加密数据')
+  toast('已删除本地身份及本机数据', 'success')
 }
 
 function resetRegisterForm() {
@@ -1955,6 +2419,7 @@ function mergeContactCard(existing: ContactItem | undefined, info: ContactInfo, 
     pending_request_id: existing?.pending_request_id,
     revoked_device_ids: existing?.revoked_device_ids,
     block_reason: existing?.block_reason,
+    read_receipts: existing?.read_receipts ?? 'default',
     device_certs: info.device_certs ?? contactCardDeviceCerts(cardText),
   }
 }
@@ -2048,6 +2513,7 @@ function statusLabel(status: MessageStatus) {
     case 'sent': return '已发送'
     case 'mailbox': return '已投递节点，待对方收取'
     case 'delivered': return '已送达'
+    case 'read': return '已读'
     case 'copied': return '待发送'
     case 'received': return '已接收'
     case 'failed': return '失败'
@@ -2085,12 +2551,22 @@ function applyLocalTextFilter(text: string, direction: 'in' | 'out'): { allow: b
   const action = evaluateLocalText(text)
   if (action === 'Allow') return { allow: true, text, action }
   appendLog(`⚠️ 本地过滤：${direction === 'in' ? '收到' : '发送'}文本触发 ${action}`)
+  if (direction === 'out') return { allow: true, text, action }
   if (direction === 'in' && safetyPolicy.value.dropFilteredIncoming && filterRank(action) >= filterRank('Hide')) {
     return { allow: false, text: '', action: 'Drop' }
   }
   if (action === 'Hide') return { allow: true, text: '[本地策略已隐藏内容]', action }
   if (action === 'Blur') return { allow: true, text: `⚠️ [本地策略提示] ${text}`, action }
   return { allow: true, text: `⚠️ ${text}`, action }
+}
+
+async function confirmOutgoingTextIfNeeded(text: string): Promise<boolean> {
+  const action = evaluateLocalText(text)
+  if (action === 'Allow') return true
+  const reason = text.toLowerCase().includes('http://') || text.toLowerCase().includes('https://')
+    ? '消息中包含外部链接。请确认链接可信，避免钓鱼或泄露身份信息。'
+    : '消息中包含可执行/脚本文件名等高风险内容。请确认这是你想发送的内容。'
+  return showConfirm('发送风险内容', reason, filterRank(action) >= filterRank('Hide'))
 }
 
 function saveSafetyPolicy() {
@@ -2381,6 +2857,43 @@ function createGroupSenderDistributionFanout(group: GroupItem, distributionText:
   })
   groupSenderDistributionFanoutJson.value = JSON.stringify(fanout, null, 2)
   appendLog(`✅ 已生成 Sender Key Distribution fanout：${fanout.length} 个成员`)
+  return fanout
+}
+
+async function sendGroupSenderDistributionFanout(group: GroupItem, fanout: Array<{ to_user_id: string; envelope: string }>, reason: string) {
+  let sent = 0
+  let queued = 0
+  let failed = 0
+  const errors: string[] = []
+  for (const item of fanout) {
+    const contact = contacts.value.find((c) => c.user_id === item.to_user_id)
+    if (!contact || contact.state !== 'Friend') {
+      failed += 1
+      errors.push(`${item.to_user_id}: 联系人不可用`)
+      continue
+    }
+    const result = await deliverPayloadToContact(contact, item.envelope, 'Sender Key Distribution', 'other')
+    if (result === 'sent' || result === 'mailbox') sent += 1
+    else {
+      queued += 1
+      const outboxItem = queueOutboxItem(contact, item.envelope, undefined, 'other')
+      outboxItem.last_error = result === 'failed' ? lastDeliveryError || 'Sender Key Distribution 投递失败' : undefined
+      if (result === 'failed') errors.push(`${contact.display_name || contact.user_id}: ${outboxItem.last_error}`)
+    }
+  }
+  if (failed > 0 || errors.length > 0) {
+    rememberGroupSenderKeyError(group.group_id, `Sender Key 分发未全部完成：已发送 ${sent}，待重试 ${queued}，失败 ${failed}；${errors.slice(0, 2).join('；')}`)
+  } else {
+    group.last_sender_key_error = undefined
+    group.last_sender_key_error_at = undefined
+  }
+  appendLog(`Sender Key Distribution ${reason}：已发送 ${sent}，待重试 ${queued}，失败 ${failed}`)
+  persist()
+}
+
+function scheduleGroupSenderDistributionFanout(group: GroupItem, fanout: Array<{ to_user_id: string; envelope: string }>, reason: string) {
+  if (fanout.length === 0) return
+  void sendGroupSenderDistributionFanout(group, fanout, reason)
 }
 
 function rotateMyGroupSenderKey(group: GroupItem, reason: string) {
@@ -2398,8 +2911,9 @@ function rotateMyGroupSenderKey(group: GroupItem, reason: string) {
     updated_at: Date.now(),
   })
   groupSenderDistributionText.value = out.distribution_text
+  let fanout: Array<{ to_user_id: string; envelope: string }> = []
   try {
-    createGroupSenderDistributionFanout(group, out.distribution_text)
+    fanout = createGroupSenderDistributionFanout(group, out.distribution_text)
     group.last_sender_key_error = undefined
     group.last_sender_key_error_at = undefined
   } catch (e) {
@@ -2409,6 +2923,7 @@ function rotateMyGroupSenderKey(group: GroupItem, reason: string) {
     return
   }
   appendLog(`🔄 已轮换本群 Sender Key：${reason}；已生成新的 distribution fanout`)
+  scheduleGroupSenderDistributionFanout(group, fanout, `轮换：${reason}`)
 }
 
 function createGroupSenderKeyForActiveGroup() {
@@ -2429,9 +2944,11 @@ function createGroupSenderKeyForActiveGroup() {
     }
     saveGroupSenderKey(item)
     groupSenderDistributionText.value = out.distribution_text
-    createGroupSenderDistributionFanout(activeGroup.value, out.distribution_text)
+    const group = activeGroup.value
+    const fanout = createGroupSenderDistributionFanout(group, out.distribution_text)
     appendLog('✅ 已创建我的群 Sender Key，并生成 distribution fanout')
     persist()
+    scheduleGroupSenderDistributionFanout(group, fanout, '创建')
   })
 }
 
@@ -2459,8 +2976,10 @@ function createGroupSenderDistributionFanoutForActiveGroup() {
   run('生成 Sender Key Distribution fanout', () => {
     if (!activeGroup.value) throw new Error('请选择群组')
     if (!groupSenderDistributionText.value.trim()) throw new Error('请先创建 Sender Key Distribution')
-    createGroupSenderDistributionFanout(activeGroup.value, groupSenderDistributionText.value.trim())
+    const group = activeGroup.value
+    const fanout = createGroupSenderDistributionFanout(group, groupSenderDistributionText.value.trim())
     persist()
+    scheduleGroupSenderDistributionFanout(group, fanout, '手动重发')
   })
 }
 
@@ -3149,7 +3668,12 @@ async function sendGroupFanoutPayloads(group: GroupItem, fanout: Array<{ to_user
   persist()
 }
 
-function sendMessage() {
+async function sendMessage() {
+  const pendingText = composerText.value
+  if (pendingText.trim() && !(await confirmOutgoingTextIfNeeded(pendingText))) {
+    appendLog('已取消发送风险文本')
+    return
+  }
   run('发送消息', () => {
     if (!composerText.value.trim()) return
     ensureUiTextSize('消息', composerText.value, MAX_TEXT_MESSAGE_BYTES)
@@ -3233,7 +3757,7 @@ function sendMessage() {
   })
 }
 
-function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem) {
+function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, mailboxDeliveryId?: string) {
   if (sender.state === 'Blocked') throw new Error('发送者已被拉黑')
   ensureUiTextSize('Envelope', envelopeText, MAX_SIGNAL_BYTES)
   const groupSenderPlain = tryDecryptGroupSenderEnvelope(envelopeText)
@@ -3339,7 +3863,11 @@ function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem) {
     status: 'received',
     created_at: Date.now(),
   })
-  void sendDeliveryAck(sender, messageProtocolIdFromEnvelope(envelopeText))
+  const protocolMessageId = messageProtocolIdFromEnvelope(envelopeText)
+  void sendDeliveryAck(sender, protocolMessageId, conversationId, mailboxDeliveryId)
+  if (!groupId && activePeerId.value === sender.user_id) {
+    void sendReadReceipt(sender, protocolMessageId, conversationId, mailboxDeliveryId)
+  }
   persist()
 }
 
@@ -3586,6 +4114,18 @@ function sendRtcText(value: string, label: string) {
 }
 
 function handleRtcText(value: string) {
+  if (value.startsWith('lm-message-receipt-v1:')) {
+    const sender = activeContact.value
+    if (sender) {
+      try {
+        applyMessageReceiptText(value, sender)
+        persist()
+        return
+      } catch (e) {
+        appendLog(`❌ WebRTC 回执处理失败：${userFacingError(e)}`)
+      }
+    }
+  }
   try {
     ensureUiTextSize('WebRTC 消息', value, MAX_RTC_TEXT_BYTES)
     const parsed = JSON.parse(value) as { type?: string }
@@ -3912,10 +4452,26 @@ function applySecureSessionOfferText() {
       created_at: Date.now(),
     }
     secureSessionResponseText.value = JSON.stringify(response, null, 2)
-    secureSessionStatusText.value = '已建立本端 Ratchet Session，并生成 Response；把 Response 发回给 Offer 创建者。'
+    const responseText = secureSessionResponseText.value
+    secureSessionStatusText.value = nodeEnabled.value
+      ? '已建立本端 Ratchet Session，并自动回传 Response。'
+      : '已建立本端 Ratchet Session，并生成 Response；开启消息同步后可自动回传。'
     incomingSecureSessionText.value = ''
     inspectRatchetStateText()
     persist()
+    if (nodeEnabled.value) {
+      void pushMailboxPayload(contact, 'other', responseText)
+        .then(() => {
+          appendLog(`✅ 已向 ${contact.display_name || contact.user_id} 自动回传安全会话 Response`)
+          persist()
+        })
+        .catch((e) => {
+          recordSecureSessionError(contact, e, '⚠️ 安全会话 Response 自动回传失败')
+          queueOutboxItem(contact, responseText, undefined, 'other')
+          appendLog(`安全会话 Response 已加入 outbox 自动重试：${contact.display_name || contact.user_id}`)
+          persist()
+        })
+    }
   })
 }
 
@@ -4214,10 +4770,13 @@ function nodeControlEndpoint(path: string, baseUrl = primaryNodeUrl()): string {
 async function fetchNodeOnce(baseUrl: string, path: string, init?: RequestInit): Promise<any> {
   const token = nodeTokenFor(baseUrl)
   const endpoint = nodeControlEndpoint(path, baseUrl)
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(new DOMException('同步服务请求超时', 'AbortError')), nodeFetchTimeoutMs())
   let res: Response
   try {
     res = await fetch(endpoint, {
       ...init,
+      signal: init?.signal ?? controller.signal,
       headers: {
         'content-type': 'application/json',
         ...(token ? { authorization: `Bearer ${token}` } : {}),
@@ -4226,6 +4785,8 @@ async function fetchNodeOnce(baseUrl: string, path: string, init?: RequestInit):
     })
   } catch (e) {
     throw new NodeRequestError(userFacingError(e), undefined, baseUrl)
+  } finally {
+    window.clearTimeout(timeout)
   }
   const text = await res.text()
   let body: any = text
@@ -4537,7 +5098,7 @@ function unwrapMailboxDelivery(item: any): { deliveryId?: string; message: any }
   return { message: item }
 }
 
-type MailboxEventKind = 'message' | 'file' | 'friend-request' | 'friend-response' | 'group-invite' | 'delivery-ack' | 'device-revoke' | 'secure-session' | 'other'
+type MailboxEventKind = 'message' | 'file' | 'friend-request' | 'friend-response' | 'group-invite' | 'delivery-ack' | 'read-receipt' | 'device-revoke' | 'secure-session' | 'other'
 
 function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: string; event?: MailboxEventKind; reason?: string } {
   const { deliveryId, message } = unwrapMailboxDelivery(item)
@@ -4574,7 +5135,7 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
 
   if (normalizedKind === 'directenvelope' || normalizedKind === 'groupfanout') {
     try {
-      receiveEnvelopeWithContact(ciphertext, sender)
+      receiveEnvelopeWithContact(ciphertext, sender, deliveryId)
       appendLog(`✅ 已自动解密 mailbox ${kind}`)
       return { handled: true, deliveryId, event: 'message' }
     } catch (e) {
@@ -4594,6 +5155,11 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
     remoteSignalText.value = ciphertext
     appendLog('✅ 已从 mailbox 填入远端 Signal Answer')
     return { handled: true, deliveryId, event: 'secure-session' }
+  }
+
+  if (normalizedKind === 'deliveryreceipt' || normalizedKind === 'readreceipt' || ciphertext.startsWith('lm-message-receipt-v1:')) {
+    const event = applyMessageReceiptText(ciphertext, sender)
+    return { handled: true, deliveryId, event }
   }
 
   if (ciphertext.startsWith('lm-friend-request-v1:')) {
@@ -4661,22 +5227,41 @@ function mailboxNotificationText(events: MailboxEventKind[]): string {
     ['好友通过', count('friend-response')],
     ['群邀请', count('group-invite')],
     ['安全会话', count('secure-session')],
+    ['回执', count('delivery-ack') + count('read-receipt')],
   ].filter(([, n]) => Number(n) > 0).map(([label, n]) => `${label} ${n}`)
   return parts.length ? parts.join('，') : `已处理 ${events.length} 条`
 }
 
-function rememberProcessedMailboxId(id: string) {
-  if (!id) return
+function mailboxDedupeIds(deliveryId?: string, messageId?: string): string[] {
+  return [deliveryId, messageId ? `message:${messageId}` : '']
+    .map((id) => (id || '').trim())
+    .filter(Boolean)
+}
+
+function rememberProcessedMailboxIds(ids: string[]) {
+  const cleanIds = [...new Set(ids.map((id) => id.trim()).filter(Boolean))]
+  if (cleanIds.length === 0) return
   const now = Date.now()
+  const incoming = cleanIds.map((id) => ({ id, processed_at: now }))
+  const incomingSet = new Set(cleanIds)
   processedMailboxIds.value = normalizeProcessedMailboxRecords([
-    { id, processed_at: now },
-    ...processedMailboxIds.value.filter((record) => record.id !== id),
+    ...incoming,
+    ...processedMailboxIds.value.filter((record) => !incomingSet.has(record.id)),
   ])
 }
 
+function rememberProcessedMailboxId(id: string) {
+  rememberProcessedMailboxIds([id])
+}
+
+function hasProcessedMailboxIds(ids: string[]): boolean {
+  const cleanIds = ids.map((id) => id.trim()).filter(Boolean)
+  if (cleanIds.length === 0) return false
+  return processedMailboxIds.value.some((record) => cleanIds.includes(record.id))
+}
+
 function hasProcessedMailboxId(id: string): boolean {
-  if (!id) return false
-  return processedMailboxIds.value.some((record) => record.id === id)
+  return hasProcessedMailboxIds([id])
 }
 
 function mailboxFailedItemId(deliveryId: string, messageId: string): string {
@@ -4751,11 +5336,12 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
   for (const item of messagesFromNode) {
     const { deliveryId, message } = unwrapMailboxDelivery(item)
     const messageId = String(message?.message_id ?? '')
-    const dedupeId = deliveryId || messageId
-    if (dedupeId && hasProcessedMailboxId(dedupeId)) {
+    const dedupeIds = mailboxDedupeIds(deliveryId, messageId)
+    if (hasProcessedMailboxIds(dedupeIds)) {
       duplicate += 1
-      if (resendAckForDuplicateMailboxMessage(message)) duplicateAckResent += 1
+      if (resendAckForDuplicateMailboxMessage(message, deliveryId)) duplicateAckResent += 1
       if (deliveryId) ackIds.push(deliveryId)
+      rememberProcessedMailboxIds(dedupeIds)
       continue
     }
     const result = handleMailboxPayload(item)
@@ -4763,7 +5349,7 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
       handled += 1
       if (result.event) events.push(result.event)
       if (deliveryId) ackIds.push(deliveryId)
-      if (dedupeId) rememberProcessedMailboxId(dedupeId)
+      rememberProcessedMailboxIds(dedupeIds)
     } else {
       failed += 1
       if (result.reason) failureReasons.push(result.reason)
@@ -4798,8 +5384,8 @@ async function retryFailedMailboxItemsNow() {
     })
     if (result.handled) {
       handled += 1
-      const dedupeId = failedItem.delivery_id || failedItem.message_id || result.deliveryId
-      if (dedupeId) rememberProcessedMailboxId(dedupeId)
+      const dedupeIds = mailboxDedupeIds(failedItem.delivery_id || result.deliveryId, failedItem.message_id)
+      rememberProcessedMailboxIds(dedupeIds)
       if (failedItem.delivery_id) ackIds.push(failedItem.delivery_id)
       handledItemIds.push(failedItem.id)
     } else {
@@ -4869,15 +5455,36 @@ async function takeMailboxFromNode() {
   await runAsync('从 lm_node 领取 mailbox', async () => {
     const userId = nodeMailboxTakeUserId.value.trim() || identity.value?.user_id
     if (!userId) throw new Error('需要 UserID')
-    const body = await nodeFetchJson(`/mailbox/take?user_id=${encodeURIComponent(userId)}`)
-    nodeMailboxTakeInfoText.value = JSON.stringify(body, null, 2)
-    const messages = Array.isArray(body.messages) ? body.messages : []
-    if (messages.length > 0) {
+    const pages: any[] = []
+    let totalMessages = 0
+    let totalAcked = 0
+    const pageLimit = 50
+    const maxPages = 20
+    let hasMoreAfterMaxPages = false
+    for (let page = 0; page < maxPages; page += 1) {
+      const body = await nodeFetchJson(`/mailbox/take?user_id=${encodeURIComponent(userId)}&limit=${pageLimit}`)
+      pages.push(body)
+      const messages = Array.isArray(body.messages) ? body.messages : []
+      if (messages.length === 0) break
+      totalMessages += messages.length
       const ackIds = processMailboxMessages(messages)
-      if (ackIds.length > 0) await ackMailboxToNode(userId, ackIds)
-    } else {
+      if (ackIds.length > 0) {
+        await ackMailboxToNode(userId, ackIds)
+        totalAcked += ackIds.length
+      }
+      if (!body.more || ackIds.length === 0) break
+      hasMoreAfterMaxPages = page === maxPages - 1 && Boolean(body.more)
+    }
+    nodeMailboxTakeInfoText.value = JSON.stringify(pages.length === 1 ? pages[0] : { pages }, null, 2)
+    if (totalMessages === 0) {
       mailboxInboxStatus.value = '没有新消息'
       appendLog('mailbox 没有新消息')
+      persist()
+    } else if (pages.length > 1 || hasMoreAfterMaxPages) {
+      const moreText = hasMoreAfterMaxPages ? '，仍有更多，请再次同步' : ''
+      mailboxInboxStatus.value = `${mailboxInboxStatus.value}，分页 ${pages.length}，已 ack ${totalAcked}${moreText}`
+      appendLog(`mailbox 分页收取完成：${totalMessages} 条，分页 ${pages.length}，ack ${totalAcked}${moreText}`)
+      if (hasMoreAfterMaxPages) notifyIfAllowed('LM Talk Mailbox 仍有待收取内容', '本次同步已达到分页上限，请再次同步继续收取。')
       persist()
     }
   })
@@ -4968,6 +5575,19 @@ async function readFileWithProgress(file: File): Promise<Uint8Array> {
 }
 
 async function createFilePackageForActive(): Promise<boolean> {
+  if (selectedFile.value && safetyPolicy.value.warnExecutableFiles && isDangerousFileName(selectedFile.value.name)) {
+    const confirmed = await showConfirm(
+      '发送危险类型文件',
+      `文件「${selectedFile.value.name}」属于可执行/安装脚本等高风险类型。LM Talk 不会自动打开附件，但接收方下载后可能触发系统风险。确认继续发送？`,
+      true,
+    )
+    if (!confirmed) {
+      fileTransferPhase.value = '已取消'
+      rtcFileStatus.value = '已取消危险类型文件发送'
+      appendLog('已取消危险类型文件发送')
+      return false
+    }
+  }
   let ok = false
   await runAsync('生成文件包', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
@@ -5019,12 +5639,32 @@ function inspectIncomingFilePackage() {
   })
 }
 
-function decryptIncomingFilePackage() {
-  run('解密文件包', () => {
+async function decryptIncomingFilePackage() {
+  await runAsync('解密文件包', async () => {
     if (!activeContact.value) throw new Error('请选择发送者联系人')
     const text = pendingFilePackageText.value.trim() || incomingFilePackageText.value.trim() || filePackageText.value.trim()
     if (!text) throw new Error('请粘贴文件包 JSON')
     ensureUiTextSize('文件包', text, MAX_RTC_TEXT_BYTES)
+    let manifestName = ''
+    try {
+      const info = JSON.parse(inspect_file_package(text)) as { manifest?: { name?: string } }
+      manifestName = info.manifest?.name || ''
+    } catch {
+      // decrypt_file_package below will surface the authoritative parse/decrypt error.
+    }
+    if (manifestName && safetyPolicy.value.warnExecutableFiles && isDangerousFileName(manifestName)) {
+      const confirmed = await showConfirm(
+        '解密危险类型文件',
+        `文件「${manifestName}」属于可执行/安装脚本等高风险类型。确认来源可信后再解密并生成下载链接。继续？`,
+        true,
+      )
+      if (!confirmed) {
+        fileTransferPhase.value = '待解密'
+        rtcFileStatus.value = '已取消危险类型文件解密'
+        appendLog('已取消危险类型文件解密')
+        return
+      }
+    }
     const out = JSON.parse(decrypt_file_package(
       backupText.value,
       passphrase.value,
@@ -5185,18 +5825,18 @@ function logout() {
 }
 const appContext = {
   goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
-  clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, pwaStatusText, pwaBackgroundCapabilityText, webVersionText,
-  nodeControlUrl, nodeUrlList, nodeEntrySummaries, nodeSettingsSummaryText, nodeTokenStorageText, nodeTokenCount, nodeMissingRemoteTokenCount, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake,
+  clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, registerPeriodicMailboxSync, pwaStatusText, pwaBackgroundCapabilityText, pwaLastBackgroundEventText, pwaBackgroundEventHistory, webVersionText,
+  nodeControlUrl, nodeUrlList, nodeEntrySummaries, nodeSettingsSummaryText, nodeTokenStorageText, nodeTokenCount, nodeMissingRemoteTokenCount, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake, autoReadReceipts,
   enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,
   autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
-  exportFullDataBackup, importFullDataBackup, downloadText, addContactText, addContact, incomingFriendRequestText,
+  exportFullDataBackup, importFullDataBackup, importFullDataBackupMerge, downloadText, addContactText, addContact, incomingFriendRequestText,
   addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, friendRequestRateRecords, friendRequestRateSummaryText, clearFriendRequestRateRecords, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
   newGroupName, friendContacts, selectedGroupMembers, createGroup, groups, activeGroupId,
-  selectGroup, activeContact, activeGroup, activeRatchetSession, activeRatchetStatusText, activeSecureSessionOutboxCount, activeGroupMembers, activeGroupWarningText, blockReason, blockActiveContact,
+  selectGroup, activeContact, activeGroup, activeRatchetSession, activeRatchetStatusText, activeSecureSessionOutboxCount, activeGroupMembers, activeGroupWarningText, blockReason, blockActiveContact, readReceiptsEnabledFor, setActiveContactReadReceipts,
   unblockActiveContact, removeActiveContact, clearActiveConversation, createFriendRequestForActive, clearActiveFriendRequestError, createInviteForActiveGroup, groupInviteText, groupFanoutJson,
   removeActiveGroup, leaveActiveGroupWithNotice, messages, activeMessages, formatTime, formatDateTime, statusLabel, copyMessageEnvelope, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,

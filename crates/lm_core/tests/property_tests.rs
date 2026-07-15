@@ -1,13 +1,32 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use lm_core::{
-    ContactCard, DirectEnvelope, FriendRequest, Identity, IdentityBackupPackage, MessageBody,
+    ContactCard, DeviceRevoke, DirectEnvelope, FileChunkEnvelope, FileManifest, FriendRequest,
+    FriendResponse, GroupEvent, GroupInvite, GroupSenderKeyDistribution, Identity,
+    IdentityBackupPackage, LmError, MailboxMessage, MessageBody, MessageReceipt, PeerAnnounce,
+    PreKeyBundle, PublicPeerAnnounce, RatchetEnvelope, RatchetSessionState, SignalAnswer,
+    SignalOffer, SignedOneTimePreKeyRecord,
 };
 use proptest::prelude::*;
+
+fn ratchet_pair() -> (RatchetSessionState, RatchetSessionState) {
+    let alice = lm_core::UserId::from_raw("lm1_prop_alice".to_string()).unwrap();
+    let bob = lm_core::UserId::from_raw("lm1_prop_bob".to_string()).unwrap();
+    RatchetSessionState::new_pair_from_shared_secret(alice, bob, &[42u8; 32]).unwrap()
+}
 
 fn bounded_text() -> impl Strategy<Value = String> {
     ".*".prop_map(|mut text| {
         text.truncate(512);
         text
+    })
+}
+
+fn ratchet_texts() -> impl Strategy<Value = Vec<String>> {
+    prop::collection::vec(".*", 1..24).prop_map(|mut texts| {
+        for text in &mut texts {
+            text.truncate(256);
+        }
+        texts
     })
 }
 
@@ -87,6 +106,35 @@ proptest! {
             "lm-identity-backup-v1:{}",
             "A".repeat(lm_core::MAX_IDENTITY_BACKUP_TEXT_BYTES + extra)
         );
+        let prekey = format!(
+            "lm-prekey-bundle-v1:{}",
+            "A".repeat(lm_core::MAX_PREKEY_BUNDLE_TEXT_BYTES + extra)
+        );
+        let signal_offer = format!(
+            "lm-signal-offer-v1:{}",
+            "A".repeat(lm_core::MAX_SIGNAL_TEXT_BYTES + extra)
+        );
+        let mailbox = format!(
+            "lm-mailbox-message-v1:{}",
+            "A".repeat(lm_core::MAX_MAILBOX_CIPHERTEXT_BYTES + extra)
+        );
+        let receipt = format!(
+            "lm-message-receipt-v1:{}",
+            "A".repeat(lm_core::MAX_MESSAGE_RECEIPT_TEXT_BYTES + extra)
+        );
+        let group_invite = format!(
+            "lm-group-invite-v1:{}",
+            "A".repeat(lm_core::MAX_GROUP_INVITE_TEXT_BYTES + extra)
+        );
+        let file_manifest = format!(
+            "lm-file-manifest-v1:{}",
+            "A".repeat(lm_core::MAX_FILE_MANIFEST_TEXT_BYTES + extra)
+        );
+        let file_chunk_json = "A".repeat(lm_core::MAX_FILE_CHUNK_JSON_BYTES + extra);
+        let device_revoke = format!(
+            "lm-device-revoke-v1:{}",
+            "A".repeat(lm_core::MAX_DEVICE_REVOKE_TEXT_BYTES + extra)
+        );
         prop_assert_eq!(
             ContactCard::from_export_text(&contact).unwrap_err(),
             lm_core::LmError::PayloadTooLarge
@@ -99,5 +147,126 @@ proptest! {
             IdentityBackupPackage::from_export_text(&backup).unwrap_err(),
             lm_core::LmError::PayloadTooLarge
         );
+        prop_assert_eq!(
+            PreKeyBundle::from_export_text(&prekey).unwrap_err(),
+            lm_core::LmError::PayloadTooLarge
+        );
+        prop_assert_eq!(
+            SignalOffer::from_export_text(&signal_offer).unwrap_err(),
+            lm_core::LmError::PayloadTooLarge
+        );
+        prop_assert_eq!(
+            SignalAnswer::from_export_text(&signal_offer.replace("lm-signal-offer-v1:", "lm-signal-answer-v1:")).unwrap_err(),
+            lm_core::LmError::PayloadTooLarge
+        );
+        prop_assert_eq!(
+            PeerAnnounce::from_export_text(&signal_offer.replace("lm-signal-offer-v1:", "lm-peer-announce-v1:")).unwrap_err(),
+            lm_core::LmError::PayloadTooLarge
+        );
+        prop_assert_eq!(
+            PublicPeerAnnounce::from_export_text(&signal_offer.replace("lm-signal-offer-v1:", "lm-public-peer-announce-v1:")).unwrap_err(),
+            lm_core::LmError::PayloadTooLarge
+        );
+        prop_assert_eq!(
+            MailboxMessage::from_export_text(&mailbox).unwrap_err(),
+            lm_core::LmError::PayloadTooLarge
+        );
+        prop_assert_eq!(
+            MessageReceipt::from_export_text(&receipt).unwrap_err(),
+            lm_core::LmError::PayloadTooLarge
+        );
+        prop_assert_eq!(
+            GroupInvite::from_export_text(&group_invite).unwrap_err(),
+            lm_core::LmError::PayloadTooLarge
+        );
+        prop_assert_eq!(
+            GroupEvent::from_export_text(&group_invite.replace("lm-group-invite-v1:", "lm-group-event-v1:")).unwrap_err(),
+            lm_core::LmError::PayloadTooLarge
+        );
+        prop_assert_eq!(
+            GroupSenderKeyDistribution::from_export_text(&group_invite.replace("lm-group-invite-v1:", "lm-group-sender-key-v1:")).unwrap_err(),
+            lm_core::LmError::PayloadTooLarge
+        );
+        prop_assert_eq!(
+            FileManifest::from_export_text(&file_manifest).unwrap_err(),
+            lm_core::LmError::PayloadTooLarge
+        );
+        prop_assert_eq!(
+            FileChunkEnvelope::from_json(&file_chunk_json).unwrap_err(),
+            lm_core::LmError::PayloadTooLarge
+        );
+        prop_assert_eq!(
+            DeviceRevoke::from_export_text(&device_revoke).unwrap_err(),
+            lm_core::LmError::PayloadTooLarge
+        );
+    }
+
+    #[test]
+    fn malformed_import_text_parsers_do_not_panic(bytes in prop::collection::vec(any::<u8>(), 0..4096)) {
+        let text = String::from_utf8_lossy(&bytes);
+        let _ = ContactCard::from_export_text(&text);
+        let _ = FriendRequest::from_export_text(&text);
+        let _ = FriendResponse::from_export_text(&text);
+        let _ = IdentityBackupPackage::from_export_text(&text);
+        let _ = PreKeyBundle::from_export_text(&text);
+        let _ = SignedOneTimePreKeyRecord::from_export_text(&text);
+        let _ = SignalOffer::from_export_text(&text);
+        let _ = SignalAnswer::from_export_text(&text);
+        let _ = PeerAnnounce::from_export_text(&text);
+        let _ = PublicPeerAnnounce::from_export_text(&text);
+        let _ = MailboxMessage::from_export_text(&text);
+        let _ = MessageReceipt::from_export_text(&text);
+        let _ = GroupInvite::from_export_text(&text);
+        let _ = GroupEvent::from_export_text(&text);
+        let _ = GroupSenderKeyDistribution::from_export_text(&text);
+        let _ = RatchetSessionState::from_export_text(&text);
+        let _ = FileManifest::from_export_text(&text);
+        let _ = FileChunkEnvelope::from_json(&text);
+        let _ = DeviceRevoke::from_export_text(&text);
+    }
+
+    #[test]
+    fn ratchet_rejects_replay_for_any_delivery_order(texts in ratchet_texts()) {
+        let (mut alice, mut bob) = ratchet_pair();
+        let mut envelopes = Vec::new();
+        for text in &texts {
+            envelopes.push(RatchetEnvelope::encrypt_text(&mut alice, "prop-ratchet".into(), text.clone()).unwrap());
+        }
+        for envelope in envelopes.iter().rev() {
+            let plain = envelope.decrypt(&mut bob).unwrap();
+            let received = match &plain.body { MessageBody::Text { text } => text };
+            prop_assert!(texts.contains(received));
+            prop_assert_eq!(envelope.decrypt(&mut bob).unwrap_err(), LmError::ReplayDetected);
+        }
+        prop_assert!(bob.skipped_message_keys.is_empty());
+    }
+
+    #[test]
+    fn ratchet_skip_window_rejects_unbounded_gap(gap in 513u32..560) {
+        let (mut alice, mut bob) = ratchet_pair();
+        let mut far = None;
+        for i in 0..=gap {
+            let envelope = RatchetEnvelope::encrypt_text(&mut alice, "prop-ratchet".into(), format!("msg-{i}")).unwrap();
+            if i == gap { far = Some(envelope); }
+        }
+        prop_assert_eq!(far.unwrap().decrypt(&mut bob).unwrap_err(), LmError::PayloadTooLarge);
+        prop_assert!(bob.skipped_message_keys.is_empty());
+        prop_assert_eq!(bob.recv_count, 0);
+    }
+
+    #[test]
+    fn ratchet_out_of_order_within_window_consumes_all_skipped_keys(count in 2usize..32) {
+        let (mut alice, mut bob) = ratchet_pair();
+        let mut envelopes = Vec::new();
+        for i in 0..count {
+            envelopes.push(RatchetEnvelope::encrypt_text(&mut alice, "prop-ratchet".into(), format!("msg-{i}")).unwrap());
+        }
+        let last = envelopes.last().unwrap().clone();
+        last.decrypt(&mut bob).unwrap();
+        prop_assert_eq!(bob.skipped_message_keys.len(), count - 1);
+        for envelope in envelopes.iter().take(count - 1) {
+            envelope.decrypt(&mut bob).unwrap();
+        }
+        prop_assert!(bob.skipped_message_keys.is_empty());
     }
 }

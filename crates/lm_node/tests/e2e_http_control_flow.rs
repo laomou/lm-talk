@@ -2,7 +2,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use lm_core::{
     Identity, MailboxMessage, MailboxMessageKind, PreKeyBundle, SignedOneTimePreKeyRecord,
 };
-use lm_node::NodeStateSnapshot;
+use lm_node::{DhtRecord, NodeConfig, NodeStateSnapshot};
 use serde_json::json;
 use std::{
     env,
@@ -31,6 +31,86 @@ impl Drop for TestNodeProcess {
 struct HttpResponse {
     status: u16,
     body: String,
+}
+
+#[test]
+fn real_http_control_plane_dht_find_value_runs_iterative_query() {
+    let port_a = free_port();
+    let port_b = free_port();
+    let base_a = format!("127.0.0.1:{port_a}");
+    let base_b = format!("127.0.0.1:{port_b}");
+    let _node_a = spawn_node(&base_a, "http-dht-find-source");
+    let _node_b = spawn_node_with_args(
+        &base_b,
+        "http-dht-find-query",
+        &[
+            "--sync-peer",
+            &format!("http://{base_a}"),
+            "--sync-interval-seconds",
+            "0",
+        ],
+    );
+    wait_for_health(&base_a);
+    wait_for_health(&base_b);
+
+    let (identity, _) = Identity::create_with_passphrase("http dht find owner").unwrap();
+    let announce = NodeConfig {
+        peer_id: "http-dht-found-peer".into(),
+        ..Default::default()
+    }
+    .create_announce(&identity)
+    .unwrap();
+    let record = DhtRecord::public_peer(&announce, announce.to_export_text().unwrap(), 3600);
+    let key = record.key;
+    let store = http_json(&base_a, "POST", "/dht/record", json!({ "record": record }));
+    assert_eq!(store.status, 201, "{}", store.body);
+
+    let find = http_request(
+        &base_b,
+        "GET",
+        &format!("/dht/find-value?key={key}&limit=8&max_peers=2"),
+        "",
+    );
+    assert_eq!(find.status, 200, "{}", find.body);
+    let body: serde_json::Value = serde_json::from_str(&find.body).unwrap();
+    assert_eq!(body["found"], true);
+    assert_eq!(body["stats"]["attempts"], 1);
+    assert_eq!(body["stats"]["found_records"], 1);
+
+    let get = http_request(&base_b, "GET", &format!("/dht/record?key={key}"), "");
+    assert_eq!(get.status, 200, "{}", get.body);
+    let get_body: serde_json::Value = serde_json::from_str(&get.body).unwrap();
+    assert_eq!(get_body["found"], true);
+    assert_eq!(
+        get_body["record"]["value"],
+        announce.to_export_text().unwrap()
+    );
+
+    let stats = http_request(&base_b, "GET", "/control/stats", "");
+    assert_eq!(stats.status, 200, "{}", stats.body);
+    let stats_body: serde_json::Value = serde_json::from_str(&stats.body).unwrap();
+    assert_eq!(stats_body["dht_find_value_runs"], 1);
+    assert_eq!(stats_body["dht_find_value_attempts"], 1);
+    assert_eq!(stats_body["dht_find_value_successes"], 1);
+    assert_eq!(stats_body["dht_find_value_found_records"], 1);
+    assert_eq!(
+        stats_body["last_dht_find_value_at"].as_u64().is_some(),
+        true
+    );
+
+    let metrics = http_request(&base_b, "GET", "/control/metrics", "");
+    assert_eq!(metrics.status, 200, "{}", metrics.body);
+    assert!(metrics.body.contains("lm_node_dht_find_value_runs_total 1"));
+    assert!(
+        metrics
+            .body
+            .contains("lm_node_dht_find_value_attempts_total{result=\"success\"} 1")
+    );
+    assert!(
+        metrics
+            .body
+            .contains("lm_node_dht_find_value_records_total{kind=\"found\"} 1")
+    );
 }
 
 #[test]
@@ -495,6 +575,7 @@ fn real_http_control_plane_loads_config_file() {
     let state_file = config_file.with_extension("state.json");
     let token_file = config_file.with_extension("token");
     std::fs::write(&token_file, "config-secret\n").unwrap();
+    restrict_secret_file_permissions(&token_file);
     std::fs::write(
         &config_file,
         json!({
@@ -530,6 +611,130 @@ fn real_http_control_plane_loads_config_file() {
     let _ = std::fs::remove_file(&config_file);
     let _ = std::fs::remove_file(&state_file);
     let _ = std::fs::remove_file(&token_file);
+}
+
+#[test]
+fn real_serve_control_rejects_required_state_db_encryption_until_supported() {
+    let port = free_port();
+    let base = format!("127.0.0.1:{port}");
+    let state_db = env::temp_dir().join(format!(
+        "lm-node-http-require-encryption-{}-{}.sqlite3",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let output = Command::new(lm_node_binary())
+        .args([
+            "serve-control",
+            "--bind",
+            &base,
+            "--peer-id",
+            "http-require-encryption-node",
+            "--state-db",
+        ])
+        .arg(&state_db)
+        .args(["--state-db-require-encryption", "true"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("failed to execute lm_node serve-control");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("plain SQLite"), "{stderr}");
+    cleanup_state_path(&state_db);
+}
+
+#[test]
+fn real_libp2p_dht_rejects_required_state_db_encryption_until_supported() {
+    let state_db = env::temp_dir().join(format!(
+        "lm-node-libp2p-require-encryption-{}-{}.sqlite3",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let output = Command::new(lm_node_binary())
+        .args([
+            "serve-dht-libp2p",
+            "--listen",
+            "/ip4/127.0.0.1/tcp/0",
+            "--peer-id",
+            "libp2p-require-encryption-node",
+            "--state-db",
+        ])
+        .arg(&state_db)
+        .args(["--state-db-require-encryption", "true"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("failed to execute lm_node serve-dht-libp2p");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("plain SQLite"), "{stderr}");
+    cleanup_state_path(&state_db);
+}
+
+#[test]
+fn real_http_control_plane_rejects_parser_abuse_with_precise_status() {
+    let port = free_port();
+    let base = format!("127.0.0.1:{port}");
+    let _node = spawn_node(&base, "http-parser-hardening-node");
+    wait_for_health(&base);
+
+    let body_too_large = raw_http_request(
+        &base,
+        &format!(
+            "POST /sync/import HTTP/1.1\r\nhost: {base}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+            4 * 1024 * 1024 + 1
+        ),
+    );
+    assert_eq!(body_too_large.status, 413, "{}", body_too_large.body);
+    assert!(body_too_large.body.contains("request body too large"));
+
+    let path_too_large = raw_http_request(
+        &base,
+        &format!(
+            "GET /{} HTTP/1.1\r\nhost: {base}\r\nconnection: close\r\n\r\n",
+            "a".repeat(4097)
+        ),
+    );
+    assert_eq!(path_too_large.status, 431, "{}", path_too_large.body);
+    assert!(path_too_large.body.contains("request path too large"));
+
+    let conflicting_content_length = raw_http_request(
+        &base,
+        &format!(
+            "POST /sync/import HTTP/1.1\r\nhost: {base}\r\ncontent-length: 2\r\ncontent-length: 3\r\nconnection: close\r\n\r\n{{}}",
+        ),
+    );
+    assert_eq!(
+        conflicting_content_length.status, 400,
+        "{}",
+        conflicting_content_length.body
+    );
+    assert!(
+        conflicting_content_length
+            .body
+            .contains("conflicting content-length")
+    );
+
+    let transfer_encoding = raw_http_request(
+        &base,
+        &format!(
+            "POST /sync/import HTTP/1.1\r\nhost: {base}\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n0\r\n\r\n",
+        ),
+    );
+    assert_eq!(transfer_encoding.status, 400, "{}", transfer_encoding.body);
+    assert!(
+        transfer_encoding
+            .body
+            .contains("unsupported transfer-encoding")
+    );
 }
 
 #[test]
@@ -881,6 +1086,17 @@ fn path_with_suffix(path: &std::path::Path, suffix: &str) -> PathBuf {
     PathBuf::from(value)
 }
 
+#[cfg(unix)]
+fn restrict_secret_file_permissions(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let mut permissions = std::fs::metadata(path).unwrap().permissions();
+    permissions.set_mode(0o600);
+    std::fs::set_permissions(path, permissions).unwrap();
+}
+
+#[cfg(not(unix))]
+fn restrict_secret_file_permissions(_path: &std::path::Path) {}
+
 fn lm_node_binary() -> PathBuf {
     if let Some(path) = option_env!("CARGO_BIN_EXE_lm_node") {
         return PathBuf::from(path);
@@ -956,6 +1172,36 @@ fn try_http_request(
     try_http_request_with_headers(addr, method, path, body, &[])
 }
 
+fn raw_http_request(addr: &str, request: &str) -> HttpResponse {
+    let mut stream = TcpStream::connect(addr).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    stream
+        .set_write_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    stream.write_all(request.as_bytes()).unwrap();
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw).unwrap();
+    parse_http_response(&raw)
+}
+
+fn parse_http_response(raw: &[u8]) -> HttpResponse {
+    let header_end = raw
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .unwrap_or_else(|| panic!("missing headers in {}", String::from_utf8_lossy(raw)));
+    let headers = String::from_utf8_lossy(&raw[..header_end]);
+    let status = headers
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or_else(|| panic!("missing status in {headers}"));
+    let body = String::from_utf8_lossy(&raw[header_end + 4..]).into_owned();
+    HttpResponse { status, body }
+}
+
 fn try_http_request_with_headers(
     addr: &str,
     method: &str,
@@ -978,17 +1224,5 @@ fn try_http_request_with_headers(
 
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw)?;
-    let header_end = raw
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "missing headers"))?;
-    let headers = String::from_utf8_lossy(&raw[..header_end]);
-    let status = headers
-        .lines()
-        .next()
-        .and_then(|line| line.split_whitespace().nth(1))
-        .and_then(|value| value.parse::<u16>().ok())
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "missing status"))?;
-    let body = String::from_utf8_lossy(&raw[header_end + 4..]).into_owned();
-    Ok(HttpResponse { status, body })
+    Ok(parse_http_response(&raw))
 }

@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 pub const SIGNAL_OFFER_TYPE: &str = "lm-signal-offer-v1";
 pub const SIGNAL_ANSWER_TYPE: &str = "lm-signal-answer-v1";
+pub const MESSAGE_RECEIPT_TYPE: &str = "lm-message-receipt-v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SignalKind {
@@ -387,7 +388,46 @@ pub enum MailboxMessageKind {
     SignalAnswer,
     DirectEnvelope,
     GroupFanout,
+    DeliveryReceipt,
+    ReadReceipt,
     Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MessageReceiptKind {
+    Delivered,
+    Read,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageReceipt {
+    pub r#type: String,
+    pub version: u16,
+    pub receipt_id: Uuid,
+    pub from_user_id: UserId,
+    pub to_user_id: UserId,
+    pub target_message_id: Uuid,
+    pub conversation_id: String,
+    pub mailbox_delivery_id: Option<String>,
+    pub kind: MessageReceiptKind,
+    pub created_at: u64,
+    pub expires_at: u64,
+    pub signature: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct MessageReceiptSignedFields {
+    r#type: String,
+    version: u16,
+    receipt_id: Uuid,
+    from_user_id: UserId,
+    to_user_id: UserId,
+    target_message_id: Uuid,
+    conversation_id: String,
+    mailbox_delivery_id: Option<String>,
+    kind: MessageReceiptKind,
+    created_at: u64,
+    expires_at: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -582,6 +622,120 @@ impl PublicPeerAnnounce {
     }
 }
 
+impl MessageReceipt {
+    pub fn new(
+        from: &Identity,
+        to_user_id: UserId,
+        target_message_id: Uuid,
+        conversation_id: String,
+        mailbox_delivery_id: Option<String>,
+        kind: MessageReceiptKind,
+        ttl_seconds: u64,
+    ) -> Result<Self> {
+        limits::ensure_len(&conversation_id, limits::MAX_NETWORK_ADDRESS_BYTES)?;
+        if let Some(delivery_id) = &mailbox_delivery_id {
+            if delivery_id.trim().is_empty() {
+                return Err(LmError::InvalidBackupFormat);
+            }
+            limits::ensure_len(delivery_id, limits::MAX_NETWORK_ADDRESS_BYTES)?;
+        }
+        let created_at = current_unix_timestamp();
+        let signed = MessageReceiptSignedFields {
+            r#type: MESSAGE_RECEIPT_TYPE.to_string(),
+            version: protocol::PROTOCOL_VERSION_V1,
+            receipt_id: Uuid::new_v4(),
+            from_user_id: from.user_id().clone(),
+            to_user_id,
+            target_message_id,
+            conversation_id,
+            mailbox_delivery_id,
+            kind,
+            created_at,
+            expires_at: created_at.saturating_add(ttl_seconds),
+        };
+        let bytes = protocol::to_canonical_bytes(&signed)?;
+        let signature = from.signing_key().sign(&bytes);
+        Ok(Self {
+            r#type: signed.r#type,
+            version: signed.version,
+            receipt_id: signed.receipt_id,
+            from_user_id: signed.from_user_id,
+            to_user_id: signed.to_user_id,
+            target_message_id: signed.target_message_id,
+            conversation_id: signed.conversation_id,
+            mailbox_delivery_id: signed.mailbox_delivery_id,
+            kind: signed.kind,
+            created_at: signed.created_at,
+            expires_at: signed.expires_at,
+            signature: BASE64.encode(signature.to_bytes()),
+        })
+    }
+
+    pub fn verify(&self, from_identity_public_key: &[u8; 32]) -> Result<()> {
+        if self.r#type != MESSAGE_RECEIPT_TYPE {
+            return Err(LmError::InvalidBackupFormat);
+        }
+        verify_common_identity(
+            &self.from_user_id,
+            from_identity_public_key,
+            self.version,
+            self.expires_at,
+        )?;
+        limits::ensure_len(&self.conversation_id, limits::MAX_NETWORK_ADDRESS_BYTES)?;
+        if let Some(delivery_id) = &self.mailbox_delivery_id {
+            if delivery_id.trim().is_empty() {
+                return Err(LmError::InvalidBackupFormat);
+            }
+            limits::ensure_len(delivery_id, limits::MAX_NETWORK_ADDRESS_BYTES)?;
+        }
+        let signed = MessageReceiptSignedFields {
+            r#type: self.r#type.clone(),
+            version: self.version,
+            receipt_id: self.receipt_id,
+            from_user_id: self.from_user_id.clone(),
+            to_user_id: self.to_user_id.clone(),
+            target_message_id: self.target_message_id,
+            conversation_id: self.conversation_id.clone(),
+            mailbox_delivery_id: self.mailbox_delivery_id.clone(),
+            kind: self.kind,
+            created_at: self.created_at,
+            expires_at: self.expires_at,
+        };
+        verify_sig(
+            from_identity_public_key,
+            &protocol::to_canonical_bytes(&signed)?,
+            &self.signature,
+        )
+    }
+
+    pub fn to_export_text(&self) -> Result<String> {
+        self.verify_public_fields()?;
+        crate::codec::encode_json_prefixed("lm-message-receipt-v1:", self)
+    }
+
+    pub fn from_export_text(text: &str) -> Result<Self> {
+        limits::ensure_len(text, limits::MAX_MESSAGE_RECEIPT_TEXT_BYTES)?;
+        crate::codec::decode_json_prefixed("lm-message-receipt-v1:", text)
+    }
+
+    fn verify_public_fields(&self) -> Result<()> {
+        if self.r#type != MESSAGE_RECEIPT_TYPE {
+            return Err(LmError::InvalidBackupFormat);
+        }
+        if self.version != protocol::PROTOCOL_VERSION_V1 {
+            return Err(LmError::UnsupportedVersion(self.version));
+        }
+        limits::ensure_len(&self.conversation_id, limits::MAX_NETWORK_ADDRESS_BYTES)?;
+        if let Some(delivery_id) = &self.mailbox_delivery_id {
+            if delivery_id.trim().is_empty() {
+                return Err(LmError::InvalidBackupFormat);
+            }
+            limits::ensure_len(delivery_id, limits::MAX_NETWORK_ADDRESS_BYTES)?;
+        }
+        Ok(())
+    }
+}
+
 impl MailboxMessage {
     pub fn new(
         identity: &Identity,
@@ -727,6 +881,31 @@ mod network_extra_tests {
         msg.ciphertext = "changed".into();
         assert_eq!(
             msg.verify(&alice.identity_public_key()).unwrap_err(),
+            LmError::InvalidSignature
+        );
+    }
+
+    #[test]
+    fn message_receipt_roundtrip_and_tamper() {
+        let (alice, _a) = Identity::create_with_passphrase("alice receipt").unwrap();
+        let (bob, _b) = Identity::create_with_passphrase("bob receipt").unwrap();
+        let mut receipt = MessageReceipt::new(
+            &bob,
+            alice.user_id().clone(),
+            Uuid::new_v4(),
+            "conversation-1".into(),
+            Some("delivery-1".into()),
+            MessageReceiptKind::Delivered,
+            3600,
+        )
+        .unwrap();
+        receipt.verify(&bob.identity_public_key()).unwrap();
+        let text = receipt.to_export_text().unwrap();
+        let imported = MessageReceipt::from_export_text(&text).unwrap();
+        imported.verify(&bob.identity_public_key()).unwrap();
+        receipt.kind = MessageReceiptKind::Read;
+        assert_eq!(
+            receipt.verify(&bob.identity_public_key()).unwrap_err(),
             LmError::InvalidSignature
         );
     }

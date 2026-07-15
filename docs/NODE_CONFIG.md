@@ -27,9 +27,11 @@ CLI 参数 > 环境变量 > config file > 默认值
 | `bind` | string | `127.0.0.1:8787` | 控制面监听地址。生产部署建议绑定 loopback，由反向代理负责 TLS。 |
 | `peer_id` | string | `lm-node-dev` | 本节点 public peer id。 |
 | `state_db` | string | 无 | SQLite 正式状态数据库；按表保存 mailbox、prekey bundle、signed one-time-prekey records、consumed prekey、public peer/routing peer、DHT record 等节点状态。 |
-| `state_file` | string | 无 | 兼容 JSON snapshot 状态文件；保存时采用临时文件 + fsync + rename。可与 `state_db` 同时配置作为调试导出。 |
+| `state_db_require_encryption` | bool | `false` | 要求数据库级加密时 fail-closed；当前构建仍是 plain SQLite，设为 `true` 会拒绝启动，避免误以为已启用 SQLCipher。 |
+| `state_file` | string | 无 | 兼容 JSON snapshot 状态文件；保存时采用同目录临时文件 + fsync + rename；Unix 下保存后权限收紧为 `0600`。可与 `state_db` 同时配置作为调试导出。 |
 | `control_token` | string | 无 | 控制面 Bearer token。配置后除 `/health` 外都要求 `Authorization: Bearer ...`。 |
-| `control_token_file` | string | 无 | 从文件读取控制面 Bearer token；文件内容会 trim，空文件报错。 |
+| `control_token_file` | string | 无 | 从文件读取控制面 Bearer token；文件内容会 trim，空文件报错；Unix 下要求 regular file 且权限不能向 group/other 开放（建议 `chmod 600`），并拒绝 symlink。 |
+| `control_previous_tokens` | string[] | `[]` | 旧控制面 Bearer token 列表，用于无停机轮换 grace window；只应短期保留。 |
 | `cors_allow_origins` | string[] | `[]` | CORS Origin 白名单；空列表时仍只由 token/loopback 保护控制面。 |
 | `sync_interval_seconds` | integer | `0` | 自动 sync 周期；`0` 表示关闭自动 sync 与同步后的 DHT runner。 |
 | `sync_max_backoff_seconds` | integer | `300` | snapshot sync 失败指数退避上限。 |
@@ -37,6 +39,7 @@ CLI 参数 > 环境变量 > config file > 默认值
 | `dht_replication_factor` | integer | `3` | 同步周期后 DHT `StoreRecord` runner 的 replication factor；`0` 可关闭 replication runner。 |
 | `dht_routing_refresh_limit` | integer | `8` | 每次 `FindNode` 请求希望返回的节点数，运行时会 clamp 到 `1..=64`。 |
 | `dht_routing_refresh_max_targets` | integer | `8` | 每轮最多查询多少个 routing refresh target；`0` 可关闭 refresh runner。 |
+| `dht_peer_quarantine_consecutive_failures` | integer | `5` | DHT runner 跳过处于退避期的连续失败 peer 的阈值；`0` 可关闭 quarantine。 |
 | `rate_limit_window_seconds` | integer | `60` | per-client IP 基础限流窗口；`0` 表示关闭限流。 |
 | `rate_limit_max_requests` | integer | `600` | 每窗口最大请求数；`0` 表示关闭限流。 |
 | `log_format` | string | `text` | 控制面 stdout 日志格式；可选 `text` 或 `json`。`json` 会输出单行 JSON，字段包含 `ts`、`level`、`event`、`message`、`fields`。 |
@@ -52,7 +55,7 @@ CLI 参数 > 环境变量 > config file > 默认值
 | `url` | string | 远端 control plane URL，目前仅支持 `http://host:port`。 |
 | `peer_id` | string | 可选；远端 public peer id。配置后，DHT StoreRecord replication 会按 closest-k plan 只发送给匹配目标 peer；未配置任何 `peer_id` 时保持旧行为：发送给所有 control peers。 |
 | `token` | string | 远端 control plane Bearer token。 |
-| `token_file` | string | 从文件读取远端 Bearer token。 |
+| `token_file` | string | 从文件读取远端 Bearer token；Unix 下同样要求 secret 文件权限收紧（建议 `chmod 600`）。 |
 
 ## 对应 CLI / 环境变量
 
@@ -64,9 +67,11 @@ CLI 参数 > 环境变量 > config file > 默认值
 | `bind` | `--bind` | - |
 | `peer_id` | `--peer-id` | - |
 | `state_db` | `--state-db` | - |
+| `state_db_require_encryption` | `--state-db-require-encryption` | `LM_NODE_STATE_DB_REQUIRE_ENCRYPTION` |
 | `state_file` | `--state-file` | - |
 | `control_token` | `--control-token` | `LM_NODE_CONTROL_TOKEN` |
 | `control_token_file` | `--control-token-file` | `LM_NODE_CONTROL_TOKEN_FILE` |
+| `control_previous_tokens` | `--control-previous-token old1,old2` | `LM_NODE_CONTROL_PREVIOUS_TOKENS` |
 | `cors_allow_origins` | `--cors-allow-origin` | `LM_NODE_CORS_ALLOW_ORIGIN` |
 | `sync_peers[].url` | `--sync-peer` | - |
 | sync peer shared token | `--sync-peer-token` | `LM_NODE_SYNC_PEER_TOKEN` |
@@ -76,6 +81,7 @@ CLI 参数 > 环境变量 > config file > 默认值
 | `dht_replication_factor` | `--dht-replication-factor` | `LM_NODE_DHT_REPLICATION_FACTOR` |
 | `dht_routing_refresh_limit` | `--dht-routing-refresh-limit` | `LM_NODE_DHT_ROUTING_REFRESH_LIMIT` |
 | `dht_routing_refresh_max_targets` | `--dht-routing-refresh-max-targets` | `LM_NODE_DHT_ROUTING_REFRESH_MAX_TARGETS` |
+| `dht_peer_quarantine_consecutive_failures` | `--dht-peer-quarantine-consecutive-failures` | `LM_NODE_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES` |
 | `rate_limit_window_seconds` | `--rate-limit-window-seconds` | `LM_NODE_RATE_LIMIT_WINDOW_SECONDS` |
 | `rate_limit_max_requests` | `--rate-limit-max-requests` | `LM_NODE_RATE_LIMIT_MAX_REQUESTS` |
 | `log_format` | `--log-format` | `LM_NODE_LOG_FORMAT` |
@@ -119,6 +125,12 @@ SQLite `state_db` 中对应表：
 - 当前控制面内置 HTTP，不直接提供 TLS；公网部署应放在 TLS 反向代理后。
 - 面向不完全可信客户端开放 Mailbox 时，建议同时启用控制面 per-client IP 限流、mailbox 全局限流和 mailbox sender 限流，例如 `rate_limit_*` + `mailbox_global_rate_limit_*` + `mailbox_sender_rate_limit_*`。
 - Mailbox `push` 拒绝原因会累计到 `maintenance.mailbox_push_rejects`，并通过 `/control/metrics` 的 `lm_node_mailbox_push_rejections_total{reason=...}` 暴露，便于观察异常 payload、重复消息和限流命中。
+- Mailbox `ack` 拒绝原因会累计到 `maintenance.mailbox_ack_rejects`，并通过 `/control/metrics` 的 `lm_node_mailbox_ack_rejections_total{reason=...}` 暴露，便于观察异常 ACK 批次、无效 user_id 或超长 delivery id；`/health` 会暴露 Mailbox take/ack 上限、控制面入站/peer 超时、control-peer 响应上限和 libp2p DHT RPC request/response/concurrency 上限和 libp2p DHT 连接数上限，便于确认反滥用参数。
+- `GET /mailbox/status?user_id=...&delivery_id=...` 返回该用户邮箱的 `summary` 和可选 delivery 状态：`pending`（尚未被 take）、`delivered_unacked`（已被 take 但未 ack）、`acked`（节点已收到 ACK，并在短期 tombstone 内保留）、`absent_or_expired`（不存在或 tombstone/消息已过期清理）。该端点用于客户端区分“对方未取”“已取但 ACK 未完成”和“ACK 已完成”。
+- 控制面 HTTP parser 会拒绝超大 method/path/header line、冲突的重复 `Content-Length` 和非空 `Transfer-Encoding`，超大 body/header 分别返回 `413`/`431`，降低请求走私和解析歧义风险。
+- 控制面所有 HTTP 响应都会附加浏览器安全响应头：`Cache-Control: no-store`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、受限 `Permissions-Policy` 和 API 友好的 `Content-Security-Policy`，降低控制面状态、snapshot 或错误响应被浏览器缓存/嗅探/误用的风险。
+- DHT record 拒绝原因会累计到 `maintenance.dht_record_rejects`，并通过 `/control/metrics` 的 `lm_node_dht_record_rejections_total{reason=...}` 暴露；统计覆盖控制面 store、DHT RPC StoreRecord、sync snapshot 导入以及 FindValue 返回的 found/closer records，便于观察垃圾记录、TTL 超限、value 超限或 key-kind-value 不匹配。Routing peer / closer node 拒绝原因会累计到 `maintenance.routing_peer_rejects`，并通过 `lm_node_routing_peer_rejections_total{reason=...}` 暴露，便于观察无效签名、缺少 identity public key、node_id 不匹配或本机节点等异常路由数据。HTTP/libp2p DHT transport 还会校验响应体里的 logical `request_id` 必须与请求一致，并把 DHT `Error` 响应作为失败处理，避免异常 peer 的串扰响应被误用；FindValue / FindNode 客户端侧只处理有界数量的返回 records/nodes，即使远端忽略请求 limit，也不会把超量 closer records/nodes 全部合并；libp2p DHT RPC codec 显式限制 request/response 大小并将并发 streams 收紧到项目上限；libp2p swarm 还启用 connection-limits，限制 pending incoming/outgoing、established incoming/outgoing、total 和 per-peer 连接数，降低异常 peer 的内存、并发和连接耗尽风险。
+- `GET /dht/find-value?key=<hex>&limit=N&max_peers=N&alpha=N` 会使用已配置 sync/control peers 与当前 DHT transport 执行有界迭代 FindValue 查询，即使 `sync_interval_seconds=0` 关闭自动 snapshot sync 也可手动查询；HTTP-control transport 会把 routing table 中同 scheme `http://` routing peers 加入候选，但不会向发现的第三方 peer 传播已配置 bearer token；响应返回 attempts/successes/found/closer/query_rounds/alpha/exhausted/peers_quarantined 统计；`/control/stats` 和 `/control/metrics` 会聚合手动 FindValue runs、attempts、命中记录、closer records/nodes、quarantine 和 exhausted 次数；DHT runner 会优先尝试 `sync_status` 中 consecutive_failures/failures 更低的健康配置 peer，并在退避期内跳过 consecutive_failures 达到配置阈值（默认 5）的本轮 quarantine peer，next_attempt_at 到期后会重新纳入候选；`/control/metrics` 暴露 `lm_node_dht_peer_quarantined{peer=...}`，并聚合 replication/refresh/find-value 中被 quarantine 跳过的 peer 数，便于告警；该端点仍是 scaffold，生产查询仍需更完整 peer scoring、真正 alpha 并发和更强恶意路由防护。
 - PreKey 发布建议使用新版客户端生成的 `signed_one_time_prekey_record_texts[]`。节点会优先按独立 signed one-time-prekey records 选择和消费 OTK；旧 bundle 内 `one_time_prekeys[]` 仍作为兼容回退。
 - 生产环境建议设置 `log_format = "json"` 或 `--log-format json`，便于 systemd/journald、容器平台或日志采集器按 `event` 和 `fields` 建索引。
 - 当前 control-peer DHT routing refresh 合并属于已配置 control peer 信任边界内的 bootstrap 能力；`RoutingPeer` 已可携带并持久化 identity public key，节点在 verified merge 路径会校验 announce 签名。开放传输层 DHT 还需要真正的网络 RPC 与端到端策略。
@@ -212,7 +224,7 @@ sync.example {
 ### 部署检查清单
 
 - 确认 `lm_node` 未直接监听公网地址：优先使用 `bind = "127.0.0.1:8787"`。
-- 确认已配置 `control_token_file`，且 secret 文件权限只允许节点进程读取。
+- 确认已配置 `control_token_file`，且 secret 文件权限只允许节点进程读取（Unix 下 `lm_node` 会拒绝 group/other 可读写执行或 symlink secret 文件，建议 `chmod 600`）。
 - 确认反向代理证书自动续期正常。
 - 确认 `cors_allow_origins` 只包含实际使用的 Web 来源；如果不是浏览器客户端，可保持空列表并依赖 Bearer token。
 - 确认反向代理和节点请求体上限不超过控制面读取上限；当前 `lm_node` 单请求 body 上限为 4 MiB。
@@ -220,7 +232,7 @@ sync.example {
 
 ## Token 轮换策略
 
-当前 `lm_node` 每个控制面实例只接受一个 `control_token`。推荐使用 `control_token_file`，通过原子替换 secret 文件并重启节点完成轮换。
+`lm_node` 支持一个当前 `control_token` 加一个短期 `control_previous_tokens[]` grace window。推荐使用 `control_token_file` 保存当前 token，并在轮换期间通过配置、CLI 或环境变量提供旧 token 列表；所有旧 token 都应在客户端切换完成后尽快移除。
 
 推荐流程：
 
@@ -247,13 +259,13 @@ sync.example {
      https://sync.example/sync/status
    ```
 
-5. 确认 `/control/stats` 中 `unauthorized` 没有持续增长，再删除旧 token 的客户端配置。
+5. 更新所有客户端/同步 peer 使用新 token。确认 `/control/stats` 中 `unauthorized` 没有持续增长后，移除 `control_previous_tokens` 并再次重启节点。
 
 注意事项：
 
 - 不建议把 token 写进 shell history；优先使用 secret 文件。
-- 如果有多个互相 sync 的节点，应逐个滚动更新：先让所有 peer 配置接受/使用新 token，再重启被访问节点。
-- 当前没有多 token grace window；需要无中断轮换时，应在反向代理层临时接受旧 token 并改写为新 token，或部署第二个节点 URL 后切流。
+- 如果有多个互相 sync 的节点，应逐个滚动更新：先在被访问节点加入 previous token，再让所有 peer 配置切换到新 token，最后移除 previous token。
+- `control_previous_tokens` 是临时兼容窗口，不应长期保留；日志和指标不会输出 token 原文。
 
 ## systemd 部署示例
 
@@ -340,7 +352,7 @@ docker run -d --name lm-node \
 
 ## 数据备份 / 恢复
 
-当前正式持久化路径是 SQLite `state_db`；JSON `state_file` 仅作为兼容 snapshot 导出路径。建议备份：
+当前正式持久化路径是 SQLite `state_db`；连接会启用 WAL、`synchronous=FULL`、`busy_timeout=5000` 和 `foreign_keys=ON`，提升崩溃恢复和短暂锁竞争时的可靠性。Unix 下 `state_db` 主文件及 `-wal` / `-shm` sidecar 会在打开/保存后收紧为 `0600`，降低本机其他用户读取未加密状态的风险；`/health`、`/control/stats` 和 `/control/metrics` 会明确返回/暴露 `state_db_encrypted=false` / `lm_node_state_db_encrypted 0` 与 `state_db_permissions_hardened=true` / `lm_node_state_db_permissions_hardened 1`，避免把权限硬化误认为数据库级加密。若部署要求数据库级加密，可设置 `state_db_require_encryption=true` / `--state-db-require-encryption true` 让当前 plain SQLite 构建 fail-closed；该 fail-closed 同时覆盖 `serve-control` 和 `serve-dht-libp2p`。JSON `state_file` 仅作为兼容 snapshot 导出路径，保存后同样收紧为 `0600`。建议备份：
 
 - `state_db`，例如 `/var/lib/lm-node/state.sqlite3`
 - 如启用了兼容导出，也备份 `state_file`，例如 `/var/lib/lm-node/state.json`
@@ -361,6 +373,7 @@ curl -H "Authorization: Bearer $(cat /etc/lm-node/control.token)" \
 2. 恢复 `state_db`；如只有 JSON snapshot，可启动空库后通过 `POST /sync/import` 导入。
 3. 恢复配置和 token 文件，确认权限。
 4. 启动节点并检查 `/health`、`/sync/status`。
+5. 检查 `/control/stats` / `/control/metrics`，确认 mailbox/DHT rejection 指标没有异常增长。
 
 注意：
 

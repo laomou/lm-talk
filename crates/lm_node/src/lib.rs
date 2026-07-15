@@ -11,12 +11,19 @@ use lm_core::{
     PublicPeerCapability, Result, SignedOneTimePreKeyRecord, UserId,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use uuid::Uuid;
 
 pub const KADEMLIA_ID_BYTES: usize = 32;
 pub const DEFAULT_K_BUCKET_SIZE: usize = 20;
 pub const DEFAULT_MAX_DHT_RECORDS: usize = 4096;
+pub const DEFAULT_MAX_DHT_RECORD_VALUE_BYTES: usize = 256 * 1024;
+pub const DEFAULT_MAX_DHT_RECORD_TTL_SECONDS: u64 = 30 * 24 * 60 * 60;
+pub const DEFAULT_MAX_MAILBOX_ACK_IDS: usize = 2048;
+pub const DEFAULT_MAX_MAILBOX_ACK_ID_BYTES: usize = 128;
+pub const DEFAULT_MAX_MAILBOX_TAKE_LIMIT: usize = 200;
+pub const DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES: u32 = 5;
+pub const DEFAULT_MAILBOX_ACK_RECEIPT_TTL_SECONDS: u64 = 30 * 24 * 60 * 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct KademliaNodeId([u8; KADEMLIA_ID_BYTES]);
@@ -215,6 +222,49 @@ impl DhtRecord {
         self.expires_at <= now
     }
 
+    pub fn is_oversized(&self) -> bool {
+        self.value.as_bytes().len() > DEFAULT_MAX_DHT_RECORD_VALUE_BYTES
+    }
+
+    pub fn ttl_too_long_at(&self, now: u64) -> bool {
+        self.expires_at.saturating_sub(now) > DEFAULT_MAX_DHT_RECORD_TTL_SECONDS
+    }
+
+    pub fn validate_for_store_at(&self, now: u64) -> Result<()> {
+        if self.is_expired_at(now) || self.ttl_too_long_at(now) || self.is_oversized() {
+            return Err(LmError::PayloadTooLarge);
+        }
+        match self.kind {
+            DhtRecordKind::PublicPeer => {
+                let announce = PublicPeerAnnounce::from_export_text(&self.value)?;
+                if DhtRecordKey::for_public_peer(&announce.peer_id) != self.key {
+                    return Err(LmError::InvalidSignature);
+                }
+                if announce.expires_at <= now {
+                    return Err(LmError::ExpiredObject);
+                }
+            }
+            DhtRecordKind::PreKey => {
+                let bundle = PreKeyBundle::from_export_text(&self.value)?;
+                bundle.verify()?;
+                if DhtRecordKey::for_prekey(&bundle.user_id) != self.key {
+                    return Err(LmError::InvalidSignature);
+                }
+                if bundle.expires_at <= now {
+                    return Err(LmError::ExpiredObject);
+                }
+            }
+            DhtRecordKind::MailboxHint => {
+                if self.value.trim().is_empty()
+                    || self.value.len() > lm_core::limits::MAX_NETWORK_ADDRESS_BYTES
+                {
+                    return Err(LmError::PayloadTooLarge);
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn should_republish_at(&self, now: u64) -> bool {
         now >= self.republish_at && !self.is_expired_at(now)
     }
@@ -227,7 +277,8 @@ pub struct DhtRecordStore {
 
 impl DhtRecordStore {
     pub fn store(&mut self, record: DhtRecord) -> bool {
-        if record.is_expired_at(current_unix_timestamp()) {
+        let now = current_unix_timestamp();
+        if record.is_expired_at(now) || record.is_oversized() || record.ttl_too_long_at(now) {
             return false;
         }
         let is_new = !self.records.contains_key(&record.key);
@@ -271,15 +322,19 @@ impl DhtRecordStore {
 
     pub fn restore_records(&mut self, records: Vec<DhtRecord>) {
         self.records.clear();
+        let now = current_unix_timestamp();
         for record in records {
-            self.store(record);
+            if record.validate_for_store_at(now).is_ok() {
+                self.store(record);
+            }
         }
     }
 
     pub fn merge_records(&mut self, records: Vec<DhtRecord>) -> usize {
         let mut inserted = 0;
+        let now = current_unix_timestamp();
         for record in records {
-            if self.store(record) {
+            if record.validate_for_store_at(now).is_ok() && self.store(record) {
                 inserted += 1;
             }
         }
@@ -550,12 +605,18 @@ pub struct NodeConfig {
     pub mailbox_global_rate_limit_window_seconds: Option<u64>,
     #[serde(default)]
     pub mailbox_global_rate_limit_max_messages: Option<u32>,
+    #[serde(default = "default_dht_peer_quarantine_consecutive_failures")]
+    pub dht_peer_quarantine_consecutive_failures: u32,
     pub max_relay_bandwidth_kbps: Option<u64>,
     pub announce_ttl_seconds: u64,
 }
 
 fn default_max_mailbox_messages_per_user() -> Option<usize> {
     Some(1000)
+}
+
+fn default_dht_peer_quarantine_consecutive_failures() -> u32 {
+    DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES
 }
 
 impl Default for NodeConfig {
@@ -571,6 +632,8 @@ impl Default for NodeConfig {
             mailbox_sender_rate_limit_max_messages: None,
             mailbox_global_rate_limit_window_seconds: None,
             mailbox_global_rate_limit_max_messages: None,
+            dht_peer_quarantine_consecutive_failures:
+                DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES,
             max_relay_bandwidth_kbps: Some(1024),
             announce_ttl_seconds: 24 * 3600,
         }
@@ -688,6 +751,41 @@ pub struct MailboxDelivery {
 pub struct MailboxStore {
     deliveries: HashMap<UserId, Vec<MailboxDelivery>>,
     message_ids: HashMap<UserId, Vec<Uuid>>,
+    ack_receipts: HashMap<UserId, Vec<MailboxAckReceipt>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MailboxDeliveryStatus {
+    pub delivery_id: String,
+    pub status: MailboxDeliveryState,
+    pub created_at: Option<u64>,
+    pub delivered_at: Option<u64>,
+    pub acked_at: Option<u64>,
+    pub expires_at: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MailboxDeliveryState {
+    Pending,
+    DeliveredUnacked,
+    Acked,
+    AbsentOrExpired,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MailboxAckReceipt {
+    pub user_id: UserId,
+    pub delivery_id: String,
+    pub acked_at: u64,
+    pub expires_at: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MailboxUserDeliverySummary {
+    pub total: usize,
+    pub undelivered: usize,
+    pub delivered_unacked: usize,
 }
 
 impl MailboxStore {
@@ -752,35 +850,109 @@ impl MailboxStore {
     /// Return pending deliveries without deleting them. Clients must call ack
     /// after successful local processing to avoid message loss.
     pub fn take_for(&mut self, user_id: &UserId) -> Vec<MailboxDelivery> {
+        self.take_for_limited(user_id, usize::MAX)
+    }
+
+    pub fn take_for_limited(&mut self, user_id: &UserId, limit: usize) -> Vec<MailboxDelivery> {
         let now = current_unix_timestamp();
         self.prune_expired(now);
         let Some(deliveries) = self.deliveries.get_mut(user_id) else {
             return Vec::new();
         };
-        for delivery in deliveries.iter_mut() {
+        let limit = limit.min(deliveries.len());
+        for delivery in deliveries.iter_mut().take(limit) {
             delivery.delivered_at = Some(now);
         }
-        deliveries.clone()
+        deliveries.iter().take(limit).cloned().collect()
     }
 
     pub fn ack(&mut self, user_id: &UserId, delivery_ids: &[String]) -> usize {
+        let now = current_unix_timestamp();
         let Some(deliveries) = self.deliveries.get_mut(user_id) else {
             return 0;
         };
-        let before = deliveries.len();
-        deliveries.retain(|delivery| !delivery_ids.contains(&delivery.delivery_id));
-        let removed = before.saturating_sub(deliveries.len());
+        let delivery_ids = delivery_ids
+            .iter()
+            .map(String::as_str)
+            .collect::<HashSet<_>>();
+        let mut acked = Vec::new();
+        deliveries.retain(|delivery| {
+            if delivery_ids.contains(delivery.delivery_id.as_str()) {
+                acked.push(delivery.delivery_id.clone());
+                false
+            } else {
+                true
+            }
+        });
+        let removed = acked.len();
         if deliveries.is_empty() {
             self.deliveries.remove(user_id);
             self.message_ids.remove(user_id);
         } else {
             self.rebuild_message_ids_for(user_id);
         }
+        for delivery_id in acked {
+            self.record_ack_receipt(user_id, delivery_id, now);
+        }
         removed
     }
 
     pub fn pending_for(&self, user_id: &UserId) -> usize {
         self.deliveries.get(user_id).map(Vec::len).unwrap_or(0)
+    }
+
+    pub fn delivery_summary_for(&self, user_id: &UserId) -> MailboxUserDeliverySummary {
+        let Some(deliveries) = self.deliveries.get(user_id) else {
+            return MailboxUserDeliverySummary::default();
+        };
+        let delivered_unacked = deliveries
+            .iter()
+            .filter(|delivery| delivery.delivered_at.is_some())
+            .count();
+        MailboxUserDeliverySummary {
+            total: deliveries.len(),
+            undelivered: deliveries.len().saturating_sub(delivered_unacked),
+            delivered_unacked,
+        }
+    }
+
+    pub fn delivery_status(&self, user_id: &UserId, delivery_id: &str) -> MailboxDeliveryStatus {
+        let Some(delivery) = self
+            .deliveries
+            .get(user_id)
+            .and_then(|deliveries| deliveries.iter().find(|d| d.delivery_id == delivery_id))
+        else {
+            if let Some(receipt) = self.ack_receipt(user_id, delivery_id) {
+                return MailboxDeliveryStatus {
+                    delivery_id: receipt.delivery_id.clone(),
+                    status: MailboxDeliveryState::Acked,
+                    created_at: None,
+                    delivered_at: None,
+                    acked_at: Some(receipt.acked_at),
+                    expires_at: Some(receipt.expires_at),
+                };
+            }
+            return MailboxDeliveryStatus {
+                delivery_id: delivery_id.to_string(),
+                status: MailboxDeliveryState::AbsentOrExpired,
+                created_at: None,
+                delivered_at: None,
+                acked_at: None,
+                expires_at: None,
+            };
+        };
+        MailboxDeliveryStatus {
+            delivery_id: delivery.delivery_id.clone(),
+            status: if delivery.delivered_at.is_some() {
+                MailboxDeliveryState::DeliveredUnacked
+            } else {
+                MailboxDeliveryState::Pending
+            },
+            created_at: Some(delivery.created_at),
+            delivered_at: delivery.delivered_at,
+            acked_at: None,
+            expires_at: Some(delivery.message.expires_at),
+        }
     }
 
     pub fn total_pending(&self) -> usize {
@@ -812,7 +984,46 @@ impl MailboxStore {
                 self.rebuild_message_ids_for(&user_id);
             }
         }
+        self.prune_ack_receipts(now);
         removed
+    }
+
+    fn record_ack_receipt(&mut self, user_id: &UserId, delivery_id: String, acked_at: u64) {
+        let expires_at = acked_at.saturating_add(DEFAULT_MAILBOX_ACK_RECEIPT_TTL_SECONDS);
+        let receipts = self.ack_receipts.entry(user_id.clone()).or_default();
+        if let Some(existing) = receipts
+            .iter_mut()
+            .find(|receipt| receipt.delivery_id == delivery_id)
+        {
+            existing.acked_at = acked_at;
+            existing.expires_at = expires_at;
+            return;
+        }
+        receipts.push(MailboxAckReceipt {
+            user_id: user_id.clone(),
+            delivery_id,
+            acked_at,
+            expires_at,
+        });
+    }
+
+    fn ack_receipt(&self, user_id: &UserId, delivery_id: &str) -> Option<&MailboxAckReceipt> {
+        self.ack_receipts
+            .get(user_id)
+            .and_then(|receipts| receipts.iter().find(|r| r.delivery_id == delivery_id))
+    }
+
+    fn prune_ack_receipts(&mut self, now: u64) {
+        let users = self.ack_receipts.keys().cloned().collect::<Vec<_>>();
+        for user_id in users {
+            let Some(receipts) = self.ack_receipts.get_mut(&user_id) else {
+                continue;
+            };
+            receipts.retain(|receipt| receipt.expires_at > now);
+            if receipts.is_empty() {
+                self.ack_receipts.remove(&user_id);
+            }
+        }
     }
 
     fn has_message_id(&self, user_id: &UserId, message_id: Uuid) -> bool {
@@ -851,6 +1062,13 @@ impl MailboxStore {
             .collect()
     }
 
+    pub fn all_ack_receipts(&self) -> Vec<MailboxAckReceipt> {
+        self.ack_receipts
+            .values()
+            .flat_map(|receipts| receipts.iter().cloned())
+            .collect()
+    }
+
     pub fn all_messages(&self) -> Vec<MailboxMessage> {
         self.all_deliveries()
             .into_iter()
@@ -868,6 +1086,11 @@ impl MailboxStore {
         }
         self.prune_expired(current_unix_timestamp());
         self.rebuild_message_ids();
+    }
+
+    fn restore_ack_receipts(&mut self, receipts: Vec<MailboxAckReceipt>) {
+        self.ack_receipts.clear();
+        self.merge_ack_receipts(receipts);
     }
 
     fn restore_messages(&mut self, messages: Vec<MailboxMessage>) {
@@ -914,6 +1137,34 @@ impl MailboxStore {
                 .push(delivery.message.message_id);
             list.push(delivery);
             inserted += 1;
+        }
+        inserted
+    }
+
+    fn merge_ack_receipts(&mut self, receipts: Vec<MailboxAckReceipt>) -> usize {
+        let now = current_unix_timestamp();
+        self.prune_ack_receipts(now);
+        let mut inserted = 0usize;
+        for receipt in receipts {
+            if receipt.expires_at <= now || receipt.delivery_id.trim().is_empty() {
+                continue;
+            }
+            let list = self
+                .ack_receipts
+                .entry(receipt.user_id.clone())
+                .or_default();
+            if let Some(existing) = list
+                .iter_mut()
+                .find(|existing| existing.delivery_id == receipt.delivery_id)
+            {
+                if receipt.acked_at > existing.acked_at || receipt.expires_at > existing.expires_at
+                {
+                    *existing = receipt;
+                }
+                continue;
+            }
+            list.push(receipt);
+            inserted = inserted.saturating_add(1);
         }
         inserted
     }
@@ -1089,6 +1340,9 @@ impl PreKeyStore {
         bundle: PreKeyBundle,
         signed_one_time_prekey_records: Vec<SignedOneTimePreKeyRecord>,
     ) -> Result<()> {
+        if signed_one_time_prekey_records.len() > lm_core::limits::MAX_ONE_TIME_PREKEYS {
+            return Err(LmError::PayloadTooLarge);
+        }
         bundle.verify()?;
         for record in &signed_one_time_prekey_records {
             record.verify_for_bundle(&bundle)?;
@@ -1497,7 +1751,100 @@ pub struct NodeMaintenanceStats {
     pub prekey_expired_bundles: u64,
     #[serde(default)]
     pub mailbox_push_rejects: MailboxPushRejectStats,
+    #[serde(default)]
+    pub dht_record_rejects: DhtRecordRejectStats,
+    #[serde(default)]
+    pub mailbox_ack_rejects: MailboxAckRejectStats,
+    #[serde(default)]
+    pub routing_peer_rejects: RoutingPeerRejectStats,
     pub last_pruned_at: Option<u64>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoutingPeerRejectStats {
+    pub expired: u64,
+    pub mismatched_node_id: u64,
+    pub local_node: u64,
+    pub missing_identity_public_key: u64,
+    pub invalid_identity_public_key: u64,
+    pub invalid_signature: u64,
+}
+
+impl RoutingPeerRejectStats {
+    pub fn total(&self) -> u64 {
+        self.expired
+            .saturating_add(self.mismatched_node_id)
+            .saturating_add(self.local_node)
+            .saturating_add(self.missing_identity_public_key)
+            .saturating_add(self.invalid_identity_public_key)
+            .saturating_add(self.invalid_signature)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RoutingPeerRejectReason {
+    Expired,
+    MismatchedNodeId,
+    LocalNode,
+    MissingIdentityPublicKey,
+    InvalidIdentityPublicKey,
+    InvalidSignature,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MailboxAckRejectStats {
+    pub invalid_json: u64,
+    pub invalid_user_id: u64,
+    pub too_many_ids: u64,
+    pub empty_id: u64,
+    pub id_too_large: u64,
+}
+
+impl MailboxAckRejectStats {
+    pub fn total(&self) -> u64 {
+        self.invalid_json
+            .saturating_add(self.invalid_user_id)
+            .saturating_add(self.too_many_ids)
+            .saturating_add(self.empty_id)
+            .saturating_add(self.id_too_large)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MailboxAckRejectReason {
+    InvalidJson,
+    InvalidUserId,
+    TooManyIds,
+    EmptyId,
+    IdTooLarge,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DhtRecordRejectStats {
+    pub invalid_json: u64,
+    pub expired: u64,
+    pub ttl_too_long: u64,
+    pub payload_too_large: u64,
+    pub invalid_record: u64,
+}
+
+impl DhtRecordRejectStats {
+    pub fn total(&self) -> u64 {
+        self.invalid_json
+            .saturating_add(self.expired)
+            .saturating_add(self.ttl_too_long)
+            .saturating_add(self.payload_too_large)
+            .saturating_add(self.invalid_record)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DhtRecordRejectReason {
+    InvalidJson,
+    Expired,
+    TtlTooLong,
+    PayloadTooLarge,
+    InvalidRecord,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1552,6 +1899,20 @@ impl From<LmError> for MailboxPushRejectReason {
             LmError::PayloadTooLarge => Self::PayloadTooLarge,
             _ => Self::Other,
         }
+    }
+}
+
+fn dht_record_reject_reason(record: &DhtRecord, now: u64) -> Option<DhtRecordRejectReason> {
+    if record.is_oversized() {
+        Some(DhtRecordRejectReason::PayloadTooLarge)
+    } else if record.is_expired_at(now) {
+        Some(DhtRecordRejectReason::Expired)
+    } else if record.ttl_too_long_at(now) {
+        Some(DhtRecordRejectReason::TtlTooLong)
+    } else if record.validate_for_store_at(now).is_err() {
+        Some(DhtRecordRejectReason::InvalidRecord)
+    } else {
+        None
     }
 }
 
@@ -1644,6 +2005,8 @@ pub struct NodeStateSnapshot {
     #[serde(default)]
     pub mailbox_deliveries: Vec<MailboxDelivery>,
     #[serde(default)]
+    pub mailbox_ack_receipts: Vec<MailboxAckReceipt>,
+    #[serde(default)]
     pub mailbox_messages: Vec<MailboxMessage>,
     #[serde(default)]
     pub prekey_bundles: Vec<PreKeyBundle>,
@@ -1723,6 +2086,9 @@ impl NativeNode {
             mailbox_expired_deliveries: mailbox_removed,
             prekey_expired_bundles: prekey_removed,
             mailbox_push_rejects: MailboxPushRejectStats::default(),
+            dht_record_rejects: DhtRecordRejectStats::default(),
+            mailbox_ack_rejects: MailboxAckRejectStats::default(),
+            routing_peer_rejects: RoutingPeerRejectStats::default(),
             last_pruned_at: Some(now),
         }
     }
@@ -1762,6 +2128,105 @@ impl NativeNode {
         }
     }
 
+    fn record_dht_record_reject(&mut self, reason: DhtRecordRejectReason) {
+        let stats = &mut self.maintenance.dht_record_rejects;
+        match reason {
+            DhtRecordRejectReason::InvalidJson => {
+                stats.invalid_json = stats.invalid_json.saturating_add(1)
+            }
+            DhtRecordRejectReason::Expired => stats.expired = stats.expired.saturating_add(1),
+            DhtRecordRejectReason::TtlTooLong => {
+                stats.ttl_too_long = stats.ttl_too_long.saturating_add(1)
+            }
+            DhtRecordRejectReason::PayloadTooLarge => {
+                stats.payload_too_large = stats.payload_too_large.saturating_add(1)
+            }
+            DhtRecordRejectReason::InvalidRecord => {
+                stats.invalid_record = stats.invalid_record.saturating_add(1)
+            }
+        }
+    }
+
+    pub fn accept_dht_record_from_peer(&mut self, record: DhtRecord) -> bool {
+        let now = current_unix_timestamp();
+        if let Some(reason) = dht_record_reject_reason(&record, now) {
+            self.record_dht_record_reject(reason);
+            return false;
+        }
+        self.dht_records.store(record)
+    }
+
+    pub fn merge_dht_records_from_peer(&mut self, records: Vec<DhtRecord>) -> usize {
+        let mut inserted = 0usize;
+        for record in records {
+            if self.accept_dht_record_from_peer(record) {
+                inserted = inserted.saturating_add(1);
+            }
+        }
+        inserted
+    }
+
+    fn record_mailbox_ack_reject(&mut self, reason: MailboxAckRejectReason) {
+        let stats = &mut self.maintenance.mailbox_ack_rejects;
+        match reason {
+            MailboxAckRejectReason::InvalidJson => {
+                stats.invalid_json = stats.invalid_json.saturating_add(1)
+            }
+            MailboxAckRejectReason::InvalidUserId => {
+                stats.invalid_user_id = stats.invalid_user_id.saturating_add(1)
+            }
+            MailboxAckRejectReason::TooManyIds => {
+                stats.too_many_ids = stats.too_many_ids.saturating_add(1)
+            }
+            MailboxAckRejectReason::EmptyId => stats.empty_id = stats.empty_id.saturating_add(1),
+            MailboxAckRejectReason::IdTooLarge => {
+                stats.id_too_large = stats.id_too_large.saturating_add(1)
+            }
+        }
+    }
+
+    fn record_routing_peer_reject(&mut self, reason: RoutingPeerRejectReason) {
+        let stats = &mut self.maintenance.routing_peer_rejects;
+        match reason {
+            RoutingPeerRejectReason::Expired => stats.expired = stats.expired.saturating_add(1),
+            RoutingPeerRejectReason::MismatchedNodeId => {
+                stats.mismatched_node_id = stats.mismatched_node_id.saturating_add(1)
+            }
+            RoutingPeerRejectReason::LocalNode => {
+                stats.local_node = stats.local_node.saturating_add(1)
+            }
+            RoutingPeerRejectReason::MissingIdentityPublicKey => {
+                stats.missing_identity_public_key =
+                    stats.missing_identity_public_key.saturating_add(1)
+            }
+            RoutingPeerRejectReason::InvalidIdentityPublicKey => {
+                stats.invalid_identity_public_key =
+                    stats.invalid_identity_public_key.saturating_add(1)
+            }
+            RoutingPeerRejectReason::InvalidSignature => {
+                stats.invalid_signature = stats.invalid_signature.saturating_add(1)
+            }
+        }
+    }
+
+    fn routing_peer_basic_reject_reason(
+        &self,
+        peer: &RoutingPeer,
+        now: u64,
+    ) -> Option<RoutingPeerRejectReason> {
+        if peer.announce.expires_at <= now {
+            return Some(RoutingPeerRejectReason::Expired);
+        }
+        let expected_node_id = KademliaNodeId::from_peer_id(&peer.announce.peer_id);
+        if peer.node_id != expected_node_id {
+            return Some(RoutingPeerRejectReason::MismatchedNodeId);
+        }
+        if expected_node_id == self.kademlia.local_id() {
+            return Some(RoutingPeerRejectReason::LocalNode);
+        }
+        None
+    }
+
     pub fn plan_dht_replication(&mut self, replication_factor: usize) -> DhtReplicationPlan {
         let now = current_unix_timestamp();
         let replication_factor = replication_factor.clamp(1, 64);
@@ -1794,18 +2259,19 @@ impl NativeNode {
         let now = current_unix_timestamp();
         let mut inserted = 0usize;
         for peer in peers {
-            if peer.announce.expires_at <= now {
-                continue;
-            }
-            let expected_node_id = KademliaNodeId::from_peer_id(&peer.announce.peer_id);
-            if peer.node_id != expected_node_id || expected_node_id == self.kademlia.local_id() {
+            if let Some(reason) = self.routing_peer_basic_reject_reason(&peer, now) {
+                self.record_routing_peer_reject(reason);
                 continue;
             }
             if let Some(identity_public_key) = &peer.identity_public_key {
                 let Ok(public_key) = decode_identity_public_key_base64(identity_public_key) else {
+                    self.record_routing_peer_reject(
+                        RoutingPeerRejectReason::InvalidIdentityPublicKey,
+                    );
                     continue;
                 };
                 if peer.announce.verify(&public_key).is_err() {
+                    self.record_routing_peer_reject(RoutingPeerRejectReason::InvalidSignature);
                     continue;
                 }
             }
@@ -1824,17 +2290,16 @@ impl NativeNode {
         let now = current_unix_timestamp();
         let mut inserted = 0usize;
         for peer in peers {
-            if peer.announce.expires_at <= now {
-                continue;
-            }
-            let expected_node_id = KademliaNodeId::from_peer_id(&peer.announce.peer_id);
-            if peer.node_id != expected_node_id || expected_node_id == self.kademlia.local_id() {
+            if let Some(reason) = self.routing_peer_basic_reject_reason(&peer, now) {
+                self.record_routing_peer_reject(reason);
                 continue;
             }
             let Some(identity_public_key) = &peer.identity_public_key else {
+                self.record_routing_peer_reject(RoutingPeerRejectReason::MissingIdentityPublicKey);
                 continue;
             };
             let Ok(public_key) = decode_identity_public_key_base64(identity_public_key) else {
+                self.record_routing_peer_reject(RoutingPeerRejectReason::InvalidIdentityPublicKey);
                 continue;
             };
             if self
@@ -1842,6 +2307,7 @@ impl NativeNode {
                 .insert_verified(peer.announce.clone(), &public_key)
                 .is_err()
             {
+                self.record_routing_peer_reject(RoutingPeerRejectReason::InvalidSignature);
                 continue;
             }
             let before = self.kademlia.len();
@@ -1892,15 +2358,19 @@ impl NativeNode {
                 }
             }
             DhtRpcRequest::StoreRecord { request_id, record } => {
-                let expired = record.is_expired_at(current_unix_timestamp());
-                let inserted = if expired {
+                let now = current_unix_timestamp();
+                let reject_reason = dht_record_reject_reason(&record, now);
+                if let Some(reason) = reject_reason {
+                    self.record_dht_record_reject(reason);
+                }
+                let inserted = if reject_reason.is_some() {
                     false
                 } else {
                     self.dht_records.store(record)
                 };
                 DhtRpcResponse::StoreResult {
                     request_id,
-                    stored: !expired,
+                    stored: reject_reason.is_none(),
                     inserted,
                 }
             }
@@ -1914,6 +2384,7 @@ impl NativeNode {
             public_peers: self.routing_table.peers().cloned().collect(),
             routing_peers: self.kademlia.all_peers(),
             mailbox_deliveries: self.mailbox.all_deliveries(),
+            mailbox_ack_receipts: self.mailbox.all_ack_receipts(),
             mailbox_messages: Vec::new(),
             prekey_bundles: self.prekeys.all_bundles(),
             signed_one_time_prekey_records: self.prekeys.all_signed_one_time_prekey_records(),
@@ -1970,6 +2441,8 @@ impl NativeNode {
         } else {
             node.mailbox.restore_deliveries(snapshot.mailbox_deliveries);
         }
+        node.mailbox
+            .restore_ack_receipts(snapshot.mailbox_ack_receipts);
         node.prekeys.restore_bundles(snapshot.prekey_bundles);
         node.prekeys
             .restore_signed_one_time_prekey_records(snapshot.signed_one_time_prekey_records);
@@ -2028,13 +2501,15 @@ impl NativeNode {
         } else {
             self.mailbox.merge_deliveries(snapshot.mailbox_deliveries)
         };
+        self.mailbox
+            .merge_ack_receipts(snapshot.mailbox_ack_receipts);
         let prekey_bundles = self.prekeys.merge_bundles(snapshot.prekey_bundles);
         let signed_one_time_prekey_records = self
             .prekeys
             .merge_signed_one_time_prekey_records(snapshot.signed_one_time_prekey_records);
         self.prekeys
             .merge_consumed(snapshot.consumed_one_time_prekeys);
-        let dht_records = self.dht_records.merge_records(snapshot.dht_records);
+        let dht_records = self.merge_dht_records_from_peer(snapshot.dht_records);
         for (url, status) in snapshot.sync_status.peers {
             self.sync_status.peers.entry(url).or_insert(status);
         }
@@ -2166,8 +2641,29 @@ struct HealthResponse<'a> {
     prekeys: usize,
     mailbox_deliveries: usize,
     mailbox_bytes: usize,
+    mailbox_take_limit: usize,
+    mailbox_ack_max_ids: usize,
+    mailbox_ack_id_max_bytes: usize,
+    control_client_timeout_seconds: u64,
+    control_peer_timeout_seconds: u64,
+    control_peer_connect_timeout_seconds: u64,
+    control_peer_response_max_bytes: usize,
+    state_db_encrypted: bool,
+    state_db_permissions_hardened: bool,
+    libp2p_dht_rpc_request_max_bytes: u64,
+    libp2p_dht_rpc_response_max_bytes: u64,
+    libp2p_dht_rpc_max_concurrent_streams: usize,
+    dht_peer_quarantine_consecutive_failures: u32,
+    libp2p_dht_pending_incoming_max: u32,
+    libp2p_dht_pending_outgoing_max: u32,
+    libp2p_dht_established_incoming_max: u32,
+    libp2p_dht_established_outgoing_max: u32,
+    libp2p_dht_established_total_max: u32,
+    libp2p_dht_established_per_peer_max: u32,
     dht_records: usize,
     dht_record_capacity: usize,
+    dht_record_value_max_bytes: usize,
+    dht_record_ttl_max_seconds: u64,
     maintenance: NodeMaintenanceStats,
     sync: NodeSyncStatus,
 }
@@ -2198,6 +2694,9 @@ struct MailboxPushResponse {
 struct MailboxTakeResponse {
     user_id: String,
     messages: Vec<MailboxDelivery>,
+    returned: usize,
+    pending: usize,
+    more: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2211,6 +2710,13 @@ struct MailboxAckResponse {
     user_id: String,
     removed: usize,
     pending: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct MailboxStatusResponse {
+    user_id: String,
+    summary: MailboxUserDeliverySummary,
+    delivery: Option<MailboxDeliveryStatus>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2332,8 +2838,31 @@ impl NativeNode {
                     prekeys: self.prekeys.len(),
                     mailbox_deliveries: self.mailbox.total_pending(),
                     mailbox_bytes: self.mailbox.total_bytes(),
+                    mailbox_take_limit: DEFAULT_MAX_MAILBOX_TAKE_LIMIT,
+                    mailbox_ack_max_ids: DEFAULT_MAX_MAILBOX_ACK_IDS,
+                    mailbox_ack_id_max_bytes: DEFAULT_MAX_MAILBOX_ACK_ID_BYTES,
+                    control_client_timeout_seconds: 10,
+                    control_peer_timeout_seconds: 10,
+                    control_peer_connect_timeout_seconds: 10,
+                    control_peer_response_max_bytes: 8 * 1024 * 1024,
+                    state_db_encrypted: false,
+                    state_db_permissions_hardened: true,
+                    libp2p_dht_rpc_request_max_bytes: 1024 * 1024,
+                    libp2p_dht_rpc_response_max_bytes: 8 * 1024 * 1024,
+                    libp2p_dht_rpc_max_concurrent_streams: 32,
+                    dht_peer_quarantine_consecutive_failures: self
+                        .config
+                        .dht_peer_quarantine_consecutive_failures,
+                    libp2p_dht_pending_incoming_max: 64,
+                    libp2p_dht_pending_outgoing_max: 64,
+                    libp2p_dht_established_incoming_max: 128,
+                    libp2p_dht_established_outgoing_max: 128,
+                    libp2p_dht_established_total_max: 256,
+                    libp2p_dht_established_per_peer_max: 4,
                     dht_records: self.dht_records.len(),
                     dht_record_capacity: DEFAULT_MAX_DHT_RECORDS,
+                    dht_record_value_max_bytes: DEFAULT_MAX_DHT_RECORD_VALUE_BYTES,
+                    dht_record_ttl_max_seconds: DEFAULT_MAX_DHT_RECORD_TTL_SECONDS,
                     maintenance: self.maintenance.clone(),
                     sync: self.sync_status.clone(),
                 },
@@ -2342,6 +2871,7 @@ impl NativeNode {
             ("GET", "/peers/closest") => self.handle_control_closest(&request.path),
             ("POST", "/mailbox/push") => self.handle_control_mailbox_push(&request.body),
             ("GET", "/mailbox/take") => self.handle_control_mailbox_take(&request.path),
+            ("GET", "/mailbox/status") => self.handle_control_mailbox_status(&request.path),
             ("POST", "/mailbox/ack") => self.handle_control_mailbox_ack(&request.body),
             ("POST", "/prekey/publish") => self.handle_control_prekey_publish(&request.body),
             ("GET", "/prekey/get") => self.handle_control_prekey_get(&request.path),
@@ -2364,6 +2894,7 @@ impl NativeNode {
                 | "/peers/closest"
                 | "/mailbox/push"
                 | "/mailbox/take"
+                | "/mailbox/status"
                 | "/mailbox/ack"
                 | "/prekey/publish"
                 | "/prekey/get"
@@ -2371,6 +2902,7 @@ impl NativeNode {
                 | "/dht/record"
                 | "/dht/closest"
                 | "/dht/rpc"
+                | "/dht/find-value"
                 | "/dht/replication-plan"
                 | "/dht/routing-refresh-plan"
                 | "/sync/snapshot"
@@ -2519,12 +3051,53 @@ impl NativeNode {
             Ok(v) => v,
             Err(e) => return ControlResponse::text(400, e.to_string()),
         };
-        let messages = self.mailbox.take_for(&user_id);
+        let requested_limit = query
+            .get("limit")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(DEFAULT_MAX_MAILBOX_TAKE_LIMIT);
+        let limit = requested_limit.clamp(1, DEFAULT_MAX_MAILBOX_TAKE_LIMIT);
+        let messages = self.mailbox.take_for_limited(&user_id, limit);
+        let returned = messages.len();
+        let pending = self.mailbox.pending_for(&user_id);
         ControlResponse::json(
             200,
             &MailboxTakeResponse {
                 user_id: user_id.to_string(),
                 messages,
+                returned,
+                pending,
+                more: pending > returned,
+            },
+        )
+    }
+
+    fn handle_control_mailbox_status(&mut self, path: &str) -> ControlResponse {
+        let query = query_params(path);
+        let Some(user_id) = query.get("user_id") else {
+            return ControlResponse::text(400, "missing user_id");
+        };
+        let user_id = match UserId::from_raw(user_id.to_string()) {
+            Ok(v) => v,
+            Err(e) => return ControlResponse::text(400, e.to_string()),
+        };
+        let delivery = match query.get("delivery_id") {
+            Some(delivery_id) => {
+                if delivery_id.trim().is_empty() {
+                    return ControlResponse::text(400, "mailbox delivery id is empty");
+                }
+                if delivery_id.as_bytes().len() > DEFAULT_MAX_MAILBOX_ACK_ID_BYTES {
+                    return ControlResponse::text(413, "mailbox delivery id too large");
+                }
+                Some(self.mailbox.delivery_status(&user_id, delivery_id))
+            }
+            None => None,
+        };
+        ControlResponse::json(
+            200,
+            &MailboxStatusResponse {
+                user_id: user_id.to_string(),
+                summary: self.mailbox.delivery_summary_for(&user_id),
+                delivery,
             },
         )
     }
@@ -2532,12 +3105,34 @@ impl NativeNode {
     fn handle_control_mailbox_ack(&mut self, body: &str) -> ControlResponse {
         let req: MailboxAckRequest = match serde_json::from_str(body) {
             Ok(v) => v,
-            Err(e) => return ControlResponse::text(400, format!("invalid json: {e}")),
+            Err(e) => {
+                self.record_mailbox_ack_reject(MailboxAckRejectReason::InvalidJson);
+                return ControlResponse::text(400, format!("invalid json: {e}"));
+            }
         };
         let user_id = match UserId::from_raw(req.user_id) {
             Ok(v) => v,
-            Err(e) => return ControlResponse::text(400, e.to_string()),
+            Err(e) => {
+                self.record_mailbox_ack_reject(MailboxAckRejectReason::InvalidUserId);
+                return ControlResponse::text(400, e.to_string());
+            }
         };
+        if req.delivery_ids.len() > DEFAULT_MAX_MAILBOX_ACK_IDS {
+            self.record_mailbox_ack_reject(MailboxAckRejectReason::TooManyIds);
+            return ControlResponse::text(413, "too many mailbox ack delivery ids");
+        }
+        if req.delivery_ids.iter().any(|id| id.trim().is_empty()) {
+            self.record_mailbox_ack_reject(MailboxAckRejectReason::EmptyId);
+            return ControlResponse::text(400, "mailbox ack delivery id is empty");
+        }
+        if req
+            .delivery_ids
+            .iter()
+            .any(|id| id.as_bytes().len() > DEFAULT_MAX_MAILBOX_ACK_ID_BYTES)
+        {
+            self.record_mailbox_ack_reject(MailboxAckRejectReason::IdTooLarge);
+            return ControlResponse::text(413, "mailbox ack delivery id too large");
+        }
         let removed = self.mailbox.ack(&user_id, &req.delivery_ids);
         ControlResponse::json(
             200,
@@ -2722,8 +3317,25 @@ impl NativeNode {
     fn handle_control_dht_record_store(&mut self, body: &str) -> ControlResponse {
         let req: StoreDhtRecordRequest = match serde_json::from_str(body) {
             Ok(v) => v,
-            Err(e) => return ControlResponse::text(400, format!("invalid json: {e}")),
+            Err(e) => {
+                self.record_dht_record_reject(DhtRecordRejectReason::InvalidJson);
+                return ControlResponse::text(400, format!("invalid json: {e}"));
+            }
         };
+        let now = current_unix_timestamp();
+        if let Some(reason) = dht_record_reject_reason(&req.record, now) {
+            self.record_dht_record_reject(reason);
+            return match reason {
+                DhtRecordRejectReason::PayloadTooLarge => {
+                    ControlResponse::text(413, "dht record value too large")
+                }
+                DhtRecordRejectReason::Expired => ControlResponse::text(400, "dht record expired"),
+                DhtRecordRejectReason::TtlTooLong => {
+                    ControlResponse::text(400, "dht record ttl too long")
+                }
+                _ => ControlResponse::text(400, "invalid dht record"),
+            };
+        }
         let key = req.record.key.to_hex();
         let inserted = self.dht_records.store(req.record);
         ControlResponse::json(
@@ -2943,6 +3555,30 @@ mod tests {
                 .unwrap_err(),
             LmError::DuplicateMessage
         );
+    }
+
+    #[test]
+    fn mailbox_take_for_limited_returns_page_without_deleting() {
+        let (alice, _) = Identity::create_with_passphrase("alice take page").unwrap();
+        let (bob, _) = Identity::create_with_passphrase("bob take page").unwrap();
+        let mut mailbox = MailboxStore::default();
+        for i in 0..3 {
+            let message = MailboxMessage::new(
+                &alice,
+                bob.user_id().clone(),
+                MailboxMessageKind::DirectEnvelope,
+                format!("ciphertext-{i}"),
+                3600,
+            )
+            .unwrap();
+            mailbox
+                .push_verified(message, &alice.identity_public_key())
+                .unwrap();
+        }
+        let page = mailbox.take_for_limited(bob.user_id(), 2);
+        assert_eq!(page.len(), 2);
+        assert_eq!(mailbox.pending_for(bob.user_id()), 3);
+        assert!(page.iter().all(|delivery| delivery.delivered_at.is_some()));
     }
 
     #[test]
@@ -3167,6 +3803,63 @@ mod tests {
     }
 
     #[test]
+    fn dht_record_store_restore_skips_invalid_records() {
+        let (identity, _) = Identity::create_with_passphrase("restore dht records").unwrap();
+        let valid = DhtRecord::mailbox_hint(identity.user_id(), "http://node/mailbox".into(), 3600);
+        let invalid = DhtRecord {
+            key: DhtRecordKey::for_public_peer("invalid-restore"),
+            kind: DhtRecordKind::PublicPeer,
+            value: "not-a-public-peer-announce".into(),
+            created_at: current_unix_timestamp(),
+            expires_at: current_unix_timestamp() + 3600,
+            republish_at: current_unix_timestamp() + 1800,
+        };
+        let mut store = DhtRecordStore::default();
+        store.restore_records(vec![valid.clone(), invalid]);
+        assert_eq!(store.len(), 1);
+        assert!(store.find_value(&valid.key).is_some());
+        assert!(
+            store
+                .find_value(&DhtRecordKey::for_public_peer("invalid-restore"))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn dht_record_store_rejects_ttl_above_max() {
+        let now = current_unix_timestamp();
+        let mut store = DhtRecordStore::default();
+        let record = DhtRecord {
+            key: DhtRecordKey::for_public_peer("ttl-too-long"),
+            kind: DhtRecordKind::PublicPeer,
+            value: "record".into(),
+            created_at: now,
+            expires_at: now + DEFAULT_MAX_DHT_RECORD_TTL_SECONDS + 1,
+            republish_at: now + 50,
+        };
+        assert!(record.ttl_too_long_at(now));
+        assert!(!store.store(record));
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn dht_record_store_rejects_oversized_values() {
+        let now = current_unix_timestamp();
+        let mut store = DhtRecordStore::default();
+        let record = DhtRecord {
+            key: DhtRecordKey::for_public_peer("oversized-record"),
+            kind: DhtRecordKind::PublicPeer,
+            value: "A".repeat(DEFAULT_MAX_DHT_RECORD_VALUE_BYTES + 1),
+            created_at: now,
+            expires_at: now + 100,
+            republish_at: now + 50,
+        };
+        assert!(record.is_oversized());
+        assert!(!store.store(record));
+        assert!(store.is_empty());
+    }
+
+    #[test]
     fn dht_record_store_evicts_earliest_expiring_records_when_full() {
         let now = current_unix_timestamp();
         let keep_key = DhtRecordKey::for_public_peer("capacity-keep");
@@ -3317,6 +4010,13 @@ mod tests {
             0
         );
         assert!(node.kademlia.is_empty());
+        assert_eq!(
+            node.maintenance
+                .routing_peer_rejects
+                .missing_identity_public_key,
+            1
+        );
+        assert_eq!(node.maintenance.routing_peer_rejects.invalid_signature, 1);
 
         assert_eq!(node.merge_verified_routing_peers(vec![base_peer]), 1);
         assert_eq!(node.kademlia.len(), 1);
@@ -3374,6 +4074,9 @@ mod tests {
         );
         assert!(node.kademlia.is_empty());
         assert!(node.routing_table.is_empty());
+        assert_eq!(node.maintenance.routing_peer_rejects.mismatched_node_id, 1);
+        assert_eq!(node.maintenance.routing_peer_rejects.expired, 1);
+        assert_eq!(node.maintenance.routing_peer_rejects.local_node, 1);
     }
 
     #[test]
@@ -3392,15 +4095,8 @@ mod tests {
         node.kademlia
             .insert_verified(announce.clone(), &identity.identity_public_key())
             .unwrap();
-        let key = DhtRecordKey::for_public_peer("rpc-record");
-        let record = DhtRecord {
-            key,
-            kind: DhtRecordKind::PublicPeer,
-            value: "rpc-value".into(),
-            created_at: current_unix_timestamp(),
-            expires_at: current_unix_timestamp().saturating_add(3600),
-            republish_at: current_unix_timestamp().saturating_add(1800),
-        };
+        let record = DhtRecord::public_peer(&announce, announce.to_export_text().unwrap(), 3600);
+        let key = record.key;
 
         let store = node.handle_dht_rpc(DhtRpcRequest::StoreRecord {
             request_id: "store-1".into(),
@@ -3459,6 +4155,137 @@ mod tests {
             }
             other => panic!("unexpected response: {other:?}"),
         }
+    }
+
+    #[test]
+    fn dht_rpc_rejects_prekey_record_with_mismatched_key() {
+        let (identity, _) = Identity::create_with_passphrase("dht prekey invalid key").unwrap();
+        let (other, _) = Identity::create_with_passphrase("dht prekey other key").unwrap();
+        let (bundle, _) = PreKeyBundle::new(&identity, 7, 0, 3600).unwrap();
+        let record = DhtRecord {
+            key: DhtRecordKey::for_prekey(other.user_id()),
+            kind: DhtRecordKind::PreKey,
+            value: bundle.to_export_text().unwrap(),
+            created_at: current_unix_timestamp(),
+            expires_at: current_unix_timestamp() + 3600,
+            republish_at: current_unix_timestamp() + 1800,
+        };
+        let mut node = NativeNode::new(NodeConfig::default());
+        let response = node.handle_dht_rpc(DhtRpcRequest::StoreRecord {
+            request_id: "prekey-mismatch".into(),
+            record,
+        });
+        assert_eq!(
+            response,
+            DhtRpcResponse::StoreResult {
+                request_id: "prekey-mismatch".into(),
+                stored: false,
+                inserted: false,
+            }
+        );
+        assert!(node.dht_records.is_empty());
+    }
+
+    #[test]
+    fn dht_rpc_rejects_empty_mailbox_hint_record() {
+        let (identity, _) = Identity::create_with_passphrase("dht mailbox empty").unwrap();
+        let record = DhtRecord::mailbox_hint(identity.user_id(), "  ".into(), 3600);
+        let mut node = NativeNode::new(NodeConfig::default());
+        let response = node.handle_dht_rpc(DhtRpcRequest::StoreRecord {
+            request_id: "mailbox-empty".into(),
+            record,
+        });
+        assert_eq!(
+            response,
+            DhtRpcResponse::StoreResult {
+                request_id: "mailbox-empty".into(),
+                stored: false,
+                inserted: false,
+            }
+        );
+        assert!(node.dht_records.is_empty());
+    }
+
+    #[test]
+    fn dht_rpc_rejects_public_peer_record_with_mismatched_key() {
+        let (identity, _) = Identity::create_with_passphrase("dht invalid key").unwrap();
+        let announce = NodeConfig {
+            peer_id: "valid-peer".into(),
+            ..Default::default()
+        }
+        .create_announce(&identity)
+        .unwrap();
+        let mut record =
+            DhtRecord::public_peer(&announce, announce.to_export_text().unwrap(), 3600);
+        record.key = DhtRecordKey::for_public_peer("wrong-peer");
+        let mut node = NativeNode::new(NodeConfig::default());
+        let response = node.handle_dht_rpc(DhtRpcRequest::StoreRecord {
+            request_id: "mismatch".into(),
+            record,
+        });
+        assert_eq!(
+            response,
+            DhtRpcResponse::StoreResult {
+                request_id: "mismatch".into(),
+                stored: false,
+                inserted: false,
+            }
+        );
+        assert!(node.dht_records.is_empty());
+    }
+
+    #[test]
+    fn dht_rpc_rejects_ttl_above_max() {
+        let mut node = NativeNode::new(NodeConfig::default());
+        let now = current_unix_timestamp();
+        let record = DhtRecord {
+            key: DhtRecordKey::for_public_peer("ttl-rpc"),
+            kind: DhtRecordKind::PublicPeer,
+            value: "record".into(),
+            created_at: now,
+            expires_at: now + DEFAULT_MAX_DHT_RECORD_TTL_SECONDS + 1,
+            republish_at: now + 50,
+        };
+        let response = node.handle_dht_rpc(DhtRpcRequest::StoreRecord {
+            request_id: "ttl".into(),
+            record,
+        });
+        assert_eq!(
+            response,
+            DhtRpcResponse::StoreResult {
+                request_id: "ttl".into(),
+                stored: false,
+                inserted: false,
+            }
+        );
+        assert!(node.dht_records.is_empty());
+    }
+
+    #[test]
+    fn dht_rpc_rejects_oversized_store_record() {
+        let mut node = NativeNode::new(NodeConfig::default());
+        let now = current_unix_timestamp();
+        let record = DhtRecord {
+            key: DhtRecordKey::for_public_peer("oversized-rpc"),
+            kind: DhtRecordKind::PublicPeer,
+            value: "A".repeat(DEFAULT_MAX_DHT_RECORD_VALUE_BYTES + 1),
+            created_at: now,
+            expires_at: now + 100,
+            republish_at: now + 50,
+        };
+        let response = node.handle_dht_rpc(DhtRpcRequest::StoreRecord {
+            request_id: "oversized".into(),
+            record,
+        });
+        assert_eq!(
+            response,
+            DhtRpcResponse::StoreResult {
+                request_id: "oversized".into(),
+                stored: false,
+                inserted: false,
+            }
+        );
+        assert!(node.dht_records.is_empty());
     }
 
     #[test]
@@ -3559,6 +4386,40 @@ mod tests {
     }
 
     #[test]
+    fn health_exposes_mailbox_limits() {
+        let mut node = NativeNode::new(NodeConfig::default());
+        let response = node.handle_control_request(ControlRequest {
+            method: "GET".into(),
+            path: "/health".into(),
+            body: String::new(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 200);
+        let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(body["mailbox_take_limit"], DEFAULT_MAX_MAILBOX_TAKE_LIMIT);
+        assert_eq!(body["mailbox_ack_max_ids"], DEFAULT_MAX_MAILBOX_ACK_IDS);
+        assert_eq!(
+            body["mailbox_ack_id_max_bytes"],
+            DEFAULT_MAX_MAILBOX_ACK_ID_BYTES
+        );
+        assert_eq!(body["state_db_encrypted"], false);
+        assert_eq!(body["state_db_permissions_hardened"], true);
+        assert_eq!(body["libp2p_dht_rpc_request_max_bytes"], 1024 * 1024);
+        assert_eq!(body["libp2p_dht_rpc_response_max_bytes"], 8 * 1024 * 1024);
+        assert_eq!(body["libp2p_dht_rpc_max_concurrent_streams"], 32);
+        assert_eq!(
+            body["dht_peer_quarantine_consecutive_failures"],
+            DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES
+        );
+        assert_eq!(body["libp2p_dht_pending_incoming_max"], 64);
+        assert_eq!(body["libp2p_dht_pending_outgoing_max"], 64);
+        assert_eq!(body["libp2p_dht_established_incoming_max"], 128);
+        assert_eq!(body["libp2p_dht_established_outgoing_max"], 128);
+        assert_eq!(body["libp2p_dht_established_total_max"], 256);
+        assert_eq!(body["libp2p_dht_established_per_peer_max"], 4);
+    }
+
+    #[test]
     fn control_plane_announces_and_finds_closest() {
         let (local_identity, _) = Identity::create_with_passphrase("local").unwrap();
         let (peer_identity, _) = Identity::create_with_passphrase("peer").unwrap();
@@ -3655,6 +4516,19 @@ mod tests {
     }
 
     #[test]
+    fn control_plane_known_dht_find_value_path_rejects_wrong_method() {
+        let mut node = NativeNode::new(NodeConfig::default());
+        let response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/dht/find-value?key=00".into(),
+            body: String::new(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 405);
+        assert!(response.body.contains("method not allowed"));
+    }
+
+    #[test]
     fn control_plane_dht_rpc_handles_store_find_value_and_find_node() {
         let (identity, _) = Identity::create_with_passphrase("control dht rpc peer").unwrap();
         let announce = NodeConfig {
@@ -3668,17 +4542,10 @@ mod tests {
             ..Default::default()
         });
         node.kademlia
-            .insert_verified(announce, &identity.identity_public_key())
+            .insert_verified(announce.clone(), &identity.identity_public_key())
             .unwrap();
-        let key = DhtRecordKey::for_public_peer("control-rpc-record");
-        let record = DhtRecord {
-            key,
-            kind: DhtRecordKind::PublicPeer,
-            value: "control-rpc-value".into(),
-            created_at: current_unix_timestamp(),
-            expires_at: current_unix_timestamp().saturating_add(3600),
-            republish_at: current_unix_timestamp().saturating_add(1800),
-        };
+        let record = DhtRecord::public_peer(&announce, announce.to_export_text().unwrap(), 3600);
+        let key = record.key;
 
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
@@ -3716,7 +4583,7 @@ mod tests {
         });
         assert_eq!(response.status, 200, "{}", response.body);
         let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
-        assert_eq!(body["Value"]["record"]["value"], "control-rpc-value");
+        assert_eq!(body["Value"]["record"]["value"], record.value);
 
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
@@ -3742,17 +4609,103 @@ mod tests {
     }
 
     #[test]
-    fn control_plane_dht_record_store_get_closest_and_snapshot() {
+    fn control_plane_dht_record_rejects_invalid_json_stats() {
         let mut node = NativeNode::new(NodeConfig::default());
+        let response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/dht/record".into(),
+            body: "{not-json".into(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 400);
+        assert_eq!(node.maintenance.dht_record_rejects.invalid_json, 1);
+    }
+
+    #[test]
+    fn control_plane_dht_record_rejects_public_peer_mismatched_key() {
+        let (identity, _) = Identity::create_with_passphrase("control invalid dht key").unwrap();
+        let announce = NodeConfig {
+            peer_id: "valid-control-peer".into(),
+            ..Default::default()
+        }
+        .create_announce(&identity)
+        .unwrap();
+        let mut record =
+            DhtRecord::public_peer(&announce, announce.to_export_text().unwrap(), 3600);
+        record.key = DhtRecordKey::for_public_peer("wrong-control-peer");
+        let mut node = NativeNode::new(NodeConfig::default());
+        let response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/dht/record".into(),
+            body: serde_json::json!({ "record": record }).to_string(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 400);
+        assert!(response.body.contains("invalid dht record"));
+        assert!(node.dht_records.is_empty());
+        assert_eq!(node.maintenance.dht_record_rejects.invalid_record, 1);
+    }
+
+    #[test]
+    fn control_plane_dht_record_rejects_ttl_above_max() {
+        let mut node = NativeNode::new(NodeConfig::default());
+        let now = current_unix_timestamp();
         let record = DhtRecord {
-            key: DhtRecordKey::for_public_peer("peer-control"),
+            key: DhtRecordKey::for_public_peer("ttl-control"),
             kind: DhtRecordKind::PublicPeer,
-            value: "public-peer-record".into(),
-            created_at: current_unix_timestamp(),
-            expires_at: current_unix_timestamp().saturating_add(3600),
-            republish_at: current_unix_timestamp().saturating_add(1800),
+            value: "record".into(),
+            created_at: now,
+            expires_at: now + DEFAULT_MAX_DHT_RECORD_TTL_SECONDS + 1,
+            republish_at: now + 50,
         };
+        let response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/dht/record".into(),
+            body: serde_json::json!({ "record": record }).to_string(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 400);
+        assert!(response.body.contains("ttl too long"));
+        assert!(node.dht_records.is_empty());
+        assert_eq!(node.maintenance.dht_record_rejects.ttl_too_long, 1);
+    }
+
+    #[test]
+    fn control_plane_dht_record_rejects_oversized_values() {
+        let mut node = NativeNode::new(NodeConfig::default());
+        let now = current_unix_timestamp();
+        let record = DhtRecord {
+            key: DhtRecordKey::for_public_peer("oversized-control-record"),
+            kind: DhtRecordKind::PublicPeer,
+            value: "A".repeat(DEFAULT_MAX_DHT_RECORD_VALUE_BYTES + 1),
+            created_at: now,
+            expires_at: now + 100,
+            republish_at: now + 50,
+        };
+        let response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/dht/record".into(),
+            body: serde_json::json!({ "record": record }).to_string(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 413);
+        assert!(node.dht_records.is_empty());
+        assert_eq!(node.maintenance.dht_record_rejects.payload_too_large, 1);
+    }
+
+    #[test]
+    fn control_plane_dht_record_store_get_closest_and_snapshot() {
+        let (identity, _) = Identity::create_with_passphrase("control dht record").unwrap();
+        let announce = NodeConfig {
+            peer_id: "peer-control".into(),
+            ..Default::default()
+        }
+        .create_announce(&identity)
+        .unwrap();
+        let record = DhtRecord::public_peer(&announce, announce.to_export_text().unwrap(), 3600);
         let key = record.key;
+        let expected_value = record.value.clone();
+        let mut node = NativeNode::new(NodeConfig::default());
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
             path: "/dht/record".into(),
@@ -3773,7 +4726,7 @@ mod tests {
         assert_eq!(response.status, 200, "{}", response.body);
         let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
         assert_eq!(body["found"], true);
-        assert_eq!(body["record"]["value"], "public-peer-record");
+        assert_eq!(body["record"]["value"], expected_value);
 
         let response = node.handle_control_request(ControlRequest {
             method: "GET".into(),
@@ -3792,8 +4745,41 @@ mod tests {
         assert_eq!(stats.dht_records, 1);
         assert_eq!(
             imported.dht_records.find_value(&key).unwrap().value,
-            "public-peer-record"
+            expected_value
         );
+    }
+
+    #[test]
+    fn control_plane_mailbox_take_supports_limit_and_more_flag() {
+        let (alice, _) = Identity::create_with_passphrase("alice take limit").unwrap();
+        let (bob, _) = Identity::create_with_passphrase("bob take limit").unwrap();
+        let mut node = NativeNode::new(NodeConfig::default());
+        for i in 0..3 {
+            let message = MailboxMessage::new(
+                &alice,
+                bob.user_id().clone(),
+                MailboxMessageKind::DirectEnvelope,
+                format!("ciphertext-{i}"),
+                3600,
+            )
+            .unwrap();
+            node.mailbox
+                .push_verified(message, &alice.identity_public_key())
+                .unwrap();
+        }
+        let response = node.handle_control_request(ControlRequest {
+            method: "GET".into(),
+            path: format!("/mailbox/take?user_id={}&limit=2", bob.user_id()),
+            body: String::new(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 200);
+        let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(body["returned"], 2);
+        assert_eq!(body["pending"], 3);
+        assert_eq!(body["more"], true);
+        assert_eq!(body["messages"].as_array().unwrap().len(), 2);
+        assert_eq!(node.mailbox.pending_for(bob.user_id()), 3);
     }
 
     #[test]
@@ -3821,7 +4807,25 @@ mod tests {
             headers: Vec::new(),
         });
         assert_eq!(response.status, 201);
+        let push_body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        let pushed_delivery_id = push_body["delivery_id"].as_str().unwrap().to_string();
         assert_eq!(node.mailbox.pending_for(bob.user_id()), 1);
+        let response = node.handle_control_request(ControlRequest {
+            method: "GET".into(),
+            path: format!(
+                "/mailbox/status?user_id={}&delivery_id={}",
+                bob.user_id(),
+                pushed_delivery_id
+            ),
+            body: String::new(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 200, "{}", response.body);
+        let status_body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(status_body["summary"]["total"], 1);
+        assert_eq!(status_body["summary"]["undelivered"], 1);
+        assert_eq!(status_body["summary"]["delivered_unacked"], 0);
+        assert_eq!(status_body["delivery"]["status"], "pending");
         let response = node.handle_control_request(ControlRequest {
             method: "GET".into(),
             path: format!("/mailbox/take?user_id={}", bob.user_id()),
@@ -3836,6 +4840,23 @@ mod tests {
             .as_str()
             .unwrap()
             .to_string();
+        assert_eq!(delivery_id, pushed_delivery_id);
+        let response = node.handle_control_request(ControlRequest {
+            method: "GET".into(),
+            path: format!(
+                "/mailbox/status?user_id={}&delivery_id={}",
+                bob.user_id(),
+                delivery_id
+            ),
+            body: String::new(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 200, "{}", response.body);
+        let status_body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(status_body["summary"]["total"], 1);
+        assert_eq!(status_body["summary"]["undelivered"], 0);
+        assert_eq!(status_body["summary"]["delivered_unacked"], 1);
+        assert_eq!(status_body["delivery"]["status"], "delivered_unacked");
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
             path: "/mailbox/ack".into(),
@@ -3848,6 +4869,97 @@ mod tests {
         });
         assert_eq!(response.status, 200);
         assert_eq!(node.mailbox.pending_for(bob.user_id()), 0);
+        let response = node.handle_control_request(ControlRequest {
+            method: "GET".into(),
+            path: format!(
+                "/mailbox/status?user_id={}&delivery_id={}",
+                bob.user_id(),
+                pushed_delivery_id
+            ),
+            body: String::new(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 200, "{}", response.body);
+        let status_body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(status_body["summary"]["total"], 0);
+        assert_eq!(status_body["delivery"]["status"], "acked");
+        assert!(status_body["delivery"]["acked_at"].as_u64().is_some());
+    }
+
+    #[test]
+    fn control_plane_mailbox_ack_rejects_excessive_ids() {
+        let (bob, _) = Identity::create_with_passphrase("bob ack too many").unwrap();
+        let mut node = NativeNode::new(NodeConfig::default());
+        let response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/mailbox/ack".into(),
+            body: serde_json::json!({
+                "user_id": bob.user_id().to_string(),
+                "delivery_ids": vec!["x"; DEFAULT_MAX_MAILBOX_ACK_IDS + 1],
+            })
+            .to_string(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 413);
+        assert_eq!(node.maintenance.mailbox_ack_rejects.too_many_ids, 1);
+    }
+
+    #[test]
+    fn control_plane_mailbox_ack_rejects_empty_id() {
+        let (bob, _) = Identity::create_with_passphrase("bob ack empty").unwrap();
+        let mut node = NativeNode::new(NodeConfig::default());
+        let response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/mailbox/ack".into(),
+            body: serde_json::json!({
+                "user_id": bob.user_id().to_string(),
+                "delivery_ids": [""],
+            })
+            .to_string(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 400);
+        assert_eq!(node.maintenance.mailbox_ack_rejects.empty_id, 1);
+    }
+
+    #[test]
+    fn control_plane_mailbox_ack_rejects_oversized_id() {
+        let (bob, _) = Identity::create_with_passphrase("bob ack oversized").unwrap();
+        let mut node = NativeNode::new(NodeConfig::default());
+        let response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/mailbox/ack".into(),
+            body: serde_json::json!({
+                "user_id": bob.user_id().to_string(),
+                "delivery_ids": ["x".repeat(DEFAULT_MAX_MAILBOX_ACK_ID_BYTES + 1)],
+            })
+            .to_string(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 413);
+        assert_eq!(node.maintenance.mailbox_ack_rejects.id_too_large, 1);
+    }
+
+    #[test]
+    fn control_plane_mailbox_ack_records_invalid_json_and_user_id() {
+        let mut node = NativeNode::new(NodeConfig::default());
+        let response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/mailbox/ack".into(),
+            body: "{bad-json".into(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 400);
+        let response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/mailbox/ack".into(),
+            body: serde_json::json!({ "user_id": "not-a-user", "delivery_ids": [] }).to_string(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 400);
+        assert_eq!(node.maintenance.mailbox_ack_rejects.invalid_json, 1);
+        assert_eq!(node.maintenance.mailbox_ack_rejects.invalid_user_id, 1);
+        assert_eq!(node.maintenance.mailbox_ack_rejects.total(), 2);
     }
 
     #[test]
@@ -4012,12 +5124,22 @@ mod tests {
             3600,
         )
         .unwrap();
-        node.mailbox
+        let delivery_id = node
+            .mailbox
             .push_verified(msg, &alice.identity_public_key())
             .unwrap();
+        let deliveries = node.mailbox.take_for(bob.user_id());
+        assert_eq!(deliveries.len(), 1);
+        assert_eq!(deliveries[0].delivery_id, delivery_id);
+        assert_eq!(
+            node.mailbox
+                .ack(bob.user_id(), std::slice::from_ref(&delivery_id)),
+            1
+        );
 
         let snapshot = node.to_state_snapshot();
         assert_eq!(snapshot.routing_peers.len(), 1);
+        assert_eq!(snapshot.mailbox_ack_receipts.len(), 1);
         assert_eq!(
             snapshot.routing_peers[0].identity_public_key.as_deref(),
             Some(BASE64.encode(alice.identity_public_key()).as_str())
@@ -4037,7 +5159,14 @@ mod tests {
                 .as_deref(),
             Some(BASE64.encode(alice.identity_public_key()).as_str())
         );
-        assert_eq!(restored.mailbox.pending_for(bob.user_id()), 1);
+        assert_eq!(restored.mailbox.pending_for(bob.user_id()), 0);
+        assert_eq!(
+            restored
+                .mailbox
+                .delivery_status(bob.user_id(), &delivery_id)
+                .status,
+            MailboxDeliveryState::Acked
+        );
     }
 
     #[test]
@@ -4140,6 +5269,34 @@ mod tests {
     }
 
     #[test]
+    fn sync_snapshot_import_skips_invalid_dht_records() {
+        let (identity, _) = Identity::create_with_passphrase("snapshot dht valid").unwrap();
+        let announce = NodeConfig {
+            peer_id: "snapshot-valid-peer".into(),
+            ..Default::default()
+        }
+        .create_announce(&identity)
+        .unwrap();
+        let valid = DhtRecord::public_peer(&announce, announce.to_export_text().unwrap(), 3600);
+        let mut invalid = valid.clone();
+        invalid.key = DhtRecordKey::for_public_peer("snapshot-wrong-peer");
+        let mut snapshot = NativeNode::new(NodeConfig::default()).to_state_snapshot();
+        snapshot.dht_records = vec![valid.clone(), invalid];
+
+        let mut target = NativeNode::new(NodeConfig::default());
+        let stats = target.merge_snapshot(snapshot);
+        assert_eq!(stats.dht_records, 1);
+        assert_eq!(target.maintenance.dht_record_rejects.invalid_record, 1);
+        assert!(target.dht_records.find_value(&valid.key).is_some());
+        assert!(
+            target
+                .dht_records
+                .find_value(&DhtRecordKey::for_public_peer("snapshot-wrong-peer"))
+                .is_none()
+        );
+    }
+
+    #[test]
     fn prekey_consume_tracks_individual_one_time_keys() {
         let (alice, _) = Identity::create_with_passphrase("alice consume").unwrap();
         let mut store = PreKeyStore::default();
@@ -4155,6 +5312,22 @@ mod tests {
         assert_eq!(second, Some(1));
         assert_eq!(store.consumed_for(alice.user_id()), vec![0, 1]);
         assert!(store.get_for(alice.user_id()).is_some());
+    }
+
+    #[test]
+    fn prekey_publish_rejects_too_many_signed_one_time_records() {
+        let (alice, _) = Identity::create_with_passphrase("alice too many signed otk").unwrap();
+        let (bundle, _private, records) =
+            PreKeyBundle::new_with_signed_one_time_prekey_records(&alice, 1, 1, 3600).unwrap();
+        let too_many = vec![records[0].clone(); lm_core::limits::MAX_ONE_TIME_PREKEYS + 1];
+        let mut store = PreKeyStore::default();
+        assert_eq!(
+            store
+                .publish_verified_with_signed_one_time_prekey_records(bundle, too_many)
+                .unwrap_err(),
+            LmError::PayloadTooLarge
+        );
+        assert!(store.get_for_unchecked(alice.user_id()).is_none());
     }
 
     #[test]
@@ -4290,6 +5463,30 @@ mod tests {
         assert_eq!(missing_body["replenishment_required"], true);
         assert_eq!(missing_body["replenishment_actor"], "client");
         assert_eq!(missing_body["node_generates_user_keys"], false);
+    }
+
+    #[test]
+    fn control_plane_prekey_publish_rejects_too_many_signed_one_time_records() {
+        let (alice, _) =
+            Identity::create_with_passphrase("alice control too many signed otk").unwrap();
+        let (bundle, _private, records) =
+            PreKeyBundle::new_with_signed_one_time_prekey_records(&alice, 1, 1, 3600).unwrap();
+        let too_many =
+            vec![records[0].to_export_text().unwrap(); lm_core::limits::MAX_ONE_TIME_PREKEYS + 1];
+        let mut node = NativeNode::new(NodeConfig::default());
+        let response = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/prekey/publish".into(),
+            body: serde_json::json!({
+                "prekey_bundle_text": bundle.to_export_text().unwrap(),
+                "signed_one_time_prekey_record_texts": too_many,
+            })
+            .to_string(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 400);
+        assert!(response.body.contains("payload too large"));
+        assert!(node.prekeys.get_for_unchecked(alice.user_id()).is_none());
     }
 
     #[test]

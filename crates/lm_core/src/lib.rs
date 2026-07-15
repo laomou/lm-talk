@@ -40,8 +40,8 @@ pub use message::{
     SessionDirection,
 };
 pub use network::{
-    MailboxMessage, MailboxMessageKind, PeerAnnounce, PublicPeerAnnounce, PublicPeerCapability,
-    SignalAnswer, SignalKind, SignalOffer,
+    MailboxMessage, MailboxMessageKind, MessageReceipt, MessageReceiptKind, PeerAnnounce,
+    PublicPeerAnnounce, PublicPeerCapability, SignalAnswer, SignalKind, SignalOffer,
 };
 pub use outbox::{Outbox, OutboxItem, OutboxStatus};
 pub use passphrase::normalize_passphrase;

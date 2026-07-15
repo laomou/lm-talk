@@ -20,10 +20,15 @@ pub const MAX_ONE_TIME_PREKEYS: usize = 100;
 pub const MAX_NETWORK_ADDRESSES: usize = 64;
 pub const MAX_NETWORK_ADDRESS_BYTES: usize = 1024;
 pub const MAX_MAILBOX_CIPHERTEXT_BYTES: usize = 512 * 1024;
+pub const MAX_MESSAGE_RECEIPT_TEXT_BYTES: usize = 32 * 1024;
 pub const MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_FILE_NAME_BYTES: usize = 255;
 pub const MAX_FILE_MIME_BYTES: usize = 128;
 pub const MAX_FILE_CHUNK_BYTES: usize = 256 * 1024;
+pub const MAX_FILE_MANIFEST_TEXT_BYTES: usize = 64 * 1024;
+pub const MAX_FILE_CHUNK_CIPHERTEXT_BYTES: usize = 384 * 1024;
+pub const MAX_FILE_CHUNK_JSON_BYTES: usize = 512 * 1024;
+pub const MAX_DEVICE_REVOKE_TEXT_BYTES: usize = 16 * 1024;
 
 pub fn ensure_len(value: &str, max: usize) -> Result<()> {
     ensure_bytes(value.as_bytes().len(), max)

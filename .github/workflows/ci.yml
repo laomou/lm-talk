@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  release-check:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -33,7 +33,9 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: .
+          workspaces: |
+            .
+            fuzz
 
       - name: Install wasm-pack
         uses: taiki-e/install-action@wasm-pack
@@ -42,16 +44,55 @@ jobs:
         working-directory: apps/web
         run: npm ci
 
-      - name: Rust fmt
-        run: cargo fmt --check
-
-      - name: Rust tests
-        run: cargo test --workspace
-
-      - name: Web typecheck
+      - name: Install Playwright Chromium
         working-directory: apps/web
-        run: npm run typecheck
+        run: npx playwright install --with-deps chromium
 
-      - name: Web build
+      - name: Release check quick
+        run: ./scripts/release-check.sh quick
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      - name: Install web dependencies
         working-directory: apps/web
-        run: npm run build
+        run: npm ci
+
+      - name: Dependency audit
+        run: ./scripts/audit.sh
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Dependency review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high

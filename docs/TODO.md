@@ -18,21 +18,21 @@
 
 已完成或基本成型：
 
-- `lm_core`：身份/备份、Contact Card、好友请求/响应、DirectEnvelope、X3DH PreKey、Double Ratchet、群 Sender Key、群权限状态、文件分片加密包、本地安全策略、Outbox、MemoryStore、大小限制、属性测试、跨平台测试向量。
+- `lm_core`：身份/备份、Contact Card、好友请求/响应、DirectEnvelope、X3DH PreKey、Double Ratchet、群 Sender Key、群权限状态、文件分片加密包、本地安全策略、Outbox、MemoryStore、大小限制、属性测试、跨平台测试向量、核心导入解析 malformed fuzz-like 覆盖。
 - `lm_wasm`：大部分 core 能力已导出，并有 smoke 测试。
-- `lm_node`：HTTP control plane、Public Peer announce、Kademlia ID/distance/closest scaffold、DHT record key/value scaffold 与控制面 store/find/closest、DHT RPC 消息/本地处理 scaffold 与 `POST /dht/rpc` 入口、closest-k replication plan 与 routing refresh target plan 及控制面 plan 端点、control-peer StoreRecord replication runner、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、独立 signed one-time prekey records 发布/同步/消费、PreKey 过期清理/轮换重置/低水位提示、snapshot sync/import、serve-control 定时 snapshot sync、控制面 token/CORS 基础安全、控制面 per-client IP 基础限流、`/control/stats` JSON 运行指标、`/control/metrics` OpenMetrics 文本导出、过期清理维护统计、状态文件原子保存。
+- `lm_node`：HTTP control plane、Public Peer announce、Kademlia ID/distance/closest scaffold、DHT record key/value scaffold 与控制面 store/find/closest、DHT RPC 消息/本地处理 scaffold 与 `POST /dht/rpc` 入口、closest-k replication plan 与 routing refresh target plan 及控制面 plan 端点、control-peer StoreRecord replication runner、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、独立 signed one-time prekey records 发布/同步/消费、PreKey 过期清理/轮换重置/低水位提示、snapshot sync/import、serve-control 定时 snapshot sync、控制面 token/CORS 基础安全、控制面 previous token 轮换窗口、控制面 per-client IP 基础限流、`/control/stats` JSON 运行指标、`/control/metrics` OpenMetrics 文本导出、过期清理维护统计、状态文件原子保存。
 - 测试：`scripts/test.sh all` 当前通过 Rust 测试、core/node e2e、HTTP control flow、WASM smoke、Web build/e2e；Web 侧补齐了 IndexedDB 持久化和 Web RNG 生成身份的真实流程验证。
 
 关键边界：
 
 - `lm_node` 仍是控制面 + snapshot sync scaffold，不是真正生产 DHT。
-- Mailbox/PreKey 可支撑 demo；Mailbox 已有基础 TTL/配额/message_id 去重、控制面 per-client IP 限流和 SQLite state_db 持久化，但仍缺完整投递回执与更强反滥用。
-- Core 协议对象已可测，属性测试和跨平台测试向量已补齐，但仍需模糊测试和安全审计。
+- Mailbox/PreKey 可支撑 demo；Mailbox 已有基础 TTL/配额/message_id 去重、take 分页、ack 批量限制与拒绝统计、delivery 状态查询和 ACK tombstone 持久化、控制面 per-client IP 限流和 SQLite state_db 持久化，但仍缺完整客户端状态合并、多设备回执同步与更强反滥用。
+- Core 协议对象已可测，属性测试和跨平台测试向量已补齐；Double Ratchet replay、乱序 skipped-key 消费和 skip-window 边界已有属性测试；常见导入文本/附件 JSON 解析已补 malformed 输入不崩溃和超限拒绝覆盖；已新增 cargo-fuzz/libFuzzer harness 脚手架。仍需长时间 fuzz 运行、持续语料回归、AFL/独立安全测试和外部安全审计。
 - 本地持久化仍偏 Web IndexedDB / MemoryStore；Native node 已有 SQLite state_db，SQLCipher/客户端完整数据加密仍未实现。
 
 ---
 
-## 当前未完成功能清单（2026-07-14 更新）
+## 当前未完成功能清单（2026-07-15 更新）
 
 > 当前 `lm_core` / `lm_wasm` / `lm_node` 已具备可测试 MVP scaffold；Web 产品化流程仍是最直接的用户可用性缺口。下面按当前代码状态整理真实缺口。
 
@@ -83,11 +83,13 @@
 4. **离线消息 Mailbox 路径增强**
    - 单聊和群 fanout 已能在 WebRTC 不可用且节点启用时通过 `/mailbox/push` 投递，并维护 `queued` / `sent` / `mailbox` / `failed` 状态。
    - Web 已有 outbox 定时调度器、当前联系人重发、全部队列重发、取消发送、基础失败分类和端到端送达回执基础路径。
-   - 仍需完善对方未取、ack 丢失恢复、状态合并规范和更细的失败恢复策略。
+   - 节点已提供 `/mailbox/status`，可查询 delivery 是否尚未被取走、已取未 ACK 或已 ACK/过期/不存在，用于客户端区分“对方未取”和“ACK/状态合并待恢复”。
+   - `lm_core` 已新增签名 `MessageReceipt`（`Delivered` / `Read`）协议对象，可通过 Mailbox/WebRTC 作为端到端送达/已读回执载荷，并有导入、验签、篡改和 fuzz-like malformed 输入覆盖；`lm_wasm` 已导出创建/验签 MessageReceipt 的 API，并支持 `delivery-receipt` / `read-receipt` MailboxMessage kind；Web 已在收到 direct mailbox/WebRTC 消息后自动生成签名 Delivered receipt；当前会话可见且用户开启“当前会话自动发送已读回执”时还会自动生成 Read receipt；并能处理 signed delivery/read receipt 更新本地消息状态为已送达/已读，保留旧 `lm-delivery-ack-v1` 兼容；全局开关会随完整数据备份导入/导出持久化，聊天页还提供每联系人策略（跟随全局/始终开启/关闭）。Web 发送方会保存 Mailbox `delivery_id`，同步时通过 `/mailbox/status` 恢复 `pending` / `delivered_unacked` / `acked` 状态，用于回执丢失时把已取/已 ACK 的消息推进到“已送达”；本地消息状态同时记录 `delivered_at` / `read_at` 时间戳并在聊天气泡展示；完整数据备份/多设备导入合并会按 `protocol_message_id` 合并同一消息的更高回执状态和时间戳，便于排查和未来多设备状态合并。
+   - 仍需完善 Read receipt 的更多产品策略（例如每联系人策略）、多设备回执同步、更复杂的 ack 丢失恢复、跨设备状态合并规范和更细的失败恢复策略。
 
 5. **Mailbox 收取与处理产品化**
-   - Web 已能登录后/切回页面/手动同步时调用 `/mailbox/take`，自动处理 direct-envelope、好友请求/响应、群 fanout、文件包和安全会话 offer/response，成功后 `/mailbox/ack`。
-   - 通讯录已有正式收件箱入口，展示好友请求、群邀请、最近 Mailbox 处理摘要和最近失败原因。
+   - Web 已能登录后/切回页面/手动同步时调用 `/mailbox/take?limit=N` 分页收取，自动处理 direct-envelope、好友请求/响应、群 fanout、文件包和安全会话 offer/response，成功后 `/mailbox/ack`，并在 `more=true` 时继续拉取后续页；达到单次分页上限仍有更多内容时会提示再次同步。
+   - 通讯录已有正式收件箱入口，展示好友请求、群邀请、最近 Mailbox 处理摘要、分页收取摘要和最近失败原因。
    - 收件箱已按失败原因归类展示 Mailbox 处理失败摘要。
    - 收件箱已保留最近 Mailbox 处理失败队列，支持手动重试和清空失败项。
    - 收件箱去重摘要已显示本地去重记录最新/最旧处理时间，便于判断裁剪范围。
@@ -127,7 +129,12 @@
 
 10. **本地数据安全增强**
     - Web IndexedDB 已有应用层加密路径，规格见 `docs/STORAGE_SPEC.md`。
-    - 继续补迁移失败恢复、密钥轮换、更多字段覆盖和异常提示。
+    - 消息、联系人、群、outbox、ratchet 会话、好友请求、群邀请、群 Sender Key、Mailbox 失败队列和同步服务地址/令牌等敏感字段已纳入应用层加密；测试会检查 IndexedDB 不直接出现聊天明文、联系人名片/显示名和 sync token URL。
+    - 分表加载已支持单条损坏记录隔离：联系人/消息/群/outbox/ratchet 等记录解密失败时跳过坏记录、加载其余数据并提示用户恢复。
+    - 身份提示词重加密后会用新提示词重新派生本地存储密钥并重写 IndexedDB；Web E2E 验证同步服务配置仍加密且可用新提示词重新登录恢复。
+    - 删除本地身份会同步清理该 user_id 前缀下的 IndexedDB 分表数据，避免只删登录入口但遗留本机加密聊天数据。
+    - 旧 localStorage 迁移到 IndexedDB 分表时，会在新分表写入成功后再删除原始状态；Web E2E 已覆盖迁移后恢复同步设置且原始状态被清理。
+    - 继续补完整迁移回滚、异常提示和更系统的明文字段审计。
     - 定期检查只保留必要索引明文。
 
 ### P1：可用性与可靠性
@@ -165,6 +172,7 @@
 
 7. **PWA / 离线包**
    - Web 版供应链风险提示已存在，设置页已展示 PWA Service Worker / 缓存状态和 Web 包版本。
+   - Web 静态入口已加入 CSP meta 和 no-referrer 策略，限制脚本/对象/frame/form 等默认能力，同时保留 WASM、PWA、blob/data 预览和用户配置同步节点连接能力；Web E2E 覆盖 CSP/referrer meta 存在。
    - Service Worker 注册 URL 和缓存名已带构建版本，避免不同构建共用同一个离线缓存。
    - 设置页已展示当前 `lm-talk-pwa-*` 固定缓存名，便于确认离线包对应构建版本。
    - 固定版本离线包已具备静态资源缓存优先策略，首次在线后可按构建版本离线使用。
@@ -206,8 +214,9 @@
    - Web 已有基础通知权限入口、页面后台消息/文件/好友请求/好友通过/群邀请/安全会话通知和同步失败通知。
    - 设置页已展示在线/离线、前台/后台和低电量状态，用于解释自动同步限制。
    - 设置页已展示通知权限、前后台通知行为、自动收取开关和浏览器后台暂停限制。
-   - 设置页已展示 Push API 和 Periodic Background Sync 能力探测，用于解释 PWA 后台能力边界。
-   - 仍需把 PWA 后台策略扩展到真实 Service Worker push/periodic sync 流程。
+   - 设置页已展示 Push API、Background Sync 和 Periodic Background Sync 能力探测，用于解释 PWA 后台能力边界。
+   - Service Worker 已处理 `sync` / `periodicsync` / `push` 后台事件，但出于端到端加密约束只通知用户打开应用完成同步，不在后台读取密钥或消息；设置页提供“注册后台同步”入口，会尝试注册 one-shot Background Sync 和 Periodic Sync，并展示/持久化最近收到的后台事件标签历史，Web E2E 覆盖该安全提示路径。
+   - 仍需接入真实 Push 订阅服务器、平台级 periodic sync 授权策略和更完整后台任务 telemetry。
 
 #### P1
 
@@ -225,11 +234,15 @@
    - Web 群详情已显示本地群视图更新时间，群事件/错误/Sender Key 异常使用完整日期时间。
    - 仍需设计成员自己退出后的双方视图和本地群视图冲突处理。
    - Web 已在群详情和聊天顶部展示 Sender Key 缺少 distribution、解密失败和轮换后分发失败。
+   - 创建或手动生成 Sender Key Distribution 后会自动通过 WebRTC/Mailbox 分发，失败时进入 outbox 自动重试。
+   - 成员变更触发本端 Sender Key rotation 后，会自动投递新的 Distribution fanout 并在群详情记录分发失败。
    - 明确历史消息策略：新人默认不可见、手动转发、重新加密范围。
 
 5. **文件传输体验**
    - Web 已有文件包生成、正式聊天附件入口、WebRTC/Mailbox/outbox 投递、接收后解密和下载基础路径。
    - Web 已显示文件名、MIME、大小和危险文件类型警告。
+   - 发送可执行/安装脚本等危险扩展名附件前会弹出确认，避免误发送高风险文件；Web E2E 已覆盖取消路径。
+   - 收到危险扩展名附件时，点击解密生成下载链接前也会要求用户确认来源可信。
    - Web 已有收到文件附件卡片和下载入口。
    - Web 已支持取消已选择/已生成的文件包。
    - Web 已在生成文件包前提示浏览器存储空间不足风险。
@@ -257,6 +270,7 @@
 7. **反滥用 UX**
    - Web 已有本地拉黑、文本过滤、陌生人请求收件箱、批量忽略好友请求和批量拉黑请求来源。
    - 设置页已有本地过滤器开关、级别、外部链接/可执行文件提示和高风险入站丢弃配置。
+   - 发送包含外部链接或可执行/脚本文件名等风险文本前会弹出本地确认；取消不会清空输入框，也不会擅自改写用户将发送给对方的文本。
    - Web 已将同一来源的重复未处理好友请求隔离到垃圾请求区，并支持恢复或清空。
    - 收件箱已显示陌生请求频率摘要；同一来源短时间重复请求会进入垃圾请求区，支持单条或全部恢复误拦截。
    - Web 已按来源记录 24 小时好友请求计数，超过本地阈值后自动隔离到垃圾请求区，并支持清空本地计数。
@@ -267,7 +281,8 @@
    - Web 已支持可选脱敏账号摘要和同步服务地址。
    - Web 已支持只生成并复制摘要报告。
    - 诊断报告同步区已导出 token_count / missing_remote_token_count 这类非敏感计数，不导出令牌内容。
-   - 诊断报告和诊断页最近日志会截断单行长文本，降低完整载荷误入报告的风险。
+   - 诊断报告和诊断页最近日志会先脱敏再截断单行长文本，降低 token、备份包和完整协议载荷误入报告的风险。
+   - Web E2E 已覆盖 Bearer token、URL token 和身份备份包前缀不会进入诊断 JSON。
 
 9. **可访问性与国际化**
    - Web 已有 `zh-CN` 页面语言、按钮焦点样式、toast `aria-live`、主导航/搜索/消息列表/弹窗基础可访问性语义。
@@ -284,7 +299,7 @@
 
 1. **生产级 DHT / Kademlia 网络**
    - 当前 `lm_node` 已有 HTTP control-plane DHT RPC、libp2p request-response DHT RPC、bootstrap discovery、closest-k replication 和 routing refresh scaffold。
-   - 仍需生产级查询鲁棒性、跨公网运维、Sybil/垃圾记录防护、传输安全策略和压力测试。
+   - 已补基础本地容量、单条记录大小限制、TTL 上限和 record key-kind-value 语义校验；仍需生产级查询鲁棒性、跨公网运维、Sybil/垃圾记录防护、传输安全策略和压力测试。
 
 2. **Relay / TURN 替代能力**
    - 有公网 IP 的节点可选做 bootstrap / DHT / relay / mailbox。
@@ -300,7 +315,11 @@
 
 5. **安全审计与测试增强**
    - 固定协议测试向量、属性测试、跨平台一致性测试、浏览器真实流程 E2E 已建立。
-   - 继续补 fuzz、ratchet replay/window/skipped-key 不变量、压力测试和外部安全审计。
+   - 已补核心导入解析的 fuzz-like malformed 输入属性测试，覆盖 Contact/Friend/Backup/PreKey/Signal/DHT/Mailbox/Group/Ratchet/File/Device revoke 等文本入口；附件 Manifest、Chunk JSON、Chunk ciphertext decode 前检查和 Device revoke import 也有显式长度上限。
+   - 已新增 `fuzz/` cargo-fuzz/libFuzzer harness：`core_imports`、`node_dht_rpc`、`node_control_request`；运行方式见 `docs/FUZZING.md`。
+   - 已新增 `scripts/release-check.sh`、`scripts/fuzz-smoke.sh` 和 `docs/RELEASE_CHECKLIST.md`，将 fmt、Rust core/node、node e2e、fuzz harness compile check、可选 fuzz smoke、Web build/e2e 串成发布候选自动化门禁；GitHub Actions CI 会运行 `release-check quick`，新增 `dependency-audit` job 执行 `cargo audit` 与 runtime/build-toolchain `npm audit`，并在 PR 上运行 `dependency-review` 阻止高危依赖变更。
+   - 已新增仓库级 `SECURITY.md`，说明私下漏洞报告流程、敏感材料脱敏要求和已知非生产阻塞项。
+   - 继续补长时间 fuzz 运行记录、持续语料回归、AFL/独立 fuzz、真实网络压力测试和外部安全审计。
 
 ---
 
@@ -837,7 +856,7 @@ TURN 不作为默认官方服务。
 
 ### 26. 完整数据备份
 
-Web/WASM 已有基础完整数据备份导入/导出路径：用当前身份备份包和提示词派生身份后，加密导出本地持久化状态。这里保留生产级策略和 UX 待办。
+Web/WASM 已有完整数据备份导入/导出路径：用当前身份备份包和提示词派生身份后，加密导出本地持久化状态；设置页已有生成、显示/粘贴、下载、导入合并和导入覆盖入口。这里保留生产级策略和 UX 待办。
 
 包含：
 
@@ -860,7 +879,7 @@ Data Backup：完整本地数据备份
 
 - 备份版本迁移策略。
 - 大数据量分片或流式导出。
-- 备份文件命名、下载/导入 UX 和失败恢复。
+- 更细粒度逐项冲突选择、下载/导入 UX 和失败恢复。
 - 是否把节点配置、processed mailbox ids、诊断日志纳入数据备份。
 
 ---
@@ -934,10 +953,20 @@ MVP 群聊采用逐个加密。
    - [x] 持久化 quota/TTL/去重索引到正式数据库：SQLite `mailbox_deliveries` 表包含 `expires_at`、`to_user_id`、`message_id` 唯一索引。
    - [x] state-file crash recovery 覆盖 mailbox push 后崩溃、take 未 ack 后崩溃、ack 后崩溃。
    - [x] 控制面基础 per-client IP 限流：`--rate-limit-window-seconds` / `--rate-limit-max-requests`，超限返回 `429`，`/health` 不计入限流。
+   - [x] 控制面入站客户端连接配置读写超时，避免慢连接长时间占用单线程控制面处理循环；相关超时参数通过 `/health` 暴露。
+   - [x] 控制面超大请求体返回 `413 Payload Too Large`，超大 header 返回 `431 Request Header Fields Too Large`，错误路径真实 HTTP status 与统计值一致，避免全部混入 `400` 难以排查。
+   - [x] 控制面 HTTP parser 拒绝超大 method/path/header line、冲突重复 `Content-Length` 和非空 `Transfer-Encoding`，降低请求走私/解析歧义和超长首行消耗；真实 `serve-control` HTTP 集成测试覆盖 413/431/400 实际响应。
+   - [x] 控制面响应附加 no-store、nosniff、no-referrer、Permissions-Policy 和受限 CSP 等安全响应头，避免浏览器缓存或误用敏感控制面响应。
    - [x] Mailbox `push` 支持全局限流：`mailbox_global_rate_limit_window_seconds` / `mailbox_global_rate_limit_max_messages`，默认关闭，超限返回 `429`。
    - [x] Mailbox `push` 支持按 sender UserID 限流：`mailbox_sender_rate_limit_window_seconds` / `mailbox_sender_rate_limit_max_messages`，默认关闭，超限返回 `429`。
    - [x] Mailbox `push` 异常 payload / 拒绝原因统计：`maintenance.mailbox_push_rejects` 与 OpenMetrics `lm_node_mailbox_push_rejections_total{reason=...}`。
    - [x] `take` 不删除，只有处理成功后 `ack` 删除；已覆盖 state-file 与 SQLite `state_db` 下 push 后崩溃、take 未 ack 后崩溃、ack 后崩溃的重启重试语义。
+   - [x] Mailbox `take` 支持 `limit` 分页领取并返回 `returned` / `pending` / `more`，默认限制单次返回数量，避免大邮箱一次性响应过大。
+   - [x] Mailbox `ack` 限制单次 delivery id 数量和单个 id 长度，并使用集合匹配删除，避免超大 ack 请求造成过多 CPU/内存消耗。
+   - [x] Mailbox `ack` 异常 payload / 拒绝原因统计：`maintenance.mailbox_ack_rejects` 与 OpenMetrics `lm_node_mailbox_ack_rejections_total{reason=...}`，覆盖 invalid_json、invalid_user_id、too_many_ids、empty_id 和 id_too_large。
+   - [x] `GET /mailbox/status` 返回 per-user summary 与单个 delivery 的 `pending` / `delivered_unacked` / `acked` / `absent_or_expired` 状态，并将 ACK receipt/tombstone 纳入 snapshot 与 SQLite state_db 持久化，为“对方未取”“已取未 ACK”和“ACK 已完成”的客户端恢复逻辑提供节点端基础。
+   - [x] 增加节点 Mailbox 压力/故障自动化测试：批量写入 120 条、分页 take、部分 ACK、查询 acked/delivered_unacked 状态，并通过 snapshot 恢复验证 ACK tombstone 与未 ACK delivery 均保留。
+   - [x] `/health` 暴露 Mailbox take 默认上限、ack delivery id 数量上限、单个 id 长度上限、控制面入站/peer 超时和 control-peer 响应大小上限，便于部署确认反滥用参数。
 
 3. **PreKey 生命周期**
    - [x] signed prekey 轮换时重置旧 one-time prekey 消费记录。
@@ -946,13 +975,14 @@ MVP 群聊采用逐个加密。
    - [x] 自动补货仍由客户端持有 private prekey 后重新发布；节点不生成用户密钥：`/prekey/get` / `/prekey/status` 返回 `replenishment_required`、`replenishment_actor="client"`、`node_generates_user_keys=false`。
    - [x] 定义独立 signed one-time-prekey record 协议对象：`SignedOneTimePreKeyRecord` 可由身份签名、验签、导出/导入，避免未来新增 OTK 时必须重签整个 bundle。
    - [x] 将节点 PreKey 存储/发布/消费路径从 bundle 内 one-time list 切换到独立 signed one-time-prekey records，避免 bundle 级签名与消费记录耦合；兼容旧 bundle 内 one_time_prekeys。
+   - [x] 节点拒绝超过 core 上限的 signed one-time-prekey record 批量发布，避免 PreKey 发布路径被超量 OTK 记录滥用。
 
 4. **控制面安全**
-   - [x] 未配置 token 时，除 `/health` 外只允许 loopback 客户端访问。
+   - [x] 未配置 token 时，除 `/health` 外只允许 loopback 客户端访问；生产 `scripts/run.sh` 在非 loopback 绑定且未显式提供 control token/token file 时会拒绝启动，并提供 `--check-config` 预检。
    - [x] `--control-token` / `LM_NODE_CONTROL_TOKEN` 支持 Bearer token 保护非 health API。
    - [x] `--cors-allow-origin` / `LM_NODE_CORS_ALLOW_ORIGIN` 支持 CORS 白名单。
    - [x] token 可从配置文件、CLI 或环境变量加载。
-   - [x] `--control-token-file` / `LM_NODE_CONTROL_TOKEN_FILE` 和 config `control_token_file` 支持从 secret 文件加载。
+   - [x] `--control-token-file` / `LM_NODE_CONTROL_TOKEN_FILE` 和 config `control_token_file` 支持从 secret 文件加载；Unix 下会拒绝 group/other 权限过宽或 symlink secret 文件，降低 token 泄漏风险。
    - [x] `--rate-limit-window-seconds` / `LM_NODE_RATE_LIMIT_WINDOW_SECONDS` / config `rate_limit_window_seconds` 与 `--rate-limit-max-requests` / `LM_NODE_RATE_LIMIT_MAX_REQUESTS` / config `rate_limit_max_requests` 支持基础限流。
    - [x] token 轮换策略：见 `docs/NODE_CONFIG.md` 的 secret 文件原子替换、滚动更新和验证流程。
    - [x] TLS/反向代理部署说明：见 `docs/NODE_CONFIG.md` 的 Nginx/Caddy 示例和部署检查清单。
@@ -965,7 +995,7 @@ MVP 群聊采用逐个加密。
    - [x] 合并 peers/mailbox/prekeys/consumed records 时保持幂等。
    - [x] 增加 `/sync/status`，记录 attempts/successes/failures/last_success_at/last_error/next_attempt_at。
    - [x] `--sync-peer-token` / `LM_NODE_SYNC_PEER_TOKEN` 支持从受 token 保护的 peer 拉取 snapshot。
-   - [x] `--sync-peer-token-file` / `LM_NODE_SYNC_PEER_TOKEN_FILE` 和 config `sync_peers[].token_file` 支持从 secret 文件加载。
+   - [x] `--sync-peer-token-file` / `LM_NODE_SYNC_PEER_TOKEN_FILE` 和 config `sync_peers[].token_file` 支持从 secret 文件加载，并复用 Unix secret 文件权限校验。
    - [x] 同步失败指数退避：`--sync-max-backoff-seconds`。
    - [x] `serve-control --config-file` / `LM_NODE_CONFIG_FILE` 支持 JSON 配置文件。
    - [x] 敏感字段拆分：control/sync token 可通过环境变量或 secret 文件加载。
@@ -978,13 +1008,18 @@ MVP 群聊采用逐个加密。
    - [x] 控制面提供 `POST /dht/record`、`GET /dht/record`、`GET /dht/closest`，snapshot 保存/合并 DHT records。
    - [x] 定义 `DhtRpcRequest` / `DhtRpcResponse` 并提供本地 `FindNode` / `FindValue` / `StoreRecord` handler scaffold。
    - [x] 控制面 `POST /dht/rpc` 可执行 DHT RPC 消息，作为传输层接入前的兼容入口。
-   - [x] HTTP control-plane DHT RPC client helper 可向远端 `/dht/rpc` 发送 RPC JSON，并复用 peer bearer token。
+   - [x] HTTP control-plane DHT RPC client helper 可向远端 `/dht/rpc` 发送 RPC JSON，并复用 peer bearer token；control-peer HTTP 请求配置连接/读写超时且响应读取有大小上限，避免恶意/异常 peer 卡住后台任务或返回超大响应占用内存。
    - [x] serve-control 同步周期后可对 due-for-republish records 向已配置 control peers 执行 `StoreRecord` replication scaffold。
    - [x] `/control/stats` 与 `/control/metrics` 暴露 DHT replication runner 的 runs、records、attempts、successes、failures 和 last run 时间。
    - [x] serve-control 同步周期后可执行 bounded control-peer `FindNode` routing refresh runner scaffold，并统计返回节点数量。
    - [x] routing refresh runner 可合并来自已配置 control peers 的可信返回节点：过滤过期、node_id/peer_id 不匹配和本机节点，并写入 routing table。
    - [x] `RoutingPeer` 返回节点可携带 identity public key；verified merge 路径会校验 public peer announce 签名，snapshot / SQLite state_db 会持久化该字段。
-   - [x] DHT runner 参数可通过 config/CLI/env 配置：replication factor、FindNode limit、每轮 refresh target 上限。
+   - [x] DHT record 拒绝统计覆盖控制面 store、DHT RPC StoreRecord、sync snapshot 导入和 FindValue found/closer records，避免查询路径静默丢弃无效记录而无法观测攻击/故障。
+   - [x] HTTP/libp2p DHT transport 校验响应体 logical `request_id` 与请求一致，并将 DHT `Error` 响应视为失败，降低异常/恶意 peer 串扰响应被上层误用的风险。
+   - [x] DHT FindValue / FindNode 客户端侧对远端返回的 closer records/nodes 做处理上限，即使恶意 peer 忽略请求 limit 返回超量对象，也只进行有界合并和校验。
+   - [x] DHT FindValue runner 已支持有界迭代查询：初始 peer 返回 verified closer nodes 后，会按目标 key XOR distance 排序，并在 `max_peers` 限制内继续查询，减少单跳 scaffold 和恶意返回顺序的影响；控制面 `GET /dht/find-value?key=<hex>&limit=N&max_peers=N&alpha=N` 已接入该 runner，并有真实 HTTP 双节点 e2e 覆盖；即使关闭自动 snapshot sync（`sync_interval_seconds=0`），仍可复用已配置 sync/control peers 进行手动 DHT 查询；HTTP-control transport 也会把 routing table 中同 scheme `http://` routing peers 加入 runner 候选，但不会向发现的第三方 peer 传播已配置 bearer token，避免 token 泄漏；已补基础终止条件：找到有效 record 后停止继续消耗查询预算；查询响应、`/control/stats` 和 `/control/metrics` 已暴露 `query_rounds` / `alpha` / `exhausted` / `peers_quarantined` 以及手动 FindValue attempts/命中/closer 统计，并有真实 HTTP 双节点 e2e 覆盖，为后续真正 alpha 并发查询提供运维语义；DHT runner 会根据 `sync_status` 中的 consecutive_failures/failures 对配置 peer 排序，优先健康 peer，并跳过 consecutive_failures 达到可配置阈值且仍处于退避期的本轮 quarantine peer，next_attempt_at 到期后重新纳入候选；`/control/metrics` 暴露 `lm_node_dht_peer_quarantined{peer=...}`，并聚合 replication/refresh/find-value 中被 quarantine 跳过的 peer 数，便于持续告警；仍需更完整的生产级查询终止策略、真正并发 alpha、更强 peer scoring 和恶意路由防护；routing peer 合并失败已纳入 `maintenance.routing_peer_rejects` 与 OpenMetrics，便于观察 expired、node_id 不匹配、本机节点、缺少 identity public key、identity key 无效和签名无效等异常 closer nodes。
+   - [x] libp2p DHT RPC codec 显式限制 request/response 大小，并收紧 request-response 并发 streams；libp2p swarm 启用 connection-limits（pending/established/total/per-peer），`/health` 暴露这些上限，便于部署确认。
+   - [x] DHT runner 参数可通过 config/CLI/env 配置：replication factor、FindNode limit、每轮 refresh target 上限、transport 和 peer quarantine threshold；生产 `scripts/run.sh` 已透传这些 DHT runner 参数并支持 `--check-config` 预检；`--config-file` 模式不会用脚本默认值覆盖配置文件，只有显式参数或环境变量才作为 CLI override。
    - [x] 生成 due-for-republish records 的 closest-k replication plan。
    - [x] 生成 256 个 Kademlia bucket routing refresh target plan。
    - [x] 控制面提供 `GET /dht/replication-plan` 与 `GET /dht/routing-refresh-plan`。
@@ -1015,8 +1050,10 @@ MVP 群聊采用逐个加密。
    - [x] `/health` / `/control/stats` / `/control/metrics` 暴露过期清理运行次数、mailbox 过期 delivery 数和 prekey 过期 bundle 数。
    - [x] `/control/stats` / `/control/metrics` 暴露 DHT control-peer replication runner 运行、records、attempts、success/failure 和 last run 时间。
    - [x] `/control/stats` / `/control/metrics` 暴露 DHT routing refresh runner 运行、targets、attempts、success/failure、nodes_returned、nodes_merged 和 last run 时间。
+   - [x] `/control/metrics` 暴露每个 sync peer 的 attempts、successes、failures、consecutive_failures 和 next_attempt_at，便于部署观察自动同步退避状态。
    - [x] `/control/stats` / `/control/metrics` 暴露后台任务调度延迟：`lm_node_background_schedule_delay_micros_*`。
    - [x] `/control/stats` / `/control/metrics` 暴露持久化 SQLite 数据库页/空间指标：`lm_node_state_db_*`。
+   - [x] SQLite `state_db` 连接启用 WAL、`synchronous=FULL`、`busy_timeout=5000` 和 `foreign_keys=ON`，并有单元测试覆盖；Unix 下 `state_db` 主文件和 WAL/SHM sidecar 以及兼容 `state_file` 保存结果会收紧为 `0600`，降低未加密本地状态泄漏风险；`/health`、`/control/stats` 和 `/control/metrics` 明示 `state_db_encrypted=false` / `lm_node_state_db_encrypted 0` 和权限硬化状态，避免部署方误判 SQLCipher 已完成；新增 `state_db_require_encryption` / `--state-db-require-encryption` / `LM_NODE_STATE_DB_REQUIRE_ENCRYPTION` fail-closed 开关，要求数据库级加密时当前 plain SQLite 构建会拒绝启动；`serve-control` 与 `serve-dht-libp2p` 真实进程路径均有覆盖。
 
 ### P2：生产网络能力
 
@@ -1064,6 +1101,7 @@ MVP 群聊采用逐个加密。
 - `DESIGN.md` 只保留跨模块总览和实现状态。
 - `*_SPEC.md` 维护稳定协议和数据格式。
 - 已完成事项从 `TODO.md` 移出，或改为对应文档引用。
+- 发布候选检查入口见 `docs/RELEASE_CHECKLIST.md` 与 `scripts/release-check.sh`；通过该脚本仍不等于生产发布完成。
 
 ---
 
@@ -1076,10 +1114,10 @@ MVP 群聊采用逐个加密。
 2. PreKey 自动补货与失败重试：低水位提示、隐藏 JSON 调试细节。
 3. 好友通过后自动 X3DH + Double Ratchet 建链：失败时回退复制粘贴流程。
 4. Mailbox 产品化：正式收件箱、失败重试、长期去重和送达回执。
-5. 本地数据应用层加密增强：迁移策略、错误恢复、更多字段覆盖。
-6. Native node 持久化增强：SQLCipher 或等价数据库加密、备份演练和运维指标。
-7. 节点自动同步增强：token 轮换、同步状态指标细化、libp2p DHT transport 产品化。
+5. 本地数据应用层加密增强：完整迁移回滚、更多字段审计。
+6. Native node 持久化增强：SQLCipher 或等价数据库加密、更多备份演练和运维指标。
+7. 节点自动同步增强：libp2p DHT transport 产品化、更多 control-peer 故障/压力测试。
 8. Outbox 调度器：指数退避、取消发送、过期、delivery status。
 9. 协议稳定化：错误码、对象大小限制、Contact Card 更新策略、PreKey 轮换策略。
-10. 安全测试增强：fuzz、ratchet replay/window/skipped-key 不变量、外部安全审计。
+10. 安全测试增强：长时间 libFuzzer/AFL fuzz 运行与语料回归、真实网络压力测试、外部安全审计。
 ```

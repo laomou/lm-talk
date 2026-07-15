@@ -5,6 +5,7 @@ const props = defineProps<{ ctx: any }>()
 const syncRecoveryQuery = ref('')
 const showRawSyncStatus = ref(false)
 const showSyncServiceEditor = ref(false)
+const showDataBackupEditor = ref(false)
 
 const outboxItems = computed(() => props.ctx.outbox.value)
 const pendingOutbox = computed(() => outboxItems.value.filter((item: any) => item.status !== 'sent'))
@@ -103,6 +104,10 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
             <span>自动收取 Mailbox</span>
           </label>
           <label class="identity-select">
+            <input v-model="ctx.autoReadReceipts.value" type="checkbox" />
+            <span>当前会话自动发送已读回执</span>
+          </label>
+          <label class="identity-select">
             <input v-model="ctx.autoNodeSync.value" type="checkbox" />
             <span>自动同步节点快照</span>
           </label>
@@ -195,6 +200,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
         <div class="section-title-row">
           <h3>PWA 状态</h3>
           <button class="secondary" @click="ctx.refreshPwaStatus">刷新</button>
+          <button class="secondary" @click="ctx.registerPeriodicMailboxSync">注册后台同步</button>
         </div>
         <div class="sync-status">
           <b>版本</b>
@@ -204,7 +210,32 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
           <b>离线缓存</b>
           <small>{{ ctx.pwaStatusText.value }}</small>
           <small>{{ ctx.pwaBackgroundCapabilityText.value }}</small>
+          <small>最近后台事件：{{ ctx.pwaLastBackgroundEventText.value }}</small>
+          <small v-if="ctx.pwaBackgroundEventHistory.value.length > 1">后台事件历史：{{ ctx.pwaBackgroundEventHistory.value.slice(0, 5).join('；') }}</small>
         </div>
+      </section>
+
+
+      <section class="home-card">
+        <div class="section-title-row">
+          <h3>完整数据备份</h3>
+          <button class="secondary" @click="showDataBackupEditor = !showDataBackupEditor">{{ showDataBackupEditor ? '隐藏备份文本' : '显示备份文本' }}</button>
+        </div>
+        <small>完整数据备份会加密导出本机联系人、群聊、消息、待发送队列、同步设置和安全会话状态；可选择“导入合并”只补缺失数据，或“导入覆盖”替换当前身份的本地数据。</small>
+        <div class="row compact">
+          <button class="secondary" @click="ctx.exportFullDataBackup">生成备份</button>
+          <button class="secondary" :disabled="!ctx.dataBackupText.value.trim()" @click="ctx.downloadText(ctx.dataBackupText.value, 'lm-talk-data-backup.txt')">下载备份</button>
+          <button class="secondary" :disabled="!ctx.dataBackupText.value.trim()" @click="ctx.importFullDataBackupMerge">导入合并</button>
+          <button class="secondary danger" :disabled="!ctx.dataBackupText.value.trim()" @click="ctx.importFullDataBackup">导入覆盖</button>
+        </div>
+        <textarea
+          v-if="showDataBackupEditor"
+          v-model="ctx.dataBackupText.value"
+          class="mono"
+          rows="6"
+          aria-label="完整数据备份文本"
+          placeholder="点击生成备份，或粘贴 lm-data-backup-v1 文本后导入"
+        />
       </section>
 
       <section class="home-card">

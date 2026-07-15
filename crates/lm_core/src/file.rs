@@ -104,6 +104,7 @@ impl FileManifest {
     }
 
     pub fn from_export_text(text: &str) -> Result<Self> {
+        limits::ensure_len(text, limits::MAX_FILE_MANIFEST_TEXT_BYTES)?;
         crate::codec::decode_json_prefixed("lm-file-manifest-v1:", text)
     }
 }
@@ -193,6 +194,7 @@ impl FileChunkEnvelope {
     }
 
     pub fn from_json(text: &str) -> Result<Self> {
+        limits::ensure_len(text, limits::MAX_FILE_CHUNK_JSON_BYTES)?;
         serde_json::from_str(text).map_err(|_| LmError::SerializationFailed)
     }
 
@@ -206,6 +208,8 @@ impl FileChunkEnvelope {
         if self.crypto != FILE_CRYPTO_V1 {
             return Err(LmError::InvalidBackupFormat);
         }
+        limits::ensure_len(&self.nonce, 64)?;
+        limits::ensure_len(&self.ciphertext, limits::MAX_FILE_CHUNK_CIPHERTEXT_BYTES)?;
         Ok(())
     }
 
@@ -314,6 +318,29 @@ mod tests {
                 .decrypt_chunk(&bob, &alice.x25519_public_key())
                 .unwrap_err(),
             LmError::CryptoError
+        );
+    }
+
+    #[test]
+    fn oversized_file_chunk_ciphertext_is_rejected_before_decode() {
+        let (alice, _a) = Identity::create_with_passphrase("alice").unwrap();
+        let (bob, _b) = Identity::create_with_passphrase("bob").unwrap();
+        let chunk = FileChunkEnvelope {
+            r#type: FILE_CHUNK_TYPE.to_string(),
+            version: protocol::PROTOCOL_VERSION_V1,
+            crypto: FILE_CRYPTO_V1.to_string(),
+            file_id: Uuid::new_v4(),
+            chunk_index: 0,
+            from_user_id: alice.user_id().clone(),
+            to_user_id: bob.user_id().clone(),
+            nonce: BASE64.encode([0u8; FILE_NONCE_LEN]),
+            ciphertext: "A".repeat(limits::MAX_FILE_CHUNK_CIPHERTEXT_BYTES + 1),
+        };
+        assert_eq!(
+            chunk
+                .decrypt_chunk(&bob, &alice.x25519_public_key())
+                .unwrap_err(),
+            LmError::PayloadTooLarge
         );
     }
 }

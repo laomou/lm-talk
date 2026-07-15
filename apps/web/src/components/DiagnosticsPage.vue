@@ -11,8 +11,17 @@ function redacted(value: string) {
   return value ? '[已脱敏]' : ''
 }
 
+function sanitizeDiagnosticText(value: string) {
+  return value
+    .replace(/Bearer\s+[A-Za-z0-9._~+\/=:-]+/gi, 'Bearer [已脱敏]')
+    .replace(/(https?:\/\/[^\s|]+)\|[^\s，；,]+/gi, '$1|[已脱敏]')
+    .replace(/\b(lm-[a-z0-9-]+-v\d+):[^\s\"'，；,]+/gi, '$1:[已脱敏]')
+    .replace(/"(backupText|backup_text|private_key|identity_seed|seed|ciphertext|envelope_json|message_text|contact_card_text)"\s*:\s*"[^"]{16,}"/gi, '"$1":"[已脱敏]"')
+}
+
 function diagnosticLogLine(value: string) {
-  return value.length > 160 ? `${value.slice(0, 160)}…[已截断]` : value
+  const sanitized = sanitizeDiagnosticText(value)
+  return sanitized.length > 160 ? `${sanitized.slice(0, 160)}…[已截断]` : sanitized
 }
 
 async function runDiagnostics() {
@@ -31,12 +40,18 @@ async function runDiagnostics() {
       service_worker_registrations: registrations.length,
       caches: cacheKeys,
     },
+    pwa: {
+      status: sanitizeDiagnosticText(props.ctx.pwaStatusText.value),
+      background_capability: sanitizeDiagnosticText(props.ctx.pwaBackgroundCapabilityText.value),
+      background_event_count: props.ctx.pwaBackgroundEventHistory.value.length,
+      last_background_event: sanitizeDiagnosticText(props.ctx.pwaLastBackgroundEventText.value),
+    },
     sync: {
       enabled: props.ctx.nodeEnabled.value,
       services: redactDiagnosticReport.value ? props.ctx.nodeUrlList().map(() => '[已脱敏]') : props.ctx.nodeUrlList(),
       token_count: props.ctx.nodeTokenCount.value,
       missing_remote_token_count: props.ctx.nodeMissingRemoteTokenCount.value,
-      status: props.ctx.nodeControlStatus.value,
+      status: sanitizeDiagnosticText(props.ctx.nodeControlStatus.value),
     },
     local_counts: {
       contacts: props.ctx.contacts.value.length,

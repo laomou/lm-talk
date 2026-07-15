@@ -12,10 +12,11 @@ use lm_core::{
     FileManifest, FriendRequest, FriendResponse, GroupEvent, GroupEventAction, GroupInvite,
     GroupPolicyState, GroupSenderEnvelope, GroupSenderKeyDistribution, GroupSenderKeyState,
     Identity, IdentityBackupPackage, IdentitySeed, MailboxMessage, MailboxMessageKind,
-    PeerAnnounce, PreKeyBundle, PreKeyPrivateBundle, PublicPeerAnnounce, PublicPeerCapability,
-    RatchetDhKeyPair, RatchetEnvelope, RatchetHeader, RatchetRole, RatchetSessionState,
-    SignalAnswer, SignalOffer, SignedOneTimePreKeyRecord, TrustLevel, X3dhInitialMessage,
-    x3dh_initiator_secret, x3dh_initiator_secret_with_one_time_prekey_id,
+    MessageReceipt, MessageReceiptKind, PeerAnnounce, PreKeyBundle, PreKeyPrivateBundle,
+    PublicPeerAnnounce, PublicPeerCapability, RatchetDhKeyPair, RatchetEnvelope, RatchetHeader,
+    RatchetRole, RatchetSessionState, SignalAnswer, SignalOffer, SignedOneTimePreKeyRecord,
+    TrustLevel, X3dhInitialMessage, x3dh_initiator_secret,
+    x3dh_initiator_secret_with_one_time_prekey_id,
     x3dh_initiator_secret_with_one_time_prekey_record, x3dh_responder_secret,
 };
 use serde::{Deserialize, Serialize};
@@ -339,7 +340,9 @@ pub fn reencrypt_identity_backup(
     if new_passphrase.trim().is_empty() {
         return Err(JsValue::from_str("new passphrase is required"));
     }
-    if let Some((expected_user_id, seed)) = restore_wasm_identity_backup(backup_text, old_passphrase)? {
+    if let Some((expected_user_id, seed)) =
+        restore_wasm_identity_backup(backup_text, old_passphrase)?
+    {
         let identity = wasm_identity_from_seed(seed)?;
         if identity.user_id().to_string() != expected_user_id {
             return Err(JsValue::from_str("backup user_id mismatch"));
@@ -1394,6 +1397,8 @@ pub fn create_mailbox_message(
         "signal-answer" => MailboxMessageKind::SignalAnswer,
         "direct-envelope" => MailboxMessageKind::DirectEnvelope,
         "group-fanout" => MailboxMessageKind::GroupFanout,
+        "delivery-receipt" => MailboxMessageKind::DeliveryReceipt,
+        "read-receipt" => MailboxMessageKind::ReadReceipt,
         _ => MailboxMessageKind::Other,
     };
     let msg = MailboxMessage::new(
@@ -1416,6 +1421,50 @@ pub fn inspect_mailbox_message(
     let pk = decode_key_32(from_identity_public_key_base64)?;
     msg.verify(&pk).map_err(to_js_error)?;
     to_json_string(&msg)
+}
+
+#[wasm_bindgen]
+pub fn create_message_receipt(
+    backup_text: &str,
+    passphrase: &str,
+    to_user_id: &str,
+    target_message_id: &str,
+    conversation_id: &str,
+    mailbox_delivery_id: Option<String>,
+    kind: &str,
+    ttl_seconds: u64,
+) -> Result<String, JsValue> {
+    let identity = restore_identity_any(backup_text, passphrase)?;
+    let to_user_id = lm_core::UserId::from_raw(to_user_id.to_string()).map_err(to_js_error)?;
+    let target_message_id =
+        uuid::Uuid::parse_str(target_message_id).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let kind = match kind {
+        "delivered" | "delivery" => MessageReceiptKind::Delivered,
+        "read" => MessageReceiptKind::Read,
+        _ => return Err(JsValue::from_str("unsupported message receipt kind")),
+    };
+    let receipt = MessageReceipt::new(
+        &identity,
+        to_user_id,
+        target_message_id,
+        conversation_id.to_string(),
+        mailbox_delivery_id,
+        kind,
+        ttl_seconds,
+    )
+    .map_err(to_js_error)?;
+    receipt.to_export_text().map_err(to_js_error)
+}
+
+#[wasm_bindgen]
+pub fn inspect_message_receipt(
+    text: &str,
+    from_identity_public_key_base64: &str,
+) -> Result<String, JsValue> {
+    let receipt = MessageReceipt::from_export_text(text).map_err(to_js_error)?;
+    let pk = decode_key_32(from_identity_public_key_base64)?;
+    receipt.verify(&pk).map_err(to_js_error)?;
+    to_json_string(&receipt)
 }
 
 #[derive(Serialize)]
@@ -1888,6 +1937,68 @@ mod tests {
         assert_eq!(info["to_user_id"], bob_v["user_id"]);
         assert_eq!(info["kind"], "DirectEnvelope");
         assert_eq!(info["ciphertext"], "ciphertext-envelope");
+    }
+
+    #[test]
+    fn wasm_message_receipt_smoke() {
+        let alice = create_identity("alice receipt pass").unwrap();
+        let bob = create_identity("bob receipt pass").unwrap();
+        let alice_v: Value = serde_json::from_str(&alice).unwrap();
+        let bob_v: Value = serde_json::from_str(&bob).unwrap();
+        let alice_backup = alice_v["backup_text"].as_str().unwrap();
+        let bob_backup = bob_v["backup_text"].as_str().unwrap();
+        let msg = create_mailbox_message(
+            alice_backup,
+            "alice receipt pass",
+            bob_v["user_id"].as_str().unwrap(),
+            "direct-envelope",
+            "ciphertext-envelope",
+            3600,
+        )
+        .unwrap();
+        let msg_info: Value = serde_json::from_str(
+            &inspect_mailbox_message(&msg, alice_v["identity_public_key"].as_str().unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        let receipt = create_message_receipt(
+            bob_backup,
+            "bob receipt pass",
+            alice_v["user_id"].as_str().unwrap(),
+            msg_info["message_id"].as_str().unwrap(),
+            "conversation-1",
+            Some("mailbox-delivery-1".into()),
+            "delivered",
+            3600,
+        )
+        .unwrap();
+        assert!(receipt.starts_with("lm-message-receipt-v1:"));
+        let receipt_info: Value = serde_json::from_str(
+            &inspect_message_receipt(&receipt, bob_v["identity_public_key"].as_str().unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(receipt_info["from_user_id"], bob_v["user_id"]);
+        assert_eq!(receipt_info["to_user_id"], alice_v["user_id"]);
+        assert_eq!(receipt_info["target_message_id"], msg_info["message_id"]);
+        assert_eq!(receipt_info["kind"], "Delivered");
+
+        let receipt_msg = create_mailbox_message(
+            bob_backup,
+            "bob receipt pass",
+            alice_v["user_id"].as_str().unwrap(),
+            "delivery-receipt",
+            &receipt,
+            3600,
+        )
+        .unwrap();
+        let receipt_msg_info: Value = serde_json::from_str(
+            &inspect_mailbox_message(&receipt_msg, bob_v["identity_public_key"].as_str().unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(receipt_msg_info["kind"], "DeliveryReceipt");
+        assert_eq!(receipt_msg_info["ciphertext"], receipt);
     }
 
     #[test]

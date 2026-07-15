@@ -284,6 +284,7 @@ impl DeviceRevoke {
     }
 
     pub fn from_export_text(text: &str) -> Result<Self> {
+        crate::limits::ensure_len(text, crate::limits::MAX_DEVICE_REVOKE_TEXT_BYTES)?;
         crate::codec::decode_json_prefixed("lm-device-revoke-v1:", text)
     }
 }

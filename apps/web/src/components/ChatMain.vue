@@ -134,6 +134,18 @@ function onComposerKeydown(e: KeyboardEvent) {
         <button v-if="ctx.activeContact.value?.state === 'Friend' && ctx.activeContact.value.last_secure_session_error" class="secondary" @click="ctx.retrySecureSessionForActiveContact">重试建链</button>
         <button v-if="ctx.activeContact.value?.state === 'Friend' && ctx.activeContact.value.last_secure_session_error" class="secondary" @click="ctx.clearActiveSecureSessionError">清除建链错误</button>
         <button v-if="ctx.activeContact.value?.state === 'Friend' && !ctx.activeRatchetSession.value" class="secondary" @click="ctx.recreateActiveRatchetSession">本地建链</button>
+        <label v-if="ctx.activeContact.value?.state === 'Friend'" class="identity-select compact-select">
+          <span>已读回执</span>
+          <select
+            aria-label="当前联系人已读回执策略"
+            :value="ctx.activeContact.value.read_receipts || 'default'"
+            @change="ctx.setActiveContactReadReceipts(($event.target as HTMLSelectElement).value)"
+          >
+            <option value="default">跟随全局（{{ ctx.autoReadReceipts.value ? '开' : '关' }}）</option>
+            <option value="enabled">始终开启</option>
+            <option value="disabled">关闭</option>
+          </select>
+        </label>
         <button class="secondary danger" @click="ctx.clearActiveConversation">清空聊天</button>
       </div>
     </header>
@@ -178,6 +190,8 @@ function onComposerKeydown(e: KeyboardEvent) {
             <small class="bubble-meta">
               {{ hmTime(item.m.created_at) }} · {{ ctx.statusLabel(item.m.status) }}
               <span v-if="mailboxWaitText(item.m)"> · {{ mailboxWaitText(item.m) }}</span>
+              <span v-if="item.m.read_at"> · 已读 {{ ctx.formatDateTime(item.m.read_at) }}</span>
+              <span v-else-if="item.m.delivered_at"> · 送达 {{ ctx.formatDateTime(item.m.delivered_at) }}</span>
               <span v-if="item.m.direction === 'out' && item.m.protocol_message_id"> · {{ shortMessageId(item.m.protocol_message_id) }}</span>
               <span v-if="item.m.file_downloaded_at"> · 已下载 {{ ctx.formatDateTime(item.m.file_downloaded_at) }}</span>
             </small>

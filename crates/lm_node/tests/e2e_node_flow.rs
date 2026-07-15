@@ -167,3 +167,116 @@ fn node_prekey_sync_mailbox_ratchet_e2e() {
     let plain = received.decrypt(&mut bob_state).unwrap();
     assert_eq!(plain.sender_user_id, *alice.user_id());
 }
+
+#[test]
+fn mailbox_pressure_partial_ack_status_and_snapshot_recovery() {
+    let (alice, _) = Identity::create_with_passphrase("mailbox pressure alice").unwrap();
+    let (bob, _) = Identity::create_with_passphrase("mailbox pressure bob").unwrap();
+    let mut node = NativeNode::new(NodeConfig {
+        peer_id: "mailbox-pressure-node".into(),
+        ..Default::default()
+    });
+
+    for i in 0..120 {
+        let mailbox = MailboxMessage::new(
+            &alice,
+            bob.user_id().clone(),
+            MailboxMessageKind::DirectEnvelope,
+            format!("pressure-envelope-{i}"),
+            3600,
+        )
+        .unwrap();
+        let push = node.handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/mailbox/push".into(),
+            body: serde_json::json!({
+                "message_text": mailbox.to_export_text().unwrap(),
+                "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
+            })
+            .to_string(),
+            headers: Vec::new(),
+        });
+        assert_eq!(push.status, 201, "push {i}: {}", push.body);
+    }
+
+    let take = node.handle_control_request(ControlRequest {
+        method: "GET".into(),
+        path: format!("/mailbox/take?user_id={}&limit=25", bob.user_id()),
+        body: String::new(),
+        headers: Vec::new(),
+    });
+    assert_eq!(take.status, 200, "{}", take.body);
+    let take_body: serde_json::Value = serde_json::from_str(&take.body).unwrap();
+    assert_eq!(take_body["returned"], 25);
+    assert_eq!(take_body["pending"], 120);
+    assert_eq!(take_body["more"], true);
+    let deliveries = take_body["messages"].as_array().unwrap();
+    let acked_ids = deliveries
+        .iter()
+        .take(10)
+        .map(|delivery| delivery["delivery_id"].as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    let unacked_id = deliveries[10]["delivery_id"].as_str().unwrap().to_string();
+
+    let ack = node.handle_control_request(ControlRequest {
+        method: "POST".into(),
+        path: "/mailbox/ack".into(),
+        body: serde_json::json!({
+            "user_id": bob.user_id().to_string(),
+            "delivery_ids": acked_ids,
+        })
+        .to_string(),
+        headers: Vec::new(),
+    });
+    assert_eq!(ack.status, 200, "{}", ack.body);
+    let ack_body: serde_json::Value = serde_json::from_str(&ack.body).unwrap();
+    assert_eq!(ack_body["removed"], 10);
+    assert_eq!(ack_body["pending"], 110);
+
+    let acked_status = node.handle_control_request(ControlRequest {
+        method: "GET".into(),
+        path: format!(
+            "/mailbox/status?user_id={}&delivery_id={}",
+            bob.user_id(),
+            deliveries[0]["delivery_id"].as_str().unwrap()
+        ),
+        body: String::new(),
+        headers: Vec::new(),
+    });
+    assert_eq!(acked_status.status, 200, "{}", acked_status.body);
+    let acked_status_body: serde_json::Value = serde_json::from_str(&acked_status.body).unwrap();
+    assert_eq!(acked_status_body["delivery"]["status"], "acked");
+    assert!(acked_status_body["delivery"]["acked_at"].as_u64().is_some());
+
+    let unacked_status = node.handle_control_request(ControlRequest {
+        method: "GET".into(),
+        path: format!(
+            "/mailbox/status?user_id={}&delivery_id={unacked_id}",
+            bob.user_id()
+        ),
+        body: String::new(),
+        headers: Vec::new(),
+    });
+    assert_eq!(unacked_status.status, 200, "{}", unacked_status.body);
+    let unacked_status_body: serde_json::Value =
+        serde_json::from_str(&unacked_status.body).unwrap();
+    assert_eq!(
+        unacked_status_body["delivery"]["status"],
+        "delivered_unacked"
+    );
+    assert_eq!(unacked_status_body["summary"]["total"], 110);
+    assert_eq!(unacked_status_body["summary"]["delivered_unacked"], 15);
+
+    let restored = NativeNode::from_state_snapshot(node.to_state_snapshot());
+    let restored_acked = restored.mailbox.delivery_status(
+        bob.user_id(),
+        deliveries[0]["delivery_id"].as_str().unwrap(),
+    );
+    assert_eq!(restored_acked.status, lm_node::MailboxDeliveryState::Acked);
+    let restored_unacked = restored.mailbox.delivery_status(bob.user_id(), &unacked_id);
+    assert_eq!(
+        restored_unacked.status,
+        lm_node::MailboxDeliveryState::DeliveredUnacked
+    );
+    assert_eq!(restored.mailbox.pending_for(bob.user_id()), 110);
+}

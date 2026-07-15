@@ -5,6 +5,7 @@ members = [
   "crates/lm_node"
 ]
 resolver = "2"
+exclude = ["fuzz"]
 
 [workspace.package]
 edition = "2024"
