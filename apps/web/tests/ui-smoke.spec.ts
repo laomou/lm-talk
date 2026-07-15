@@ -309,6 +309,8 @@ test('消息同步可完成好友请求和消息收发', async ({ browser }) => 
   await enableSync(bob)
   await expect(bob.getByText(/节点健康：.*Mailbox/)).toBeVisible()
   await expect(bob.getByText(/DHT peer：2 个，失败 1，隔离 1/)).toBeVisible()
+  await bob.getByRole('button', { name: '刷新节点健康' }).click()
+  await expect(bob.getByText(/节点健康：.*Mailbox/)).toBeVisible()
   await bob.getByLabel('当前会话自动发送已读回执').check()
 
   await alice.goto('/#/contacts')
