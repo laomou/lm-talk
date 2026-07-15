@@ -50,7 +50,11 @@ async function installMockSyncNode(context: BrowserContext, mailboxes: Map<strin
     if (url.pathname === '/health') return route.fulfill({ json: { ok: true, peers: 2, prekeys: 1, mailbox_deliveries: 0, mailbox_bytes: 0, mailbox_max_bytes: 10485760, mailbox_max_bytes_per_user: 2097152, mailbox_max_messages_per_user: 1000 } })
     if (url.pathname === '/prekey/publish') return route.fulfill({ json: { ok: true } })
     if (url.pathname === '/sync/status') return route.fulfill({ json: syncPeerHealth })
-    if (url.pathname === '/dht/key') return route.fulfill({ json: { kind: 'PreKey', value: url.searchParams.get('value'), key: 'b'.repeat(64) } })
+    if (url.pathname === '/dht/key') {
+      const kind = url.searchParams.get('kind') === 'mailbox-hint' ? 'MailboxHint' : 'PreKey'
+      return route.fulfill({ json: { kind, value: url.searchParams.get('value'), key: 'b'.repeat(64) } })
+    }
+    if (url.pathname === '/dht/record') return route.fulfill({ json: { stored: true, inserted: true, key: 'b'.repeat(64), records: 1 } })
     if (url.pathname === '/dht/find-value') return route.fulfill({ json: { key: url.searchParams.get('key'), found: true, records: 1, stats: { attempts: 2, successes: 2, failures: 0, found_records: 1, closer_records: 0, peers_quarantined: 0 } } })
     if (url.pathname === '/dht/replicate') return route.fulfill({ json: { peers: 2, records: 4, stats: { records: 4, attempts: 2, successes: 2, failures: 0, peers_quarantined: 0 } } })
     if (url.pathname === '/dht/routing-refresh') return route.fulfill({ json: { peers: 2, routing_peers: 3, stats: { targets: 8, attempts: 2, successes: 2, failures: 0, nodes_returned: 3, nodes_merged: 1, peers_quarantined: 0 } } })
@@ -346,6 +350,8 @@ test('消息同步可完成好友请求和消息收发', async ({ browser }) => 
   await expect(bob.getByText(/DHT 路由刷新：peer 2，尝试 2，成功 2/)).toBeVisible()
   await bob.getByRole('button', { name: '发布并查 DHT' }).click()
   await expect(bob.getByText(/已发布并完成 DHT 查找/)).toBeVisible()
+  await bob.getByRole('button', { name: '发布并查 MailboxHint' }).click()
+  await expect(bob.getByText(/MailboxHint 已发布并完成 DHT 查找/)).toBeVisible()
   await bob.getByLabel('当前会话自动发送已读回执').check()
 
   await alice.goto('/#/contacts')

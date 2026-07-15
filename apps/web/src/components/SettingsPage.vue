@@ -143,6 +143,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
           <div class="inline-field">
             <input id="dht-find-key-input" v-model="ctx.nodeDhtFindValueKey.value" aria-label="DHT record key" placeholder="64 位十六进制 key" />
             <button class="secondary" @click="ctx.runDhtFindValueNow">查找 DHT 记录</button>
+            <button class="secondary" @click="ctx.publishAndCheckMyMailboxHintDht">发布并查 MailboxHint</button>
           </div>
           <div class="row compact">
             <button class="secondary" @click="ctx.checkNodeHealth">刷新节点健康</button>

@@ -5118,6 +5118,33 @@ async function publishPreKeyToNode() {
   })
 }
 
+async function publishAndCheckMyMailboxHintDht() {
+  await runAsync('发布并检查我的 MailboxHint DHT', async () => {
+    if (!identity.value?.user_id) throw new Error('需要先登录身份')
+    const primaryNode = nodeEntries()[0]?.url
+    if (!primaryNode) throw new Error('请先填写同步节点')
+    fillDhtKeyInput('mailbox-hint', identity.value.user_id)
+    const keyPayload = await deriveDhtKeyPayload()
+    const now = Math.floor(Date.now() / 1000)
+    const record = {
+      key: String(keyPayload.key || nodeDhtFindValueKey.value).trim(),
+      kind: 'MailboxHint',
+      value: primaryNode,
+      created_at: now,
+      expires_at: now + 24 * 3600,
+      republish_at: now,
+    }
+    const store = await nodeFetchJson('/dht/record', {
+      method: 'POST',
+      body: JSON.stringify({ record }),
+    })
+    nodeClosestInfoText.value = JSON.stringify(store, null, 2)
+    await runDhtFindValueForKey(record.key)
+    nodeDhtFindValueStatusText.value = `MailboxHint 已发布并完成 DHT 查找：${primaryNode}；${nodeDhtFindValueStatusText.value}`
+    mailboxInboxStatus.value = `MailboxHint 已发布并完成 DHT 查找：${primaryNode}`
+  })
+}
+
 async function publishAndCheckMyPreKeyDht() {
   await runAsync('发布并检查我的 PreKey DHT', async () => {
     if (!identity.value?.user_id) throw new Error('需要先登录身份')
@@ -6094,7 +6121,7 @@ const appContext = {
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
   nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, fillCurrentPublicPeerDhtKeyInput, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, runDhtFindValueNow, runDhtRoutingRefreshNow, runDhtReplicationNow, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
-  nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, publishAndCheckMyPreKeyDht, clearPreKeyRawState, copyText,
+  nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, publishAndCheckMyPreKeyDht, publishAndCheckMyMailboxHintDht, clearPreKeyRawState, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
   ratchetDhStepText, saveSafetyPolicy, createPeerAnnounceText, inspectPeerAnnounceText, createPublicPeerAnnounceText, inspectPublicPeerAnnounceText,
