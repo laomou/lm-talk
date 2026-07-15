@@ -989,6 +989,7 @@ struct DhtFindValueRunStats {
     closer_records: usize,
     closer_nodes_returned: usize,
     closer_nodes_merged: usize,
+    closer_nodes_rejected_non_closer: usize,
     peers_quarantined: usize,
     quarantine_threshold: u32,
     query_rounds: usize,
@@ -1155,6 +1156,7 @@ struct ControlRuntimeStats {
     dht_find_value_closer_records: u64,
     dht_find_value_closer_nodes_returned: u64,
     dht_find_value_closer_nodes_merged: u64,
+    dht_find_value_closer_nodes_rejected_non_closer: u64,
     dht_find_value_peers_quarantined: u64,
     dht_find_value_query_rounds: u64,
     dht_find_value_alpha_max: usize,
@@ -1223,6 +1225,7 @@ impl ControlRuntimeStats {
             dht_find_value_closer_records: 0,
             dht_find_value_closer_nodes_returned: 0,
             dht_find_value_closer_nodes_merged: 0,
+            dht_find_value_closer_nodes_rejected_non_closer: 0,
             dht_find_value_peers_quarantined: 0,
             dht_find_value_query_rounds: 0,
             dht_find_value_alpha_max: 0,
@@ -1641,6 +1644,13 @@ impl ControlRuntimeStats {
             "kind",
             "merged",
             self.dht_find_value_closer_nodes_merged,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_dht_find_value_closer_nodes_total",
+            "kind",
+            "rejected_non_closer",
+            self.dht_find_value_closer_nodes_rejected_non_closer,
         );
         push_metric_help(
             &mut out,
@@ -2319,6 +2329,9 @@ impl ControlRuntimeStats {
         self.dht_find_value_closer_nodes_merged = self
             .dht_find_value_closer_nodes_merged
             .saturating_add(stats.closer_nodes_merged as u64);
+        self.dht_find_value_closer_nodes_rejected_non_closer = self
+            .dht_find_value_closer_nodes_rejected_non_closer
+            .saturating_add(stats.closer_nodes_rejected_non_closer as u64);
         self.dht_find_value_peers_quarantined = self
             .dht_find_value_peers_quarantined
             .saturating_add(stats.peers_quarantined as u64);
@@ -4053,10 +4066,16 @@ fn merge_find_value_closer_results(
         .take(dht_response_node_limit(limit))
         .collect::<Vec<_>>();
     let target_node_id = key.to_node_id();
-    closer_nodes.sort_by_key(|peer| peer.node_id.xor_distance(&target_node_id));
     stats.closer_nodes_returned = stats
         .closer_nodes_returned
         .saturating_add(closer_nodes.len());
+    let before_progress_filter = closer_nodes.len();
+    closer_nodes
+        .retain(|peer| routing_peer_makes_find_value_progress(seed_peer, peer, target_node_id));
+    stats.closer_nodes_rejected_non_closer = stats
+        .closer_nodes_rejected_non_closer
+        .saturating_add(before_progress_filter.saturating_sub(closer_nodes.len()));
+    closer_nodes.sort_by_key(|peer| peer.node_id.xor_distance(&target_node_id));
     for closer_node in closer_nodes {
         let candidate = sync_peer_config_from_routing_peer_for_seed(seed_peer, &closer_node);
         let merged = node.merge_verified_routing_peers(vec![closer_node]);
@@ -4071,6 +4090,21 @@ fn merge_find_value_closer_results(
             }
         }
     }
+}
+
+fn routing_peer_makes_find_value_progress(
+    seed_peer: &SyncPeerConfig,
+    candidate: &RoutingPeer,
+    target_node_id: lm_node::KademliaNodeId,
+) -> bool {
+    let Some(seed_peer_id) = seed_peer.peer_id.as_deref() else {
+        // Configured HTTP control peers may not have a peer id. In that case
+        // we cannot prove progress relative to the responder, so keep the
+        // verified candidate and rely on max_peers/query budget bounds.
+        return true;
+    };
+    let seed_node_id = lm_node::KademliaNodeId::from_peer_id(seed_peer_id);
+    candidate.node_id.xor_distance(&target_node_id) < seed_node_id.xor_distance(&target_node_id)
 }
 
 fn sync_peer_config_from_routing_peer_for_seed(
@@ -5254,6 +5288,59 @@ mod tests {
         assert_eq!(requests.len(), 2);
         assert_eq!(requests[0].0, "transport://seed");
         assert_eq!(requests[1].0, "transport://iterative-closer");
+    }
+
+    #[test]
+    fn dht_find_value_rejects_non_closer_nodes_when_responder_identity_is_known() {
+        let (identity, _) = Identity::create_with_passphrase("non closer peer identity").unwrap();
+        let (target_user, _) = Identity::create_with_passphrase("non closer target user").unwrap();
+        let key = DhtRecordKey::for_mailbox_hint(target_user.user_id());
+        let target_node_id = key.to_node_id();
+        let seed_peer_id = "known-seed-for-non-closer";
+        let seed_distance =
+            lm_node::KademliaNodeId::from_peer_id(seed_peer_id).xor_distance(&target_node_id);
+        let far_peer_id = (0..512)
+            .map(|index| format!("non-closer-candidate-{index}"))
+            .find(|peer_id| {
+                lm_node::KademliaNodeId::from_peer_id(peer_id).xor_distance(&target_node_id)
+                    >= seed_distance
+            })
+            .expect("test should find a non-closer candidate");
+        let far_announce = NodeConfig {
+            peer_id: far_peer_id.clone(),
+            addresses: vec![format!("transport://{far_peer_id}")],
+            ..Default::default()
+        }
+        .create_announce(&identity)
+        .unwrap();
+        let far_peer = lm_node::RoutingPeer {
+            node_id: lm_node::KademliaNodeId::from_peer_id(&far_announce.peer_id),
+            announce: far_announce,
+            identity_public_key: Some(BASE64.encode(identity.identity_public_key())),
+            last_seen_at: current_unix_timestamp(),
+        };
+        let seed_peer = SyncPeerConfig {
+            url: "transport://known-seed".into(),
+            token: None,
+            peer_id: Some(seed_peer_id.into()),
+        };
+        let transport = FakeDhtTransport {
+            responses: Mutex::new(vec![DhtRpcResponse::Value {
+                request_id: "non-closer-first".into(),
+                record: None,
+                closer_records: Vec::new(),
+                closer_nodes: vec![far_peer],
+            }]),
+            ..Default::default()
+        };
+        let mut node = NativeNode::new(NodeConfig::default());
+        let stats =
+            dht_find_value_with_transport(&mut node, &[seed_peer], key, 8, 2, 1, &transport);
+        assert_eq!(stats.attempts, 1);
+        assert_eq!(stats.closer_nodes_returned, 1);
+        assert_eq!(stats.closer_nodes_rejected_non_closer, 1);
+        assert_eq!(stats.closer_nodes_merged, 0);
+        assert!(node.kademlia.all_peers().is_empty());
     }
 
     #[test]
@@ -6713,6 +6800,7 @@ connection: close
                 closer_records: 2,
                 closer_nodes_returned: 5,
                 closer_nodes_merged: 2,
+                closer_nodes_rejected_non_closer: 4,
                 peers_quarantined: 1,
                 exhausted: true,
                 ..Default::default()
@@ -6724,6 +6812,7 @@ connection: close
         assert_eq!(stats.dht_find_value_successes, 3);
         assert_eq!(stats.dht_find_value_failures, 1);
         assert_eq!(stats.dht_find_value_found_records, 1);
+        assert_eq!(stats.dht_find_value_closer_nodes_rejected_non_closer, 4);
         assert_eq!(stats.dht_find_value_peers_quarantined, 1);
         assert_eq!(stats.dht_find_value_query_rounds, 0);
         assert_eq!(stats.dht_find_value_alpha_max, 0);
@@ -6838,6 +6927,11 @@ connection: close
         assert!(metrics.contains("lm_node_dht_find_value_records_total{kind=\"closer\"} 2"));
         assert!(metrics.contains("lm_node_dht_find_value_closer_nodes_total{kind=\"returned\"} 5"));
         assert!(metrics.contains("lm_node_dht_find_value_closer_nodes_total{kind=\"merged\"} 2"));
+        assert!(
+            metrics.contains(
+                "lm_node_dht_find_value_closer_nodes_total{kind=\"rejected_non_closer\"} 4"
+            )
+        );
         assert!(metrics.contains("lm_node_dht_find_value_peers_quarantined_total 1"));
         assert!(metrics.contains("lm_node_dht_find_value_query_rounds_total 0"));
         assert!(metrics.contains("lm_node_dht_find_value_alpha_max 0"));
