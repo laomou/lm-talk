@@ -14,7 +14,9 @@
   "log_format": "json",
   "mailbox_global_rate_limit_window_seconds": 60,
   "mailbox_global_rate_limit_max_messages": 1000,
+  "max_mailbox_bytes": 10485760,
   "max_mailbox_bytes_per_user": 2097152,
+  "max_mailbox_messages_per_user": 1000,
   "mailbox_sender_rate_limit_window_seconds": 60,
   "mailbox_sender_rate_limit_max_messages": 120,
   "sync_peers": [
