@@ -7,9 +7,9 @@ use lm_core::PublicPeerAnnounce;
 use lm_node::{
     ConsumedOneTimePreKey, ControlRequest, DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES,
     DhtRecord, DhtRecordReplicationPlan, DhtRpcRequest, DhtRpcResponse, MailboxDelivery,
-    NativeNode, NodeConfig, NodeMaintenanceStats, NodeStateSnapshot, NodeSyncPeerStatus,
-    NodeSyncStatus, RoutingPeer, decode_identity_public_key_base64, parse_capabilities_csv,
-    restore_identity_from_backup_text,
+    NativeNode, NodeConfig, NodeMaintenanceStats, NodeMergeStats, NodeStateSnapshot,
+    NodeSyncPeerStatus, NodeSyncStatus, RoutingPeer, decode_identity_public_key_base64,
+    parse_capabilities_csv, restore_identity_from_backup_text,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::de::DeserializeOwned;
@@ -31,6 +31,8 @@ const MAX_CONTROL_PEER_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const CONTROL_PEER_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 const CONTROL_PEER_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const CONTROL_CLIENT_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
+const DHT_PEER_FAILURE_BACKOFF_BASE_SECONDS: u64 = 30;
+const DHT_PEER_FAILURE_BACKOFF_MAX_SECONDS: u64 = 10 * 60;
 #[allow(dead_code)]
 const MAX_DHT_RESPONSE_RECORDS: usize = 64;
 const MAX_DHT_RESPONSE_NODES: usize = 64;
@@ -3659,6 +3661,40 @@ fn sync_peer_config_from_libp2p_routing_peer(peer: &RoutingPeer) -> Option<SyncP
     })
 }
 
+fn record_dht_peer_success(node: &mut NativeNode, peer: &SyncPeerConfig) {
+    node.sync_status.record_success(
+        &peer.url,
+        NodeMergeStats {
+            peers: 0,
+            mailbox_deliveries: 0,
+            prekey_bundles: 0,
+            signed_one_time_prekey_records: 0,
+            dht_records: 0,
+        },
+    );
+    node.sync_status
+        .record_next_attempt(&peer.url, current_unix_timestamp());
+}
+
+fn record_dht_peer_failure(node: &mut NativeNode, peer: &SyncPeerConfig, error: impl Into<String>) {
+    node.sync_status.record_failure(&peer.url, error.into());
+    let consecutive_failures = node
+        .sync_status
+        .peers
+        .get(&peer.url)
+        .map(|status| status.consecutive_failures)
+        .unwrap_or(1);
+    let delay_seconds = sync_backoff_delay_seconds(
+        DHT_PEER_FAILURE_BACKOFF_BASE_SECONDS,
+        DHT_PEER_FAILURE_BACKOFF_MAX_SECONDS,
+        consecutive_failures,
+    );
+    node.sync_status.record_next_attempt(
+        &peer.url,
+        current_unix_timestamp().saturating_add(delay_seconds),
+    );
+}
+
 fn run_dht_replication_with_transport(
     node: &mut NativeNode,
     peers: &[SyncPeerConfig],
@@ -3688,9 +3724,15 @@ fn run_dht_replication_with_transport(
             match transport.send_dht_rpc(peer, &request) {
                 Ok(DhtRpcResponse::StoreResult { stored: true, .. }) => {
                     stats.successes = stats.successes.saturating_add(1);
+                    record_dht_peer_success(node, peer);
                 }
                 Ok(response) => {
                     stats.failures = stats.failures.saturating_add(1);
+                    record_dht_peer_failure(
+                        node,
+                        peer,
+                        format!("unexpected DHT StoreRecord response: {response:?}"),
+                    );
                     log_warn_or_stderr(
                         logger,
                         "dht.replication.unexpected_response",
@@ -3703,6 +3745,7 @@ fn run_dht_replication_with_transport(
                 }
                 Err(err) => {
                     stats.failures = stats.failures.saturating_add(1);
+                    record_dht_peer_failure(node, peer, err.to_string());
                     log_error_or_stderr(
                         logger,
                         "dht.replication.error",
@@ -3819,6 +3862,7 @@ fn run_dht_routing_refresh_with_transport(
             match transport.send_dht_rpc(peer, &request) {
                 Ok(DhtRpcResponse::Nodes { nodes, .. }) => {
                     stats.successes = stats.successes.saturating_add(1);
+                    record_dht_peer_success(node, peer);
                     let nodes = nodes
                         .into_iter()
                         .take(dht_response_node_limit(limit))
@@ -3829,6 +3873,11 @@ fn run_dht_routing_refresh_with_transport(
                 }
                 Ok(response) => {
                     stats.failures = stats.failures.saturating_add(1);
+                    record_dht_peer_failure(
+                        node,
+                        peer,
+                        format!("unexpected DHT FindNode response: {response:?}"),
+                    );
                     log_warn_or_stderr(
                         logger,
                         "dht.routing_refresh.unexpected_response",
@@ -3844,6 +3893,7 @@ fn run_dht_routing_refresh_with_transport(
                 }
                 Err(err) => {
                     stats.failures = stats.failures.saturating_add(1);
+                    record_dht_peer_failure(node, peer, err.to_string());
                     log_error_or_stderr(
                         logger,
                         "dht.routing_refresh.error",
@@ -3938,6 +3988,7 @@ fn dht_find_value_with_transport(
                     ..
                 }) => {
                     stats.successes = stats.successes.saturating_add(1);
+                    record_dht_peer_success(node, &peer);
                     if let Some(record) = record {
                         if node.accept_dht_record_from_peer(record) {
                             stats.found_records = stats.found_records.saturating_add(1);
@@ -3958,8 +4009,17 @@ fn dht_find_value_with_transport(
                         closer_nodes,
                     );
                 }
-                Ok(_) | Err(_) => {
+                Ok(response) => {
                     stats.failures = stats.failures.saturating_add(1);
+                    record_dht_peer_failure(
+                        node,
+                        &peer,
+                        format!("unexpected DHT FindValue response: {response:?}"),
+                    );
+                }
+                Err(err) => {
+                    stats.failures = stats.failures.saturating_add(1);
+                    record_dht_peer_failure(node, &peer, err);
                 }
             }
         }
@@ -4726,9 +4786,10 @@ mod tests {
         SyncPeerConfig, atomic_write_text, configure_control_client_stream,
         configure_control_peer_stream, connect_control_peer, control_error_http_response,
         current_unix_timestamp, dht_find_value_with_transport, dht_runner_peer_configs,
-        dial_libp2p_bootstrap_peers, handle_control_dht_find_value_run,
-        handle_libp2p_dht_rpc_request, handle_libp2p_dht_server_event, http_control_request,
-        libp2p_dht_rpc_behaviour, libp2p_dht_swarm, load_node_state_db, open_state_db,
+        dht_runner_peer_configs_with_quarantine_count, dial_libp2p_bootstrap_peers,
+        handle_control_dht_find_value_run, handle_libp2p_dht_rpc_request,
+        handle_libp2p_dht_server_event, http_control_request, libp2p_dht_rpc_behaviour,
+        libp2p_dht_swarm, load_node_state_db, open_state_db,
         parse_content_length_and_validate_headers, parse_dht_transport_kind,
         parse_libp2p_bootstrap_peers, parse_libp2p_dht_peer, parse_log_format, read_secret_file,
         request_is_authorized, run_dht_replication, run_dht_replication_with_transport,
@@ -5446,6 +5507,79 @@ mod tests {
             transport.max_in_flight.load(Ordering::SeqCst) > 1,
             "alpha=3 should issue more than one FindValue request concurrently"
         );
+    }
+
+    #[test]
+    fn dht_find_value_updates_peer_health_and_quarantine() {
+        let (target_identity, _) = Identity::create_with_passphrase("health target").unwrap();
+        let key = DhtRecordKey::for_mailbox_hint(target_identity.user_id());
+        let peer = SyncPeerConfig {
+            url: "transport://health-peer".into(),
+            token: None,
+            peer_id: Some("health-peer".into()),
+        };
+        let mut failure_responses = Vec::new();
+        for index in 0..DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES {
+            failure_responses.push(DhtRpcResponse::Error {
+                request_id: format!("health-failure-{index}"),
+                message: format!("synthetic failure {index}"),
+            });
+        }
+        failure_responses.reverse();
+        let transport = FakeDhtTransport {
+            responses: Mutex::new(failure_responses),
+            ..Default::default()
+        };
+        let mut node = NativeNode::new(NodeConfig::default());
+        for _ in 0..DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES {
+            let stats = dht_find_value_with_transport(
+                &mut node,
+                std::slice::from_ref(&peer),
+                key,
+                8,
+                1,
+                1,
+                &transport,
+            );
+            assert_eq!(stats.failures, 1);
+        }
+        let status = node.sync_status.peers.get(&peer.url).unwrap();
+        assert_eq!(
+            status.consecutive_failures,
+            DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES
+        );
+        assert!(status.next_attempt_at.unwrap() > current_unix_timestamp());
+        let (eligible, quarantined) = dht_runner_peer_configs_with_quarantine_count(
+            &node,
+            std::slice::from_ref(&peer),
+            DhtTransportKind::HttpControl,
+            DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES,
+        );
+        assert!(eligible.is_empty());
+        assert_eq!(quarantined, 1);
+
+        let transport = FakeDhtTransport {
+            responses: Mutex::new(vec![DhtRpcResponse::Value {
+                request_id: "health-success".into(),
+                record: None,
+                closer_records: Vec::new(),
+                closer_nodes: Vec::new(),
+            }]),
+            ..Default::default()
+        };
+        let stats = dht_find_value_with_transport(
+            &mut node,
+            std::slice::from_ref(&peer),
+            key,
+            8,
+            1,
+            1,
+            &transport,
+        );
+        assert_eq!(stats.successes, 1);
+        let status = node.sync_status.peers.get(&peer.url).unwrap();
+        assert_eq!(status.consecutive_failures, 0);
+        assert!(status.last_error.is_none());
     }
 
     #[test]
