@@ -465,6 +465,7 @@ const autoNodeSync = ref(false)
 let nodeSyncTimer: number | undefined
 let lastVisibilityMailboxTakeAt = 0
 const nodeControlStatus = ref('未连接')
+const nodeHealthSummaryText = ref('节点健康：尚未检查')
 const nodeClosestTarget = ref('')
 const nodeClosestInfoText = ref('')
 const nodeMailboxTakeUserId = ref('')
@@ -4854,9 +4855,39 @@ async function nodeFetchJson(path: string, init?: RequestInit): Promise<any> {
   throw new Error(`所有同步服务都不可用：${errors.join('；')}`)
 }
 
+function nodeHealthSummaryFromResponse(health: any): string {
+  const parts: string[] = []
+  const peers = Number(health?.peers ?? 0)
+  const prekeys = Number(health?.prekeys ?? 0)
+  const mailboxDeliveries = Number(health?.mailbox_deliveries ?? 0)
+  const mailboxBytes = Number(health?.mailbox_bytes ?? 0)
+  const mailboxMaxBytesRaw = health?.mailbox_max_bytes
+  const mailboxMaxBytes = mailboxMaxBytesRaw === null || mailboxMaxBytesRaw === undefined ? null : Number(mailboxMaxBytesRaw)
+  if (Number.isFinite(peers)) parts.push(`peers ${peers}`)
+  if (Number.isFinite(prekeys)) parts.push(`PreKey ${prekeys}`)
+  if (Number.isFinite(mailboxDeliveries)) parts.push(`Mailbox ${mailboxDeliveries} 条`)
+  if (Number.isFinite(mailboxBytes)) {
+    if (mailboxMaxBytes && Number.isFinite(mailboxMaxBytes) && mailboxMaxBytes > 0) {
+      parts.push(`Mailbox ${formatBytes(mailboxBytes)} / ${formatBytes(mailboxMaxBytes)}`)
+    } else {
+      parts.push(`Mailbox ${formatBytes(mailboxBytes)}`)
+    }
+  }
+  const perUserBytes = health?.mailbox_max_bytes_per_user
+  const perUserMessages = health?.mailbox_max_messages_per_user
+  if (perUserBytes !== undefined && perUserBytes !== null) parts.push(`每用户 ${formatBytes(Number(perUserBytes))}`)
+  if (perUserMessages !== undefined && perUserMessages !== null) parts.push(`每用户 ${perUserMessages} 条`)
+  return parts.length ? `节点健康：${parts.join(' · ')}` : '节点健康：已连接'
+}
+
 async function checkNodeHealth() {
   await runAsync('检查 lm_node 控制面', async () => {
     const health = await nodeFetchJson('/health')
+    nodeHealthSummaryText.value = nodeHealthSummaryFromResponse(health)
+    updateMailboxQuotaStatus({
+      pending_bytes: Number(health?.mailbox_bytes ?? 0),
+      max_bytes_per_user: health?.mailbox_max_bytes_per_user,
+    })
     // /health 免鉴权，会掩盖令牌问题。再探测一个需要鉴权的接口，避免误报"已连接"。
     try {
       await nodeFetchJson('/sync/status')
@@ -4864,8 +4895,10 @@ async function checkNodeHealth() {
     } catch (e) {
       const msg = String(e)
       if (/401|unauthorized/i.test(msg)) {
+        nodeHealthSummaryText.value = `${nodeHealthSummaryText.value} · 鉴权失败`
         nodeControlStatus.value = `节点在线，但鉴权失败（401）。\n若节点启用了 --control-token，请在地址后追加 " | 令牌"（与节点令牌一致）。\n\n${msg}`
       } else {
+        nodeHealthSummaryText.value = `${nodeHealthSummaryText.value} · 控制接口异常`
         nodeControlStatus.value = `节点在线，但控制接口异常。\n\n${msg}`
       }
     }
@@ -5870,7 +5903,7 @@ const appContext = {
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, registerPeriodicMailboxSync, pwaStatusText, pwaBackgroundCapabilityText, pwaLastBackgroundEventText, pwaBackgroundEventHistory, webVersionText,
   nodeControlUrl, nodeUrlList, nodeEntrySummaries, nodeSettingsSummaryText, nodeTokenStorageText, nodeTokenCount, nodeMissingRemoteTokenCount, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake, autoReadReceipts,
   enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,
-  autoPublishPreKey, autoNodeSync, nodeControlStatus, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
+  autoPublishPreKey, autoNodeSync, nodeControlStatus, nodeHealthSummaryText, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
   exportFullDataBackup, importFullDataBackup, importFullDataBackupMerge, downloadText, addContactText, addContact, incomingFriendRequestText,
