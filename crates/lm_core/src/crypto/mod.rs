@@ -28,9 +28,10 @@ pub fn xchacha20poly1305_encrypt(
     aad: &[u8],
 ) -> Result<Vec<u8>> {
     let cipher = XChaCha20Poly1305::new(key.into());
+    let nonce = XNonce::try_from(nonce.as_slice()).map_err(|_| LmError::CryptoError)?;
     cipher
         .encrypt(
-            XNonce::from_slice(nonce),
+            &nonce,
             Payload {
                 msg: plaintext,
                 aad,
@@ -46,9 +47,10 @@ pub fn xchacha20poly1305_decrypt(
     aad: &[u8],
 ) -> Result<Vec<u8>> {
     let cipher = XChaCha20Poly1305::new(key.into());
+    let nonce = XNonce::try_from(nonce.as_slice()).map_err(|_| LmError::WrongPassphrase)?;
     cipher
         .decrypt(
-            XNonce::from_slice(nonce),
+            &nonce,
             Payload {
                 msg: ciphertext,
                 aad,
