@@ -4077,14 +4077,14 @@ async function sendMessage() {
   })
 }
 
-function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, mailboxDeliveryId?: string) {
+function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, mailboxDeliveryId?: string): boolean {
   if (sender.state === 'Blocked') throw new Error('发送者已被拉黑')
-  if (!allowIncomingFromContact(sender)) { persist(); return }
+  if (!allowIncomingFromContact(sender)) { persist(); return false }
   ensureUiTextSize('Envelope', envelopeText, MAX_SIGNAL_BYTES)
   const groupSenderPlain = tryDecryptGroupSenderEnvelope(envelopeText)
   if (groupSenderPlain) {
     const filtered = applyLocalTextFilter(groupSenderPlain.text, 'in')
-    if (!filtered.allow) { persist(); return }
+    if (!filtered.allow) { persist(); return true }
     messages.value.push({
       id: newId(),
       conversation_id: `grp-${groupSenderPlain.group_id}`,
@@ -4099,7 +4099,7 @@ function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, m
     activeGroupId.value = groupSenderPlain.group_id
     activePeerId.value = ''
     persist()
-    return
+    return true
   }
   const plain = decryptEnvelopeForContact(envelopeText, sender)
   const rawText = plain.body?.Text?.text ?? JSON.stringify(plain.body)
@@ -4127,7 +4127,7 @@ function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, m
       created_at: Date.now(),
     })
     persist()
-    return
+    return true
   }
   if (typeof rawText === 'string' && rawText.startsWith(GROUP_EVENT_PAYLOAD_PREFIX)) {
     const eventText = rawText.slice(GROUP_EVENT_PAYLOAD_PREFIX.length)
@@ -4151,12 +4151,12 @@ function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, m
       created_at: Date.now(),
     })
     persist()
-    return
+    return true
   }
   const filtered = applyLocalTextFilter(rawText, 'in')
   if (!filtered.allow) {
     persist()
-    return
+    return true
   }
   const text = filtered.text
   const conversationId = plain.conversation_id ?? `conv-${sender.user_id}`
@@ -4190,6 +4190,7 @@ function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, m
     void sendReadReceipt(sender, protocolMessageId, conversationId, mailboxDeliveryId)
   }
   persist()
+  return true
 }
 
 function receiveEnvelope() {
@@ -6259,7 +6260,8 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
 
   if (normalizedKind === 'directenvelope' || normalizedKind === 'groupfanout') {
     try {
-      receiveEnvelopeWithContact(ciphertext, sender, deliveryId)
+      const accepted = receiveEnvelopeWithContact(ciphertext, sender, deliveryId)
+      if (!accepted) return { handled: true, deliveryId, event: 'other' }
       appendLog(`✅ 已自动解密 mailbox ${kind}`)
       return { handled: true, deliveryId, event: 'message' }
     } catch (e) {
