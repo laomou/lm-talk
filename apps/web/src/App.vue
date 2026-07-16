@@ -3612,6 +3612,10 @@ function createMyDeviceCert() {
       `[${myDeviceCertJson.value}]`,
     )
     persist()
+    if (friendContacts.value.length) {
+      appendLog(`正在自动向 ${friendContacts.value.length} 个好友分发新的设备证书更新`)
+      void fanoutMyContactCardUpdateToFriends()
+    }
   })
 }
 
