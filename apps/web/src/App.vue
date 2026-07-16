@@ -5378,11 +5378,13 @@ function nodePeerHealthSummaryFromPeers(peers: Array<{ consecutive_failures: num
 }
 
 function nodeStateDbSecurityFromHealth(health: any): { text: string; level: 'ok' | 'warning' | 'danger' } {
-  const encrypted = Boolean(health?.state_db_encrypted)
-  const hardened = Boolean(health?.state_db_permissions_hardened)
-  if (encrypted) return { text: `state_db：数据库加密已启用${hardened ? '，权限已硬化' : ''}`, level: 'ok' }
-  if (hardened) return { text: 'state_db：未加密，仅权限硬化；生产环境建议启用数据库级加密', level: 'warning' }
-  return { text: 'state_db：未加密且权限未硬化；不建议生产使用', level: 'danger' }
+  const stateDb = health?.state_db ?? health
+  const encrypted = Boolean(stateDb?.encrypted ?? health?.state_db_encrypted)
+  const hardened = Boolean(stateDb?.permissions_hardened ?? health?.state_db_permissions_hardened)
+  const mode = String(stateDb?.encryption_mode || (encrypted ? 'encrypted' : 'plain'))
+  if (encrypted) return { text: `state_db：数据库加密已启用（${mode}）${hardened ? '，权限已硬化' : ''}`, level: 'ok' }
+  if (hardened) return { text: `state_db：未加密（${mode}），仅权限硬化；生产环境建议启用数据库级加密`, level: 'warning' }
+  return { text: `state_db：未加密（${mode}）且权限未硬化；不建议生产使用`, level: 'danger' }
 }
 
 function nodeStateFileSecurityFromStats(stats: any): { text: string; level: 'ok' | 'warning' | 'danger' } {
@@ -5457,6 +5459,11 @@ async function checkNodeHealth() {
     }
     try {
       const stats = await nodeFetchJson('/control/stats')
+      if (stats?.state_db) {
+        const stateDbFromStats = nodeStateDbSecurityFromHealth({ state_db: stats.state_db })
+        nodeStateDbSecurityText.value = stateDbFromStats.text
+        nodeStateDbSecurityLevel.value = stateDbFromStats.level
+      }
       const stateFile = nodeStateFileSecurityFromStats(stats)
       nodeStateFileSecurityText.value = stateFile.text
       nodeStateFileSecurityLevel.value = stateFile.level
