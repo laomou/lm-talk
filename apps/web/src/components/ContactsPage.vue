@@ -204,6 +204,7 @@ function openGroupDetail(groupId: string) {
             <small v-if="ctx.activeContact.value.state === 'Friend'">端到端会话：{{ ctx.activeRatchetStatusText.value }}</small>
             <small>指纹：{{ ctx.activeContact.value.fingerprint }}</small>
             <small v-if="ctx.activeContact.value.fingerprint_verified_at">指纹已核验：{{ ctx.formatDateTime(ctx.activeContact.value.fingerprint_verified_at) }}</small>
+            <small v-if="ctx.activeContact.value.device_certs?.length">活跃设备：{{ ctx.contactActiveDeviceIds(ctx.activeContact.value).length }}/{{ ctx.activeContact.value.device_certs.length }}</small>
             <small v-if="ctx.contactRevokedDeviceCount(ctx.activeContact.value)" class="danger-text">已撤销设备：{{ ctx.contactRevokedDeviceCount(ctx.activeContact.value) }}（已知 {{ ctx.contactKnownRevokedDeviceCount(ctx.activeContact.value) }}/{{ ctx.activeContact.value.device_certs?.length || 0 }}）</small>
             <small v-if="ctx.contactAllKnownDevicesRevoked(ctx.activeContact.value)" class="danger-text">所有已知设备均已撤销，已阻止发送/建链</small>
             <small v-if="ctx.activeContact.value.mailbox_hint_url">MailboxHint：{{ ctx.activeContact.value.mailbox_hint_url }}</small>
@@ -223,6 +224,16 @@ function openGroupDetail(groupId: string) {
           </div>
         </div>
         <div class="detail-body">
+          <section v-if="ctx.activeContact.value.device_certs?.length" class="home-card">
+            <h3>已知设备</h3>
+            <div class="outbox-list">
+              <div v-for="cert in ctx.activeContact.value.device_certs" :key="cert.device_id" class="outbox-row">
+                <b>{{ cert.device_name || cert.device_id }}</b>
+                <small>{{ cert.device_id }}</small>
+                <small :class="{ 'danger-text': (ctx.activeContact.value.revoked_device_ids || []).includes(cert.device_id) }">{{ (ctx.activeContact.value.revoked_device_ids || []).includes(cert.device_id) ? '已撤销' : '活跃' }}</small>
+              </div>
+            </div>
+          </section>
           <section v-if="ctx.contactRevokedDeviceIds(ctx.activeContact.value).length" class="home-card">
             <h3>已撤销设备</h3>
             <div class="outbox-list">
