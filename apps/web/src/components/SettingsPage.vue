@@ -349,6 +349,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
         <small :class="{ 'danger-text': ctx.fullDataBackupFreshnessLevel.value !== 'ok' }">{{ ctx.fullDataBackupFreshnessText.value }}</small>
         <small v-if="ctx.lastFullDataBackupAt.value">最近生成备份：{{ ctx.formatDateTime(ctx.lastFullDataBackupAt.value) }}</small>
         <small v-if="ctx.lastSelfMailboxBackupPushedAt.value">最近备份到自己的 Mailbox：{{ ctx.formatDateTime(ctx.lastSelfMailboxBackupPushedAt.value) }}</small>
+        <small>{{ ctx.selfMailboxBackupStatusText.value }}</small>
         <small v-if="ctx.lastSelfMailboxBackupReceivedAt.value" :class="{ 'danger-text': ctx.selfMailboxBackupMergePending.value }">{{ ctx.selfMailboxBackupMergeStatusText.value }}</small>
         <small v-if="ctx.lastSelfMailboxBackupReceivedAt.value">最近收到自己的 Mailbox 备份：{{ ctx.formatDateTime(ctx.lastSelfMailboxBackupReceivedAt.value) }}</small>
         <small v-if="ctx.lastSelfMailboxBackupMergedAt.value">最近合并自己的 Mailbox 备份：{{ ctx.formatDateTime(ctx.lastSelfMailboxBackupMergedAt.value) }}</small>

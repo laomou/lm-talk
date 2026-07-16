@@ -488,6 +488,7 @@ const lastFullDataBackupAt = ref<number | null>(null)
 const lastSelfMailboxBackupPushedAt = ref<number | null>(null)
 const lastSelfMailboxBackupReceivedAt = ref<number | null>(null)
 const lastSelfMailboxBackupMergedAt = ref<number | null>(null)
+const selfMailboxBackupStatusText = ref('自 Mailbox 备份：尚未运行')
 const selfMailboxBackupMergePending = computed(() => {
   const receivedAt = lastSelfMailboxBackupReceivedAt.value ?? 0
   const mergedAt = lastSelfMailboxBackupMergedAt.value ?? 0
@@ -1819,8 +1820,9 @@ async function pushFullDataBackupToOwnMailbox() {
     })
     nodeControlStatus.value = JSON.stringify(body, null, 2)
     lastSelfMailboxBackupPushedAt.value = Date.now()
+    selfMailboxBackupStatusText.value = `完整数据备份已投递到自己的 Mailbox${body?.delivery_id ? '：' + body.delivery_id : ''}`
     persist()
-    appendLog(`✅ 完整数据备份已投递到自己的 Mailbox${body?.delivery_id ? '：' + body.delivery_id : ''}`)
+    appendLog(`✅ ${selfMailboxBackupStatusText.value}`)
     toast('完整数据备份已投递到自己的 Mailbox', 'success')
   })
 }
@@ -6580,8 +6582,9 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
   if (identity.value?.user_id && fromUserId === identity.value.user_id && (normalizedKind === 'databackup' || ciphertext.startsWith('lm-data-backup-v1:'))) {
     dataBackupText.value = ciphertext
     lastSelfMailboxBackupReceivedAt.value = Date.now()
-    appendLog('✅ 已从自己的 Mailbox 收到完整数据备份，可在设置页导入合并')
-    mailboxInboxStatus.value = '已从自己的 Mailbox 收到完整数据备份，可在设置页导入合并'
+    selfMailboxBackupStatusText.value = '已从自己的 Mailbox 收到完整数据备份，可在设置页导入合并'
+    appendLog(`✅ ${selfMailboxBackupStatusText.value}`)
+    mailboxInboxStatus.value = selfMailboxBackupStatusText.value
     return { handled: true, deliveryId, event: 'data-backup' }
   }
   if (!sender && ciphertext.startsWith('lm-friend-request-v1:')) {
@@ -7313,7 +7316,7 @@ const appContext = {
   autoPublishPreKey, autoNodeSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodeStateFileSecurityText, nodeStateFileSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutDeviceRevokeToFriends, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
-  exportFullDataBackup, pushFullDataBackupToOwnMailbox, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, selfMailboxBackupMergePending, selfMailboxBackupMergeStatusText, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
+  exportFullDataBackup, pushFullDataBackupToOwnMailbox, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, selfMailboxBackupStatusText, selfMailboxBackupMergePending, selfMailboxBackupMergeStatusText, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
   addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, friendRequestRateRecords, friendRequestRateSummaryText, clearFriendRequestRateRecords, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
