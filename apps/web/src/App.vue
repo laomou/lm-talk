@@ -2086,13 +2086,23 @@ async function pushMailboxPayload(to: ContactItem, kind: string, payload: string
     payload,
     BigInt(24 * 3600),
   )
-  const body = await nodeFetchJson('/mailbox/push', {
+  const init = {
     method: 'POST',
     body: JSON.stringify({
       message_text: msg,
       from_identity_public_key: identity.value?.identity_public_key,
     }),
-  })
+  }
+  const preferredMailboxUrl = to.mailbox_hint_url?.trim().replace(/\/$/, '')
+  let body: any
+  if (preferredMailboxUrl && /^https?:\/\//i.test(preferredMailboxUrl)) {
+    try {
+      body = await fetchNodeOnce(preferredMailboxUrl, '/mailbox/push', init)
+    } catch (error) {
+      appendLog(`⚠️ 联系人 MailboxHint 投递失败，回退同步服务：${userFacingError(error)}`)
+    }
+  }
+  if (!body) body = await nodeFetchJson('/mailbox/push', init)
   nodeControlStatus.value = JSON.stringify(body, null, 2)
   updateMailboxQuotaStatus(body)
   return String(body.delivery_id ?? '')
