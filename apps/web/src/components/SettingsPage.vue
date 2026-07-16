@@ -358,6 +358,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
         <small v-if="ctx.lastSelfMailboxBackupReceivedAt.value">最近收到自己的 Mailbox 备份：{{ ctx.formatDateTime(ctx.lastSelfMailboxBackupReceivedAt.value) }}</small>
         <small v-if="ctx.lastSelfMailboxBackupMergedAt.value">最近合并自己的 Mailbox 备份：{{ ctx.formatDateTime(ctx.lastSelfMailboxBackupMergedAt.value) }}</small>
         <small>{{ ctx.selfSyncStatusText.value }}</small>
+        <small v-if="ctx.selfSyncRequestSentCount.value || ctx.selfSyncRequestHitCount.value || ctx.selfSyncRequestMissCount.value">缺包请求：发送 {{ ctx.selfSyncRequestSentCount.value }}，命中 {{ ctx.selfSyncRequestHitCount.value }}，未命中 {{ ctx.selfSyncRequestMissCount.value }}</small>
         <small v-if="ctx.lastSelfSyncPushedAt.value">最近投递轻量自同步：#{{ ctx.lastSelfSyncSequenceSent.value }} · {{ ctx.formatDateTime(ctx.lastSelfSyncPushedAt.value) }}</small>
         <small v-if="ctx.lastSelfSyncMergedAt.value">最近合并轻量自同步：#{{ ctx.lastSelfSyncSequenceMerged.value }} · {{ ctx.formatDateTime(ctx.lastSelfSyncMergedAt.value) }}</small>
         <div v-if="ctx.selfSyncGapCount.value" class="row compact">
