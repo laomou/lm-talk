@@ -94,6 +94,7 @@ type DeviceOutput = {
   device_id: string
   device_public_key: string
   device_cert_json: string
+  device_backup_text?: string
 }
 
 type DeviceRevokeInfo = {
@@ -310,6 +311,7 @@ type PersistedState = {
   ratchetSessions?: RatchetSessionItem[]
   myContactCardText: string
   myDeviceCertJson?: string
+  myDeviceBackupText?: string
   myDeviceId?: string
   prekeyBundleText?: string
   prekeyPrivateBundleJson?: string | EncryptedStringV1
@@ -365,6 +367,7 @@ type PersistedMeta = {
   backupText: string
   myContactCardText: string
   myDeviceCertJson?: string
+  myDeviceBackupText?: string
   myDeviceId?: string
   prekeyBundleText?: string
   prekeyPrivateBundleJson?: string | EncryptedStringV1
@@ -533,6 +536,7 @@ const selectedLocalIdentityId = ref('')
 const lastRegisteredIdentity = ref<LocalIdentityRecord | null>(null)
 const myContactCardText = ref('')
 const myDeviceCertJson = ref('')
+const myDeviceBackupText = ref('')
 const myDeviceId = ref('')
 const revokeDeviceId = ref('')
 const revokeReason = ref('')
@@ -1425,6 +1429,7 @@ function currentPersistedState(): PersistedState {
     ratchetSessions: ratchetSessions.value,
     myContactCardText: myContactCardText.value,
     myDeviceCertJson: myDeviceCertJson.value,
+    myDeviceBackupText: myDeviceBackupText.value,
     myDeviceId: myDeviceId.value,
     prekeyBundleText: prekeyBundleText.value,
     prekeyPrivateBundleJson: prekeyPrivateBundleJson.value,
@@ -1482,6 +1487,7 @@ function persistedMeta(): PersistedMeta {
     backupText: backupText.value,
     myContactCardText: myContactCardText.value,
     myDeviceCertJson: myDeviceCertJson.value,
+    myDeviceBackupText: myDeviceBackupText.value,
     myDeviceId: myDeviceId.value,
     prekeyBundleText: prekeyBundleText.value,
     prekeyPrivateBundleJson: prekeyPrivateBundleJson.value,
@@ -1648,6 +1654,7 @@ async function writeStateToTables(state: PersistedState) {
   ratchetSessions.value = await Promise.all((state.ratchetSessions ?? []).map((r: any) => decryptRatchetFromStore(r, key)))
   myContactCardText.value = state.myContactCardText ?? ''
   myDeviceCertJson.value = state.myDeviceCertJson ?? ''
+  myDeviceBackupText.value = state.myDeviceBackupText ?? ''
   myDeviceId.value = state.myDeviceId ?? ''
   prekeyBundleText.value = state.prekeyBundleText ?? ''
   prekeyPrivateBundleJson.value = state.prekeyPrivateBundleJson ? await decryptLocalString(state.prekeyPrivateBundleJson, key) : ''
@@ -1708,6 +1715,7 @@ async function loadStateFromTables(): Promise<boolean> {
   backupText.value = meta.backupText ?? ''
   myContactCardText.value = meta.myContactCardText ?? ''
   myDeviceCertJson.value = meta.myDeviceCertJson ?? ''
+  myDeviceBackupText.value = meta.myDeviceBackupText ?? ''
   myDeviceId.value = meta.myDeviceId ?? ''
   const key = await localStorageCryptoKey()
   prekeyBundleText.value = meta.prekeyBundleText ?? ''
@@ -1846,6 +1854,7 @@ function resetAccountScopedState() {
   activeGroupId.value = ''
   myContactCardText.value = ''
   myDeviceCertJson.value = ''
+  myDeviceBackupText.value = ''
   myDeviceId.value = ''
   prekeyBundleText.value = ''
   prekeyPrivateBundleJson.value = ''
@@ -1935,6 +1944,7 @@ async function clearPersisted() {
   lastPerDeviceEnvelopeDropReason.value = ''
   myContactCardText.value = ''
   myDeviceCertJson.value = ''
+  myDeviceBackupText.value = ''
   myDeviceId.value = ''
   prekeyBundleText.value = ''
   prekeyPrivateBundleJson.value = ''
@@ -2585,6 +2595,7 @@ async function importFullDataBackupMerge() {
       lastRevokedDeviceIncomingDropFrom.value = state.lastRevokedDeviceIncomingDropFrom ?? ''
     }
     if (!myDeviceCertJson.value && state.myDeviceCertJson) myDeviceCertJson.value = state.myDeviceCertJson
+    if (!myDeviceBackupText.value && state.myDeviceBackupText) myDeviceBackupText.value = state.myDeviceBackupText
     if (!myDeviceId.value && state.myDeviceId) myDeviceId.value = state.myDeviceId
     if (!prekeyBundleText.value && state.prekeyBundleText) prekeyBundleText.value = state.prekeyBundleText
     if (!prekeyPrivateBundleJson.value && typeof state.prekeyPrivateBundleJson === 'string') prekeyPrivateBundleJson.value = state.prekeyPrivateBundleJson
@@ -3476,6 +3487,7 @@ function createMyDeviceCert() {
     const out = safeJson<DeviceOutput>(create_device_cert(backupText.value, passphrase.value, 'Web Browser'))
     myDeviceId.value = out.device_id
     myDeviceCertJson.value = out.device_cert_json
+    myDeviceBackupText.value = out.device_backup_text ?? ''
     myContactCardText.value = export_contact_card(
       backupText.value,
       passphrase.value,
@@ -8053,7 +8065,7 @@ const appContext = {
   nodeControlUrl, nodeUrlList, nodeEntrySummaries, nodeSettingsSummaryText, nodeTokenStorageText, nodeTokenCount, nodeMissingRemoteTokenCount, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake, autoReadReceipts,
   enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,
   autoPublishPreKey, autoNodeSync, autoSelfMailboxSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodeStateFileSecurityText, nodeStateFileSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
-  secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutDeviceRevokeToFriends, myDeviceCertJson,
+  secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutDeviceRevokeToFriends, myDeviceCertJson, myDeviceBackupText,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
   exportFullDataBackup, pushFullDataBackupToOwnMailbox, pushSelfSyncPackageToOwnMailbox, selfSyncStatusText, processedSelfSyncIds, processedSelfSyncRequestIds, selfSyncMissingRequestRecords, selfSyncRequestSentCount, selfSyncRequestHitCount, selfSyncRequestMissCount, selfSyncRecentPackages, resendLatestSelfSyncPackageToOwnMailbox, clearSelfSyncRecentPackages, lastSelfSyncPushedAt, lastSelfSyncMergedAt, lastSelfSyncSequenceSent, lastSelfSyncSequenceMerged, selfSyncGapCount, lastSelfSyncGapAt, lastSelfSyncMissingPreviousId, clearSelfSyncGapStats, repairSelfSyncGapNow, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, selfMailboxBackupStatusText, selfMailboxBackupMergePending, selfMailboxBackupMergeStatusText, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
   addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, friendRequestRateRecords, friendRequestRateSummaryText, clearFriendRequestRateRecords, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,

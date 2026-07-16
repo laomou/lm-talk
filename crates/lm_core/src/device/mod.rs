@@ -48,6 +48,10 @@ impl std::fmt::Display for DeviceId {
 pub struct DeviceSeed([u8; DEVICE_SEED_LEN]);
 
 impl DeviceSeed {
+    pub fn from_bytes(seed: [u8; DEVICE_SEED_LEN]) -> Self {
+        Self(seed)
+    }
+
     pub fn random() -> Result<Self> {
         let mut seed = [0u8; DEVICE_SEED_LEN];
         getrandom(&mut seed).map_err(|_| LmError::RandomFailed)?;
@@ -85,6 +89,10 @@ impl std::fmt::Debug for DeviceIdentity {
 impl DeviceIdentity {
     pub fn random() -> Result<Self> {
         let seed = DeviceSeed::random()?;
+        Self::from_seed(seed)
+    }
+
+    pub fn from_seed(seed: DeviceSeed) -> Result<Self> {
         let signing_key = SigningKey::from_bytes(seed.as_bytes());
         let device_id = DeviceId::from_device_public_key(signing_key.verifying_key().as_bytes());
         Ok(Self {
@@ -92,6 +100,10 @@ impl DeviceIdentity {
             _seed: seed,
             signing_key,
         })
+    }
+
+    pub fn seed_bytes(&self) -> &[u8; DEVICE_SEED_LEN] {
+        self._seed.as_bytes()
     }
 
     pub fn device_id(&self) -> &DeviceId {

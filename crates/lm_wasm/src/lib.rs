@@ -420,6 +420,119 @@ struct DeviceOutput {
     device_id: String,
     device_public_key: String,
     device_cert_json: String,
+    device_backup_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DeviceBackupPackage {
+    r#type: String,
+    version: u16,
+    user_id: String,
+    device_id: String,
+    nonce: String,
+    ciphertext: String,
+    created_at: u64,
+}
+
+const DEVICE_BACKUP_PREFIX: &str = "lm-device-backup-v1:";
+const DEVICE_BACKUP_AAD: &[u8] = b"lm-talk.device-backup.v1";
+
+#[derive(Serialize)]
+struct DeviceBackupInfo {
+    user_id: String,
+    device_id: String,
+    device_public_key: String,
+    created_at: u64,
+}
+
+fn restore_device_backup(
+    identity_backup_text: &str,
+    passphrase: &str,
+    device_backup_text: &str,
+) -> Result<(DeviceBackupPackage, DeviceIdentity), JsValue> {
+    ensure_js_len(
+        identity_backup_text,
+        lm_core::limits::MAX_IDENTITY_BACKUP_TEXT_BYTES,
+    )?;
+    ensure_js_bytes(device_backup_text.as_bytes().len(), 64 * 1024)?;
+    let payload = device_backup_text
+        .strip_prefix(DEVICE_BACKUP_PREFIX)
+        .ok_or_else(|| JsValue::from_str("invalid device backup prefix"))?;
+    let bytes = URL_SAFE_NO_PAD
+        .decode(payload.as_bytes())
+        .map_err(|_| JsValue::from_str("invalid device backup encoding"))?;
+    let package: DeviceBackupPackage =
+        serde_json::from_slice(&bytes).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    if package.r#type != "lm-device-backup-v1" || package.version != 1 {
+        return Err(JsValue::from_str("unsupported device backup"));
+    }
+    let identity = restore_identity_any(identity_backup_text, passphrase)?;
+    if package.user_id != identity.user_id().to_string() {
+        return Err(JsValue::from_str(
+            "device backup user_id does not match current identity",
+        ));
+    }
+    let key = identity.storage_key().map_err(to_js_error)?;
+    let nonce = decode_fixed_24(&package.nonce)?;
+    let ciphertext = BASE64
+        .decode(package.ciphertext.as_bytes())
+        .map_err(|_| JsValue::from_str("invalid device backup ciphertext"))?;
+    let seed_vec =
+        lm_core::crypto::xchacha20poly1305_decrypt(&key, &nonce, &ciphertext, DEVICE_BACKUP_AAD)
+            .map_err(|_| JsValue::from_str("WrongPassphrase"))?;
+    let seed: [u8; lm_core::device::DEVICE_SEED_LEN] = seed_vec
+        .try_into()
+        .map_err(|_| JsValue::from_str("invalid device backup seed"))?;
+    let device = DeviceIdentity::from_seed(lm_core::device::DeviceSeed::from_bytes(seed))
+        .map_err(to_js_error)?;
+    if package.device_id != device.device_id().to_string() {
+        return Err(JsValue::from_str("device backup device_id mismatch"));
+    }
+    Ok((package, device))
+}
+
+#[wasm_bindgen]
+pub fn inspect_device_backup(
+    identity_backup_text: &str,
+    passphrase: &str,
+    device_backup_text: &str,
+) -> Result<String, JsValue> {
+    let (package, device) =
+        restore_device_backup(identity_backup_text, passphrase, device_backup_text)?;
+    to_json_string(&DeviceBackupInfo {
+        user_id: package.user_id,
+        device_id: package.device_id,
+        device_public_key: BASE64.encode(device.device_public_key()),
+        created_at: package.created_at,
+    })
+}
+
+fn device_backup_text(identity: &Identity, device: &DeviceIdentity) -> Result<String, JsValue> {
+    let key = identity.storage_key().map_err(to_js_error)?;
+    let mut nonce = [0u8; 24];
+    getrandom(&mut nonce).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let ciphertext = lm_core::crypto::xchacha20poly1305_encrypt(
+        &key,
+        &nonce,
+        device.seed_bytes(),
+        DEVICE_BACKUP_AAD,
+    )
+    .map_err(to_js_error)?;
+    let package = DeviceBackupPackage {
+        r#type: "lm-device-backup-v1".to_string(),
+        version: 1,
+        user_id: identity.user_id().to_string(),
+        device_id: device.device_id().to_string(),
+        nonce: BASE64.encode(nonce),
+        ciphertext: BASE64.encode(ciphertext),
+        created_at: unix_now(),
+    };
+    let json = serde_json::to_vec(&package).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    Ok(format!(
+        "{}{}",
+        DEVICE_BACKUP_PREFIX,
+        URL_SAFE_NO_PAD.encode(json)
+    ))
 }
 
 #[wasm_bindgen]
@@ -437,6 +550,7 @@ pub fn create_device_cert(
         device_id: device.device_id().to_string(),
         device_public_key: BASE64.encode(device.device_public_key()),
         device_cert_json: to_json_string(&cert)?,
+        device_backup_text: device_backup_text(&identity, &device)?,
     };
     to_json_string(&out)
 }
@@ -1834,6 +1948,17 @@ mod tests {
         let device = create_device_cert(backup, "alice pass", Some("phone".into())).unwrap();
         let device_v: Value = serde_json::from_str(&device).unwrap();
         let device_id = device_v["device_id"].as_str().unwrap();
+        let device_backup = device_v["device_backup_text"].as_str().unwrap();
+        assert!(device_backup.starts_with("lm-device-backup-v1:"));
+        let backup_info: Value = serde_json::from_str(
+            &inspect_device_backup(backup, "alice pass", device_backup).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(backup_info["device_id"], device_id);
+        assert_eq!(
+            backup_info["device_public_key"],
+            device_v["device_public_key"]
+        );
         let revoke =
             create_device_revoke(backup, "alice pass", device_id, Some("lost".into())).unwrap();
         assert!(revoke.starts_with("lm-device-revoke-v1:"));
