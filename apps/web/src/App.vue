@@ -482,6 +482,7 @@ const nodeDhtReplicationStatusText = ref('DHT 复制：尚未运行')
 const nodeDhtMaintenanceStatusText = ref('DHT 维护：尚未运行')
 const nodeDhtOperationHistory = ref<string[]>([])
 const nodeDhtOperationHistoryImportText = ref('')
+const nodeDhtOperationHistoryImportStatus = ref('DHT 历史导入：尚未导入')
 const nodeMailboxTakeUserId = ref('')
 const nodeMailboxTakeInfoText = ref('')
 const syncTriggerPolicyText = computed(() => {
@@ -5042,23 +5043,33 @@ function normalizeDhtHistoryItems(value: unknown): string[] {
 
 async function importDhtOperationHistory() {
   await runAsync('导入 DHT 操作历史', async () => {
-    if (!nodeDhtOperationHistoryImportText.value.trim()) throw new Error('请粘贴 DHT 历史 JSON')
-    const parsed = JSON.parse(nodeDhtOperationHistoryImportText.value)
-    const incoming = normalizeDhtHistoryItems(parsed)
-    if (incoming.length === 0) throw new Error('DHT 历史为空或格式不正确')
-    const merged = [...new Set([...incoming, ...nodeDhtOperationHistory.value])]
-    const kept = merged.slice(0, 8)
-    const dropped = Math.max(0, merged.length - kept.length)
-    const ok = await showConfirm(
-      '导入 DHT 操作历史',
-      `将导入 ${incoming.length} 条 DHT 操作历史，合并后保留最近 ${kept.length} 条${dropped ? `，丢弃 ${dropped} 条较旧记录` : ''}。继续？`,
-      false,
-    )
-    if (!ok) return
-    nodeDhtOperationHistory.value = kept
-    nodeDhtFindValueStatusText.value = `DHT 查找：已导入 ${incoming.length} 条 DHT 操作历史`
-    nodeDhtOperationHistoryImportText.value = ''
-    persist()
+    try {
+      if (!nodeDhtOperationHistoryImportText.value.trim()) throw new Error('请粘贴 DHT 历史 JSON')
+      const parsed = JSON.parse(nodeDhtOperationHistoryImportText.value)
+      const incoming = normalizeDhtHistoryItems(parsed)
+      if (incoming.length === 0) throw new Error('DHT 历史为空或格式不正确；请粘贴 {"history":["时间 · 操作"]} 或字符串数组')
+      const merged = [...new Set([...incoming, ...nodeDhtOperationHistory.value])]
+      const kept = merged.slice(0, 8)
+      const dropped = Math.max(0, merged.length - kept.length)
+      nodeDhtOperationHistoryImportStatus.value = `DHT 历史导入：准备导入 ${incoming.length} 条，合并后保留 ${kept.length} 条${dropped ? `，将丢弃 ${dropped} 条较旧记录` : ''}`
+      const ok = await showConfirm(
+        '导入 DHT 操作历史',
+        `将导入 ${incoming.length} 条 DHT 操作历史，合并后保留最近 ${kept.length} 条${dropped ? `，丢弃 ${dropped} 条较旧记录` : ''}。继续？`,
+        false,
+      )
+      if (!ok) {
+        nodeDhtOperationHistoryImportStatus.value = 'DHT 历史导入：已取消'
+        return
+      }
+      nodeDhtOperationHistory.value = kept
+      nodeDhtFindValueStatusText.value = `DHT 查找：已导入 ${incoming.length} 条 DHT 操作历史`
+      nodeDhtOperationHistoryImportStatus.value = `DHT 历史导入：已导入 ${incoming.length} 条，当前保留 ${kept.length} 条`
+      nodeDhtOperationHistoryImportText.value = ''
+      persist()
+    } catch (error) {
+      nodeDhtOperationHistoryImportStatus.value = `DHT 历史导入失败：${userFacingError(error)}`
+      throw error
+    }
   })
 }
 
@@ -6313,7 +6324,7 @@ const appContext = {
   ratchetInfoText, safetyPolicy, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
-  nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
+  nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
   nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, publishAndCheckMyPreKeyDht, publishAndCheckMyMailboxHintDht, publishAndCheckAllMyDht, clearPreKeyRawState, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
