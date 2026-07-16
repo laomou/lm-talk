@@ -79,10 +79,13 @@ proptest! {
     fn contact_card_expiration_boundary_is_enforced(offset in -2i64..=2) {
         let alice = Identity::from_seed(lm_core::IdentitySeed::from_bytes([9u8; 32])).unwrap();
         let now = lm_core::unix_now();
-        let expires_at = if offset.is_negative() {
+        let expires_at = if offset <= 0 {
             now.saturating_sub(offset.unsigned_abs())
         } else {
-            now.saturating_add(offset as u64)
+            // Keep positive-offset cases comfortably in the future so slow CI
+            // runners do not turn the "expires in one second" boundary case
+            // into an accidental expiration before verification executes.
+            now.saturating_add(60 + offset as u64)
         };
         let card = ContactCard::new(&alice, None, Some(expires_at), vec![]).unwrap();
         if expires_at <= now {
