@@ -21,6 +21,7 @@ for n in a b c; do
 done
 chmod 600 secrets/*
 docker compose up -d --build
+./smoke-test.sh
 ```
 
 Use a node URL plus the matching token from `secrets/node-*-token` in the Web app sync settings.
@@ -36,3 +37,10 @@ For real public nodes:
 5. Set `cors_allow_origins` to your deployed Web origins.
 
 This template is for federation/bootstrap testing. Run long-lived nodes with monitoring on `/health`, `/control/stats`, and `/control/metrics`.
+
+
+## Smoke test
+
+`./smoke-test.sh` checks that all three reverse-proxied nodes respond to `/health` and `/control/stats`, verifies DHT key derivation for `contact-card`, exports a snapshot from node A, imports it into node B, and checks node B sync status.
+
+The script deliberately does not publish a fake ContactCard record because `lm_node` validates ContactCard signatures before accepting DHT records. End-to-end ContactCard DHT publishing is exercised through the Web/WASM identity flow.
