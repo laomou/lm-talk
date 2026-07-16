@@ -162,6 +162,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 None,
             )?;
             install_state_file_passphrase_override(state_file_passphrase_from_file);
+            let state_file_require_encryption =
+                optional_arg(&args, "--state-file-require-encryption")?
+                    .or_else(|| env::var("LM_NODE_STATE_FILE_REQUIRE_ENCRYPTION").ok())
+                    .map(|value| value.parse::<bool>())
+                    .transpose()?
+                    .unwrap_or(false);
+            validate_state_file_encryption_requirement(
+                state_file_require_encryption,
+                state_file.as_deref(),
+            )?;
             let state_db = optional_arg(&args, "--state-db")?;
             let state_db_require_encryption = optional_arg(&args, "--state-db-require-encryption")?
                 .or_else(|| env::var("LM_NODE_STATE_DB_REQUIRE_ENCRYPTION").ok())
@@ -229,6 +239,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 file_config.state_file_passphrase_file,
             )?;
             install_state_file_passphrase_override(state_file_passphrase_from_file);
+            let state_file_require_encryption =
+                optional_arg(&args, "--state-file-require-encryption")?
+                    .or_else(|| env::var("LM_NODE_STATE_FILE_REQUIRE_ENCRYPTION").ok())
+                    .map(|value| value.parse::<bool>())
+                    .transpose()?
+                    .or(file_config.state_file_require_encryption)
+                    .unwrap_or(false);
+            validate_state_file_encryption_requirement(
+                state_file_require_encryption,
+                state_file.as_deref(),
+            )?;
             let state_db = optional_arg(&args, "--state-db")?.or(file_config.state_db);
             let state_db_require_encryption = optional_arg(&args, "--state-db-require-encryption")?
                 .or_else(|| env::var("LM_NODE_STATE_DB_REQUIRE_ENCRYPTION").ok())
@@ -571,6 +592,29 @@ fn install_state_file_passphrase_override(value: Option<String>) {
         // the control/libp2p worker loops are spawned.
         unsafe { std::env::set_var("LM_NODE_STATE_FILE_PASSPHRASE", value) }
     }
+}
+
+fn validate_state_file_encryption_requirement(
+    required: bool,
+    state_file: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !required {
+        return Ok(());
+    }
+    let Some(path) = state_file else {
+        return Err("state_file encryption is required but no state_file is configured".into());
+    };
+    if state_file_passphrase()?.is_none() {
+        return Err("state_file encryption is required but no passphrase was provided via LM_NODE_STATE_FILE_PASSPHRASE, LM_NODE_STATE_FILE_PASSPHRASE_FILE, --state-file-passphrase-file, or config".into());
+    }
+    let path_ref = Path::new(path);
+    if path_ref.exists() {
+        let text = fs::read_to_string(path_ref)?;
+        if !text.trim().starts_with(ENCRYPTED_STATE_FILE_PREFIX) {
+            return Err("state_file encryption is required but existing state_file is plaintext; migrate by starting without require flag once with a passphrase, then enable require flag".into());
+        }
+    }
+    Ok(())
 }
 
 fn validate_state_db_encryption_requirement(
@@ -2848,6 +2892,7 @@ struct ServeControlConfigFile {
     peer_id: Option<String>,
     state_file: Option<String>,
     state_file_passphrase_file: Option<String>,
+    state_file_require_encryption: Option<bool>,
     state_db: Option<String>,
     state_db_require_encryption: Option<bool>,
     control_token: Option<String>,
@@ -5476,6 +5521,7 @@ mod tests {
         run_dht_routing_refresh, run_dht_routing_refresh_with_transport, save_node_state,
         save_node_state_db, send_dht_rpc, send_libp2p_dht_rpc_async, status_for_request_error,
         status_reason, sync_backoff_delay_seconds, validate_state_db_encryption_requirement,
+        validate_state_file_encryption_requirement,
     };
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use futures::StreamExt;
@@ -5493,6 +5539,8 @@ mod tests {
         atomic::{AtomicUsize, Ordering},
     };
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    static TEST_ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[derive(Default)]
     struct FakeDhtTransport {
@@ -8569,6 +8617,7 @@ connection: close
 
     #[test]
     fn encrypted_state_file_save_load_roundtrip_uses_passphrase_env() {
+        let _guard = TEST_ENV_MUTEX.lock().unwrap();
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -8611,6 +8660,19 @@ connection: close
             decrypt_state_file_text(&encrypted, "correct horse battery staple").unwrap();
         assert_eq!(decrypted, plaintext);
         assert!(decrypt_state_file_text(&encrypted, "wrong passphrase").is_err());
+    }
+
+    #[test]
+    fn state_file_encryption_requirement_fails_closed_without_passphrase() {
+        let _guard = TEST_ENV_MUTEX.lock().unwrap();
+        unsafe { std::env::remove_var("LM_NODE_STATE_FILE_PASSPHRASE") };
+        unsafe { std::env::remove_var("LM_NODE_STATE_FILE_PASSPHRASE_FILE") };
+        let err = validate_state_file_encryption_requirement(true, Some("missing-state.json"))
+            .unwrap_err();
+        assert!(err.to_string().contains("no passphrase"));
+        assert!(validate_state_file_encryption_requirement(false, None).is_ok());
+        let err = validate_state_file_encryption_requirement(true, None).unwrap_err();
+        assert!(err.to_string().contains("no state_file"));
     }
 
     #[test]
@@ -8670,6 +8732,7 @@ connection: close
                 "peer_id": "cfg-node",
                 "state_file": "state.json",
                 "state_file_passphrase_file": "state.pass",
+                "state_file_require_encryption": true,
                 "state_db": "state.sqlite3",
                 "state_db_require_encryption": true,
                 "control_token": "control",
@@ -8707,6 +8770,7 @@ connection: close
             config.state_file_passphrase_file.as_deref(),
             Some("state.pass")
         );
+        assert_eq!(config.state_file_require_encryption, Some(true));
         assert_eq!(config.state_db.as_deref(), Some("state.sqlite3"));
         assert_eq!(config.state_db_require_encryption, Some(true));
         assert_eq!(config.control_token.as_deref(), Some("control"));
