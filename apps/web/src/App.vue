@@ -852,16 +852,16 @@ function contactSealedSlotStatusText(contact: ContactItem): string {
   return `兼容模式风险：${activeDeviceIds.length - sealed}/${activeDeviceIds.length} 个活跃设备缺少 device_box_public_key，将使用 placeholder/fallback；可在设置中开启“仅发送到支持 sealed slot 的设备”阻止降级。`
 }
 
-const activeContactSealedSlotStatusText = computed(() => activeContact.value ? contactSealedSlotStatusText(activeContact.value) : '')
-const activeContactSealedSlotRiskLevel = computed(() => {
-  const contact = activeContact.value
-  if (!contact) return 'none'
+
+function activeContactSealedSlotRiskFor(contact: ContactItem): 'ok' | 'high' {
   const activeDeviceIds = contactActiveDeviceIds(contact)
   if (activeDeviceIds.length === 0) return 'high'
   const certs = contact.device_certs ?? []
-  const missing = activeDeviceIds.some((deviceId) => !certs.find((cert) => cert.device_id === deviceId)?.device_box_public_key)
-  return missing ? 'high' : 'ok'
-})
+  return activeDeviceIds.some((deviceId) => !certs.find((cert) => cert.device_id === deviceId)?.device_box_public_key) ? 'high' : 'ok'
+}
+
+const activeContactSealedSlotStatusText = computed(() => activeContact.value ? contactSealedSlotStatusText(activeContact.value) : '')
+const activeContactSealedSlotRiskLevel = computed(() => activeContact.value ? activeContactSealedSlotRiskFor(activeContact.value) : 'none')
 
 const activeSecureSessionOutboxCount = computed(() => {
   const peerId = activeContact.value?.user_id
@@ -880,6 +880,35 @@ const activeMessages = computed(() => activeGroup.value
 const friendContacts = computed(() => contacts.value.filter((c) => c.state === 'Friend'))
 const verifiedFriendContactCount = computed(() => friendContacts.value.filter((c) => c.fingerprint_verified_at).length)
 const unverifiedFriendContactCount = computed(() => Math.max(0, friendContacts.value.length - verifiedFriendContactCount.value))
+
+const sealedSlotCoverageSummary = computed(() => {
+  const friends = friendContacts.value
+  const totalDevices = friends.reduce((sum, contact) => sum + contactActiveDeviceIds(contact).length, 0)
+  const sealedDevices = friends.reduce((sum, contact) => {
+    const certs = contact.device_certs ?? []
+    return sum + contactActiveDeviceIds(contact).filter((deviceId) => certs.find((cert) => cert.device_id === deviceId)?.device_box_public_key).length
+  }, 0)
+  const riskyContacts = friends.filter((contact) => activeContactSealedSlotRiskFor(contact) === 'high')
+  return {
+    friend_count: friends.length,
+    total_devices: totalDevices,
+    sealed_devices: sealedDevices,
+    risky_contacts: riskyContacts.length,
+    text: totalDevices === 0
+      ? '尚无好友活跃设备证书。'
+      : `sealed slot 覆盖 ${sealedDevices}/${totalDevices} 个活跃设备；风险联系人 ${riskyContacts.length}/${friends.length}`,
+  }
+})
+
+const sealedSlotRiskContacts = computed(() => friendContacts.value
+  .filter((contact) => activeContactSealedSlotRiskFor(contact) === 'high')
+  .slice(0, 8)
+  .map((contact) => ({
+    user_id: contact.user_id,
+    display_name: contact.display_name || contact.user_id,
+    status: contactSealedSlotStatusText(contact),
+  }))
+)
 const visibleFriendRequests = computed(() => friendRequests.value.filter((req) => !req.quarantined))
 const quarantinedFriendRequests = computed(() => friendRequests.value.filter((req) => req.quarantined))
 const friendRequestRateSummaryText = computed(() => {
@@ -8182,7 +8211,7 @@ const appContext = {
   prekeySignedId, prekeyOneTimeCount, prekeyBundleText, prekeyPrivateBundleJson, prekeySignedOneTimeRecordTexts, prekeyInfoText, x3dhInitialMessageJson,
   selectedOneTimePreKeyId, selectedSignedOneTimePreKeyRecordText, x3dhSharedSecretText, ratchetStateText, ratchetPeerStateText, ratchetLocalDhKeyPairJson, ratchetRemoteDhPublicKeyForInit,
   ratchetInitRole, ratchetHeaderText, ratchetEnvelopeText, ratchetPlainText, ratchetKeyText, ratchetRemoteDhPublicKey,
-  ratchetInfoText, safetyPolicy, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, perDeviceEnvelopeSentCount, perDeviceEnvelopeReceivedCount, perDeviceEnvelopeDropCount, lastPerDeviceEnvelopeAt, lastPerDeviceEnvelopeDropAt, lastPerDeviceEnvelopeDropReason, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
+  ratchetInfoText, safetyPolicy, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, perDeviceEnvelopeSentCount, perDeviceEnvelopeReceivedCount, perDeviceEnvelopeDropCount, lastPerDeviceEnvelopeAt, lastPerDeviceEnvelopeDropAt, lastPerDeviceEnvelopeDropReason, sealedSlotCoverageSummary, sealedSlotRiskContacts, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
   nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, findActiveContactMailboxHint, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, startFingerprintQrScan, stopFingerprintQrScan, fingerprintScanOpen, fingerprintScanStatus, copyActiveContactFingerprintProof, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, showMyFingerprintQr, copyMyFingerprintProof, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,

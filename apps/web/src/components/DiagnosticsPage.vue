@@ -88,6 +88,7 @@ async function runDiagnostics() {
       revoked_devices: props.ctx.contacts.value.reduce((sum: number, x: any) => sum + (x.revoked_device_ids || []).length, 0),
       unverified_incoming_drops: props.ctx.unverifiedIncomingDropCount.value,
       revoked_device_incoming_drops: props.ctx.revokedDeviceIncomingDropCount.value,
+      sealed_slot_coverage: props.ctx.sealedSlotCoverageSummary.value,
       per_device_envelope_sent_count: props.ctx.perDeviceEnvelopeSentCount.value,
       per_device_envelope_received_count: props.ctx.perDeviceEnvelopeReceivedCount.value,
       per_device_envelope_drop_count: props.ctx.perDeviceEnvelopeDropCount.value,

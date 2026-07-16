@@ -403,6 +403,11 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
           <span>启用文本过滤</span>
         </label>
         <p class="muted">好友指纹核验：已核验 {{ ctx.verifiedFriendContactCount.value }}，未核验 {{ ctx.unverifiedFriendContactCount.value }}</p>
+        <p class="muted">分设备 sealed slot：{{ ctx.sealedSlotCoverageSummary.value.text }}</p>
+        <div v-if="ctx.sealedSlotRiskContacts.value.length" class="callout warning">
+          <b>存在 sealed slot 降级风险</b>
+          <small v-for="item in ctx.sealedSlotRiskContacts.value" :key="item.user_id">{{ item.display_name }}：{{ item.status }}</small>
+        </div>
         <div class="policy-grid">
           <label>
             <span>过滤级别</span>
