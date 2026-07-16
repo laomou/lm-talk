@@ -150,6 +150,7 @@ type ContactItem = ContactInfo & {
   next_dht_discovery_retry_at?: number
   last_prekey_dht_found_at?: number
   last_mailbox_hint_dht_found_at?: number
+  last_contact_card_dht_found_at?: number
   fingerprint_verified_at?: number
   fingerprint_verified_note?: string
 }
@@ -3197,7 +3198,7 @@ function resetContactDhtDiscoveryBackoff(contact: ContactItem) {
   contact.dht_discovery_risk_level = undefined
 }
 
-function markContactDhtDiscoverySuccess(contact: ContactItem, kind: 'prekey' | 'mailbox-hint') {
+function markContactDhtDiscoverySuccess(contact: ContactItem, kind: 'prekey' | 'mailbox-hint' | 'contact-card') {
   contact.last_dht_discovery_success_at = Date.now()
   contact.last_dht_discovery_error = undefined
   contact.dht_discovery_failure_count = 0
@@ -3206,6 +3207,7 @@ function markContactDhtDiscoverySuccess(contact: ContactItem, kind: 'prekey' | '
   contact.dht_discovery_risk_level = undefined
   if (kind === 'prekey') contact.last_prekey_dht_found_at = contact.last_dht_discovery_success_at
   if (kind === 'mailbox-hint') contact.last_mailbox_hint_dht_found_at = contact.last_dht_discovery_success_at
+  if (kind === 'contact-card') contact.last_contact_card_dht_found_at = contact.last_dht_discovery_success_at
 }
 
 function classifyDhtDiscoveryError(error: unknown): ContactItem['last_dht_discovery_error_kind'] {
@@ -7287,7 +7289,7 @@ function applyDhtFindValueRecord(body: any): boolean {
       if (index >= 0) contacts.value[index] = merged
       else contacts.value.push(merged)
       const contact = currentDhtTargetContact('contact-card') ?? merged
-      if (contact) markContactDhtDiscoverySuccess(contact, 'contact-card' as any)
+      if (contact) markContactDhtDiscoverySuccess(contact, 'contact-card')
       appendLog(`✅ DHT 查到并合并 ContactCard：${merged.display_name || merged.user_id}`)
       persist()
     } catch (error) {

@@ -120,6 +120,7 @@ function onComposerKeydown(e: KeyboardEvent) {
         <small v-if="ctx.activeContact.value.last_dht_discovery_attempt_at">最近 DHT 发现尝试：{{ ctx.formatDateTime(ctx.activeContact.value.last_dht_discovery_attempt_at) }}</small>
         <small v-if="ctx.activeContact.value.last_prekey_dht_found_at">PreKey DHT 发现：{{ ctx.formatDateTime(ctx.activeContact.value.last_prekey_dht_found_at) }}</small>
         <small v-if="ctx.activeContact.value.last_mailbox_hint_dht_found_at">MailboxHint DHT 发现：{{ ctx.formatDateTime(ctx.activeContact.value.last_mailbox_hint_dht_found_at) }}</small>
+        <small v-if="ctx.activeContact.value.last_contact_card_dht_found_at">ContactCard DHT 发现：{{ ctx.formatDateTime(ctx.activeContact.value.last_contact_card_dht_found_at) }}</small>
         <small v-if="ctx.activeContact.value.next_dht_discovery_retry_at">DHT 下次自动重试：{{ ctx.formatDateTime(ctx.activeContact.value.next_dht_discovery_retry_at) }}</small>
         <small v-if="ctx.activeContact.value.dht_discovery_failure_count">DHT 连续失败：{{ ctx.activeContact.value.dht_discovery_failure_count }} 次</small>
         <small v-if="ctx.activeContact.value.dht_discovery_risk_level === 'high'" class="danger-text">DHT 安全风险：记录验签或格式异常，请谨慎信任该联系人发现结果</small>
