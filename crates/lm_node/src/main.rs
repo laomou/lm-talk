@@ -5956,6 +5956,115 @@ mod tests {
     }
 
     #[test]
+    fn dht_find_value_survives_multiple_poisoned_hops() {
+        let (identity, _) = Identity::create_with_passphrase("multi poisoned identity").unwrap();
+        let (target_user, _) = Identity::create_with_passphrase("multi poisoned target").unwrap();
+        let key = DhtRecordKey::for_mailbox_hint(target_user.user_id());
+        let now = current_unix_timestamp();
+        let make_peer = |peer_id: &str, url: &str| {
+            let announce = NodeConfig {
+                peer_id: peer_id.into(),
+                addresses: vec![url.into()],
+                ..Default::default()
+            }
+            .create_announce(&identity)
+            .unwrap();
+            lm_node::RoutingPeer {
+                node_id: lm_node::KademliaNodeId::from_peer_id(&announce.peer_id),
+                announce,
+                identity_public_key: Some(BASE64.encode(identity.identity_public_key())),
+                last_seen_at: now,
+            }
+        };
+        let closer_one = make_peer(
+            "multi-poisoned-hop-one",
+            "transport://multi-poisoned-hop-one",
+        );
+        let closer_two = make_peer(
+            "multi-poisoned-hop-two",
+            "transport://multi-poisoned-hop-two",
+        );
+        let poisoned_record = || DhtRecord {
+            key,
+            kind: DhtRecordKind::PreKey,
+            value: "not-a-prekey-bundle".into(),
+            created_at: now,
+            expires_at: now.saturating_add(60),
+            republish_at: now,
+        };
+        let valid_record = DhtRecord::mailbox_hint(
+            target_user.user_id(),
+            "mailbox://multi-hop-valid".into(),
+            3600,
+        );
+        let seed_peer = SyncPeerConfig {
+            url: "transport://multi-poisoned-seed".into(),
+            token: None,
+            peer_id: None,
+        };
+        let transport = FakeDhtTransport {
+            responses: Mutex::new(vec![
+                DhtRpcResponse::Value {
+                    request_id: "multi-poisoned-third".into(),
+                    record: Some(valid_record.clone()),
+                    closer_records: Vec::new(),
+                    closer_nodes: Vec::new(),
+                },
+                DhtRpcResponse::Value {
+                    request_id: "multi-poisoned-second".into(),
+                    record: Some(poisoned_record()),
+                    closer_records: Vec::new(),
+                    closer_nodes: vec![closer_two],
+                },
+                DhtRpcResponse::Value {
+                    request_id: "multi-poisoned-first".into(),
+                    record: Some(poisoned_record()),
+                    closer_records: Vec::new(),
+                    closer_nodes: vec![closer_one],
+                },
+            ]),
+            ..Default::default()
+        };
+        let mut node = NativeNode::new(NodeConfig::default());
+        let stats =
+            dht_find_value_with_transport(&mut node, &[seed_peer], key, 8, 3, 1, &transport);
+        assert_eq!(stats.attempts, 3);
+        assert_eq!(stats.successes, 3);
+        assert_eq!(stats.found_records, 1);
+        assert_eq!(stats.invalid_found_records, 2);
+        assert_eq!(stats.closer_nodes_merged, 2);
+        assert_eq!(node.maintenance.dht_record_rejects.invalid_record, 2);
+        assert_eq!(
+            node.dht_records.find_value(&key).unwrap().value,
+            valid_record.value
+        );
+        assert_eq!(
+            node.sync_status
+                .peers
+                .get("transport://multi-poisoned-seed")
+                .unwrap()
+                .consecutive_failures,
+            1
+        );
+        assert_eq!(
+            node.sync_status
+                .peers
+                .get("transport://multi-poisoned-hop-one")
+                .unwrap()
+                .consecutive_failures,
+            1
+        );
+        assert_eq!(
+            node.sync_status
+                .peers
+                .get("transport://multi-poisoned-hop-two")
+                .unwrap()
+                .consecutive_failures,
+            0
+        );
+    }
+
+    #[test]
     fn dht_find_value_rejects_duplicate_closer_nodes_before_queueing() {
         let (identity, _) = Identity::create_with_passphrase("duplicate closer identity").unwrap();
         let (target_user, _) = Identity::create_with_passphrase("duplicate closer target").unwrap();
