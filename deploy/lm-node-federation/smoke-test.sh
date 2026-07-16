@@ -73,6 +73,8 @@ SNAPSHOT="$(request a /sync/snapshot)"
 python3 -m json.tool <<<"$SNAPSHOT" >/dev/null
 post_json b /sync/import "{\"snapshot\":$SNAPSHOT}" >/dev/null
 request b /sync/status >/dev/null
+FOUND_B="$(request b "/dht/find-value?key=$KEY&limit=8&max_peers=8&alpha=3")"
+python3 -c 'import json,sys; body=json.loads(sys.argv[1]); assert body.get("found"), body; assert body.get("record",{}).get("kind") == "ContactCard", body' "$FOUND_B"
 TAKE="$(request b "/mailbox/take?user_id=$RECIPIENT_USER_ID&limit=5")"
 python3 -c 'import json,sys; body=json.loads(sys.argv[1]); deliveries=body.get("deliveries") or body.get("messages") or []; assert deliveries, body' "$TAKE"
 
