@@ -23,8 +23,7 @@ use lm_core::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use wasm_bindgen::prelude::*;
-#[cfg(target_arch = "wasm32")]
-use x25519_dalek::StaticSecret as X25519Secret;
+use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519Secret};
 
 #[wasm_bindgen]
 extern "C" {
@@ -536,6 +535,93 @@ fn device_backup_text(identity: &Identity, device: &DeviceIdentity) -> Result<St
         DEVICE_BACKUP_PREFIX,
         URL_SAFE_NO_PAD.encode(json)
     ))
+}
+
+#[derive(Serialize, Deserialize)]
+struct DeviceSlotSealedBox {
+    crypto: String,
+    x25519_ephemeral_public_key: String,
+    nonce: String,
+    ciphertext: String,
+}
+
+const DEVICE_SLOT_CRYPTO_V1: &str = "x25519-ephemeral-hkdf-xchacha20poly1305-device-slot-v1";
+const DEVICE_SLOT_KEY_INFO: &[u8] = b"lm-talk.per-device-slot.v1";
+
+fn derive_device_slot_key(shared: &[u8; 32], aad: &str) -> Result<[u8; 32], JsValue> {
+    let mut info = Vec::new();
+    info.extend_from_slice(DEVICE_SLOT_KEY_INFO);
+    info.extend_from_slice(aad.as_bytes());
+    lm_core::crypto::hkdf_32(shared, &info).map_err(to_js_error)
+}
+
+#[wasm_bindgen]
+pub fn seal_device_slot(
+    recipient_device_box_public_key: &str,
+    aad: &str,
+    plaintext: &str,
+) -> Result<String, JsValue> {
+    ensure_js_len(plaintext, lm_core::limits::MAX_MAILBOX_CIPHERTEXT_BYTES)?;
+    ensure_js_bytes(aad.as_bytes().len(), 16 * 1024)?;
+    let recipient_public_bytes = decode_key_32(recipient_device_box_public_key)?;
+    let recipient_public = X25519PublicKey::from(recipient_public_bytes);
+    let mut ephemeral_seed = [0u8; 32];
+    getrandom(&mut ephemeral_seed).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let ephemeral_secret = X25519Secret::from(ephemeral_seed);
+    let ephemeral_public = X25519PublicKey::from(&ephemeral_secret);
+    let shared = ephemeral_secret
+        .diffie_hellman(&recipient_public)
+        .to_bytes();
+    let key = derive_device_slot_key(&shared, aad)?;
+    let mut nonce = [0u8; 24];
+    getrandom(&mut nonce).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let ciphertext = lm_core::crypto::xchacha20poly1305_encrypt(
+        &key,
+        &nonce,
+        plaintext.as_bytes(),
+        aad.as_bytes(),
+    )
+    .map_err(to_js_error)?;
+    to_json_string(&DeviceSlotSealedBox {
+        crypto: DEVICE_SLOT_CRYPTO_V1.to_string(),
+        x25519_ephemeral_public_key: BASE64.encode(ephemeral_public.to_bytes()),
+        nonce: BASE64.encode(nonce),
+        ciphertext: BASE64.encode(ciphertext),
+    })
+}
+
+#[wasm_bindgen]
+pub fn open_device_slot(
+    identity_backup_text: &str,
+    passphrase: &str,
+    device_backup_text: &str,
+    aad: &str,
+    sealed_slot_json: &str,
+) -> Result<String, JsValue> {
+    ensure_js_bytes(aad.as_bytes().len(), 16 * 1024)?;
+    ensure_js_len(
+        sealed_slot_json,
+        lm_core::limits::MAX_MAILBOX_CIPHERTEXT_BYTES,
+    )?;
+    let (_package, device) =
+        restore_device_backup(identity_backup_text, passphrase, device_backup_text)?;
+    let sealed: DeviceSlotSealedBox = from_json_string(sealed_slot_json)?;
+    if sealed.crypto != DEVICE_SLOT_CRYPTO_V1 {
+        return Err(JsValue::from_str("unsupported device slot crypto"));
+    }
+    let ephemeral_public =
+        X25519PublicKey::from(decode_key_32(&sealed.x25519_ephemeral_public_key)?);
+    let device_secret = X25519Secret::from(*device.seed_bytes());
+    let shared = device_secret.diffie_hellman(&ephemeral_public).to_bytes();
+    let key = derive_device_slot_key(&shared, aad)?;
+    let nonce = decode_fixed_24(&sealed.nonce)?;
+    let ciphertext = BASE64
+        .decode(sealed.ciphertext.as_bytes())
+        .map_err(|_| JsValue::from_str("invalid device slot ciphertext"))?;
+    let plaintext =
+        lm_core::crypto::xchacha20poly1305_decrypt(&key, &nonce, &ciphertext, aad.as_bytes())
+            .map_err(|_| JsValue::from_str("WrongPassphrase"))?;
+    String::from_utf8(plaintext).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 #[wasm_bindgen]
@@ -1966,6 +2052,23 @@ mod tests {
         assert_eq!(
             backup_info["device_box_public_key"],
             device_v["device_box_public_key"]
+        );
+        let sealed = seal_device_slot(
+            device_v["device_box_public_key"].as_str().unwrap(),
+            "device-slot-aad",
+            "secret envelope",
+        )
+        .unwrap();
+        assert_eq!(
+            open_device_slot(
+                backup,
+                "alice pass",
+                device_backup,
+                "device-slot-aad",
+                &sealed
+            )
+            .unwrap(),
+            "secret envelope"
         );
         let revoke =
             create_device_revoke(backup, "alice pass", device_id, Some("lost".into())).unwrap();

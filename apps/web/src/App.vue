@@ -50,6 +50,8 @@ import init, {
   inspect_message_receipt,
   sign_identity_text,
   verify_identity_text_signature,
+  seal_device_slot,
+  open_device_slot,
   inspect_peer_announce,
   inspect_prekey_bundle,
   inspect_public_peer_announce,
@@ -257,7 +259,8 @@ type PerDeviceEnvelopeV1 = {
     slot_id: string
     nonce: string
     aad: string
-    crypto: 'placeholder-shared-envelope-v1'
+    crypto: 'placeholder-shared-envelope-v1' | 'x25519-ephemeral-hkdf-xchacha20poly1305-device-slot-v1'
+    x25519_ephemeral_public_key?: string
     ciphertext: string
   }>
   fallback_ciphertext?: string
@@ -4990,16 +4993,36 @@ function createPerDeviceEnvelopeDraft(contact: ContactItem, conversationId: stri
     version: 1,
     conversation_id: conversationId,
     sender_user_id: senderUserId,
-    target_devices: targetDeviceIds.map((deviceId) => ({
-      device_id: deviceId,
-      slot_id: randomBase64Url(16),
-      nonce: randomBase64Url(24),
-      aad: perDeviceSlotAad(conversationId, senderUserId, deviceId, createdAt),
-      crypto: 'placeholder-shared-envelope-v1',
-      ciphertext,
-    })),
-    // Scaffold only: each device slot currently carries the same conversation envelope.
-    // The slot_id/nonce/aad fields make the wire shape ready for per-device sealed ciphertext.
+    target_devices: targetDeviceIds.map((deviceId) => {
+      const aad = perDeviceSlotAad(conversationId, senderUserId, deviceId, createdAt)
+      const cert = (contact.device_certs ?? []).find((item) => item.device_id === deviceId)
+      if (cert?.device_box_public_key) {
+        const sealed = safeJson<{
+          crypto: 'x25519-ephemeral-hkdf-xchacha20poly1305-device-slot-v1'
+          x25519_ephemeral_public_key: string
+          nonce: string
+          ciphertext: string
+        }>(seal_device_slot(cert.device_box_public_key, aad, ciphertext))
+        return {
+          device_id: deviceId,
+          slot_id: randomBase64Url(16),
+          nonce: sealed.nonce,
+          aad,
+          crypto: sealed.crypto,
+          x25519_ephemeral_public_key: sealed.x25519_ephemeral_public_key,
+          ciphertext: sealed.ciphertext,
+        }
+      }
+      return {
+        device_id: deviceId,
+        slot_id: randomBase64Url(16),
+        nonce: randomBase64Url(24),
+        aad,
+        crypto: 'placeholder-shared-envelope-v1',
+        ciphertext,
+      }
+    }),
+    // Fallback remains for older/self devices until every contact device cert has a box key.
     fallback_ciphertext: ciphertext,
     created_at: createdAt,
   }
@@ -5049,9 +5072,26 @@ function unwrapPerDeviceEnvelopeForCurrentDevice(payloadText: string, sender: Co
     if (!matched) return recordDrop(`分设备 envelope 未投递给当前设备：${currentDeviceId}`)
     if (!matched.slot_id || !matched.nonce || !matched.aad) return recordDrop('分设备 envelope 缺少当前设备 slot 元数据')
     if (!matched.ciphertext) return recordDrop('分设备 envelope 缺少当前设备密文')
+    let envelopeText = matched.ciphertext
+    if (matched.crypto === 'x25519-ephemeral-hkdf-xchacha20poly1305-device-slot-v1') {
+      if (!matched.x25519_ephemeral_public_key) return recordDrop('分设备 sealed slot 缺少临时公钥')
+      if (!myDeviceBackupText.value) return recordDrop('当前设备缺少设备私钥备份，无法打开 sealed slot')
+      envelopeText = open_device_slot(
+        backupText.value,
+        passphrase.value,
+        myDeviceBackupText.value,
+        matched.aad,
+        JSON.stringify({
+          crypto: matched.crypto,
+          x25519_ephemeral_public_key: matched.x25519_ephemeral_public_key,
+          nonce: matched.nonce,
+          ciphertext: matched.ciphertext,
+        }),
+      )
+    }
     perDeviceEnvelopeReceivedCount.value += 1
     lastPerDeviceEnvelopeAt.value = Date.now()
-    return { envelopeText: matched.ciphertext, perDeviceEnvelopeJson: payloadText, targetDeviceIds }
+    return { envelopeText, perDeviceEnvelopeJson: payloadText, targetDeviceIds }
   }
   if (parsed.fallback_ciphertext) {
     appendLog('⚠️ 当前设备没有 device_id，使用分设备 envelope fallback 密文')
