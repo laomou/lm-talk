@@ -5040,13 +5040,22 @@ function normalizeDhtHistoryItems(value: unknown): string[] {
     .slice(0, 32)
 }
 
-function importDhtOperationHistory() {
-  run('导入 DHT 操作历史', () => {
+async function importDhtOperationHistory() {
+  await runAsync('导入 DHT 操作历史', async () => {
     if (!nodeDhtOperationHistoryImportText.value.trim()) throw new Error('请粘贴 DHT 历史 JSON')
     const parsed = JSON.parse(nodeDhtOperationHistoryImportText.value)
     const incoming = normalizeDhtHistoryItems(parsed)
     if (incoming.length === 0) throw new Error('DHT 历史为空或格式不正确')
-    nodeDhtOperationHistory.value = [...new Set([...incoming, ...nodeDhtOperationHistory.value])].slice(0, 8)
+    const merged = [...new Set([...incoming, ...nodeDhtOperationHistory.value])]
+    const kept = merged.slice(0, 8)
+    const dropped = Math.max(0, merged.length - kept.length)
+    const ok = await showConfirm(
+      '导入 DHT 操作历史',
+      `将导入 ${incoming.length} 条 DHT 操作历史，合并后保留最近 ${kept.length} 条${dropped ? `，丢弃 ${dropped} 条较旧记录` : ''}。继续？`,
+      false,
+    )
+    if (!ok) return
+    nodeDhtOperationHistory.value = kept
     nodeDhtFindValueStatusText.value = `DHT 查找：已导入 ${incoming.length} 条 DHT 操作历史`
     nodeDhtOperationHistoryImportText.value = ''
     persist()
