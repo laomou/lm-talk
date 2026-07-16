@@ -204,7 +204,7 @@ function openGroupDetail(groupId: string) {
             <small v-if="ctx.activeContact.value.state === 'Friend'">端到端会话：{{ ctx.activeRatchetStatusText.value }}</small>
             <small>指纹：{{ ctx.activeContact.value.fingerprint }}</small>
             <small v-if="ctx.activeContact.value.fingerprint_verified_at">指纹已核验：{{ ctx.formatDateTime(ctx.activeContact.value.fingerprint_verified_at) }}</small>
-            <small v-if="ctx.contactRevokedDeviceCount(ctx.activeContact.value)" class="danger-text">已撤销设备：{{ ctx.contactRevokedDeviceCount(ctx.activeContact.value) }}/{{ ctx.activeContact.value.device_certs?.length || 0 }}</small>
+            <small v-if="ctx.contactRevokedDeviceCount(ctx.activeContact.value)" class="danger-text">已撤销设备：{{ ctx.contactRevokedDeviceCount(ctx.activeContact.value) }}（已知 {{ ctx.contactKnownRevokedDeviceCount(ctx.activeContact.value) }}/{{ ctx.activeContact.value.device_certs?.length || 0 }}）</small>
             <small v-if="ctx.contactAllKnownDevicesRevoked(ctx.activeContact.value)" class="danger-text">所有已知设备均已撤销，已阻止发送/建链</small>
             <small v-if="ctx.activeContact.value.mailbox_hint_url">MailboxHint：{{ ctx.activeContact.value.mailbox_hint_url }}</small>
             <small v-if="ctx.activeContact.value.last_dht_discovery_attempt_at">最近 DHT 发现尝试：{{ ctx.formatDateTime(ctx.activeContact.value.last_dht_discovery_attempt_at) }}</small>
@@ -229,6 +229,7 @@ function openGroupDetail(groupId: string) {
               <div v-for="item in ctx.contactRevokedDeviceDetails(ctx.activeContact.value)" :key="item.device_id" class="outbox-row">
                 <b>{{ item.device_id }}</b>
                 <small>该设备已标记撤销，不应再用于信任或建链。</small>
+                <small v-if="!(ctx.activeContact.value.device_certs || []).some((cert: any) => cert.device_id === item.device_id)" class="danger-text">该 device_id 不在当前联系人名片的已知设备中。</small>
                 <small v-if="item.reason">原因：{{ item.reason }}</small>
                 <small v-if="item.created_at">撤销时间：{{ ctx.formatDateTime(item.created_at * 1000) }}</small>
                 <button class="secondary danger" @click="ctx.unmarkActiveContactRevokedDevice(item.device_id)">解除撤销标记</button>
