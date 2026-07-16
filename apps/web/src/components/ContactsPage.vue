@@ -87,6 +87,8 @@ function openGroupDetail(groupId: string) {
           <span class="contact-main">
             <b>{{ c.display_name || '未命名' }}</b>
             <small>{{ stateLabel(c.state) }} · {{ c.user_id }}</small>
+            <small v-if="c.state === 'Friend' && c.fingerprint_verified_at">指纹已核验</small>
+            <small v-else-if="c.state === 'Friend'" class="danger-text">指纹未核验</small>
           </span>
         </button>
 
