@@ -99,6 +99,7 @@ function openGroupDetail(groupId: string) {
             <small>{{ stateLabel(c.state) }} · {{ c.user_id }}</small>
             <small v-if="c.state === 'Friend' && c.fingerprint_verified_at">指纹已核验</small>
             <small v-else-if="c.state === 'Friend'" class="danger-text">指纹未核验</small>
+            <small v-if="c.state === 'Friend' && ctx.contactStrictE2eeStatusText(c)" :class="{ 'danger-text': ctx.contactStrictE2eeRiskLevel(c) === 'high' }">{{ ctx.contactStrictE2eeStatusText(c) }}</small>
           </span>
         </button>
 
@@ -221,6 +222,8 @@ function openGroupDetail(groupId: string) {
             <small v-if="ctx.activeSecureSessionOutboxCount.value">安全建链待重试：{{ ctx.activeSecureSessionOutboxCount.value }} 条</small>
             <small v-if="ctx.activeContact.value.last_secure_session_error" class="danger-text">安全建链失败：{{ ctx.activeContact.value.last_secure_session_error }}</small>
             <small v-if="ctx.activeContact.value.last_friend_request_error" class="danger-text">好友请求失败：{{ ctx.activeContact.value.last_friend_request_error }}</small>
+            <small v-if="ctx.activeContact.value.state === 'Friend'" :class="{ 'danger-text': ctx.contactStrictE2eeRiskLevel(ctx.activeContact.value) === 'high' }">{{ ctx.contactStrictE2eeStatusText(ctx.activeContact.value) }}</small>
+            <small v-if="ctx.contactCardUpdateAckStatusFor(ctx.activeContact.value).pending" class="danger-text">设备证书更新 ACK：待确认 {{ ctx.contactCardUpdateAckStatusFor(ctx.activeContact.value).pending }}，过期 {{ ctx.contactCardUpdateAckStatusFor(ctx.activeContact.value).stale }}</small>
           </div>
         </div>
         <div class="detail-body">
