@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import LoginPage from './components/LoginPage.vue'
 import ChatPage from './components/ChatPage.vue'
@@ -351,6 +351,11 @@ const qrTitle = ref('')
 const qrDataUrl = ref('')
 const qrRawText = ref('')
 const activeFingerprintVerificationText = ref('')
+const fingerprintScanOpen = ref(false)
+const fingerprintScanStatus = ref('')
+const fingerprintScanVideo = ref<HTMLVideoElement | null>(null)
+let fingerprintScanStream: MediaStream | null = null
+let fingerprintScanStopped = true
 const route = useRoute()
 const router = useRouter()
 const authMode = computed(() => route.path === '/register' ? 'register' : route.path === '/import' ? 'import' : 'login')
@@ -5389,6 +5394,62 @@ async function copyActiveContactFingerprintProof() {
   await copyText(contactFingerprintProof(activeContact.value), '联系人指纹核验码')
 }
 
+function barcodeDetectorCtor(): any {
+  return (globalThis as any).BarcodeDetector
+}
+
+async function stopFingerprintQrScan() {
+  fingerprintScanStopped = true
+  fingerprintScanOpen.value = false
+  fingerprintScanStatus.value = ''
+  if (fingerprintScanStream) {
+    fingerprintScanStream.getTracks().forEach((track) => track.stop())
+    fingerprintScanStream = null
+  }
+}
+
+async function startFingerprintQrScan() {
+  if (!activeContact.value) throw new Error('请选择联系人')
+  const Detector = barcodeDetectorCtor()
+  if (!Detector) {
+    showAlert('当前浏览器不支持扫码', '请改用“复制/粘贴指纹核验码”。', 'warning')
+    return
+  }
+  try {
+    fingerprintScanOpen.value = true
+    fingerprintScanStopped = false
+    fingerprintScanStatus.value = '正在打开摄像头…'
+    fingerprintScanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+    await nextTick()
+    if (!fingerprintScanVideo.value) throw new Error('扫码视频组件未就绪')
+    fingerprintScanVideo.value.srcObject = fingerprintScanStream
+    await fingerprintScanVideo.value.play()
+    const detector = new Detector({ formats: ['qr_code'] })
+    fingerprintScanStatus.value = '请将指纹核验二维码对准摄像头'
+    const scanOnce = async () => {
+      if (fingerprintScanStopped || !fingerprintScanVideo.value) return
+      try {
+        const codes = await detector.detect(fingerprintScanVideo.value)
+        const raw = String(codes?.[0]?.rawValue || '')
+        if (raw) {
+          activeFingerprintVerificationText.value = raw
+          fingerprintScanStatus.value = '已识别二维码，正在核验…'
+          await stopFingerprintQrScan()
+          await verifyActiveContactFingerprintFromText()
+          return
+        }
+      } catch (error) {
+        fingerprintScanStatus.value = `扫码失败：${userFacingError(error)}`
+      }
+      if (!fingerprintScanStopped) window.setTimeout(scanOnce, 350)
+    }
+    void scanOnce()
+  } catch (error) {
+    await stopFingerprintQrScan()
+    showAlert('扫码启动失败', userFacingError(error), 'warning')
+  }
+}
+
 function parseFingerprintVerificationText(text: string): { user_id?: string; fingerprint?: string; identity_public_key?: string } {
   const trimmed = text.trim()
   if (!trimmed) throw new Error('请粘贴指纹核验码或指纹文本')
@@ -6920,7 +6981,7 @@ const appContext = {
   ratchetInfoText, safetyPolicy, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
-  nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, findActiveContactMailboxHint, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, copyActiveContactFingerprintProof, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, showMyFingerprintQr, copyMyFingerprintProof, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
+  nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, findActiveContactMailboxHint, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, startFingerprintQrScan, stopFingerprintQrScan, fingerprintScanOpen, fingerprintScanStatus, copyActiveContactFingerprintProof, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, showMyFingerprintQr, copyMyFingerprintProof, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
   nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, publishAndCheckMyPreKeyDht, publishAndCheckMyMailboxHintDht, publishAndCheckAllMyDht, clearPreKeyRawState, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
@@ -7007,6 +7068,18 @@ const appContext = {
         <button class="secondary" @click="closeConfirm(false)">取消</button>
         <button :class="{ danger: confirmDialog.danger }" @click="closeConfirm(true)">确定</button>
       </div>
+    </section>
+  </div>
+
+  <div v-if="fingerprintScanOpen" class="qr-mask" @click.self="stopFingerprintQrScan">
+    <section class="qr-modal" role="dialog" aria-modal="true" aria-labelledby="fingerprint-scan-title">
+      <header>
+        <h2 id="fingerprint-scan-title">扫码核验联系人指纹</h2>
+        <button class="danger" @click="stopFingerprintQrScan">关闭</button>
+      </header>
+      <video ref="fingerprintScanVideo" playsinline muted style="width:100%;border-radius:12px;border:1px solid var(--c-line);background:#000"></video>
+      <small>{{ fingerprintScanStatus }}</small>
+      <small>如果浏览器不支持摄像头扫码，请复制/粘贴 lm-contact-fingerprint-v1 核验码。</small>
     </section>
   </div>
 

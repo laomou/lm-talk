@@ -216,6 +216,7 @@ function openGroupDetail(groupId: string) {
             <textarea v-model="ctx.activeFingerprintVerificationText.value" rows="3" placeholder="粘贴对方通过可信渠道展示的 lm-contact-fingerprint-v1 核验码，或直接粘贴指纹文本"></textarea>
             <div class="row detail-actions">
               <button class="secondary" @click="ctx.verifyActiveContactFingerprintFromText">核验并标记可信</button>
+              <button class="secondary" @click="ctx.startFingerprintQrScan">扫码核验</button>
               <button class="secondary" @click="ctx.showActiveContactFingerprintQr">显示当前联系人核验码</button>
               <button class="secondary" @click="ctx.copyActiveContactFingerprintProof">复制当前联系人核验码</button>
             </div>
