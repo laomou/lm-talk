@@ -79,10 +79,15 @@ Do not mark the project production-ready until these are explicitly completed an
 - Long-running fuzz campaigns with saved corpus and crash triage, beyond harness compile checks.
 - Real network chaos/load testing: latency, packet loss, reconnects, malformed/hostile peers, sustained Mailbox/DHT load.
 - External security audit of core cryptography, Web/WASM bindings, node control plane, and deployment guidance.
-- Native node database encryption, e.g. SQLCipher or an equivalent encrypted state store; current `0600` permissions are only a local hardening measure.
+- Native node SQLite `state_db` database encryption, e.g. SQLCipher or an equivalent encrypted state store. The JSON `state_file` now supports XChaCha20-Poly1305 passphrase encryption and fail-closed enforcement, but that is a compatibility/snapshot path and does not replace database-level `state_db` encryption for production.
 - Multi-device sync and receipt-state reconciliation beyond backup merge heuristics.
 
 ## Evidence to keep for a release candidate
+
+Before calling a node build production-ready, also archive evidence for any configured state persistence mode:
+
+- `state_db`: `/control/stats` and `/control/metrics` showing `state_db_encrypted=1` once database-level encryption is implemented.
+- `state_file`: `/control/stats` and `/control/metrics` showing `state_file.encrypted=true` / `lm_node_state_file_encrypted 1` and `state_file.permissions_hardened=true`; keep secret-file permission checks for the passphrase file.
 
 For every release candidate, archive:
 
