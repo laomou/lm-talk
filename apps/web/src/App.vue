@@ -297,6 +297,7 @@ type PersistedState = {
   autoReadReceipts?: boolean
   autoPublishPreKey?: boolean
   autoNodeSync?: boolean
+  lastNodeSnapshotSyncAt?: number
   processedMailboxIds?: Array<string | ProcessedMailboxRecord>
   mailboxFailedItems?: MailboxFailedItem[]
   syncRecoveryHistory?: string[]
@@ -327,6 +328,7 @@ type PersistedMeta = {
   autoReadReceipts?: boolean
   autoPublishPreKey?: boolean
   autoNodeSync?: boolean
+  lastNodeSnapshotSyncAt?: number
   processedMailboxIds?: Array<string | ProcessedMailboxRecord>
   mailboxFailedItems?: MailboxFailedItem[]
   syncRecoveryHistory?: string[]
@@ -1238,6 +1240,7 @@ function currentPersistedState(): PersistedState {
     autoReadReceipts: autoReadReceipts.value,
     autoPublishPreKey: autoPublishPreKey.value,
     autoNodeSync: autoNodeSync.value,
+    lastNodeSnapshotSyncAt: lastNodeSnapshotSyncAt.value ?? undefined,
     processedMailboxIds: processedMailboxIds.value,
     mailboxFailedItems: mailboxFailedItems.value,
     syncRecoveryHistory: syncRecoveryHistory.value,
@@ -1270,6 +1273,7 @@ function persistedMeta(): PersistedMeta {
     autoReadReceipts: autoReadReceipts.value,
     autoPublishPreKey: autoPublishPreKey.value,
     autoNodeSync: autoNodeSync.value,
+    lastNodeSnapshotSyncAt: lastNodeSnapshotSyncAt.value ?? undefined,
     processedMailboxIds: processedMailboxIds.value,
     mailboxFailedItems: mailboxFailedItems.value,
     syncRecoveryHistory: syncRecoveryHistory.value,
@@ -1410,6 +1414,7 @@ async function writeStateToTables(state: PersistedState) {
   autoReadReceipts.value = state.autoReadReceipts ?? false
   autoPublishPreKey.value = state.autoPublishPreKey ?? true
   autoNodeSync.value = state.autoNodeSync ?? false
+  lastNodeSnapshotSyncAt.value = typeof state.lastNodeSnapshotSyncAt === 'number' ? state.lastNodeSnapshotSyncAt : null
   processedMailboxIds.value = normalizeProcessedMailboxRecords(state.processedMailboxIds)
   mailboxFailedItems.value = await Promise.all((state.mailboxFailedItems ?? []).map((m: any) => decryptMailboxFailedItemFromStore(m, key)))
   syncRecoveryHistory.value = state.syncRecoveryHistory ?? []
@@ -1439,6 +1444,7 @@ async function loadStateFromTables(): Promise<boolean> {
   autoReadReceipts.value = meta.autoReadReceipts ?? false
   autoPublishPreKey.value = meta.autoPublishPreKey ?? true
   autoNodeSync.value = meta.autoNodeSync ?? false
+  lastNodeSnapshotSyncAt.value = typeof meta.lastNodeSnapshotSyncAt === 'number' ? meta.lastNodeSnapshotSyncAt : null
   processedMailboxIds.value = normalizeProcessedMailboxRecords(meta.processedMailboxIds)
   mailboxFailedItems.value = await Promise.all((meta.mailboxFailedItems ?? []).map((m: any) => decryptMailboxFailedItemFromStore(m, key)))
   syncRecoveryHistory.value = meta.syncRecoveryHistory ?? []
@@ -1553,6 +1559,7 @@ function resetAccountScopedState() {
   autoReadReceipts.value = false
   autoPublishPreKey.value = true
   autoNodeSync.value = false
+  lastNodeSnapshotSyncAt.value = null
   nodeControlStatus.value = '未连接'
 }
 
@@ -6375,6 +6382,7 @@ async function importNodeSnapshot() {
     })
     lastNodeSnapshotSyncAt.value = Date.now()
     nodeSyncStatusText.value = JSON.stringify(body, null, 2)
+    persist()
   })
 }
 
@@ -6391,6 +6399,7 @@ async function pullSnapshotFromPeerNode() {
     })
     lastNodeSnapshotSyncAt.value = Date.now()
     nodeSyncStatusText.value = JSON.stringify(body, null, 2)
+    persist()
   })
 }
 
@@ -6404,6 +6413,7 @@ async function autoPullSnapshotFromPeerNode() {
     const body = await nodeFetchJson('/sync/import', { method: 'POST', body: JSON.stringify({ snapshot }) })
     lastNodeSnapshotSyncAt.value = Date.now()
     nodeSyncStatusText.value = `auto sync ok: ${JSON.stringify(body)}`
+    persist()
   } catch (e) {
     nodeSyncStatusText.value = `auto sync failed: ${String(e)}`
   }
