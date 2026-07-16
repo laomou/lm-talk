@@ -6496,6 +6496,62 @@ mod tests {
     }
 
     #[test]
+    fn dht_find_value_retries_peer_after_quarantine_backoff_expires() {
+        let (target_identity, _) =
+            Identity::create_with_passphrase("quarantine recovery target").unwrap();
+        let key = DhtRecordKey::for_mailbox_hint(target_identity.user_id());
+        let peer = SyncPeerConfig {
+            url: "transport://recovering-peer".into(),
+            token: None,
+            peer_id: Some("recovering-peer".into()),
+        };
+        let mut node = NativeNode::new(NodeConfig::default());
+        for failure in 0..DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES {
+            node.sync_status
+                .record_failure(&peer.url, format!("synthetic quarantine failure {failure}"));
+        }
+        node.sync_status
+            .record_next_attempt(&peer.url, current_unix_timestamp().saturating_sub(1));
+
+        let (eligible, quarantined) = dht_runner_peer_configs_with_quarantine_count(
+            &node,
+            std::slice::from_ref(&peer),
+            DhtTransportKind::HttpControl,
+            DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES,
+        );
+        assert_eq!(quarantined, 0);
+        assert_eq!(eligible.len(), 1);
+        assert_eq!(eligible[0].url, peer.url);
+
+        let record = DhtRecord::mailbox_hint(
+            target_identity.user_id(),
+            "mailbox://recovered-target".into(),
+            3600,
+        );
+        let transport = FakeDhtTransport {
+            responses: Mutex::new(vec![DhtRpcResponse::Value {
+                request_id: "quarantine-recovery-success".into(),
+                record: Some(record.clone()),
+                closer_records: Vec::new(),
+                closer_nodes: Vec::new(),
+            }]),
+            ..Default::default()
+        };
+        let stats = dht_find_value_with_transport(&mut node, &eligible, key, 8, 1, 1, &transport);
+        assert_eq!(stats.attempts, 1);
+        assert_eq!(stats.successes, 1);
+        assert_eq!(stats.found_records, 1);
+        assert_eq!(
+            node.dht_records.find_value(&key).unwrap().value,
+            record.value
+        );
+        let status = node.sync_status.peers.get(&peer.url).unwrap();
+        assert_eq!(status.consecutive_failures, 0);
+        assert_eq!(status.last_error, None);
+        assert!(status.next_attempt_at.unwrap() <= current_unix_timestamp());
+    }
+
+    #[test]
     fn dht_find_value_updates_peer_health_and_quarantine() {
         let (target_identity, _) = Identity::create_with_passphrase("health target").unwrap();
         let key = DhtRecordKey::for_mailbox_hint(target_identity.user_id());
