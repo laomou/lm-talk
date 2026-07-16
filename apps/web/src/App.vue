@@ -1885,6 +1885,7 @@ async function afterLoginAutomation() {
   if (!nodeEnabled.value) return
   if (autoPublishPreKey.value) await ensurePreKeyInventory()
   await ensureOwnMailboxHintDhtRecord()
+  await ensureOwnPublicPeerDhtRecord()
   if (autoMailboxTake.value) await takeMailboxFromNode()
 }
 
@@ -1898,6 +1899,7 @@ async function syncNow() {
   try {
     if (autoPublishPreKey.value) await ensurePreKeyInventory()
     await ensureOwnMailboxHintDhtRecord()
+    await ensureOwnPublicPeerDhtRecord()
     await refreshOutgoingMailboxDeliveryStatusesFromNode()
     await takeMailboxFromNode()
     await refreshOutgoingMailboxDeliveryStatusesFromNode()
@@ -5976,29 +5978,46 @@ async function publishAndCheckAllMyDht() {
   })
 }
 
+async function publishPublicPeerDhtRecord(options: { recordHistory?: boolean } = {}): Promise<{ key: string; peerId: string; store: any }> {
+  if (!publicPeerAnnounceText.value.trim()) createPublicPeerAnnounceText()
+  if (!publicPeerAnnounceText.value.trim()) throw new Error('请先生成 PublicPeerAnnounce')
+  const peerId = publicPeerId.value.trim()
+  if (!peerId) throw new Error('缺少 public peer id')
+  fillDhtKeyInput('public-peer', peerId)
+  const keyPayload = await deriveDhtKeyPayload()
+  const now = Math.floor(Date.now() / 1000)
+  const record = {
+    key: String(keyPayload.key || nodeDhtFindValueKey.value).trim(),
+    kind: 'PublicPeer',
+    value: publicPeerAnnounceText.value,
+    created_at: now,
+    expires_at: now + 24 * 3600,
+    republish_at: now,
+  }
+  const store = await nodeFetchJson('/dht/record', {
+    method: 'POST',
+    body: JSON.stringify({ record }),
+  })
+  nodeClosestInfoText.value = JSON.stringify(store, null, 2)
+  if (options.recordHistory !== false) recordDhtOperation(`PublicPeer 已发布到 DHT：${peerId}`)
+  return { key: record.key, peerId, store }
+}
+
+async function ensureOwnPublicPeerDhtRecord() {
+  if (!identity.value || !nodeEnabled.value) return
+  if (!publicPeerAnnounceText.value.trim() && parseLines(publicPeerAddressesText.value).length === 0) return
+  try {
+    const { key } = await publishPublicPeerDhtRecord({ recordHistory: false })
+    appendLog(`✅ PublicPeer 已自动发布到 DHT：${key.slice(0, 12)}…`)
+  } catch (error) {
+    appendLog(`⚠️ PublicPeer 自动发布到 DHT 失败：${userFacingError(error)}`)
+  }
+}
+
 async function publishAndCheckMyPublicPeerDht() {
   await runAsync('发布并检查我的 PublicPeer DHT', async () => {
-    if (!publicPeerAnnounceText.value.trim()) createPublicPeerAnnounceText()
-    if (!publicPeerAnnounceText.value.trim()) throw new Error('请先生成 PublicPeerAnnounce')
-    const peerId = publicPeerId.value.trim()
-    if (!peerId) throw new Error('缺少 public peer id')
-    fillDhtKeyInput('public-peer', peerId)
-    const keyPayload = await deriveDhtKeyPayload()
-    const now = Math.floor(Date.now() / 1000)
-    const record = {
-      key: String(keyPayload.key || nodeDhtFindValueKey.value).trim(),
-      kind: 'PublicPeer',
-      value: publicPeerAnnounceText.value,
-      created_at: now,
-      expires_at: now + 24 * 3600,
-      republish_at: now,
-    }
-    const store = await nodeFetchJson('/dht/record', {
-      method: 'POST',
-      body: JSON.stringify({ record }),
-    })
-    nodeClosestInfoText.value = JSON.stringify(store, null, 2)
-    await runDhtFindValueForKey(record.key)
+    const { key, peerId } = await publishPublicPeerDhtRecord()
+    await runDhtFindValueForKey(key)
     nodeDhtFindValueStatusText.value = `PublicPeer 已发布并完成 DHT 查找：${peerId}；${nodeDhtFindValueStatusText.value}`
     recordDhtOperation(`PublicPeer 已发布并完成 DHT 查找：${peerId}`)
   })
