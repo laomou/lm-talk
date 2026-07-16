@@ -5183,11 +5183,15 @@ async function discoverActiveContactDht() {
   await runAsync('发现联系人 DHT 记录', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
     const contact = activeContact.value
+    contact.last_secure_session_attempt_at = Date.now()
     fillDhtKeyInput('prekey', contact.user_id)
     await deriveAndFindDhtValueNow()
     fillDhtKeyInput('mailbox-hint', contact.user_id)
     await deriveAndFindDhtValueNow()
+    contact.last_secure_session_error = undefined
+    contact.secure_session_failure_count = 0
     appendLog(`✅ 已完成 ${contact.display_name || contact.user_id} 的 PreKey / MailboxHint DHT 发现`)
+    persist()
   })
 }
 
