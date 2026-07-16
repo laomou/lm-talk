@@ -216,10 +216,12 @@ function openGroupDetail(groupId: string) {
           <section v-if="ctx.contactRevokedDeviceIds(ctx.activeContact.value).length" class="home-card">
             <h3>已撤销设备</h3>
             <div class="outbox-list">
-              <div v-for="deviceId in ctx.contactRevokedDeviceIds(ctx.activeContact.value)" :key="deviceId" class="outbox-row">
-                <b>{{ deviceId }}</b>
+              <div v-for="item in ctx.contactRevokedDeviceDetails(ctx.activeContact.value)" :key="item.device_id" class="outbox-row">
+                <b>{{ item.device_id }}</b>
                 <small>该设备已标记撤销，不应再用于信任或建链。</small>
-                <button class="secondary danger" @click="ctx.unmarkActiveContactRevokedDevice(deviceId)">解除撤销标记</button>
+                <small v-if="item.reason">原因：{{ item.reason }}</small>
+                <small v-if="item.created_at">撤销时间：{{ ctx.formatDateTime(item.created_at * 1000) }}</small>
+                <button class="secondary danger" @click="ctx.unmarkActiveContactRevokedDevice(item.device_id)">解除撤销标记</button>
               </div>
             </div>
           </section>

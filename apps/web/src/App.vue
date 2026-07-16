@@ -129,6 +129,7 @@ type ContactItem = ContactInfo & {
   last_secure_session_success_at?: number
   secure_session_failure_count?: number
   revoked_device_ids?: string[]
+  device_revocations?: DeviceRevokeInfo[]
   device_certs?: DeviceCertItem[]
   block_reason?: string
   read_receipts?: 'default' | 'enabled' | 'disabled'
@@ -2697,6 +2698,7 @@ function mergeContactCard(existing: ContactItem | undefined, info: ContactInfo, 
     state: existing?.state ?? 'LocalOnly',
     pending_request_id: existing?.pending_request_id,
     revoked_device_ids: existing?.revoked_device_ids,
+    device_revocations: existing?.device_revocations,
     block_reason: existing?.block_reason,
     read_receipts: existing?.read_receipts ?? 'default',
     fingerprint_verified_at: existing?.fingerprint_verified_at,
@@ -2761,6 +2763,8 @@ function applyDeviceRevokeToActiveContact() {
     const list = new Set(activeContact.value.revoked_device_ids ?? [])
     list.add(info.device_id)
     activeContact.value.revoked_device_ids = [...list]
+    const existing = activeContact.value.device_revocations ?? []
+    activeContact.value.device_revocations = [info, ...existing.filter((item) => item.device_id !== info.device_id)]
     incomingDeviceRevokeText.value = ''
     persist()
   })
@@ -2857,6 +2861,15 @@ function contactRevokedDeviceIds(contact: ContactItem): string[] {
     .filter((deviceId) => revoked.has(deviceId))
 }
 
+function contactRevokedDeviceDetails(contact: ContactItem): DeviceRevokeInfo[] {
+  const byId = new Map((contact.device_revocations ?? []).map((item) => [item.device_id, item]))
+  return contactRevokedDeviceIds(contact).map((deviceId) => byId.get(deviceId) ?? {
+    user_id: contact.user_id,
+    device_id: deviceId,
+    created_at: 0,
+  })
+}
+
 async function unmarkActiveContactRevokedDevice(deviceId: string) {
   await runAsync('解除联系人设备撤销标记', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
@@ -2868,6 +2881,7 @@ async function unmarkActiveContactRevokedDevice(deviceId: string) {
     )
     if (!ok) return
     contact.revoked_device_ids = (contact.revoked_device_ids ?? []).filter((id) => id !== deviceId)
+    contact.device_revocations = (contact.device_revocations ?? []).filter((item) => item.device_id !== deviceId)
     appendLog(`已解除 ${contact.display_name || contact.user_id} 的设备撤销标记：${deviceId}`)
     persist()
   })
@@ -7023,7 +7037,7 @@ const appContext = {
   prekeySignedId, prekeyOneTimeCount, prekeyBundleText, prekeyPrivateBundleJson, prekeySignedOneTimeRecordTexts, prekeyInfoText, x3dhInitialMessageJson,
   selectedOneTimePreKeyId, selectedSignedOneTimePreKeyRecordText, x3dhSharedSecretText, ratchetStateText, ratchetPeerStateText, ratchetLocalDhKeyPairJson, ratchetRemoteDhPublicKeyForInit,
   ratchetInitRole, ratchetHeaderText, ratchetEnvelopeText, ratchetPlainText, ratchetKeyText, ratchetRemoteDhPublicKey,
-  ratchetInfoText, safetyPolicy, contactRevokedDeviceCount, contactRevokedDeviceIds, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
+  ratchetInfoText, safetyPolicy, contactRevokedDeviceCount, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
   nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, findActiveContactMailboxHint, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, startFingerprintQrScan, stopFingerprintQrScan, fingerprintScanOpen, fingerprintScanStatus, copyActiveContactFingerprintProof, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, showMyFingerprintQr, copyMyFingerprintProof, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
