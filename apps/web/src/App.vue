@@ -5033,7 +5033,13 @@ async function copyDhtOperationHistory() {
 }
 
 function normalizeDhtHistoryItems(value: unknown): string[] {
-  const raw = Array.isArray(value) ? value : (value as any)?.history
+  const raw = Array.isArray(value)
+    ? value
+    : Array.isArray((value as any)?.history)
+      ? (value as any).history
+      : Array.isArray((value as any)?.dht?.operation_history)
+        ? (value as any).dht.operation_history
+        : []
   if (!Array.isArray(raw)) return []
   return raw
     .map((item) => String(item ?? '').trim())

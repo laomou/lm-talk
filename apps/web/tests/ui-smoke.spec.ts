@@ -551,7 +551,7 @@ test('设置页可导出并导入完整数据备份恢复本地同步设置', as
   await expect(page.getByLabel('当前会话自动发送已读回执')).not.toBeChecked()
   await expect(page.getByText(/DHT 操作历史：.*备份测试/)).toBeVisible()
   await page.locator('summary').filter({ hasText: '导入 DHT 历史' }).click()
-  await page.getByLabel('DHT 操作历史 JSON').fill(JSON.stringify({ history: ['2026/07/16 10:20 · DHT 查找：导入测试'] }))
+  await page.getByLabel('DHT 操作历史 JSON').fill(JSON.stringify({ dht: { operation_history: ['2026/07/16 10:20 · DHT 查找：导入测试'] } }))
   await page.getByRole('button', { name: '导入 DHT 历史' }).click()
   await expect(page.getByRole('heading', { name: '导入 DHT 操作历史' })).toBeVisible()
   await expect(page.getByText(/将导入 1 条 DHT 操作历史/)).toBeVisible()
