@@ -212,6 +212,7 @@ function openGroupDetail(groupId: string) {
             <button v-if="ctx.activeContact.value.state === 'Friend'" class="secondary" @click="ctx.discoverActiveContactDht">发现 DHT</button>
             <button v-if="ctx.activeContact.value.state === 'Friend'" class="secondary" @click="ctx.findActiveContactPreKey">查找 PreKey</button>
             <button v-if="ctx.activeContact.value.state === 'Friend'" class="secondary" @click="ctx.findActiveContactMailboxHint">查找 MailboxHint</button>
+            <button v-if="ctx.activeContact.value.dht_discovery_risk_level === 'high'" class="secondary danger" @click="ctx.clearActiveContactDhtRisk">已核验，清除 DHT 风险</button>
             <button v-if="ctx.activeContact.value.state === 'Friend' && ctx.activeContact.value.last_secure_session_error" class="secondary" @click="ctx.retrySecureSessionForActiveContact">重试建链</button>
             <button v-if="ctx.activeContact.value.state === 'Friend' && ctx.activeContact.value.last_secure_session_error" class="secondary" @click="ctx.clearActiveSecureSessionError">清除建链错误</button>
             <button v-if="ctx.activeContact.value.state === 'Friend' && !ctx.activeRatchetSession.value" class="secondary" @click="ctx.recreateActiveRatchetSession">本地建链</button>
