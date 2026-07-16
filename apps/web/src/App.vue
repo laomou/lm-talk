@@ -5126,7 +5126,10 @@ async function deriveDhtKeyForFindValue() {
 
 function dhtFindValueSummary(body: any): string {
   const stats = body?.stats ?? {}
-  return `DHT 查找：${body?.found ? '找到' : '未找到'}，peer 尝试 ${Number(stats.attempts ?? 0)}，成功 ${Number(stats.successes ?? 0)}，失败 ${Number(stats.failures ?? 0)}，found ${Number(stats.found_records ?? 0)}，closer ${Number(stats.closer_records ?? 0)}，隔离 ${Number(stats.peers_quarantined ?? 0)}`
+  const record = body?.record ?? body?.value ?? body?.found_record
+  const kind = record?.kind ? `，kind ${record.kind}` : ''
+  const key = body?.key ? `，key ${String(body.key).slice(0, 12)}…` : ''
+  return `DHT 查找：${body?.found ? '找到' : '未找到'}${kind}${key}，peer 尝试 ${Number(stats.attempts ?? 0)}，成功 ${Number(stats.successes ?? 0)}，失败 ${Number(stats.failures ?? 0)}，found ${Number(stats.found_records ?? 0)}，closer ${Number(stats.closer_records ?? 0)}，隔离 ${Number(stats.peers_quarantined ?? 0)}`
 }
 
 async function runDhtFindValueForKey(key: string) {
