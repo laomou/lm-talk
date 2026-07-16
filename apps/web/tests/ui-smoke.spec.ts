@@ -295,6 +295,7 @@ test('登录注册、主界面和诊断页是产品化 UI', async ({ page }) => 
   await expect(page.getByText('一键诊断')).toBeVisible()
   await page.evaluate(() => {
     ;(window as any).appendLogForTests?.('secret Bearer super-secret-token lm-identity-backup-v1:abcdef lm-message-receipt-v1:receipt-secret lm-prekey-bundle-v1:prekey-secret http://sync.test|node-token')
+    ;(window as any).appContextForTests?.nodeDhtFindValueStatusText && ((window as any).appContextForTests.nodeDhtFindValueStatusText.value = 'DHT 查找：找到')
   })
   await page.getByRole('button', { name: '生成诊断报告' }).click()
   await page.getByRole('button', { name: '显示预览' }).click()
@@ -309,6 +310,8 @@ test('登录注册、主界面和诊断页是产品化 UI', async ({ page }) => 
   expect(diagnosticJson).toContain('Bearer [已脱敏]')
   expect(diagnosticJson).toContain('background_event_count')
   expect(diagnosticJson).toContain('lm-talk-mailbox-sync')
+  expect(diagnosticJson).toContain('dht_peer_health_summary')
+  expect(diagnosticJson).toContain('find_value_status')
 
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', '/manifest.webmanifest')
   await expect(page.locator('meta[http-equiv="Content-Security-Policy"]')).toHaveAttribute('content', /default-src 'self'/)

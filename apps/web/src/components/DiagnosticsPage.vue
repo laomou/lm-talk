@@ -52,6 +52,14 @@ async function runDiagnostics() {
       token_count: props.ctx.nodeTokenCount.value,
       missing_remote_token_count: props.ctx.nodeMissingRemoteTokenCount.value,
       status: sanitizeDiagnosticText(props.ctx.nodeControlStatus.value),
+      node_health_summary: sanitizeDiagnosticText(props.ctx.nodeHealthSummaryText.value),
+      dht_peer_health_summary: sanitizeDiagnosticText(props.ctx.nodePeerHealthStatusText.value),
+      dht_peer_health_risk: props.ctx.nodePeerHealthRiskLevel.value,
+    },
+    dht: {
+      find_value_status: sanitizeDiagnosticText(props.ctx.nodeDhtFindValueStatusText.value),
+      replication_status: sanitizeDiagnosticText(props.ctx.nodeDhtReplicationStatusText.value),
+      routing_refresh_status: sanitizeDiagnosticText(props.ctx.nodeRoutingRefreshStatusText.value),
     },
     local_counts: {
       contacts: props.ctx.contacts.value.length,
@@ -112,6 +120,11 @@ async function runDiagnostics() {
           <span>垃圾请求</span>
           <b>{{ ctx.quarantinedFriendRequests.value.length }}</b>
           <small>去重记录 {{ ctx.mailboxDedupeCount.value }}</small>
+        </div>
+        <div class="diagnostic-card">
+          <span>DHT 状态</span>
+          <b>{{ ctx.nodePeerHealthRiskLevel.value === 'ok' ? '正常' : ctx.nodePeerHealthRiskLevel.value === 'warning' ? '警告' : '异常' }}</b>
+          <small>{{ ctx.nodePeerHealthStatusText.value }}</small>
         </div>
       </section>
 
