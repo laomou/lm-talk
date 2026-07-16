@@ -281,7 +281,7 @@ type OutboxItem = {
   peer_user_id: string
   envelope_json: string
   message_id?: string
-  kind?: 'direct-envelope' | 'group-fanout' | 'file-package' | 'delivery-receipt' | 'read-receipt' | 'other'
+  kind?: 'direct-envelope' | 'group-fanout' | 'file-package' | 'delivery-receipt' | 'read-receipt' | 'contact-update' | 'other'
   status: 'queued' | 'sent' | 'failed'
   created_at: number
   retry_count: number
@@ -3192,6 +3192,7 @@ function mailboxKindForOutboxKind(kind: OutboxItem['kind']): string {
   if (kind === 'group-fanout') return 'group-fanout'
   if (kind === 'delivery-receipt') return 'delivery-receipt'
   if (kind === 'read-receipt') return 'read-receipt'
+  if (kind === 'contact-update') return 'contact-update'
   if (kind === 'file-package') return 'other'
   if (kind === 'other') return 'other'
   return 'direct-envelope'
@@ -3640,6 +3641,37 @@ async function fanoutDeviceRevokeToFriends() {
     appendLog(`设备撤销事件分发完成：已投递 ${sent}，queued ${queued}`)
     persist()
   })
+}
+
+
+async function fanoutMyContactCardUpdateToFriends() {
+  await runAsync('向好友分发联系人设备证书更新', async () => {
+    if (!myContactCardText.value.trim()) refreshMyContactCard()
+    if (!myContactCardText.value.trim()) throw new Error('请先生成我的联系人名片')
+    let sent = 0
+    let queued = 0
+    for (const contact of friendContacts.value) {
+      const result = await deliverPayloadToContact(contact, myContactCardText.value, '联系人设备证书更新', 'contact-update')
+      if (result === 'sent' || result === 'mailbox') sent += 1
+      else { queued += 1; queueOutboxItem(contact, myContactCardText.value, undefined, 'contact-update') }
+    }
+    appendLog(`联系人设备证书更新分发完成：已投递 ${sent}，queued ${queued}`)
+    persist()
+  })
+}
+
+function applyContactCardUpdateFromMailbox(cardText: string, sender: ContactItem) {
+  ensureUiTextSize('联系人设备证书更新', cardText, MAX_CONTACT_CARD_BYTES)
+  const info = safeJson<ContactInfo>(inspect_contact_card(cardText))
+  if (info.user_id !== sender.user_id) throw new Error('联系人更新 user_id 与发送者不匹配')
+  import_contact_as_json(cardText, 'MailboxContactUpdate')
+  const index = contacts.value.findIndex((c) => c.user_id === info.user_id)
+  const existing = index >= 0 ? contacts.value[index] : sender
+  const merged = mergeContactCard(existing, info, cardText)
+  if (index >= 0) contacts.value[index] = merged
+  else contacts.value.push({ ...merged, state: 'Friend' })
+  appendLog(`✅ 已合并 ${merged.display_name || merged.user_id} 的联系人设备证书更新`)
+  persist()
 }
 
 function applyDeviceRevokeToActiveContact() {
@@ -7500,7 +7532,7 @@ function unwrapMailboxDelivery(item: any): { deliveryId?: string; message: any }
   return { message: item }
 }
 
-type MailboxEventKind = 'message' | 'file' | 'friend-request' | 'friend-response' | 'group-invite' | 'delivery-ack' | 'read-receipt' | 'device-revoke' | 'secure-session' | 'data-backup' | 'self-sync' | 'other'
+type MailboxEventKind = 'message' | 'file' | 'friend-request' | 'friend-response' | 'group-invite' | 'delivery-ack' | 'read-receipt' | 'device-revoke' | 'contact-update' | 'secure-session' | 'data-backup' | 'self-sync' | 'other'
 
 function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: string; event?: MailboxEventKind; reason?: string } {
   const { deliveryId, message } = unwrapMailboxDelivery(item)
@@ -7554,6 +7586,11 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
   }
   activePeerId.value = sender.user_id
   activeGroupId.value = ''
+
+  if (normalizedKind === 'contactupdate' || ciphertext.startsWith('lm-contact-card-v1:')) {
+    applyContactCardUpdateFromMailbox(ciphertext, sender)
+    return { handled: true, deliveryId, event: 'contact-update' }
+  }
 
   if (normalizedKind === 'directenvelope' || normalizedKind === 'groupfanout') {
     try {
@@ -8263,7 +8300,7 @@ const appContext = {
   nodeControlUrl, nodeUrlList, nodeEntrySummaries, nodeSettingsSummaryText, nodeTokenStorageText, nodeTokenCount, nodeMissingRemoteTokenCount, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake, autoReadReceipts,
   enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,
   autoPublishPreKey, autoNodeSync, autoSelfMailboxSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodeStateFileSecurityText, nodeStateFileSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
-  secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutDeviceRevokeToFriends, myDeviceCertJson, myDeviceBackupText,
+  secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutMyContactCardUpdateToFriends, fanoutDeviceRevokeToFriends, myDeviceCertJson, myDeviceBackupText,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
   exportFullDataBackup, pushFullDataBackupToOwnMailbox, pushSelfSyncPackageToOwnMailbox, selfSyncStatusText, processedSelfSyncIds, processedSelfSyncRequestIds, selfSyncMissingRequestRecords, selfSyncRequestSentCount, selfSyncRequestHitCount, selfSyncRequestMissCount, selfSyncRecentPackages, resendLatestSelfSyncPackageToOwnMailbox, clearSelfSyncRecentPackages, lastSelfSyncPushedAt, lastSelfSyncMergedAt, lastSelfSyncSequenceSent, lastSelfSyncSequenceMerged, selfSyncGapCount, lastSelfSyncGapAt, lastSelfSyncMissingPreviousId, clearSelfSyncGapStats, repairSelfSyncGapNow, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, selfMailboxBackupStatusText, selfMailboxBackupMergePending, selfMailboxBackupMergeStatusText, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
   addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, friendRequestRateRecords, friendRequestRateSummaryText, clearFriendRequestRateRecords, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,

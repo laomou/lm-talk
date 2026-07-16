@@ -87,6 +87,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
         <div class="row compact" v-if="ctx.myDeviceCertJson.value">
           <button class="secondary" @click="ctx.copyText(ctx.myDeviceCertJson.value, '设备证书')">复制设备证书</button>
           <button class="secondary" @click="ctx.showQr(ctx.myDeviceCertJson.value, '设备证书')">设备证书二维码</button>
+          <button class="secondary" @click="ctx.fanoutMyContactCardUpdateToFriends">分发设备证书更新</button>
         </div>
         <label for="device-revoke-id-input">撤销 Device ID</label>
         <input id="device-revoke-id-input" v-model="ctx.revokeDeviceId.value" placeholder="输入要撤销的 device_id" />
