@@ -391,6 +391,18 @@ type SelfSyncPackage = {
   revokedDeviceIncomingDropCount?: number
 }
 
+type SelfSyncRequestPackage = {
+  type: 'lm-self-sync-request-v1'
+  version: number
+  request_id: string
+  missing_sync_id: string
+  created_at: number
+  from_user_id: string
+  identity_public_key: string
+  from_device_id?: string
+  signature?: string
+}
+
 type SelfSyncCachedPackage = {
   sync_id: string
   sequence: number
@@ -1987,6 +1999,34 @@ function selfSyncSigningPayload(pkg: SelfSyncPackage): string {
   })
 }
 
+function selfSyncRequestSigningPayload(pkg: SelfSyncRequestPackage): string {
+  return JSON.stringify({
+    type: pkg.type,
+    version: pkg.version,
+    request_id: pkg.request_id,
+    missing_sync_id: pkg.missing_sync_id,
+    created_at: pkg.created_at,
+    from_user_id: pkg.from_user_id,
+    identity_public_key: pkg.identity_public_key,
+    from_device_id: pkg.from_device_id,
+  })
+}
+
+function currentSelfSyncRequestPackage(missingSyncId: string): SelfSyncRequestPackage {
+  const pkg: SelfSyncRequestPackage = {
+    type: 'lm-self-sync-request-v1',
+    version: 1,
+    request_id: newId(),
+    missing_sync_id: missingSyncId,
+    created_at: Date.now(),
+    from_user_id: identity.value?.user_id || '',
+    identity_public_key: identity.value?.identity_public_key || '',
+    from_device_id: myDeviceId.value || undefined,
+  }
+  pkg.signature = sign_identity_text(backupText.value, passphrase.value, selfSyncRequestSigningPayload(pkg))
+  return pkg
+}
+
 function currentSelfSyncPackage(): SelfSyncPackage {
   const sequence = lastSelfSyncSequenceSent.value + 1
   const pkg: SelfSyncPackage = {
@@ -2016,14 +2056,14 @@ function rememberSelfSyncPackage(pkg: SelfSyncPackage, payload: string) {
   ].slice(0, 10)
 }
 
-async function pushSelfSyncPayloadToOwnMailbox(payload: string, label: string) {
+async function pushSelfSyncPayloadToOwnMailbox(payload: string, label: string, kind = 'self-sync') {
   if (!identity.value?.user_id) throw new Error('需要先登录身份')
   if (!nodeEnabled.value) throw new Error('节点未启用')
   const msg = create_mailbox_message(
     backupText.value,
     passphrase.value,
     identity.value.user_id,
-    'self-sync',
+    kind,
     payload,
     BigInt(7 * 24 * 3600),
   )
@@ -2077,6 +2117,7 @@ function applySelfSyncPackage(pkg: SelfSyncPackage) {
     lastSelfSyncGapAt.value = Date.now()
     lastSelfSyncMissingPreviousId.value = pkg.previous_sync_id
     appendLog(`⚠️ 自同步可能存在缺口：previous_sync_id ${pkg.previous_sync_id} 未见过`)
+    void requestMissingSelfSyncPackage(pkg.previous_sync_id).catch((error) => appendLog(`⚠️ 自同步缺包请求失败：${userFacingError(error)}`))
   }
   processedSelfSyncIds.value = [pkg.sync_id, ...processedSelfSyncIds.value.filter((id) => id !== pkg.sync_id), ...(pkg.processedSelfSyncIds ?? [])].filter(Boolean).slice(0, 100)
   processedSelfSyncIds.value = [...new Set(processedSelfSyncIds.value)].slice(0, 100)
@@ -2108,6 +2149,32 @@ function clearSelfSyncGapStats() {
   selfSyncStatusText.value = '自同步：已清空缺口统计'
   appendLog('已清空轻量自同步缺口统计')
   persist()
+}
+
+async function requestMissingSelfSyncPackage(missingSyncId: string) {
+  const pkg = currentSelfSyncRequestPackage(missingSyncId)
+  const payload = JSON.stringify(pkg)
+  await pushSelfSyncPayloadToOwnMailbox(payload, `自同步：已请求缺失包 ${missingSyncId.slice(0, 8)}`, 'self-sync-request')
+}
+
+async function applySelfSyncRequestPackage(pkg: SelfSyncRequestPackage) {
+  if (pkg.version !== 1) throw new Error('self-sync request version 不支持')
+  if (!pkg.request_id || !pkg.missing_sync_id) throw new Error('self-sync request 缺少 request_id 或 missing_sync_id')
+  if (pkg.from_user_id !== identity.value?.user_id) throw new Error('self-sync request user_id 与当前身份不匹配')
+  if (pkg.identity_public_key !== identity.value?.identity_public_key) throw new Error('self-sync request identity_public_key 与当前身份不匹配')
+  if (!pkg.signature || !verify_identity_text_signature(pkg.identity_public_key, selfSyncRequestSigningPayload(pkg), pkg.signature)) throw new Error('self-sync request 签名无效')
+  if (pkg.from_device_id && myDeviceId.value && pkg.from_device_id === myDeviceId.value) {
+    selfSyncStatusText.value = `自同步：已跳过本设备缺包请求 ${pkg.missing_sync_id.slice(0, 8)}`
+    appendLog(selfSyncStatusText.value)
+    return
+  }
+  const cached = selfSyncRecentPackages.value.find((item) => item.sync_id === pkg.missing_sync_id)
+  if (!cached?.payload) {
+    selfSyncStatusText.value = `自同步：收到缺包请求但本机无缓存 ${pkg.missing_sync_id.slice(0, 8)}`
+    appendLog(`⚠️ ${selfSyncStatusText.value}`)
+    return
+  }
+  await pushSelfSyncPayloadToOwnMailbox(cached.payload, `自同步：响应缺包请求，重发 #${cached.sequence} 到自己的 Mailbox`)
 }
 
 async function repairSelfSyncGapNow() {
@@ -6913,6 +6980,12 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
   const fromUserId = String(message.from_user_id ?? '')
   const ciphertext = String(message.ciphertext ?? '')
   let sender = contactByUserId(fromUserId)
+  if (identity.value?.user_id && fromUserId === identity.value.user_id && normalizedKind === 'selfsyncrequest') {
+    const pkg = JSON.parse(ciphertext) as SelfSyncRequestPackage
+    if (pkg?.type !== 'lm-self-sync-request-v1') throw new Error('self-sync request 类型不匹配')
+    void applySelfSyncRequestPackage(pkg)
+    return { handled: true, deliveryId, event: 'self-sync' }
+  }
   if (identity.value?.user_id && fromUserId === identity.value.user_id && normalizedKind === 'selfsync') {
     const pkg = JSON.parse(ciphertext) as SelfSyncPackage
     if (pkg?.type !== 'lm-self-sync-v1') throw new Error('self-sync package 类型不匹配')
