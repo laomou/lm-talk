@@ -406,7 +406,11 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
           <span>启用文本过滤</span>
         </label>
         <p class="muted">好友指纹核验：已核验 {{ ctx.verifiedFriendContactCount.value }}，未核验 {{ ctx.unverifiedFriendContactCount.value }}</p>
-        <p class="muted">严格 E2EE 策略：{{ ctx.strictE2eePolicyEnabled.value ? '已启用' : '未完全启用' }}</p>
+        <p class="muted">严格 E2EE 策略：{{ ctx.strictE2eePolicyEnabled.value ? '已启用' : '未完全启用' }}；{{ ctx.strictE2eeReadiness.value.text }}</p>
+        <div v-if="ctx.strictE2eeReadinessIssues.value.length" class="callout warning">
+          <b>严格 E2EE 启用前检查</b>
+          <small v-for="item in ctx.strictE2eeReadinessIssues.value" :key="`${item.user_id}-${item.issue}`">{{ item.display_name }}：{{ item.issue }}</small>
+        </div>
         <p class="muted">分设备 sealed slot：{{ ctx.sealedSlotCoverageSummary.value.text }}</p>
         <div v-if="ctx.sealedSlotRiskContacts.value.length" class="callout warning">
           <b>存在 sealed slot 降级风险</b>

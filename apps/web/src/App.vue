@@ -909,6 +909,37 @@ const sealedSlotRiskContacts = computed(() => friendContacts.value
     status: contactSealedSlotStatusText(contact),
   }))
 )
+
+const strictE2eeReadiness = computed(() => {
+  const unverified = friendContacts.value.filter((contact) => !contact.fingerprint_verified_at)
+  const sealedRisks = friendContacts.value.filter((contact) => activeContactSealedSlotRiskFor(contact) === 'high')
+  const blockers = [
+    ...(unverified.length ? [`未核验指纹联系人 ${unverified.length} 个`] : []),
+    ...(sealedRisks.length ? [`sealed slot 风险联系人 ${sealedRisks.length} 个`] : []),
+  ]
+  return {
+    ready: blockers.length === 0,
+    unverified_contacts: unverified.length,
+    sealed_slot_risk_contacts: sealedRisks.length,
+    text: blockers.length === 0 ? '严格 E2EE 启用前检查通过。' : `严格 E2EE 启用前仍有：${blockers.join('；')}`,
+  }
+})
+
+const strictE2eeReadinessIssues = computed(() => [
+  ...friendContacts.value
+    .filter((contact) => !contact.fingerprint_verified_at)
+    .slice(0, 8)
+    .map((contact) => ({
+      user_id: contact.user_id,
+      display_name: contact.display_name || contact.user_id,
+      issue: '身份指纹未核验',
+    })),
+  ...sealedSlotRiskContacts.value.map((contact: any) => ({
+    user_id: contact.user_id,
+    display_name: contact.display_name,
+    issue: contact.status,
+  })),
+].slice(0, 12))
 const visibleFriendRequests = computed(() => friendRequests.value.filter((req) => !req.quarantined))
 const quarantinedFriendRequests = computed(() => friendRequests.value.filter((req) => req.quarantined))
 const friendRequestRateSummaryText = computed(() => {
@@ -3846,7 +3877,9 @@ function enableStrictE2eePolicy() {
     requireSealedPerDeviceSlotsForReceive: true,
   }
   persist()
-  appendLog('✅ 已启用严格 E2EE 策略：指纹核验 + sealed slot 收发')
+  appendLog(strictE2eeReadiness.value.ready
+    ? '✅ 已启用严格 E2EE 策略：指纹核验 + sealed slot 收发'
+    : `⚠️ 已启用严格 E2EE 策略，但启用前检查仍有风险：${strictE2eeReadiness.value.text}`)
 }
 
 const strictE2eePolicyEnabled = computed(() => Boolean(
@@ -8230,7 +8263,7 @@ const appContext = {
   prekeySignedId, prekeyOneTimeCount, prekeyBundleText, prekeyPrivateBundleJson, prekeySignedOneTimeRecordTexts, prekeyInfoText, x3dhInitialMessageJson,
   selectedOneTimePreKeyId, selectedSignedOneTimePreKeyRecordText, x3dhSharedSecretText, ratchetStateText, ratchetPeerStateText, ratchetLocalDhKeyPairJson, ratchetRemoteDhPublicKeyForInit,
   ratchetInitRole, ratchetHeaderText, ratchetEnvelopeText, ratchetPlainText, ratchetKeyText, ratchetRemoteDhPublicKey,
-  ratchetInfoText, safetyPolicy, enableStrictE2eePolicy, strictE2eePolicyEnabled, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, perDeviceEnvelopeSentCount, perDeviceEnvelopeReceivedCount, perDeviceEnvelopeDropCount, lastPerDeviceEnvelopeAt, lastPerDeviceEnvelopeDropAt, lastPerDeviceEnvelopeDropReason, sealedSlotCoverageSummary, sealedSlotRiskContacts, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
+  ratchetInfoText, safetyPolicy, enableStrictE2eePolicy, strictE2eePolicyEnabled, strictE2eeReadiness, strictE2eeReadinessIssues, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, perDeviceEnvelopeSentCount, perDeviceEnvelopeReceivedCount, perDeviceEnvelopeDropCount, lastPerDeviceEnvelopeAt, lastPerDeviceEnvelopeDropAt, lastPerDeviceEnvelopeDropReason, sealedSlotCoverageSummary, sealedSlotRiskContacts, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
   nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, findActiveContactMailboxHint, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, startFingerprintQrScan, stopFingerprintQrScan, fingerprintScanOpen, fingerprintScanStatus, copyActiveContactFingerprintProof, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, showMyFingerprintQr, copyMyFingerprintProof, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
