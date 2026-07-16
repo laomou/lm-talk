@@ -30,4 +30,6 @@
 
 ## 许可证
 
-[MIT](LICENSE) © 2026 LM Talk contributors
+[非商业使用许可](LICENSE) © 2026 LM Talk contributors
+
+本项目仅允许非商业用途使用、复制、修改和分发；未经作者书面许可，禁止商业使用。
