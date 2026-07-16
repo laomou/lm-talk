@@ -251,6 +251,10 @@ type PerDeviceEnvelopeV1 = {
   sender_user_id: string
   target_devices: Array<{
     device_id: string
+    slot_id: string
+    nonce: string
+    aad: string
+    crypto: 'placeholder-shared-envelope-v1'
     ciphertext: string
   }>
   fallback_ciphertext?: string
@@ -959,6 +963,26 @@ function newId(): string {
     return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`
   }
   return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
+function randomBase64Url(byteLength: number): string {
+  const bytes = new Uint8Array(byteLength)
+  const webCrypto = globalThis.crypto
+  if (typeof webCrypto?.getRandomValues === 'function') webCrypto.getRandomValues(bytes)
+  else for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256)
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+function perDeviceSlotAad(conversationId: string, senderUserId: string, deviceId: string, createdAt: number): string {
+  return JSON.stringify({
+    type: 'lm-per-device-envelope-slot-aad-v1',
+    conversation_id: conversationId,
+    sender_user_id: senderUserId,
+    target_device_id: deviceId,
+    created_at: createdAt,
+  })
 }
 
 function fallbackCopyText(value: string) {
@@ -4945,19 +4969,25 @@ function perDeviceEnvelopeSigningPayload(envelope: PerDeviceEnvelopeV1): string 
 function createPerDeviceEnvelopeDraft(contact: ContactItem, conversationId: string, ciphertext: string): string | undefined {
   const targetDeviceIds = contactActiveDeviceIds(contact)
   if (targetDeviceIds.length === 0) return undefined
+  const senderUserId = identity.value?.user_id || ''
+  const createdAt = Date.now()
   const draft: PerDeviceEnvelopeV1 = {
     type: 'lm-per-device-envelope-v1',
     version: 1,
     conversation_id: conversationId,
-    sender_user_id: identity.value?.user_id || '',
+    sender_user_id: senderUserId,
     target_devices: targetDeviceIds.map((deviceId) => ({
       device_id: deviceId,
+      slot_id: randomBase64Url(16),
+      nonce: randomBase64Url(24),
+      aad: perDeviceSlotAad(conversationId, senderUserId, deviceId, createdAt),
+      crypto: 'placeholder-shared-envelope-v1',
       ciphertext,
     })),
-    // Scaffold only: each device currently references the same conversation envelope.
-    // A later crypto step should replace this with per-device sealed sender keys/envelopes.
+    // Scaffold only: each device slot currently carries the same conversation envelope.
+    // The slot_id/nonce/aad fields make the wire shape ready for per-device sealed ciphertext.
     fallback_ciphertext: ciphertext,
-    created_at: Date.now(),
+    created_at: createdAt,
   }
   draft.signature = sign_identity_text(backupText.value, passphrase.value, perDeviceEnvelopeSigningPayload(draft))
   return JSON.stringify(draft)
@@ -4997,10 +5027,13 @@ function unwrapPerDeviceEnvelopeForCurrentDevice(payloadText: string, sender: Co
   }
   const targets = Array.isArray(parsed.target_devices) ? parsed.target_devices : []
   const targetDeviceIds = targets.map((item) => String(item.device_id || '')).filter(Boolean)
+  const slotIds = targets.map((item) => String(item.slot_id || '')).filter(Boolean)
+  if (slotIds.length !== new Set(slotIds).size) recordDrop('分设备 envelope slot_id 重复')
   const currentDeviceId = myDeviceId.value
   if (currentDeviceId) {
     const matched = targets.find((item) => item.device_id === currentDeviceId)
     if (!matched) return recordDrop(`分设备 envelope 未投递给当前设备：${currentDeviceId}`)
+    if (!matched.slot_id || !matched.nonce || !matched.aad) return recordDrop('分设备 envelope 缺少当前设备 slot 元数据')
     if (!matched.ciphertext) return recordDrop('分设备 envelope 缺少当前设备密文')
     perDeviceEnvelopeReceivedCount.value += 1
     lastPerDeviceEnvelopeAt.value = Date.now()
