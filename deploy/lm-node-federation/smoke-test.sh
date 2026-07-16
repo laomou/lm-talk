@@ -30,6 +30,11 @@ post_json() {
     "$(node_url "$node")$path"
 }
 
+json_field() {
+  local field="$1" json="$2"
+  python3 -c 'import json,sys; print(json.loads(sys.argv[2])[sys.argv[1]])' "$field" "$json"
+}
+
 for node in a b c; do
   echo "== health node-$node =="
   request "$node" /health >/dev/null
@@ -37,21 +42,22 @@ for node in a b c; do
   echo "node-$node ok"
 done
 
-echo "== publish ContactCard-like DHT record on node-a =="
-# This is a shape smoke for node reachability and DHT key derivation. It does not
-# store a fake ContactCard because lm_node correctly requires signed ContactCard
-# payloads. Full ContactCard publish/verify is covered by the Web/WASM flow.
-KEY_JSON="$(request a '/dht/key?kind=contact-card&value=user1_smoke')"
+echo "== publish signed ContactCard DHT record on node-a =="
+IDENTITY_JSON="$(docker compose -f "$ROOT/docker-compose.yml" exec -T node-a /usr/local/bin/lm_node identity --passphrase smoke-pass)"
+USER_ID="$(json_field user_id "$IDENTITY_JSON")"
+BACKUP_TEXT="$(json_field backup_text "$IDENTITY_JSON")"
+TMP_BACKUP="$(mktemp)"
+printf '%s' "$BACKUP_TEXT" > "$TMP_BACKUP"
+CONTACT_CARD="$(docker compose -f "$ROOT/docker-compose.yml" exec -T node-a /usr/local/bin/lm_node contact-card --backup-file "$TMP_BACKUP" --passphrase smoke-pass --display-name Smoke)"
+rm -f "$TMP_BACKUP"
+KEY_JSON="$(request a "/dht/key?kind=contact-card&value=$USER_ID")"
 echo "$KEY_JSON" | python3 -m json.tool >/dev/null
-KEY="$(python3 - <<'PY' "$KEY_JSON"
-import json, sys
-print(json.loads(sys.argv[1])["key"])
-PY
-)"
-if [[ ! "$KEY" =~ ^[0-9a-f]{64}$ ]]; then
-  echo "invalid dht key: $KEY" >&2
-  exit 1
-fi
+KEY="$(json_field key "$KEY_JSON")"
+NOW="$(date +%s)"
+RECORD_JSON="$(python3 -c 'import json,sys; key,value,now=sys.argv[1],sys.argv[2],int(sys.argv[3]); print(json.dumps({"record":{"key":key,"kind":"ContactCard","value":value,"created_at":now,"expires_at":now+3600,"republish_at":now}}))' "$KEY" "$CONTACT_CARD" "$NOW")"
+post_json a /dht/record "$RECORD_JSON" >/dev/null
+FOUND="$(request a "/dht/find-value?key=$KEY&limit=8&max_peers=8&alpha=3")"
+python3 -c 'import json,sys; body=json.loads(sys.argv[1]); assert body.get("found"), body; assert body.get("record",{}).get("kind") == "ContactCard", body' "$FOUND"
 
 echo "== snapshot sync node-a -> node-b =="
 SNAPSHOT="$(request a /sync/snapshot)"

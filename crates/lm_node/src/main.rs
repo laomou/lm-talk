@@ -4,7 +4,7 @@ use libp2p::{
     Multiaddr, PeerId, StreamProtocol, connection_limits, noise, request_response,
     swarm::NetworkBehaviour, tcp, yamux,
 };
-use lm_core::{PublicPeerAnnounce, UserId, crypto};
+use lm_core::{Identity, PublicPeerAnnounce, UserId, crypto};
 use lm_node::{
     ConsumedOneTimePreKey, ControlRequest, DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES,
     DhtRecord, DhtRecordReplicationPlan, DhtRpcRequest, DhtRpcResponse, MailboxDelivery,
@@ -98,6 +98,28 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cmd = args.remove(0);
 
     match cmd.as_str() {
+        "identity" => {
+            let passphrase = required_arg(&args, "--passphrase")?;
+            let (identity, backup) = Identity::create_with_passphrase(&passphrase)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "user_id": identity.user_id().to_string(),
+                    "identity_public_key": BASE64.encode(identity.identity_public_key()),
+                    "x25519_public_key": BASE64.encode(identity.x25519_public_key()),
+                    "backup_text": backup.to_export_text()?,
+                }))?
+            );
+        }
+        "contact-card" => {
+            let backup_file = required_arg(&args, "--backup-file")?;
+            let passphrase = required_arg(&args, "--passphrase")?;
+            let display_name = optional_arg(&args, "--display-name")?;
+            let backup_text = fs::read_to_string(backup_file)?;
+            let identity = restore_identity_from_backup_text(backup_text.trim(), &passphrase)?;
+            let card = identity.export_contact_card(display_name, None, vec![])?;
+            println!("{}", card.to_export_text()?);
+        }
         "announce" => {
             let backup_file = required_arg(&args, "--backup-file")?;
             let passphrase = required_arg(&args, "--passphrase")?;
