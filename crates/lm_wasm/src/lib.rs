@@ -6,6 +6,7 @@ use base64::{
 };
 #[cfg(target_arch = "wasm32")]
 use ed25519_dalek::SigningKey;
+use ed25519_dalek::{Signature, Signer, Verifier, VerifyingKey};
 use getrandom::getrandom;
 use lm_core::{
     ContactCard, DeviceId, DeviceIdentity, DeviceRevoke, DirectEnvelope, FileChunkEnvelope,
@@ -328,6 +329,32 @@ pub fn create_identity(_passphrase: &str) -> Result<String, JsValue> {
         };
         to_json_string(&out)
     }
+}
+
+#[wasm_bindgen]
+pub fn sign_identity_text(backup_text: &str, passphrase: &str, text: &str) -> Result<String, JsValue> {
+    ensure_js_len(text, lm_core::limits::MAX_MAILBOX_CIPHERTEXT_BYTES)?;
+    let identity = restore_identity_any(backup_text, passphrase)?;
+    let signature = identity.signing_key().sign(text.as_bytes());
+    Ok(BASE64.encode(signature.to_bytes()))
+}
+
+#[wasm_bindgen]
+pub fn verify_identity_text_signature(
+    identity_public_key: &str,
+    text: &str,
+    signature_base64: &str,
+) -> Result<bool, JsValue> {
+    ensure_js_len(text, lm_core::limits::MAX_MAILBOX_CIPHERTEXT_BYTES)?;
+    let pk = decode_key_32(identity_public_key)?;
+    let verifying_key = VerifyingKey::from_bytes(&pk).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let sig_bytes: [u8; 64] = BASE64
+        .decode(signature_base64.as_bytes())
+        .map_err(|_| JsValue::from_str("invalid signature base64"))?
+        .try_into()
+        .map_err(|_| JsValue::from_str("invalid signature length"))?;
+    let signature = Signature::from_bytes(&sig_bytes);
+    Ok(verifying_key.verify(text.as_bytes(), &signature).is_ok())
 }
 
 #[wasm_bindgen]

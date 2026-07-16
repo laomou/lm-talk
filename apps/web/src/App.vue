@@ -48,6 +48,8 @@ import init, {
   apply_group_policy_event,
   inspect_mailbox_message,
   inspect_message_receipt,
+  sign_identity_text,
+  verify_identity_text_signature,
   inspect_peer_announce,
   inspect_prekey_bundle,
   inspect_public_peer_announce,
@@ -363,6 +365,7 @@ type SelfSyncPackage = {
   identity_public_key: string
   from_device_id?: string
   contacts: ContactItem[]
+  signature?: string
   dhtOperationHistory?: string[]
   processedSelfSyncIds?: string[]
   unverifiedIncomingDropCount?: number
@@ -1893,8 +1896,24 @@ async function pushFullDataBackupToOwnMailbox() {
   })
 }
 
+function selfSyncSigningPayload(pkg: SelfSyncPackage): string {
+  return JSON.stringify({
+    type: pkg.type,
+    sync_id: pkg.sync_id,
+    created_at: pkg.created_at,
+    from_user_id: pkg.from_user_id,
+    identity_public_key: pkg.identity_public_key,
+    from_device_id: pkg.from_device_id,
+    contacts: pkg.contacts,
+    dhtOperationHistory: pkg.dhtOperationHistory,
+    processedSelfSyncIds: pkg.processedSelfSyncIds,
+    unverifiedIncomingDropCount: pkg.unverifiedIncomingDropCount,
+    revokedDeviceIncomingDropCount: pkg.revokedDeviceIncomingDropCount,
+  })
+}
+
 function currentSelfSyncPackage(): SelfSyncPackage {
-  return {
+  const pkg: SelfSyncPackage = {
     type: 'lm-self-sync-v1',
     sync_id: newId(),
     created_at: Date.now(),
@@ -1907,12 +1926,15 @@ function currentSelfSyncPackage(): SelfSyncPackage {
     unverifiedIncomingDropCount: unverifiedIncomingDropCount.value,
     revokedDeviceIncomingDropCount: revokedDeviceIncomingDropCount.value,
   }
+  pkg.signature = sign_identity_text(backupText.value, passphrase.value, selfSyncSigningPayload(pkg))
+  return pkg
 }
 
 function applySelfSyncPackage(pkg: SelfSyncPackage) {
   if (!pkg.sync_id) throw new Error('self-sync 缺少 sync_id')
   if (pkg.from_user_id !== identity.value?.user_id) throw new Error('self-sync user_id 与当前身份不匹配')
   if (pkg.identity_public_key !== identity.value?.identity_public_key) throw new Error('self-sync identity_public_key 与当前身份不匹配')
+  if (!pkg.signature || !verify_identity_text_signature(pkg.identity_public_key, selfSyncSigningPayload(pkg), pkg.signature)) throw new Error('self-sync 签名无效')
   if (pkg.from_device_id && myDeviceId.value && pkg.from_device_id === myDeviceId.value) {
     processedSelfSyncIds.value = [pkg.sync_id, ...processedSelfSyncIds.value.filter((id) => id !== pkg.sync_id)].slice(0, 100)
     selfSyncStatusText.value = `自同步：已跳过本设备包 ${pkg.sync_id}`
