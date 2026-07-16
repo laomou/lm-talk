@@ -1818,6 +1818,33 @@ function mergeMessagesForState(current: ChatMessage[], incoming: ChatMessage[]):
   return { items, added, merged, skipped }
 }
 
+function mergeContactDeviceAndTrustState(current: ContactItem[], incoming: ContactItem[]): ContactItem[] {
+  const byId = new Map(incoming.map((contact) => [contact.user_id, contact]))
+  return current.map((contact) => {
+    const other = byId.get(contact.user_id)
+    if (!other || other.identity_public_key !== contact.identity_public_key) return contact
+    const revoked = [...new Set([...(contact.revoked_device_ids ?? []), ...(other.revoked_device_ids ?? [])])]
+    const revocationById = new Map<string, DeviceRevokeInfo>()
+    for (const item of [...(other.device_revocations ?? []), ...(contact.device_revocations ?? [])]) {
+      const existing = revocationById.get(item.device_id)
+      if (!existing || item.created_at >= existing.created_at) revocationById.set(item.device_id, item)
+    }
+    const deviceById = new Map<string, DeviceCertItem>()
+    for (const cert of [...(contact.device_certs ?? []), ...(other.device_certs ?? [])]) deviceById.set(cert.device_id, cert)
+    return {
+      ...contact,
+      revoked_device_ids: revoked.length ? revoked : contact.revoked_device_ids,
+      device_revocations: revocationById.size ? [...revocationById.values()] : contact.device_revocations,
+      device_certs: deviceById.size ? [...deviceById.values()] : contact.device_certs,
+      fingerprint_verified_at: contact.fingerprint_verified_at ?? other.fingerprint_verified_at,
+      fingerprint_verified_note: contact.fingerprint_verified_note ?? other.fingerprint_verified_note,
+      mailbox_hint_url: contact.mailbox_hint_url ?? other.mailbox_hint_url,
+      last_prekey_dht_found_at: Math.max(contact.last_prekey_dht_found_at ?? 0, other.last_prekey_dht_found_at ?? 0) || contact.last_prekey_dht_found_at,
+      last_mailbox_hint_dht_found_at: Math.max(contact.last_mailbox_hint_dht_found_at ?? 0, other.last_mailbox_hint_dht_found_at ?? 0) || contact.last_mailbox_hint_dht_found_at,
+    }
+  })
+}
+
 function mergeProcessedMailboxRecords(current: ProcessedMailboxRecord[], incoming: Array<string | ProcessedMailboxRecord> | undefined): ProcessedMailboxRecord[] {
   return normalizeProcessedMailboxRecords([...current, ...normalizeProcessedMailboxRecords(incoming)])
 }
@@ -1836,7 +1863,7 @@ async function importFullDataBackupMerge() {
     const messageMerge = mergeMessagesForState(messages.value, state.messages ?? [])
     const outboxMerge = mergeUniqueBy(outbox.value, state.outbox ?? [], (x) => x.id)
     const ratchetMerge = mergeUniqueBy(ratchetSessions.value, state.ratchetSessions ?? [], (x) => x.peer_user_id)
-    contacts.value = contactMerge.items
+    contacts.value = mergeContactDeviceAndTrustState(contactMerge.items, state.contacts ?? [])
     friendRequests.value = requestMerge.items
     groups.value = groupMerge.items
     groupInvites.value = inviteMerge.items
