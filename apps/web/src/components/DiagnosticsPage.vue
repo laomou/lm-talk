@@ -77,12 +77,15 @@ async function runDiagnostics() {
       fully_revoked_contacts: props.ctx.contacts.value.filter((x: any) => props.ctx.contactAllKnownDevicesRevoked(x)).length,
       revoked_devices: props.ctx.contacts.value.reduce((sum: number, x: any) => sum + (x.revoked_device_ids || []).length, 0),
       unverified_incoming_drops: props.ctx.unverifiedIncomingDropCount.value,
+      revoked_device_incoming_drops: props.ctx.revokedDeviceIncomingDropCount.value,
     },
     security: {
       require_verified_contacts_for_send: Boolean(props.ctx.safetyPolicy.value.requireVerifiedContactsForSend),
       require_verified_contacts_for_receive: Boolean(props.ctx.safetyPolicy.value.requireVerifiedContactsForReceive),
       last_unverified_incoming_drop_at: props.ctx.lastUnverifiedIncomingDropAt.value,
       last_unverified_incoming_drop_from: redactDiagnosticReport.value ? redacted(props.ctx.lastUnverifiedIncomingDropFrom.value) : sanitizeDiagnosticText(props.ctx.lastUnverifiedIncomingDropFrom.value),
+      last_revoked_device_incoming_drop_at: props.ctx.lastRevokedDeviceIncomingDropAt.value,
+      last_revoked_device_incoming_drop_from: redactDiagnosticReport.value ? redacted(props.ctx.lastRevokedDeviceIncomingDropFrom.value) : sanitizeDiagnosticText(props.ctx.lastRevokedDeviceIncomingDropFrom.value),
       revoked_device_contacts: props.ctx.contacts.value
         .filter((x: any) => (x.revoked_device_ids || []).length > 0)
         .slice(0, 8)

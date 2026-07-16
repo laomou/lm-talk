@@ -306,6 +306,9 @@ type PersistedState = {
   unverifiedIncomingDropCount?: number
   lastUnverifiedIncomingDropAt?: number
   lastUnverifiedIncomingDropFrom?: string
+  revokedDeviceIncomingDropCount?: number
+  lastRevokedDeviceIncomingDropAt?: number
+  lastRevokedDeviceIncomingDropFrom?: string
 }
 
 type PersistedMeta = {
@@ -332,6 +335,9 @@ type PersistedMeta = {
   unverifiedIncomingDropCount?: number
   lastUnverifiedIncomingDropAt?: number
   lastUnverifiedIncomingDropFrom?: string
+  revokedDeviceIncomingDropCount?: number
+  lastRevokedDeviceIncomingDropAt?: number
+  lastRevokedDeviceIncomingDropFrom?: string
   schemaVersion: number
 }
 
@@ -430,6 +436,9 @@ const friendRequestRateRecords = ref<FriendRequestRateRecord[]>([])
 const unverifiedIncomingDropCount = ref(0)
 const lastUnverifiedIncomingDropAt = ref<number | null>(null)
 const lastUnverifiedIncomingDropFrom = ref('')
+const revokedDeviceIncomingDropCount = ref(0)
+const lastRevokedDeviceIncomingDropAt = ref<number | null>(null)
+const lastRevokedDeviceIncomingDropFrom = ref('')
 const groups = ref<GroupItem[]>([])
 const groupInvites = ref<GroupInviteItem[]>([])
 const groupSenderKeys = ref<GroupSenderKeyItem[]>([])
@@ -1221,6 +1230,9 @@ function currentPersistedState(): PersistedState {
     unverifiedIncomingDropCount: unverifiedIncomingDropCount.value,
     lastUnverifiedIncomingDropAt: lastUnverifiedIncomingDropAt.value ?? undefined,
     lastUnverifiedIncomingDropFrom: lastUnverifiedIncomingDropFrom.value,
+    revokedDeviceIncomingDropCount: revokedDeviceIncomingDropCount.value,
+    lastRevokedDeviceIncomingDropAt: lastRevokedDeviceIncomingDropAt.value ?? undefined,
+    lastRevokedDeviceIncomingDropFrom: lastRevokedDeviceIncomingDropFrom.value,
   }
 }
 
@@ -1555,6 +1567,9 @@ async function clearPersisted() {
   unverifiedIncomingDropCount.value = 0
   lastUnverifiedIncomingDropAt.value = null
   lastUnverifiedIncomingDropFrom.value = ''
+  revokedDeviceIncomingDropCount.value = 0
+  lastRevokedDeviceIncomingDropAt.value = null
+  lastRevokedDeviceIncomingDropFrom.value = ''
   myContactCardText.value = ''
   myDeviceCertJson.value = ''
   myDeviceId.value = ''
@@ -2920,6 +2935,13 @@ function requireVerifiedContactForSend(contact: ContactItem) {
 }
 
 function allowIncomingFromContact(sender: ContactItem): boolean {
+  if (contactAllKnownDevicesRevoked(sender)) {
+    revokedDeviceIncomingDropCount.value += 1
+    lastRevokedDeviceIncomingDropAt.value = Date.now()
+    lastRevokedDeviceIncomingDropFrom.value = sender.display_name || sender.user_id
+    appendLog(`⚠️ 已丢弃所有已知设备均撤销的联系人消息：${lastRevokedDeviceIncomingDropFrom.value}`)
+    return false
+  }
   if (!safetyPolicy.value.requireVerifiedContactsForReceive) return true
   if (sender.fingerprint_verified_at) return true
   unverifiedIncomingDropCount.value += 1
@@ -2934,6 +2956,14 @@ function clearUnverifiedIncomingDropStats() {
   lastUnverifiedIncomingDropAt.value = null
   lastUnverifiedIncomingDropFrom.value = ''
   appendLog('已清空未核验联系人入站丢弃统计')
+  persist()
+}
+
+function clearRevokedDeviceIncomingDropStats() {
+  revokedDeviceIncomingDropCount.value = 0
+  lastRevokedDeviceIncomingDropAt.value = null
+  lastRevokedDeviceIncomingDropFrom.value = ''
+  appendLog('已清空撤销设备联系人入站丢弃统计')
   persist()
 }
 
@@ -7081,7 +7111,7 @@ const appContext = {
   prekeySignedId, prekeyOneTimeCount, prekeyBundleText, prekeyPrivateBundleJson, prekeySignedOneTimeRecordTexts, prekeyInfoText, x3dhInitialMessageJson,
   selectedOneTimePreKeyId, selectedSignedOneTimePreKeyRecordText, x3dhSharedSecretText, ratchetStateText, ratchetPeerStateText, ratchetLocalDhKeyPairJson, ratchetRemoteDhPublicKeyForInit,
   ratchetInitRole, ratchetHeaderText, ratchetEnvelopeText, ratchetPlainText, ratchetKeyText, ratchetRemoteDhPublicKey,
-  ratchetInfoText, safetyPolicy, contactRevokedDeviceCount, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
+  ratchetInfoText, safetyPolicy, contactRevokedDeviceCount, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
   nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, findActiveContactMailboxHint, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, startFingerprintQrScan, stopFingerprintQrScan, fingerprintScanOpen, fingerprintScanStatus, copyActiveContactFingerprintProof, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, showMyFingerprintQr, copyMyFingerprintProof, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,

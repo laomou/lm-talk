@@ -389,6 +389,10 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
             <small class="danger-text">已丢弃未核验联系人入站消息 {{ ctx.unverifiedIncomingDropCount.value }} 条<span v-if="ctx.lastUnverifiedIncomingDropAt.value">，最近：{{ ctx.lastUnverifiedIncomingDropFrom.value }} · {{ ctx.formatDateTime(ctx.lastUnverifiedIncomingDropAt.value) }}</span></small>
             <button class="secondary" @click="ctx.clearUnverifiedIncomingDropStats">清空丢弃统计</button>
           </div>
+          <div v-if="ctx.revokedDeviceIncomingDropCount.value" class="row compact">
+            <small class="danger-text">已丢弃撤销设备联系人入站消息 {{ ctx.revokedDeviceIncomingDropCount.value }} 条<span v-if="ctx.lastRevokedDeviceIncomingDropAt.value">，最近：{{ ctx.lastRevokedDeviceIncomingDropFrom.value }} · {{ ctx.formatDateTime(ctx.lastRevokedDeviceIncomingDropAt.value) }}</span></small>
+            <button class="secondary" @click="ctx.clearRevokedDeviceIncomingDropStats">清空撤销丢弃统计</button>
+          </div>
         </div>
       </section>
 
