@@ -354,6 +354,9 @@ const FRIEND_REQUEST_RATE_LIMIT = 3
 const FRIEND_REQUEST_LONG_RATE_WINDOW_MS = 24 * 60 * 60 * 1000
 const FRIEND_REQUEST_LONG_RATE_LIMIT = 5
 const MAILBOX_DEDUPE_MAX_RECORDS = 1000
+const DHT_OPERATION_HISTORY_MAX_RECORDS = 8
+const DHT_OPERATION_HISTORY_IMPORT_MAX_RECORDS = 32
+const DHT_OPERATION_HISTORY_ITEM_MAX_CHARS = 240
 const MAILBOX_DEDUPE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 const MAX_SIGNAL_BYTES = 256 * 1024
 const MAX_FILE_BYTES = 16 * 1024 * 1024
@@ -1784,7 +1787,7 @@ async function importFullDataBackupMerge() {
     processedMailboxIds.value = mergeProcessedMailboxRecords(processedMailboxIds.value, state.processedMailboxIds)
     mailboxFailedItems.value = mergeUniqueBy(mailboxFailedItems.value, state.mailboxFailedItems ?? [], (x) => x.id).items
     syncRecoveryHistory.value = [...new Set([...syncRecoveryHistory.value, ...(state.syncRecoveryHistory ?? [])])].slice(0, 5)
-    nodeDhtOperationHistory.value = [...new Set([...nodeDhtOperationHistory.value, ...(state.dhtOperationHistory ?? [])])].slice(0, 8)
+    nodeDhtOperationHistory.value = [...new Set([...nodeDhtOperationHistory.value, ...(state.dhtOperationHistory ?? [])])].slice(0, DHT_OPERATION_HISTORY_MAX_RECORDS)
     pwaBackgroundEventHistory.value = [...new Set([...pwaBackgroundEventHistory.value, ...(state.pwaBackgroundEventHistory ?? [])])].slice(0, 5)
     pwaLastBackgroundEventText.value = pwaBackgroundEventHistory.value[0] ?? '尚未收到后台事件'
     friendRequestRateRecords.value = mergeUniqueBy(friendRequestRateRecords.value, state.friendRequestRateRecords ?? [], (x) => x.from_user_id).items
@@ -4998,7 +5001,7 @@ async function submitPublicPeerToNode() {
 
 function recordDhtOperation(summary: string) {
   const line = `${formatDateTime(Date.now())} · ${summary}`
-  nodeDhtOperationHistory.value = [line, ...nodeDhtOperationHistory.value.filter((item) => item !== line)].slice(0, 8)
+  nodeDhtOperationHistory.value = [line, ...nodeDhtOperationHistory.value.filter((item) => item !== line)].slice(0, DHT_OPERATION_HISTORY_MAX_RECORDS)
   persist()
 }
 
@@ -5045,7 +5048,8 @@ function normalizeDhtHistoryItems(value: unknown): string[] {
     .map((item) => String(item ?? '').trim())
     .filter((item) => item.length > 0)
     .filter((item) => !item.includes('[已脱敏]') && !item.includes('[已截断]'))
-    .slice(0, 32)
+    .map((item) => item.length > DHT_OPERATION_HISTORY_ITEM_MAX_CHARS ? `${item.slice(0, DHT_OPERATION_HISTORY_ITEM_MAX_CHARS)}…` : item)
+    .slice(0, DHT_OPERATION_HISTORY_IMPORT_MAX_RECORDS)
 }
 
 async function importDhtOperationHistory() {
@@ -5056,12 +5060,12 @@ async function importDhtOperationHistory() {
       const incoming = normalizeDhtHistoryItems(parsed)
       if (incoming.length === 0) throw new Error('DHT 历史为空或格式不正确；请粘贴 {"history":["时间 · 操作"]} 或字符串数组')
       const merged = [...new Set([...incoming, ...nodeDhtOperationHistory.value])]
-      const kept = merged.slice(0, 8)
+      const kept = merged.slice(0, DHT_OPERATION_HISTORY_MAX_RECORDS)
       const dropped = Math.max(0, merged.length - kept.length)
       nodeDhtOperationHistoryImportStatus.value = `DHT 历史导入：准备导入 ${incoming.length} 条，合并后保留 ${kept.length} 条${dropped ? `，将丢弃 ${dropped} 条较旧记录` : ''}`
       const ok = await showConfirm(
         '导入 DHT 操作历史',
-        `将导入 ${incoming.length} 条 DHT 操作历史，合并后保留最近 ${kept.length} 条${dropped ? `，丢弃 ${dropped} 条较旧记录` : ''}。继续？`,
+        `将导入 ${incoming.length} 条 DHT 操作历史，单条最多保留 ${DHT_OPERATION_HISTORY_ITEM_MAX_CHARS} 字符，合并后最多保留 ${DHT_OPERATION_HISTORY_MAX_RECORDS} 条（本次保留 ${kept.length} 条）${dropped ? `，丢弃 ${dropped} 条较旧记录` : ''}。继续？`,
         false,
       )
       if (!ok) {
