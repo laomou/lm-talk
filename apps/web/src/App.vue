@@ -477,6 +477,18 @@ const selectedGroupMembers = ref<string[]>([])
 const groupFanoutJson = ref('')
 const dataBackupText = ref('')
 const lastFullDataBackupAt = ref<number | null>(null)
+const fullDataBackupFreshnessLevel = computed<'ok' | 'warning' | 'danger'>(() => {
+  const at = lastFullDataBackupAt.value
+  if (!at) return 'danger'
+  const ageDays = (Date.now() - at) / 86_400_000
+  return ageDays > 30 ? 'danger' : ageDays > 7 ? 'warning' : 'ok'
+})
+const fullDataBackupFreshnessText = computed(() => {
+  const at = lastFullDataBackupAt.value
+  if (!at) return '尚未生成完整数据备份'
+  const ageDays = Math.max(0, Math.floor((Date.now() - at) / 86_400_000))
+  return ageDays === 0 ? '完整数据备份：今天已生成' : `完整数据备份：${ageDays} 天前生成`
+})
 const groupInviteText = ref('')
 const incomingGroupInviteText = ref('')
 const groupEventText = ref('')
@@ -7142,7 +7154,7 @@ const appContext = {
   autoPublishPreKey, autoNodeSync, nodeControlStatus, nodeHealthSummaryText, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutDeviceRevokeToFriends, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
-  exportFullDataBackup, importFullDataBackup, importFullDataBackupMerge, downloadText, lastFullDataBackupAt, addContactText, addContact, incomingFriendRequestText,
+  exportFullDataBackup, importFullDataBackup, importFullDataBackupMerge, downloadText, lastFullDataBackupAt, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
   addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, friendRequestRateRecords, friendRequestRateSummaryText, clearFriendRequestRateRecords, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,

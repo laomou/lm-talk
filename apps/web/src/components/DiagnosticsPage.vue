@@ -82,6 +82,8 @@ async function runDiagnostics() {
       unverified_incoming_drops: props.ctx.unverifiedIncomingDropCount.value,
       revoked_device_incoming_drops: props.ctx.revokedDeviceIncomingDropCount.value,
       last_full_data_backup_at: props.ctx.lastFullDataBackupAt.value,
+      full_data_backup_freshness: props.ctx.fullDataBackupFreshnessText.value,
+      full_data_backup_freshness_level: props.ctx.fullDataBackupFreshnessLevel.value,
     },
     security: {
       require_verified_contacts_for_send: Boolean(props.ctx.safetyPolicy.value.requireVerifiedContactsForSend),
