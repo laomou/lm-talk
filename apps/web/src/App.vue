@@ -724,6 +724,7 @@ const syncFailureSummaryText = computed(() => {
   const failedOutbox = outbox.value.filter((item) => item.status === 'failed')
   if (failedOutbox.length > 0) parts.push(`Outbox：失败 ${failedOutbox.length} 条`)
   if (/failed|失败/i.test(nodeSyncStatusText.value)) parts.push(`节点快照：${nodeSyncStatusText.value}`)
+  if (selfSyncGapCount.value > 0) parts.push(`轻量自同步：缺口 ${selfSyncGapCount.value} 次`)
   return parts.length ? parts.join('；') : '暂无同步失败'
 })
 const storageEstimateText = ref('尚未估算')
@@ -7425,6 +7426,11 @@ async function recoverSyncFailures() {
       await autoPullSnapshotFromPeerNode()
       actions.push('节点快照')
       results.push('节点快照已重试')
+    }
+    if (selfSyncGapCount.value > 0 && nodeEnabled.value) {
+      await repairSelfSyncGapNow()
+      actions.push('轻量自同步')
+      results.push('轻量自同步已补发')
     }
     syncRecoveryStatusText.value = results.length ? results.join('；') : '没有需要恢复的同步失败'
     syncRecoveryHistory.value = [syncRecoveryStatusText.value, ...syncRecoveryHistory.value].slice(0, 5)
