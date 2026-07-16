@@ -5578,8 +5578,8 @@ mod tests {
         ControlHttpResponse, ControlLogger, ControlRuntimeStats, ControlSecurityConfig,
         DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES, DhtFindValueRunStats,
         DhtReplicationRunStats, DhtRoutingRefreshRunStats, DhtRunnerConfig, DhtTransport,
-        DhtTransportKind, ENCRYPTED_STATE_FILE_PREFIX, LIBP2P_DHT_RPC_PROTOCOL, Libp2pDhtTransport,
-        LogFormat, MAX_CONTROL_PEER_RESPONSE_BYTES, MAX_CONTROL_REQUEST_HEADER_LINE_BYTES,
+        DhtTransportKind, ENCRYPTED_STATE_FILE_PREFIX, LIBP2P_DHT_RPC_PROTOCOL, LogFormat,
+        MAX_CONTROL_PEER_RESPONSE_BYTES, MAX_CONTROL_REQUEST_HEADER_LINE_BYTES,
         NodeMaintenanceStats, RateLimitConfig, RateLimiter, ServeControlConfigFile, StateDbStats,
         StateFileStats, SyncPeerConfig, atomic_write_text, configure_control_client_stream,
         configure_control_peer_stream, connect_control_peer, control_error_http_response,
@@ -5696,55 +5696,6 @@ mod tests {
 
         let (response, _) = futures::future::join(client_request, server).await;
         response.unwrap()
-    }
-
-    async fn libp2p_dht_transport_roundtrip(
-        server_node: &mut NativeNode,
-        request: DhtRpcRequest,
-    ) -> DhtRpcResponse {
-        let mut server_swarm = libp2p_dht_swarm().unwrap();
-        let server_peer = *server_swarm.local_peer_id();
-        server_swarm
-            .listen_on("/ip4/127.0.0.1/tcp/0".parse().unwrap())
-            .unwrap();
-        let listen_addr = loop {
-            if let SwarmEvent::NewListenAddr { address, .. } = server_swarm.select_next_some().await
-            {
-                break address;
-            }
-        };
-        let peer = SyncPeerConfig {
-            url: format!("libp2p://{listen_addr}"),
-            token: None,
-            peer_id: Some(server_peer.to_string()),
-        };
-        let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let transport = Libp2pDhtTransport {
-                timeout: Duration::from_secs(30),
-            };
-            let response = transport
-                .send_dht_rpc(&peer, &request)
-                .map_err(|err| err.to_string());
-            tx.send(response).unwrap();
-        });
-        tokio::time::timeout(Duration::from_secs(30), async {
-            let mut pending_discovery = HashSet::new();
-            loop {
-                if let Ok(response) = rx.try_recv() {
-                    return response.expect("libp2p DHT transport request should complete");
-                }
-                let event = server_swarm.select_next_some().await;
-                let _ = handle_libp2p_dht_server_event(
-                    server_node,
-                    &mut server_swarm,
-                    &mut pending_discovery,
-                    event,
-                );
-            }
-        })
-        .await
-        .expect("local libp2p DHT transport roundtrip timed out")
     }
 
     fn spawn_dht_rpc_store_result_server(
@@ -7727,7 +7678,7 @@ mod tests {
             let record = DhtRecord::public_peer(&announce, announce.to_export_text().unwrap(), 60);
             let expected_value = record.value.clone();
             let mut server_node = NativeNode::new(NodeConfig::default());
-            let response = libp2p_dht_transport_roundtrip(
+            let response = libp2p_dht_roundtrip(
                 &mut server_node,
                 DhtRpcRequest::StoreRecord {
                     request_id: "libp2p-store".into(),
