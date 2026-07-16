@@ -158,7 +158,10 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
           <small>{{ ctx.nodeDhtReplicationStatusText.value }}</small>
           <small>{{ ctx.nodeRoutingRefreshStatusText.value }}</small>
           <small v-if="ctx.nodeDhtOperationHistory.value.length">DHT 操作历史：{{ ctx.nodeDhtOperationHistory.value.slice(0, 4).join(' ｜ ') }}</small>
-          <button v-if="ctx.nodeDhtOperationHistory.value.length" class="secondary" @click="ctx.clearDhtOperationHistory">清空 DHT 历史</button>
+          <div v-if="ctx.nodeDhtOperationHistory.value.length" class="row compact">
+            <button class="secondary" @click="ctx.exportDhtOperationHistory">导出 DHT 历史</button>
+            <button class="secondary" @click="ctx.clearDhtOperationHistory">清空 DHT 历史</button>
+          </div>
           <small :class="{ 'danger-text': ctx.syncFailureSummaryText.value !== '暂无同步失败' }">{{ ctx.syncFailureSummaryText.value }}</small>
           <small>{{ ctx.syncRecoveryStatusText.value }}</small>
           <input v-if="ctx.syncRecoveryHistory.value.length" v-model="syncRecoveryQuery" type="search" aria-label="筛选同步恢复历史" placeholder="筛选恢复历史" />
