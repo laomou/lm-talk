@@ -147,6 +147,7 @@ function onComposerKeydown(e: KeyboardEvent) {
         <button v-if="ctx.activeContact.value?.state === 'Friend'" class="secondary" @click="ctx.discoverActiveContactDht">发现 DHT</button>
         <button v-if="ctx.activeContact.value?.state === 'Friend'" class="secondary" @click="ctx.findActiveContactPreKey">查找 PreKey</button>
         <button v-if="ctx.activeContact.value?.state === 'Friend'" class="secondary" @click="ctx.findActiveContactMailboxHint">查找 MailboxHint</button>
+        <button v-if="ctx.activeContact.value?.state === 'Friend'" class="secondary" @click="ctx.findActiveContactContactCard">查找 ContactCard</button>
         <button v-if="ctx.activeContact.value?.state === 'Friend' && !ctx.activeContact.value.fingerprint_verified_at" class="secondary" @click="ctx.verifyActiveContactFingerprint">标记指纹已核验</button>
         <button v-if="ctx.activeContact.value?.state === 'Friend'" class="secondary" @click="ctx.showActiveContactFingerprintQr">指纹核验码</button>
         <button v-if="ctx.activeContact.value?.state === 'Friend'" class="secondary" @click="ctx.copyActiveContactFingerprintProof">复制核验码</button>
