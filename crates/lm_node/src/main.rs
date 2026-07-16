@@ -5854,6 +5854,75 @@ mod tests {
     }
 
     #[test]
+    fn dht_find_value_ignores_invalid_record_and_continues_to_closer_peer() {
+        let (closer_identity, _) =
+            Identity::create_with_passphrase("malicious closer identity").unwrap();
+        let (target_user, _) = Identity::create_with_passphrase("malicious closer target").unwrap();
+        let closer_announce = NodeConfig {
+            peer_id: "malicious-response-valid-closer".into(),
+            addresses: vec!["transport://malicious-valid-closer".into()],
+            ..Default::default()
+        }
+        .create_announce(&closer_identity)
+        .unwrap();
+        let closer_peer = lm_node::RoutingPeer {
+            node_id: lm_node::KademliaNodeId::from_peer_id(&closer_announce.peer_id),
+            announce: closer_announce,
+            identity_public_key: Some(BASE64.encode(closer_identity.identity_public_key())),
+            last_seen_at: current_unix_timestamp(),
+        };
+        let key = DhtRecordKey::for_mailbox_hint(target_user.user_id());
+        let now = current_unix_timestamp();
+        let poisoned_record = DhtRecord {
+            key,
+            kind: DhtRecordKind::PreKey,
+            value: "not-a-prekey-bundle".into(),
+            created_at: now,
+            expires_at: now.saturating_add(60),
+            republish_at: now,
+        };
+        let valid_record =
+            DhtRecord::mailbox_hint(target_user.user_id(), "mailbox://valid-target".into(), 3600);
+        let seed_peer = SyncPeerConfig {
+            url: "transport://malicious-seed".into(),
+            token: None,
+            peer_id: None,
+        };
+        let transport = FakeDhtTransport {
+            responses: Mutex::new(vec![
+                DhtRpcResponse::Value {
+                    request_id: "malicious-second".into(),
+                    record: Some(valid_record.clone()),
+                    closer_records: Vec::new(),
+                    closer_nodes: Vec::new(),
+                },
+                DhtRpcResponse::Value {
+                    request_id: "malicious-first".into(),
+                    record: Some(poisoned_record),
+                    closer_records: Vec::new(),
+                    closer_nodes: vec![closer_peer],
+                },
+            ]),
+            ..Default::default()
+        };
+        let mut node = NativeNode::new(NodeConfig::default());
+        let stats =
+            dht_find_value_with_transport(&mut node, &[seed_peer], key, 8, 2, 1, &transport);
+        assert_eq!(stats.attempts, 2);
+        assert_eq!(stats.successes, 2);
+        assert_eq!(stats.found_records, 1);
+        assert_eq!(stats.closer_nodes_merged, 1);
+        assert_eq!(node.maintenance.dht_record_rejects.invalid_record, 1);
+        assert_eq!(
+            node.dht_records.find_value(&key).unwrap().value,
+            valid_record.value
+        );
+        let requests = transport.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "transport://malicious-seed");
+        assert_eq!(requests[1].0, "transport://malicious-valid-closer");
+    }
+
+    #[test]
     fn dht_find_value_rejects_duplicate_closer_nodes_before_queueing() {
         let (identity, _) = Identity::create_with_passphrase("duplicate closer identity").unwrap();
         let (target_user, _) = Identity::create_with_passphrase("duplicate closer target").unwrap();
