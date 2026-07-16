@@ -438,6 +438,9 @@ type SelfSyncPackage = {
   identity_public_key: string
   from_device_id?: string
   contacts: ContactItem[]
+  myContactCardText?: string
+  myDeviceCertJson?: string
+  myDeviceId?: string
   signature?: string
   dhtOperationHistory?: string[]
   processedSelfSyncIds?: string[]
@@ -2255,6 +2258,9 @@ function selfSyncSigningPayload(pkg: SelfSyncPackage): string {
     identity_public_key: pkg.identity_public_key,
     from_device_id: pkg.from_device_id,
     contacts: pkg.contacts,
+    myContactCardText: pkg.myContactCardText,
+    myDeviceCertJson: pkg.myDeviceCertJson,
+    myDeviceId: pkg.myDeviceId,
     dhtOperationHistory: pkg.dhtOperationHistory,
     processedSelfSyncIds: pkg.processedSelfSyncIds,
     unverifiedIncomingDropCount: pkg.unverifiedIncomingDropCount,
@@ -2303,6 +2309,9 @@ function currentSelfSyncPackage(): SelfSyncPackage {
     identity_public_key: identity.value?.identity_public_key || '',
     from_device_id: myDeviceId.value || undefined,
     contacts: contacts.value,
+    myContactCardText: myContactCardText.value || undefined,
+    myDeviceCertJson: myDeviceCertJson.value || undefined,
+    myDeviceId: myDeviceId.value || undefined,
     dhtOperationHistory: nodeDhtOperationHistory.value,
     processedSelfSyncIds: processedSelfSyncIds.value,
     unverifiedIncomingDropCount: unverifiedIncomingDropCount.value,
@@ -2310,6 +2319,26 @@ function currentSelfSyncPackage(): SelfSyncPackage {
   }
   pkg.signature = sign_identity_text(backupText.value, passphrase.value, selfSyncSigningPayload(pkg))
   return pkg
+}
+
+
+function mergeOwnDeviceCertsFromSelfSync(pkg: SelfSyncPackage) {
+  if (!identity.value?.user_id) return
+  const incomingCerts = [
+    ...(pkg.myContactCardText ? contactCardDeviceCerts(pkg.myContactCardText) : []),
+    ...(pkg.myDeviceCertJson ? [safeJson<DeviceCertItem>(pkg.myDeviceCertJson)] : []),
+  ].filter((cert) => cert?.device_id)
+  if (incomingCerts.length === 0) return
+  const byId = new Map<string, DeviceCertItem>()
+  for (const cert of contactCardDeviceCerts(myContactCardText.value || '')) byId.set(cert.device_id, cert)
+  if (myDeviceCertJson.value) {
+    const cert = safeJson<DeviceCertItem>(myDeviceCertJson.value)
+    if (cert?.device_id) byId.set(cert.device_id, cert)
+  }
+  for (const cert of incomingCerts) byId.set(cert.device_id, cert)
+  const certJson = JSON.stringify([...byId.values()])
+  myContactCardText.value = export_contact_card(backupText.value, passphrase.value, displayName.value || undefined, certJson)
+  appendLog(`✅ 自同步已合并自己的设备证书：${incomingCerts.length} 个新增/更新来源`)
 }
 
 function normalizeSelfSyncRecentPackages(items: SelfSyncCachedPackage[]): SelfSyncCachedPackage[] {
@@ -2394,6 +2423,7 @@ function applySelfSyncPackage(pkg: SelfSyncPackage) {
   processedSelfSyncIds.value = [pkg.sync_id, ...processedSelfSyncIds.value.filter((id) => id !== pkg.sync_id), ...(pkg.processedSelfSyncIds ?? [])].filter(Boolean).slice(0, 100)
   processedSelfSyncIds.value = [...new Set(processedSelfSyncIds.value)].slice(0, 100)
   contacts.value = mergeContactDeviceAndTrustState(contacts.value, pkg.contacts ?? [])
+  mergeOwnDeviceCertsFromSelfSync(pkg)
   nodeDhtOperationHistory.value = [...new Set([...(pkg.dhtOperationHistory ?? []), ...nodeDhtOperationHistory.value])].slice(0, DHT_OPERATION_HISTORY_MAX_RECORDS)
   unverifiedIncomingDropCount.value = Math.max(unverifiedIncomingDropCount.value, Number(pkg.unverifiedIncomingDropCount ?? 0))
   revokedDeviceIncomingDropCount.value = Math.max(revokedDeviceIncomingDropCount.value, Number(pkg.revokedDeviceIncomingDropCount ?? 0))
@@ -3541,7 +3571,13 @@ function restoreAndEnter() {
 }
 
 function exportMyCard() {
-  const certs = myDeviceCertJson.value ? `[${myDeviceCertJson.value}]` : undefined
+  const certById = new Map<string, DeviceCertItem>()
+  for (const cert of contactCardDeviceCerts(myContactCardText.value || '')) certById.set(cert.device_id, cert)
+  if (myDeviceCertJson.value) {
+    const cert = safeJson<DeviceCertItem>(myDeviceCertJson.value)
+    if (cert?.device_id) certById.set(cert.device_id, cert)
+  }
+  const certs = certById.size ? JSON.stringify([...certById.values()]) : undefined
   myContactCardText.value = export_contact_card(backupText.value, passphrase.value, displayName.value || undefined, certs)
 }
 
