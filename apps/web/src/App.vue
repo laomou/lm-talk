@@ -2340,8 +2340,20 @@ async function tryMailboxDeliveryForMessage(contact: ContactItem, envelope: stri
 
 async function ensureRatchetSessionFromNode(contact: ContactItem): Promise<boolean> {
   if (!nodeEnabled.value || ratchetSessionFor(contact.user_id)) return Boolean(ratchetSessionFor(contact.user_id))
-  const body = await nodeFetchJson(`/prekey/get?user_id=${encodeURIComponent(contact.user_id)}&consume=true`)
+  let body = await nodeFetchJson(`/prekey/get?user_id=${encodeURIComponent(contact.user_id)}&consume=true`)
   nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
+  if (!body.found || !body.prekey_bundle_text) {
+    try {
+      const dht = await nodeFetchJson(`/dht/find-value?kind=prekey&value=${encodeURIComponent(contact.user_id)}&limit=8&max_peers=8&alpha=3`)
+      if (applyDhtFindValueRecord(dht) && dht?.record?.kind === 'PreKey' && typeof dht.record.value === 'string') {
+        body = { found: true, prekey_bundle_text: dht.record.value }
+        nodePreKeyStatusText.value = JSON.stringify({ found: true, source: 'dht', record: dht.record }, null, 2)
+        appendLog(`✅ 已通过 DHT 发现 ${contact.display_name || contact.user_id} 的 PreKey`)
+      }
+    } catch (error) {
+      appendLog(`⚠️ DHT 查找联系人 PreKey 失败：${userFacingError(error)}`)
+    }
+  }
   if (!body.found || !body.prekey_bundle_text) return false
   prekeyBundleText.value = body.prekey_bundle_text
   selectedOneTimePreKeyId.value = typeof body.selected_one_time_prekey_id === 'number' ? body.selected_one_time_prekey_id : null
