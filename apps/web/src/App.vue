@@ -2322,13 +2322,14 @@ function currentSelfSyncPackage(): SelfSyncPackage {
 }
 
 
-function mergeOwnDeviceCertsFromSelfSync(pkg: SelfSyncPackage) {
-  if (!identity.value?.user_id) return
+function mergeOwnDeviceCertsFromSelfSync(pkg: SelfSyncPackage): boolean {
+  if (!identity.value?.user_id) return false
   const incomingCerts = [
     ...(pkg.myContactCardText ? contactCardDeviceCerts(pkg.myContactCardText) : []),
     ...(pkg.myDeviceCertJson ? [safeJson<DeviceCertItem>(pkg.myDeviceCertJson)] : []),
   ].filter((cert) => cert?.device_id)
-  if (incomingCerts.length === 0) return
+  if (incomingCerts.length === 0) return false
+  const before = myContactCardText.value || ''
   const byId = new Map<string, DeviceCertItem>()
   for (const cert of contactCardDeviceCerts(myContactCardText.value || '')) byId.set(cert.device_id, cert)
   if (myDeviceCertJson.value) {
@@ -2338,7 +2339,9 @@ function mergeOwnDeviceCertsFromSelfSync(pkg: SelfSyncPackage) {
   for (const cert of incomingCerts) byId.set(cert.device_id, cert)
   const certJson = JSON.stringify([...byId.values()])
   myContactCardText.value = export_contact_card(backupText.value, passphrase.value, displayName.value || undefined, certJson)
+  const changed = myContactCardText.value !== before
   appendLog(`✅ 自同步已合并自己的设备证书：${incomingCerts.length} 个新增/更新来源`)
+  return changed
 }
 
 function normalizeSelfSyncRecentPackages(items: SelfSyncCachedPackage[]): SelfSyncCachedPackage[] {
@@ -2423,7 +2426,7 @@ function applySelfSyncPackage(pkg: SelfSyncPackage) {
   processedSelfSyncIds.value = [pkg.sync_id, ...processedSelfSyncIds.value.filter((id) => id !== pkg.sync_id), ...(pkg.processedSelfSyncIds ?? [])].filter(Boolean).slice(0, 100)
   processedSelfSyncIds.value = [...new Set(processedSelfSyncIds.value)].slice(0, 100)
   contacts.value = mergeContactDeviceAndTrustState(contacts.value, pkg.contacts ?? [])
-  mergeOwnDeviceCertsFromSelfSync(pkg)
+  const ownDeviceCertsChanged = mergeOwnDeviceCertsFromSelfSync(pkg)
   nodeDhtOperationHistory.value = [...new Set([...(pkg.dhtOperationHistory ?? []), ...nodeDhtOperationHistory.value])].slice(0, DHT_OPERATION_HISTORY_MAX_RECORDS)
   unverifiedIncomingDropCount.value = Math.max(unverifiedIncomingDropCount.value, Number(pkg.unverifiedIncomingDropCount ?? 0))
   revokedDeviceIncomingDropCount.value = Math.max(revokedDeviceIncomingDropCount.value, Number(pkg.revokedDeviceIncomingDropCount ?? 0))
@@ -2432,6 +2435,10 @@ function applySelfSyncPackage(pkg: SelfSyncPackage) {
   selfSyncStatusText.value = `自同步：已合并 ${pkg.contacts?.length ?? 0} 个联系人状态（#${sequence} ${pkg.sync_id.slice(0, 8)}）`
   appendLog(`✅ ${selfSyncStatusText.value}`)
   persist()
+  if (ownDeviceCertsChanged && friendContacts.value.length) {
+    appendLog('自同步合并了新的本机设备证书，正在向好友分发联系人更新')
+    void fanoutMyContactCardUpdateToFriends()
+  }
 }
 
 async function autoPushSelfSyncPackageToOwnMailbox() {
