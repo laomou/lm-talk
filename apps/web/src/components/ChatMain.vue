@@ -112,6 +112,8 @@ function onComposerKeydown(e: KeyboardEvent) {
         <small v-else-if="ctx.activeContact.value.state === 'Blocked'">已拉黑</small>
         <small v-else>还不是好友</small>
         <small v-if="ctx.activeContact.value.state === 'Friend'">端到端会话：{{ ctx.activeRatchetStatusText.value }}</small>
+        <small v-if="ctx.activeContact.value.fingerprint_verified_at">身份指纹：已核验 · {{ ctx.formatDateTime(ctx.activeContact.value.fingerprint_verified_at) }}</small>
+        <small v-else-if="ctx.activeContact.value.state === 'Friend'" class="danger-text">身份指纹：未核验，请通过可信渠道核对</small>
         <small v-if="ctx.activeContact.value.mailbox_hint_url">MailboxHint：{{ ctx.activeContact.value.mailbox_hint_url }}</small>
         <small v-if="ctx.activeContact.value.last_dht_discovery_attempt_at">最近 DHT 发现尝试：{{ ctx.formatDateTime(ctx.activeContact.value.last_dht_discovery_attempt_at) }}</small>
         <small v-if="ctx.activeContact.value.last_prekey_dht_found_at">PreKey DHT 发现：{{ ctx.formatDateTime(ctx.activeContact.value.last_prekey_dht_found_at) }}</small>
