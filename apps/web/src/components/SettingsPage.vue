@@ -138,6 +138,19 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
             <span>自动同步节点快照</span>
           </label>
         </div>
+        <section class="home-card">
+          <h3>节点快照同步</h3>
+          <small>用于把当前 lm_node 的 mailbox、PreKey、DHT records 和 routing peers 与另一节点同步；不包含身份私钥。</small>
+          <label for="node-sync-peer-input">对端节点</label>
+          <input id="node-sync-peer-input" v-model="ctx.nodeSyncPeerUrl.value" placeholder="http://127.0.0.1:8788" />
+          <div class="row compact">
+            <button class="secondary" @click="ctx.exportNodeSnapshot">导出本节点快照</button>
+            <button class="secondary" @click="ctx.importNodeSnapshot">导入到本节点</button>
+            <button class="secondary" @click="ctx.pullSnapshotFromPeerNode">从对端拉取并导入</button>
+          </div>
+          <small v-if="ctx.nodeSyncStatusText.value">{{ ctx.nodeSyncStatusText.value.slice(0, 180) }}</small>
+          <textarea v-model="ctx.nodeSyncSnapshotText.value" class="mono" rows="4" placeholder="节点 snapshot JSON，可粘贴后导入" />
+        </section>
         <div class="sync-status">
           <b>同步状态</b>
           <small>{{ showRawSyncStatus ? syncStatusText : syncStatusSummary }}</small>
