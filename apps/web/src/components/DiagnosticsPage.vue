@@ -60,6 +60,7 @@ async function runDiagnostics() {
       find_value_status: sanitizeDiagnosticText(props.ctx.nodeDhtFindValueStatusText.value),
       replication_status: sanitizeDiagnosticText(props.ctx.nodeDhtReplicationStatusText.value),
       routing_refresh_status: sanitizeDiagnosticText(props.ctx.nodeRoutingRefreshStatusText.value),
+      operation_history: props.ctx.nodeDhtOperationHistory.value.slice(0, 8).map((line: string) => sanitizeDiagnosticText(line)),
     },
     local_counts: {
       contacts: props.ctx.contacts.value.length,

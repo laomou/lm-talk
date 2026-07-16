@@ -1299,6 +1299,10 @@ async function flushPersistForTests() {
 if (typeof window !== 'undefined') {
   ;(window as any).flushPersistForTests = flushPersistForTests
   ;(window as any).appendLogForTests = appendLog
+  ;(window as any).setDhtDiagnosticsForTests = (status: string, history: string[] = []) => {
+    nodeDhtFindValueStatusText.value = status
+    nodeDhtOperationHistory.value = history
+  }
   ;(window as any).mergeMessagesForTests = mergeMessagesForState
   ;(window as any).handlePwaBackgroundSyncForTests = handlePwaBackgroundSyncMessage
 }
