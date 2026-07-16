@@ -3009,6 +3009,7 @@ impl NativeNode {
                 | "/dht/closest"
                 | "/dht/rpc"
                 | "/dht/find-value"
+                | "/dht/maintenance"
                 | "/dht/replicate"
                 | "/dht/replication-plan"
                 | "/dht/routing-refresh-plan"

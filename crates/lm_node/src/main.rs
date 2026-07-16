@@ -1048,6 +1048,15 @@ struct DhtReplicationRunResponse {
 }
 
 #[derive(Debug, Serialize)]
+struct DhtMaintenanceRunResponse {
+    peers: usize,
+    records: usize,
+    routing_peers: usize,
+    replication: DhtReplicationRunStats,
+    routing_refresh: DhtRoutingRefreshRunStats,
+}
+
+#[derive(Debug, Serialize)]
 struct DhtRoutingRefreshRunResponse {
     peers: usize,
     routing_peers: usize,
@@ -3359,7 +3368,7 @@ fn serve_control(
     );
     logger.info(
         "control.endpoints",
-        "endpoints: GET /health, GET /control/stats, GET /control/metrics, POST /announce, GET /peers/closest, POST /mailbox/push, GET /mailbox/take, GET /mailbox/status, POST /mailbox/ack, POST /prekey/publish, GET /prekey/get, GET /prekey/status, GET /dht/key, POST/GET /dht/record, GET /dht/closest, POST /dht/rpc, GET /dht/find-value, GET /dht/replicate, GET /dht/routing-refresh, GET /dht/replication-plan, GET /dht/routing-refresh-plan, GET /sync/snapshot, GET /sync/status, POST /sync/peer/reset, POST /sync/import"
+        "endpoints: GET /health, GET /control/stats, GET /control/metrics, POST /announce, GET /peers/closest, POST /mailbox/push, GET /mailbox/take, GET /mailbox/status, POST /mailbox/ack, POST /prekey/publish, GET /prekey/get, GET /prekey/status, GET /dht/key, POST/GET /dht/record, GET /dht/closest, POST /dht/rpc, GET /dht/find-value, GET /dht/maintenance, GET /dht/replicate, GET /dht/routing-refresh, GET /dht/replication-plan, GET /dht/routing-refresh-plan, GET /sync/snapshot, GET /sync/status, POST /sync/peer/reset, POST /sync/import"
             .to_string(),
         serde_json::Value::Null,
     );
@@ -4668,6 +4677,14 @@ fn handle_stream(
             &request.path,
             Some(runtime_stats),
         )
+    } else if request.method == "GET" && request.path.starts_with("/dht/maintenance") {
+        handle_control_dht_maintenance_run(
+            node,
+            dht_configured_peers,
+            dht_runner,
+            &request.path,
+            Some(runtime_stats),
+        )
     } else if request.method == "GET" && request.path.starts_with("/dht/replicate") {
         handle_control_dht_replication_run(
             node,
@@ -4718,6 +4735,63 @@ fn handle_stream(
     let allow_origin = security.access_control_origin(origin.as_deref());
     stream.write_all(response.to_http_string(&allow_origin).as_bytes())?;
     Ok(())
+}
+
+fn handle_control_dht_maintenance_run(
+    node: &mut NativeNode,
+    dht_configured_peers: &[SyncPeerConfig],
+    dht_runner: DhtRunnerConfig,
+    path: &str,
+    mut runtime_stats: Option<&mut ControlRuntimeStats>,
+) -> ControlHttpResponse {
+    let replication_factor = query_param_value(path, "factor")
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(dht_runner.replication_factor)
+        .clamp(1, 64);
+    let refresh_limit = query_param_value(path, "limit")
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(dht_runner.routing_refresh_limit)
+        .clamp(1, MAX_DHT_RESPONSE_NODES);
+    let max_targets = query_param_value(path, "max_targets")
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(dht_runner.routing_refresh_max_targets)
+        .clamp(1, 256);
+    let (peers, peers_quarantined) = dht_runner_peer_configs_with_quarantine_count(
+        node,
+        dht_configured_peers,
+        dht_runner.transport,
+        dht_runner.peer_quarantine_consecutive_failures,
+    );
+    let replication_config = DhtRunnerConfig {
+        replication_factor,
+        ..dht_runner
+    };
+    let mut replication = run_dht_replication_with_logger(node, &peers, replication_config, None);
+    replication.peers_quarantined = peers_quarantined;
+    if let Some(runtime_stats) = runtime_stats.as_deref_mut() {
+        runtime_stats.record_dht_replication_run(replication, current_unix_timestamp());
+    }
+    let refresh_config = DhtRunnerConfig {
+        routing_refresh_limit: refresh_limit,
+        routing_refresh_max_targets: max_targets,
+        ..dht_runner
+    };
+    let mut routing_refresh =
+        run_dht_routing_refresh_with_logger(node, &peers, refresh_config, None);
+    routing_refresh.peers_quarantined = peers_quarantined;
+    if let Some(runtime_stats) = runtime_stats.as_deref_mut() {
+        runtime_stats.record_dht_routing_refresh_run(routing_refresh, current_unix_timestamp());
+    }
+    ControlHttpResponse::json(
+        200,
+        &DhtMaintenanceRunResponse {
+            peers: peers.len(),
+            records: node.dht_records.len(),
+            routing_peers: node.kademlia.len(),
+            replication,
+            routing_refresh,
+        },
+    )
 }
 
 fn handle_control_dht_replication_run(
@@ -5187,10 +5261,10 @@ mod tests {
         configure_control_peer_stream, connect_control_peer, control_error_http_response,
         current_unix_timestamp, dht_find_value_with_transport, dht_runner_peer_configs,
         dht_runner_peer_configs_with_quarantine_count, dial_libp2p_bootstrap_peers,
-        handle_control_dht_find_value_run, handle_control_dht_replication_run,
-        handle_control_dht_routing_refresh_run, handle_libp2p_dht_rpc_request,
-        handle_libp2p_dht_server_event, http_control_request, libp2p_dht_rpc_behaviour,
-        libp2p_dht_swarm, load_node_state_db, open_state_db,
+        handle_control_dht_find_value_run, handle_control_dht_maintenance_run,
+        handle_control_dht_replication_run, handle_control_dht_routing_refresh_run,
+        handle_libp2p_dht_rpc_request, handle_libp2p_dht_server_event, http_control_request,
+        libp2p_dht_rpc_behaviour, libp2p_dht_swarm, load_node_state_db, open_state_db,
         parse_content_length_and_validate_headers, parse_dht_transport_kind,
         parse_libp2p_bootstrap_peers, parse_libp2p_dht_peer, parse_log_format, read_secret_file,
         request_is_authorized, run_dht_replication, run_dht_replication_with_transport,
@@ -5962,6 +6036,47 @@ mod tests {
             requests[1].0,
             format!("transport://{}", nearer.announce.peer_id)
         );
+    }
+
+    #[test]
+    fn control_dht_maintenance_run_combines_replication_and_refresh() {
+        let mut node = NativeNode::new(NodeConfig::default());
+        let response = handle_control_dht_maintenance_run(
+            &mut node,
+            &[],
+            DhtRunnerConfig::default(),
+            "/dht/maintenance?factor=2&limit=4&max_targets=2",
+            None,
+        );
+        assert_eq!(response.status, 200, "{}", response.body);
+        let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(body["peers"], 0);
+        assert_eq!(body["replication"]["attempts"], 0);
+        assert_eq!(body["routing_refresh"]["attempts"], 0);
+
+        for failure in 0..DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES {
+            node.sync_status.record_failure(
+                "http://maintenance-quarantined",
+                format!("failure-{failure}"),
+            );
+        }
+        let peers = vec![SyncPeerConfig {
+            url: "http://maintenance-quarantined".into(),
+            token: None,
+            peer_id: None,
+        }];
+        let response = handle_control_dht_maintenance_run(
+            &mut node,
+            &peers,
+            DhtRunnerConfig::default(),
+            "/dht/maintenance?factor=2&limit=4&max_targets=2",
+            None,
+        );
+        assert_eq!(response.status, 200, "{}", response.body);
+        let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(body["peers"], 0);
+        assert_eq!(body["replication"]["peers_quarantined"], 1);
+        assert_eq!(body["routing_refresh"]["peers_quarantined"], 1);
     }
 
     #[test]
