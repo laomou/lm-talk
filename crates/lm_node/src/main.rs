@@ -5594,9 +5594,9 @@ mod tests {
         parse_libp2p_bootstrap_peers, parse_libp2p_dht_peer, parse_log_format, read_secret_file,
         request_is_authorized, run_dht_replication, run_dht_replication_with_transport,
         run_dht_routing_refresh, run_dht_routing_refresh_with_transport, save_node_state,
-        save_node_state_db, send_dht_rpc, send_libp2p_dht_rpc_async, status_for_request_error,
-        status_reason, sync_backoff_delay_seconds, validate_state_db_encryption_requirement,
-        validate_state_file_encryption_requirement,
+        save_node_state_db, send_dht_rpc, send_libp2p_dht_rpc_async, state_db_stats,
+        status_for_request_error, status_reason, sync_backoff_delay_seconds,
+        validate_state_db_encryption_requirement, validate_state_file_encryption_requirement,
     };
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use futures::StreamExt;
@@ -8526,6 +8526,31 @@ connection: close
         assert_eq!(leftovers, 1);
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn state_db_stats_report_external_encryption_mode_without_db_encrypted_flag() {
+        let _guard = TEST_ENV_MUTEX.lock().unwrap();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("lm-node-external-mode-{unique}.sqlite3"));
+        unsafe { std::env::set_var("LM_NODE_STATE_DB_ENCRYPTION_MODE", "external") };
+        let mut node = NativeNode::new(NodeConfig::default());
+        node.config.peer_id = "external-mode-node".into();
+        save_node_state_db(path.to_str().unwrap(), &node).unwrap();
+        let stats = state_db_stats(path.to_str().unwrap()).unwrap();
+        assert_eq!(stats.encryption_mode, "external");
+        assert!(
+            !stats.encrypted,
+            "external protection is not database-level encryption"
+        );
+        assert!(stats.permissions_hardened);
+        unsafe { std::env::remove_var("LM_NODE_STATE_DB_ENCRYPTION_MODE") };
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("sqlite3-wal"));
+        let _ = std::fs::remove_file(path.with_extension("sqlite3-shm"));
     }
 
     #[test]
