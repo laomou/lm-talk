@@ -5000,9 +5000,17 @@ function recordDhtOperation(summary: string) {
   persist()
 }
 
-function clearDhtOperationHistory() {
+async function clearDhtOperationHistory() {
+  if (nodeDhtOperationHistory.value.length === 0) return
+  const ok = await showConfirm(
+    '清空 DHT 操作历史',
+    '清空最近 DHT 查找、复制和路由刷新历史？这只删除本机排障记录，不影响 DHT 网络或聊天数据。',
+    true,
+  )
+  if (!ok) return
   nodeDhtOperationHistory.value = []
   nodeDhtFindValueStatusText.value = 'DHT 查找：已清空操作历史'
+  appendLog('已清空 DHT 操作历史')
   persist()
 }
 
