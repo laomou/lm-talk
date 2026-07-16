@@ -4,13 +4,17 @@ import { avatarColor } from '../avatarColor'
 
 const props = defineProps<{ ctx: any }>()
 const keyword = ref('')
+const trustFilter = ref<'all' | 'unverified' | 'verified' | 'revoked'>('all')
 type View = 'welcome' | 'requests' | 'detail' | 'add' | 'group'
 const view = ref<View>('welcome')
 
 const query = computed(() => keyword.value.trim().toLowerCase())
 const filteredContacts = computed(() => {
   const q = query.value
-  const list = props.ctx.contacts.value
+  let list = props.ctx.contacts.value
+  if (trustFilter.value === 'verified') list = list.filter((c: any) => c.state === 'Friend' && c.fingerprint_verified_at)
+  else if (trustFilter.value === 'unverified') list = list.filter((c: any) => c.state === 'Friend' && !c.fingerprint_verified_at)
+  else if (trustFilter.value === 'revoked') list = list.filter((c: any) => (c.revoked_device_ids || []).length > 0)
   if (!q) return list
   return list.filter((c: any) => `${c.display_name || ''} ${c.user_id || ''} ${c.state || ''}`.toLowerCase().includes(q))
 })
@@ -47,6 +51,12 @@ function openGroupDetail(groupId: string) {
       </header>
       <div class="list-col-search">
         <input v-model="keyword" type="search" aria-label="搜索好友或群聊" placeholder="搜索好友或群聊" />
+        <select v-model="trustFilter" aria-label="联系人信任筛选">
+          <option value="all">全部联系人</option>
+          <option value="unverified">未核验好友</option>
+          <option value="verified">已核验好友</option>
+          <option value="revoked">有撤销设备</option>
+        </select>
       </div>
 
       <div class="conversation-list">
