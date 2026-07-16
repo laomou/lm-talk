@@ -1878,6 +1878,16 @@ async function importFullDataBackupMerge() {
     pwaBackgroundEventHistory.value = [...new Set([...pwaBackgroundEventHistory.value, ...(state.pwaBackgroundEventHistory ?? [])])].slice(0, 5)
     pwaLastBackgroundEventText.value = pwaBackgroundEventHistory.value[0] ?? '尚未收到后台事件'
     friendRequestRateRecords.value = mergeUniqueBy(friendRequestRateRecords.value, state.friendRequestRateRecords ?? [], (x) => x.from_user_id).items
+    unverifiedIncomingDropCount.value += Number(state.unverifiedIncomingDropCount ?? 0)
+    if (typeof state.lastUnverifiedIncomingDropAt === 'number' && state.lastUnverifiedIncomingDropAt > (lastUnverifiedIncomingDropAt.value ?? 0)) {
+      lastUnverifiedIncomingDropAt.value = state.lastUnverifiedIncomingDropAt
+      lastUnverifiedIncomingDropFrom.value = state.lastUnverifiedIncomingDropFrom ?? ''
+    }
+    revokedDeviceIncomingDropCount.value += Number(state.revokedDeviceIncomingDropCount ?? 0)
+    if (typeof state.lastRevokedDeviceIncomingDropAt === 'number' && state.lastRevokedDeviceIncomingDropAt > (lastRevokedDeviceIncomingDropAt.value ?? 0)) {
+      lastRevokedDeviceIncomingDropAt.value = state.lastRevokedDeviceIncomingDropAt
+      lastRevokedDeviceIncomingDropFrom.value = state.lastRevokedDeviceIncomingDropFrom ?? ''
+    }
     if (!myDeviceCertJson.value && state.myDeviceCertJson) myDeviceCertJson.value = state.myDeviceCertJson
     if (!myDeviceId.value && state.myDeviceId) myDeviceId.value = state.myDeviceId
     if (!prekeyBundleText.value && state.prekeyBundleText) prekeyBundleText.value = state.prekeyBundleText
