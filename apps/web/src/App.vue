@@ -5135,8 +5135,16 @@ function applyDhtFindValueRecord(body: any) {
     peerMailboxKey.value = record.value
     mailboxInboxStatus.value = `DHT 查到 MailboxHint：${record.value}`
   } else if (record.kind === 'PublicPeer') {
-    publicPeerAnnounceText.value = record.value
-    publicPeerAnnounceInfoText.value = JSON.stringify({ source: 'dht', record }, null, 2)
+    const key = publicPeerAnnounceInspectPublicKey.value.trim() || defaultInspectPublicKey()
+    try {
+      const inspected = key ? JSON.parse(inspect_public_peer_announce(record.value, key)) : null
+      publicPeerAnnounceText.value = record.value
+      publicPeerAnnounceInspectPublicKey.value = key
+      publicPeerAnnounceInfoText.value = JSON.stringify({ source: 'dht', verified: Boolean(inspected), record, inspected }, null, 2)
+    } catch (error) {
+      publicPeerAnnounceInfoText.value = JSON.stringify({ source: 'dht', verified: false, error: userFacingError(error), record }, null, 2)
+      nodeDhtFindValueStatusText.value = `DHT 查到 PublicPeer record，但验签失败：${userFacingError(error)}`
+    }
   }
 }
 
