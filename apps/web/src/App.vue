@@ -136,6 +136,8 @@ type ContactItem = ContactInfo & {
   last_dht_discovery_attempt_at?: number
   last_dht_discovery_success_at?: number
   last_dht_discovery_error?: string
+  dht_discovery_failure_count?: number
+  next_dht_discovery_retry_at?: number
   last_prekey_dht_found_at?: number
   last_mailbox_hint_dht_found_at?: number
 }
@@ -2091,16 +2093,33 @@ function markContactDhtDiscoveryAttempt(contact: ContactItem) {
 function markContactDhtDiscoverySuccess(contact: ContactItem, kind: 'prekey' | 'mailbox-hint') {
   contact.last_dht_discovery_success_at = Date.now()
   contact.last_dht_discovery_error = undefined
+  contact.dht_discovery_failure_count = 0
+  contact.next_dht_discovery_retry_at = undefined
   if (kind === 'prekey') contact.last_prekey_dht_found_at = contact.last_dht_discovery_success_at
   if (kind === 'mailbox-hint') contact.last_mailbox_hint_dht_found_at = contact.last_dht_discovery_success_at
 }
 
 function markContactDhtDiscoveryError(contact: ContactItem, error: unknown) {
+  const now = Date.now()
+  const failures = Math.min(8, (contact.dht_discovery_failure_count ?? 0) + 1)
+  const retryDelayMs = Math.min(15 * 60_000, 30_000 * 2 ** (failures - 1))
+  contact.dht_discovery_failure_count = failures
+  contact.next_dht_discovery_retry_at = now + retryDelayMs
   contact.last_dht_discovery_error = userFacingError(error)
+}
+
+function contactDhtDiscoveryRetryWaitMs(contact: ContactItem): number {
+  const retryAt = contact.next_dht_discovery_retry_at ?? 0
+  return retryAt > Date.now() ? retryAt - Date.now() : 0
+}
+
+function shouldSkipAutoContactDhtDiscovery(contact: ContactItem): boolean {
+  return contactDhtDiscoveryRetryWaitMs(contact) > 0
 }
 
 async function discoverMailboxHintForContact(contact: ContactItem): Promise<string | undefined> {
   if (contact.mailbox_hint_url?.trim()) return contact.mailbox_hint_url.trim()
+  if (shouldSkipAutoContactDhtDiscovery(contact)) return undefined
   markContactDhtDiscoveryAttempt(contact)
   try {
     nodeDhtKeyKind.value = 'mailbox-hint'
@@ -2371,6 +2390,7 @@ async function ensureRatchetSessionFromNode(contact: ContactItem): Promise<boole
   nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
   if (!body.found || !body.prekey_bundle_text) {
     try {
+      if (shouldSkipAutoContactDhtDiscovery(contact)) return false
       markContactDhtDiscoveryAttempt(contact)
       nodeDhtKeyKind.value = 'prekey'
       nodeDhtKeyValue.value = contact.user_id
