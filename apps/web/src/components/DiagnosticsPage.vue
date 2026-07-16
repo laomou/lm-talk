@@ -98,6 +98,8 @@ async function runDiagnostics() {
       last_self_sync_merged_at: props.ctx.lastSelfSyncMergedAt.value,
       last_self_sync_sequence_sent: props.ctx.lastSelfSyncSequenceSent.value,
       last_self_sync_sequence_merged: props.ctx.lastSelfSyncSequenceMerged.value,
+      self_sync_gap_count: props.ctx.selfSyncGapCount.value,
+      last_self_sync_gap_at: props.ctx.lastSelfSyncGapAt.value,
       full_data_backup_freshness: props.ctx.fullDataBackupFreshnessText.value,
       full_data_backup_freshness_level: props.ctx.fullDataBackupFreshnessLevel.value,
     },
