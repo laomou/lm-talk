@@ -72,6 +72,30 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
         <small>重加密后请重新导出身份；本机保存的登录入口会同步更新。</small>
       </section>
 
+      <section class="home-card">
+        <div class="section-title-row">
+          <h3>设备与撤销</h3>
+          <button class="secondary" @click="ctx.createMyDeviceCert">生成本设备证书</button>
+        </div>
+        <small>设备证书用于后续多设备信任；撤销事件可分发给好友，提醒对方停止信任已丢失或废弃设备。</small>
+        <small v-if="ctx.myDeviceId.value">当前设备：{{ ctx.myDeviceId.value }}</small>
+        <div class="row compact" v-if="ctx.myDeviceCertJson.value">
+          <button class="secondary" @click="ctx.copyText(ctx.myDeviceCertJson.value, '设备证书')">复制设备证书</button>
+          <button class="secondary" @click="ctx.showQr(ctx.myDeviceCertJson.value, '设备证书')">设备证书二维码</button>
+        </div>
+        <label for="device-revoke-id-input">撤销 Device ID</label>
+        <input id="device-revoke-id-input" v-model="ctx.revokeDeviceId.value" placeholder="输入要撤销的 device_id" />
+        <label for="device-revoke-reason-input">撤销原因</label>
+        <input id="device-revoke-reason-input" v-model="ctx.revokeReason.value" placeholder="可选，例如：设备丢失 / 已更换" />
+        <div class="row compact">
+          <button class="secondary" @click="ctx.createDeviceRevokeText">生成撤销事件</button>
+          <button class="secondary" :disabled="!ctx.deviceRevokeText.value" @click="ctx.copyText(ctx.deviceRevokeText.value, '设备撤销事件')">复制撤销事件</button>
+          <button class="secondary" :disabled="!ctx.deviceRevokeText.value" @click="ctx.showQr(ctx.deviceRevokeText.value, '设备撤销事件')">撤销二维码</button>
+          <button class="secondary danger" :disabled="!ctx.deviceRevokeText.value" @click="ctx.fanoutDeviceRevokeToFriends">分发给好友</button>
+        </div>
+        <textarea v-if="ctx.deviceRevokeText.value" v-model="ctx.deviceRevokeText.value" class="mono" rows="3" readonly />
+      </section>
+
       <section class="home-card sync-card">
         <div class="section-title-row">
           <h3>消息同步</h3>
