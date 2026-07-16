@@ -100,6 +100,7 @@ async function runDiagnostics() {
       self_sync_request_hit_count: props.ctx.selfSyncRequestHitCount.value,
       self_sync_request_miss_count: props.ctx.selfSyncRequestMissCount.value,
       cached_self_sync_packages: props.ctx.selfSyncRecentPackages.value.length,
+      latest_cached_self_sync_expires_at: props.ctx.selfSyncRecentPackages.value[0]?.expires_at ?? null,
       last_self_sync_pushed_at: props.ctx.lastSelfSyncPushedAt.value,
       last_self_sync_merged_at: props.ctx.lastSelfSyncMergedAt.value,
       last_self_sync_sequence_sent: props.ctx.lastSelfSyncSequenceSent.value,

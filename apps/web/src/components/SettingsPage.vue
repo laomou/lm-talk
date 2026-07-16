@@ -23,6 +23,11 @@ function outboxRetryText(item: any) {
   if (!nextRetryAt || Date.now() >= nextRetryAt) return '下次重试：可立即重试'
   return `下次重试：${props.ctx.formatDateTime(nextRetryAt)}`
 }
+function selfSyncCacheExpiryText(item: any) {
+  if (!item?.expires_at) return '最近轻量包缓存未设置过期时间'
+  if (Date.now() > item.expires_at) return '最近轻量包缓存已过期，下一次使用前会自动清理'
+  return `最近轻量包缓存保留至：${props.ctx.formatDateTime(item.expires_at)}`
+}
 const localObjectCount = computed(() =>
   props.ctx.contacts.value.length +
   props.ctx.groups.value.length +
@@ -359,7 +364,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
         <small v-if="ctx.lastSelfMailboxBackupMergedAt.value">最近合并自己的 Mailbox 备份：{{ ctx.formatDateTime(ctx.lastSelfMailboxBackupMergedAt.value) }}</small>
         <small>{{ ctx.selfSyncStatusText.value }}</small>
         <small v-if="ctx.selfSyncRequestSentCount.value || ctx.selfSyncRequestHitCount.value || ctx.selfSyncRequestMissCount.value">缺包请求：发送 {{ ctx.selfSyncRequestSentCount.value }}，命中 {{ ctx.selfSyncRequestHitCount.value }}，未命中 {{ ctx.selfSyncRequestMissCount.value }}</small>
-        <small v-if="ctx.selfSyncRecentPackages.value.length">最近轻量包缓存：{{ ctx.selfSyncRecentPackages.value.length }}/10</small>
+        <small v-if="ctx.selfSyncRecentPackages.value.length">最近轻量包缓存：{{ ctx.selfSyncRecentPackages.value.length }}/10；{{ selfSyncCacheExpiryText(ctx.selfSyncRecentPackages.value[0]) }}</small>
         <small v-if="ctx.lastSelfSyncPushedAt.value">最近投递轻量自同步：#{{ ctx.lastSelfSyncSequenceSent.value }} · {{ ctx.formatDateTime(ctx.lastSelfSyncPushedAt.value) }}</small>
         <small v-if="ctx.lastSelfSyncMergedAt.value">最近合并轻量自同步：#{{ ctx.lastSelfSyncSequenceMerged.value }} · {{ ctx.formatDateTime(ctx.lastSelfSyncMergedAt.value) }}</small>
         <div v-if="ctx.selfSyncGapCount.value" class="row compact">
