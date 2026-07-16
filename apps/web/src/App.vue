@@ -943,15 +943,22 @@ const strictE2eeReadinessIssues = computed(() => [
   })),
 ].slice(0, 12))
 
-function openStrictE2eeReadinessIssue(issue: { user_id: string; issue_kind?: string }) {
+async function openStrictE2eeReadinessIssue(issue: { user_id: string; issue_kind?: string }) {
   const contact = contacts.value.find((item) => item.user_id === issue.user_id)
   if (!contact) return
   selectContact(contact.user_id)
   goContactsPage()
+  await nextTick()
   if (issue.issue_kind === 'fingerprint') {
     appendLog(`严格 E2EE 预检：请核验 ${contact.display_name || contact.user_id} 的身份指纹`)
+    try {
+      await showActiveContactFingerprintQr()
+    } catch (error) {
+      appendLog(`严格 E2EE 预检：打开指纹核验码失败：${userFacingError(error)}`)
+    }
   } else if (issue.issue_kind === 'sealed-slot') {
-    appendLog(`严格 E2EE 预检：请刷新/重新导入 ${contact.display_name || contact.user_id} 的设备证书以获得 device_box_public_key`)
+    appendLog(`严格 E2EE 预检：正在为 ${contact.display_name || contact.user_id} 重新发现 DHT 记录以刷新设备/投递线索`)
+    await discoverActiveContactDht()
   }
 }
 
