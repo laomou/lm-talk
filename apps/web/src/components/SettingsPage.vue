@@ -409,7 +409,10 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
         <p class="muted">严格 E2EE 策略：{{ ctx.strictE2eePolicyEnabled.value ? '已启用' : '未完全启用' }}；{{ ctx.strictE2eeReadiness.value.text }}</p>
         <div v-if="ctx.strictE2eeReadinessIssues.value.length" class="callout warning">
           <b>严格 E2EE 启用前检查</b>
-          <small v-for="item in ctx.strictE2eeReadinessIssues.value" :key="`${item.user_id}-${item.issue}`">{{ item.display_name }}：{{ item.issue }}</small>
+          <div v-for="item in ctx.strictE2eeReadinessIssues.value" :key="`${item.user_id}-${item.issue}`" class="row compact">
+            <small>{{ item.display_name }}：{{ item.issue }}</small>
+            <button class="secondary" @click="ctx.openStrictE2eeReadinessIssue(item)">处理</button>
+          </div>
         </div>
         <p class="muted">分设备 sealed slot：{{ ctx.sealedSlotCoverageSummary.value.text }}</p>
         <div v-if="ctx.sealedSlotRiskContacts.value.length" class="callout warning">

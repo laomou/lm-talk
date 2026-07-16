@@ -933,13 +933,28 @@ const strictE2eeReadinessIssues = computed(() => [
       user_id: contact.user_id,
       display_name: contact.display_name || contact.user_id,
       issue: '身份指纹未核验',
+      issue_kind: 'fingerprint',
     })),
   ...sealedSlotRiskContacts.value.map((contact: any) => ({
     user_id: contact.user_id,
     display_name: contact.display_name,
     issue: contact.status,
+    issue_kind: 'sealed-slot',
   })),
 ].slice(0, 12))
+
+function openStrictE2eeReadinessIssue(issue: { user_id: string; issue_kind?: string }) {
+  const contact = contacts.value.find((item) => item.user_id === issue.user_id)
+  if (!contact) return
+  selectContact(contact.user_id)
+  goContactsPage()
+  if (issue.issue_kind === 'fingerprint') {
+    appendLog(`严格 E2EE 预检：请核验 ${contact.display_name || contact.user_id} 的身份指纹`)
+  } else if (issue.issue_kind === 'sealed-slot') {
+    appendLog(`严格 E2EE 预检：请刷新/重新导入 ${contact.display_name || contact.user_id} 的设备证书以获得 device_box_public_key`)
+  }
+}
+
 const visibleFriendRequests = computed(() => friendRequests.value.filter((req) => !req.quarantined))
 const quarantinedFriendRequests = computed(() => friendRequests.value.filter((req) => req.quarantined))
 const friendRequestRateSummaryText = computed(() => {
@@ -8263,7 +8278,7 @@ const appContext = {
   prekeySignedId, prekeyOneTimeCount, prekeyBundleText, prekeyPrivateBundleJson, prekeySignedOneTimeRecordTexts, prekeyInfoText, x3dhInitialMessageJson,
   selectedOneTimePreKeyId, selectedSignedOneTimePreKeyRecordText, x3dhSharedSecretText, ratchetStateText, ratchetPeerStateText, ratchetLocalDhKeyPairJson, ratchetRemoteDhPublicKeyForInit,
   ratchetInitRole, ratchetHeaderText, ratchetEnvelopeText, ratchetPlainText, ratchetKeyText, ratchetRemoteDhPublicKey,
-  ratchetInfoText, safetyPolicy, enableStrictE2eePolicy, strictE2eePolicyEnabled, strictE2eeReadiness, strictE2eeReadinessIssues, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, perDeviceEnvelopeSentCount, perDeviceEnvelopeReceivedCount, perDeviceEnvelopeDropCount, lastPerDeviceEnvelopeAt, lastPerDeviceEnvelopeDropAt, lastPerDeviceEnvelopeDropReason, sealedSlotCoverageSummary, sealedSlotRiskContacts, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
+  ratchetInfoText, safetyPolicy, enableStrictE2eePolicy, strictE2eePolicyEnabled, strictE2eeReadiness, strictE2eeReadinessIssues, openStrictE2eeReadinessIssue, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, perDeviceEnvelopeSentCount, perDeviceEnvelopeReceivedCount, perDeviceEnvelopeDropCount, lastPerDeviceEnvelopeAt, lastPerDeviceEnvelopeDropAt, lastPerDeviceEnvelopeDropReason, sealedSlotCoverageSummary, sealedSlotRiskContacts, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
   nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, findActiveContactMailboxHint, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, startFingerprintQrScan, stopFingerprintQrScan, fingerprintScanOpen, fingerprintScanStatus, copyActiveContactFingerprintProof, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, showMyFingerprintQr, copyMyFingerprintProof, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
