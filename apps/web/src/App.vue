@@ -301,6 +301,14 @@ type MailboxFailedItem = {
   retry_count: number
 }
 
+type ContactCardUpdateFanoutRecord = {
+  peer_user_id: string
+  update_id: string
+  status: 'sent' | 'queued' | 'acked'
+  sent_at: number
+  acked_at?: number
+}
+
 type ProcessedMailboxRecord = {
   id: string
   processed_at: number
@@ -334,6 +342,7 @@ type PersistedState = {
   lastNodeSnapshotSyncAt?: number
   processedMailboxIds?: Array<string | ProcessedMailboxRecord>
   mailboxFailedItems?: MailboxFailedItem[]
+  contactCardUpdateFanoutRecords?: ContactCardUpdateFanoutRecord[]
   syncRecoveryHistory?: string[]
   dhtOperationHistory?: string[]
   pwaBackgroundEventHistory?: string[]
@@ -393,6 +402,7 @@ type PersistedMeta = {
   lastNodeSnapshotSyncAt?: number
   processedMailboxIds?: Array<string | ProcessedMailboxRecord>
   mailboxFailedItems?: MailboxFailedItem[]
+  contactCardUpdateFanoutRecords?: ContactCardUpdateFanoutRecord[]
   syncRecoveryHistory?: string[]
   dhtOperationHistory?: string[]
   pwaBackgroundEventHistory?: string[]
@@ -597,6 +607,7 @@ const outbox = ref<OutboxItem[]>([])
 const ratchetSessions = ref<RatchetSessionItem[]>([])
 const processedMailboxIds = ref<ProcessedMailboxRecord[]>([])
 const mailboxFailedItems = ref<MailboxFailedItem[]>([])
+const contactCardUpdateFanoutRecords = ref<ContactCardUpdateFanoutRecord[]>([])
 let outboxRetryTimer: number | undefined
 let lastDeliveryError = ''
 const notificationPermission = ref(typeof Notification !== 'undefined' ? Notification.permission : 'unsupported')
@@ -1569,6 +1580,7 @@ function currentPersistedState(): PersistedState {
     lastNodeSnapshotSyncAt: lastNodeSnapshotSyncAt.value ?? undefined,
     processedMailboxIds: processedMailboxIds.value,
     mailboxFailedItems: mailboxFailedItems.value,
+    contactCardUpdateFanoutRecords: contactCardUpdateFanoutRecords.value,
     syncRecoveryHistory: syncRecoveryHistory.value,
     dhtOperationHistory: nodeDhtOperationHistory.value,
     pwaBackgroundEventHistory: pwaBackgroundEventHistory.value,
@@ -1630,6 +1642,7 @@ function persistedMeta(): PersistedMeta {
     lastNodeSnapshotSyncAt: lastNodeSnapshotSyncAt.value ?? undefined,
     processedMailboxIds: processedMailboxIds.value,
     mailboxFailedItems: mailboxFailedItems.value,
+    contactCardUpdateFanoutRecords: contactCardUpdateFanoutRecords.value,
     syncRecoveryHistory: syncRecoveryHistory.value,
     dhtOperationHistory: nodeDhtOperationHistory.value,
     pwaBackgroundEventHistory: pwaBackgroundEventHistory.value,
@@ -1797,6 +1810,7 @@ async function writeStateToTables(state: PersistedState) {
   lastNodeSnapshotSyncAt.value = typeof state.lastNodeSnapshotSyncAt === 'number' ? state.lastNodeSnapshotSyncAt : null
   processedMailboxIds.value = normalizeProcessedMailboxRecords(state.processedMailboxIds)
   mailboxFailedItems.value = await Promise.all((state.mailboxFailedItems ?? []).map((m: any) => decryptMailboxFailedItemFromStore(m, key)))
+  contactCardUpdateFanoutRecords.value = (state.contactCardUpdateFanoutRecords ?? []).slice(0, 100)
   syncRecoveryHistory.value = state.syncRecoveryHistory ?? []
   nodeDhtOperationHistory.value = state.dhtOperationHistory ?? []
   pwaBackgroundEventHistory.value = state.pwaBackgroundEventHistory ?? []
@@ -1862,6 +1876,7 @@ async function loadStateFromTables(): Promise<boolean> {
   lastNodeSnapshotSyncAt.value = typeof meta.lastNodeSnapshotSyncAt === 'number' ? meta.lastNodeSnapshotSyncAt : null
   processedMailboxIds.value = normalizeProcessedMailboxRecords(meta.processedMailboxIds)
   mailboxFailedItems.value = await Promise.all((meta.mailboxFailedItems ?? []).map((m: any) => decryptMailboxFailedItemFromStore(m, key)))
+  contactCardUpdateFanoutRecords.value = (meta.contactCardUpdateFanoutRecords ?? []).slice(0, 100)
   syncRecoveryHistory.value = meta.syncRecoveryHistory ?? []
   nodeDhtOperationHistory.value = meta.dhtOperationHistory ?? []
   pwaBackgroundEventHistory.value = meta.pwaBackgroundEventHistory ?? []
@@ -1978,6 +1993,7 @@ function resetAccountScopedState() {
   ratchetSessions.value = []
   processedMailboxIds.value = []
   mailboxFailedItems.value = []
+  contactCardUpdateFanoutRecords.value = []
   syncRecoveryHistory.value = []
   nodeDhtOperationHistory.value = []
   pwaBackgroundEventHistory.value = []
@@ -2045,6 +2061,7 @@ async function clearPersisted() {
   ratchetSessions.value = []
   processedMailboxIds.value = []
   mailboxFailedItems.value = []
+  contactCardUpdateFanoutRecords.value = []
   syncRecoveryHistory.value = []
   nodeDhtOperationHistory.value = []
   pwaBackgroundEventHistory.value = []
@@ -3286,7 +3303,40 @@ function conversationIdFromEnvelope(envelope: string): string | undefined {
   } catch { return undefined }
 }
 
+
+function contactCardUpdateId(cardText: string): string {
+  let hash = 2166136261
+  for (let i = 0; i < cardText.length; i += 1) {
+    hash ^= cardText.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return `contact-card-update:${identity.value?.user_id || 'unknown'}:${(hash >>> 0).toString(16)}`
+}
+
+function rememberContactCardUpdateFanout(peerUserId: string, updateId: string, status: 'sent' | 'queued') {
+  const existing = contactCardUpdateFanoutRecords.value.find((item) => item.peer_user_id === peerUserId && item.update_id === updateId)
+  if (existing) {
+    existing.status = existing.status === 'acked' ? 'acked' : status
+    existing.sent_at = Date.now()
+  } else {
+    contactCardUpdateFanoutRecords.value = [{ peer_user_id: peerUserId, update_id: updateId, status, sent_at: Date.now() }, ...contactCardUpdateFanoutRecords.value].slice(0, 100)
+  }
+}
+
+function markContactCardUpdateAck(updateId: string, fromUserId: string): boolean {
+  const record = contactCardUpdateFanoutRecords.value.find((item) => item.peer_user_id === fromUserId && item.update_id === updateId)
+  if (!record) return false
+  record.status = 'acked'
+  record.acked_at = record.acked_at || Date.now()
+  appendLog(`✅ 联系人设备证书更新已被 ${fromUserId} 确认合并`)
+  persist()
+  return true
+}
+
+const contactCardUpdateFanoutAckCount = computed(() => contactCardUpdateFanoutRecords.value.filter((item) => item.status === 'acked').length)
+
 function applyDeliveryAck(messageId: string, fromUserId: string) {
+  if (messageId.startsWith('contact-card-update:') && markContactCardUpdateAck(messageId, fromUserId)) return
   const msg = messages.value.find((m) => m.direction === 'out' && m.protocol_message_id === messageId && m.peer_user_id === fromUserId)
   if (msg) {
     if (msg.status !== 'read') msg.status = 'delivered'
@@ -3728,10 +3778,11 @@ async function fanoutMyContactCardUpdateToFriends(options: { force?: boolean } =
     }
     let sent = 0
     let queued = 0
+    const updateId = contactCardUpdateId(myContactCardText.value)
     for (const contact of friendContacts.value) {
       const result = await deliverPayloadToContact(contact, myContactCardText.value, '联系人设备证书更新', 'contact-update')
-      if (result === 'sent' || result === 'mailbox') sent += 1
-      else { queued += 1; queueOutboxItem(contact, myContactCardText.value, undefined, 'contact-update') }
+      if (result === 'sent' || result === 'mailbox') { sent += 1; rememberContactCardUpdateFanout(contact.user_id, updateId, 'sent') }
+      else { queued += 1; rememberContactCardUpdateFanout(contact.user_id, updateId, 'queued'); queueOutboxItem(contact, myContactCardText.value, undefined, 'contact-update') }
     }
     contactCardUpdateFanoutCount.value += 1
     lastContactCardUpdateFanoutAt.value = now
@@ -7669,6 +7720,7 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
 
   if (normalizedKind === 'contactupdate' || ciphertext.startsWith('lm-contact-card-v1:')) {
     applyContactCardUpdateFromMailbox(ciphertext, sender)
+    void sendDeliveryAck(sender, contactCardUpdateId(ciphertext), `contact-update-${sender.user_id}`, deliveryId)
     return { handled: true, deliveryId, event: 'contact-update' }
   }
 
@@ -8402,7 +8454,7 @@ const appContext = {
   prekeySignedId, prekeyOneTimeCount, prekeyBundleText, prekeyPrivateBundleJson, prekeySignedOneTimeRecordTexts, prekeyInfoText, x3dhInitialMessageJson,
   selectedOneTimePreKeyId, selectedSignedOneTimePreKeyRecordText, x3dhSharedSecretText, ratchetStateText, ratchetPeerStateText, ratchetLocalDhKeyPairJson, ratchetRemoteDhPublicKeyForInit,
   ratchetInitRole, ratchetHeaderText, ratchetEnvelopeText, ratchetPlainText, ratchetKeyText, ratchetRemoteDhPublicKey,
-  ratchetInfoText, safetyPolicy, enableStrictE2eePolicy, strictE2eePolicyEnabled, strictE2eeReadiness, strictE2eeReadinessIssues, openStrictE2eeReadinessIssue, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, perDeviceEnvelopeSentCount, perDeviceEnvelopeReceivedCount, perDeviceEnvelopeDropCount, lastPerDeviceEnvelopeAt, lastPerDeviceEnvelopeDropAt, lastPerDeviceEnvelopeDropReason, contactCardUpdateFanoutCount, contactCardUpdateFanoutSkipCount, lastContactCardUpdateFanoutAt, sealedSlotCoverageSummary, sealedSlotRiskContacts, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
+  ratchetInfoText, safetyPolicy, enableStrictE2eePolicy, strictE2eePolicyEnabled, strictE2eeReadiness, strictE2eeReadinessIssues, openStrictE2eeReadinessIssue, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, perDeviceEnvelopeSentCount, perDeviceEnvelopeReceivedCount, perDeviceEnvelopeDropCount, lastPerDeviceEnvelopeAt, lastPerDeviceEnvelopeDropAt, lastPerDeviceEnvelopeDropReason, contactCardUpdateFanoutCount, contactCardUpdateFanoutSkipCount, lastContactCardUpdateFanoutAt, contactCardUpdateFanoutRecords, contactCardUpdateFanoutAckCount, sealedSlotCoverageSummary, sealedSlotRiskContacts, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
   nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, findActiveContactMailboxHint, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, startFingerprintQrScan, stopFingerprintQrScan, fingerprintScanOpen, fingerprintScanStatus, copyActiveContactFingerprintProof, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, showMyFingerprintQr, copyMyFingerprintProof, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
