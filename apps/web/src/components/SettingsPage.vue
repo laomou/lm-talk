@@ -350,6 +350,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
         <small v-if="ctx.lastFullDataBackupAt.value">最近生成备份：{{ ctx.formatDateTime(ctx.lastFullDataBackupAt.value) }}</small>
         <small v-if="ctx.lastSelfMailboxBackupPushedAt.value">最近备份到自己的 Mailbox：{{ ctx.formatDateTime(ctx.lastSelfMailboxBackupPushedAt.value) }}</small>
         <small v-if="ctx.lastSelfMailboxBackupReceivedAt.value">最近收到自己的 Mailbox 备份：{{ ctx.formatDateTime(ctx.lastSelfMailboxBackupReceivedAt.value) }}</small>
+        <small v-if="ctx.lastSelfMailboxBackupMergedAt.value">最近合并自己的 Mailbox 备份：{{ ctx.formatDateTime(ctx.lastSelfMailboxBackupMergedAt.value) }}</small>
         <div class="row compact">
           <button class="secondary" @click="ctx.exportFullDataBackup">生成备份</button>
           <button class="secondary" :disabled="!ctx.nodeEnabled.value" @click="ctx.pushFullDataBackupToOwnMailbox">备份到自己 Mailbox</button>

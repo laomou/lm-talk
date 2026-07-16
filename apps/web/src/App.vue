@@ -307,6 +307,7 @@ type PersistedState = {
   lastFullDataBackupAt?: number
   lastSelfMailboxBackupPushedAt?: number
   lastSelfMailboxBackupReceivedAt?: number
+  lastSelfMailboxBackupMergedAt?: number
   unverifiedIncomingDropCount?: number
   lastUnverifiedIncomingDropAt?: number
   lastUnverifiedIncomingDropFrom?: string
@@ -340,6 +341,7 @@ type PersistedMeta = {
   lastFullDataBackupAt?: number
   lastSelfMailboxBackupPushedAt?: number
   lastSelfMailboxBackupReceivedAt?: number
+  lastSelfMailboxBackupMergedAt?: number
   unverifiedIncomingDropCount?: number
   lastUnverifiedIncomingDropAt?: number
   lastUnverifiedIncomingDropFrom?: string
@@ -485,6 +487,7 @@ const dataBackupText = ref('')
 const lastFullDataBackupAt = ref<number | null>(null)
 const lastSelfMailboxBackupPushedAt = ref<number | null>(null)
 const lastSelfMailboxBackupReceivedAt = ref<number | null>(null)
+const lastSelfMailboxBackupMergedAt = ref<number | null>(null)
 const fullDataBackupFreshnessLevel = computed<'ok' | 'warning' | 'danger'>(() => {
   const at = lastFullDataBackupAt.value
   if (!at) return 'danger'
@@ -1276,6 +1279,7 @@ function currentPersistedState(): PersistedState {
     lastFullDataBackupAt: lastFullDataBackupAt.value ?? undefined,
     lastSelfMailboxBackupPushedAt: lastSelfMailboxBackupPushedAt.value ?? undefined,
     lastSelfMailboxBackupReceivedAt: lastSelfMailboxBackupReceivedAt.value ?? undefined,
+    lastSelfMailboxBackupMergedAt: lastSelfMailboxBackupMergedAt.value ?? undefined,
     unverifiedIncomingDropCount: unverifiedIncomingDropCount.value,
     lastUnverifiedIncomingDropAt: lastUnverifiedIncomingDropAt.value ?? undefined,
     lastUnverifiedIncomingDropFrom: lastUnverifiedIncomingDropFrom.value,
@@ -1620,6 +1624,7 @@ async function clearPersisted() {
   lastFullDataBackupAt.value = null
   lastSelfMailboxBackupPushedAt.value = null
   lastSelfMailboxBackupReceivedAt.value = null
+  lastSelfMailboxBackupMergedAt.value = null
   unverifiedIncomingDropCount.value = 0
   lastUnverifiedIncomingDropAt.value = null
   lastUnverifiedIncomingDropFrom.value = ''
@@ -1939,6 +1944,8 @@ function mergeProcessedMailboxRecords(current: ProcessedMailboxRecord[], incomin
 async function mergeSelfMailboxBackupNow() {
   if (!lastSelfMailboxBackupReceivedAt.value) throw new Error('尚未从自己的 Mailbox 收到完整备份')
   await importFullDataBackupMerge()
+  lastSelfMailboxBackupMergedAt.value = Date.now()
+  persist()
 }
 
 async function importFullDataBackupMerge() {
@@ -1973,6 +1980,7 @@ async function importFullDataBackupMerge() {
     if (typeof state.lastFullDataBackupAt === 'number') lastFullDataBackupAt.value = Math.max(lastFullDataBackupAt.value ?? 0, state.lastFullDataBackupAt)
     if (typeof state.lastSelfMailboxBackupPushedAt === 'number') lastSelfMailboxBackupPushedAt.value = Math.max(lastSelfMailboxBackupPushedAt.value ?? 0, state.lastSelfMailboxBackupPushedAt)
     if (typeof state.lastSelfMailboxBackupReceivedAt === 'number') lastSelfMailboxBackupReceivedAt.value = Math.max(lastSelfMailboxBackupReceivedAt.value ?? 0, state.lastSelfMailboxBackupReceivedAt)
+    if (typeof state.lastSelfMailboxBackupMergedAt === 'number') lastSelfMailboxBackupMergedAt.value = Math.max(lastSelfMailboxBackupMergedAt.value ?? 0, state.lastSelfMailboxBackupMergedAt)
     unverifiedIncomingDropCount.value += Number(state.unverifiedIncomingDropCount ?? 0)
     if (typeof state.lastUnverifiedIncomingDropAt === 'number' && state.lastUnverifiedIncomingDropAt > (lastUnverifiedIncomingDropAt.value ?? 0)) {
       lastUnverifiedIncomingDropAt.value = state.lastUnverifiedIncomingDropAt
@@ -7294,7 +7302,7 @@ const appContext = {
   autoPublishPreKey, autoNodeSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodeStateFileSecurityText, nodeStateFileSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutDeviceRevokeToFriends, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
-  exportFullDataBackup, pushFullDataBackupToOwnMailbox, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
+  exportFullDataBackup, pushFullDataBackupToOwnMailbox, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
   addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, friendRequestRateRecords, friendRequestRateSummaryText, clearFriendRequestRateRecords, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
