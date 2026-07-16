@@ -120,6 +120,7 @@ async function runDiagnostics() {
     security: {
       require_verified_contacts_for_send: Boolean(props.ctx.safetyPolicy.value.requireVerifiedContactsForSend),
       require_verified_contacts_for_receive: Boolean(props.ctx.safetyPolicy.value.requireVerifiedContactsForReceive),
+      require_sealed_per_device_slots_for_send: Boolean(props.ctx.safetyPolicy.value.requireSealedPerDeviceSlotsForSend),
       last_unverified_incoming_drop_at: props.ctx.lastUnverifiedIncomingDropAt.value,
       last_unverified_incoming_drop_from: redactDiagnosticReport.value ? redacted(props.ctx.lastUnverifiedIncomingDropFrom.value) : sanitizeDiagnosticText(props.ctx.lastUnverifiedIncomingDropFrom.value),
       last_revoked_device_incoming_drop_at: props.ctx.lastRevokedDeviceIncomingDropAt.value,

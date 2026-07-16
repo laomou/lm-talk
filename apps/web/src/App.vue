@@ -164,6 +164,7 @@ type SafetyPolicy = {
   dropFilteredIncoming: boolean
   requireVerifiedContactsForSend: boolean
   requireVerifiedContactsForReceive: boolean
+  requireSealedPerDeviceSlotsForSend: boolean
 }
 
 type GroupInviteItem = {
@@ -556,6 +557,7 @@ const safetyPolicy = ref<SafetyPolicy>({
   dropFilteredIncoming: false,
   requireVerifiedContactsForSend: false,
   requireVerifiedContactsForReceive: false,
+  requireSealedPerDeviceSlotsForSend: false,
 })
 
 const contacts = ref<ContactItem[]>([])
@@ -1874,6 +1876,7 @@ function resetAccountScopedState() {
     dropFilteredIncoming: false,
     requireVerifiedContactsForSend: false,
     requireVerifiedContactsForReceive: false,
+    requireSealedPerDeviceSlotsForSend: false,
   }
   nodeEnabled.value = false
   autoMailboxTake.value = true
@@ -1964,6 +1967,7 @@ async function clearPersisted() {
     dropFilteredIncoming: false,
     requireVerifiedContactsForSend: false,
     requireVerifiedContactsForReceive: false,
+    requireSealedPerDeviceSlotsForSend: false,
   }
   nodeEnabled.value = false
   autoMailboxTake.value = true
@@ -3702,8 +3706,25 @@ function requireContactHasActiveDevice(contact: ContactItem) {
   throw new Error(`联系人全部已知设备均已撤销：${contact.display_name || contact.user_id}`)
 }
 
+
+function requireContactSupportsSealedPerDeviceSlots(contact: ContactItem) {
+  if (!safetyPolicy.value.requireSealedPerDeviceSlotsForSend) return
+  const activeDeviceIds = contactActiveDeviceIds(contact)
+  if (activeDeviceIds.length === 0) {
+    throw new Error(`安全策略要求分设备 sealed slot，但联系人没有可投递设备证书：${contact.display_name || contact.user_id}`)
+  }
+  const missing = activeDeviceIds.filter((deviceId) => {
+    const cert = (contact.device_certs ?? []).find((item) => item.device_id === deviceId)
+    return !cert?.device_box_public_key
+  })
+  if (missing.length) {
+    throw new Error(`安全策略要求分设备 sealed slot，但 ${missing.length} 个活跃设备缺少加密公钥`)
+  }
+}
+
 function requireVerifiedContactForSend(contact: ContactItem) {
   requireContactHasActiveDevice(contact)
+  requireContactSupportsSealedPerDeviceSlots(contact)
   if (!safetyPolicy.value.requireVerifiedContactsForSend) return
   if (contact.fingerprint_verified_at) return
   throw new Error(`安全策略要求先核验联系人指纹：${contact.display_name || contact.user_id}`)
