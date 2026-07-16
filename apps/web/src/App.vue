@@ -2573,6 +2573,10 @@ async function autoPushSelfSyncPackageToOwnMailbox() {
   if (!loggedIn.value || !nodeEnabled.value || !autoSelfMailboxSync.value) return
   if (lastSelfSyncPushedAt.value && Date.now() - lastSelfSyncPushedAt.value < 5 * 60_000) return
   try {
+    if (contactCardUpdateStaleAckCount.value > 0) {
+      const retried = await retryStaleContactCardUpdateAcksRaw()
+      if (retried.retried) appendLog(`自同步巡检：已自动重试过期设备证书更新确认 ${retried.retried}/${retried.stale} 条`)
+    }
     if (selfSyncGapCount.value > 0) await repairSelfSyncGapNow()
     else await pushSelfSyncPackageToOwnMailbox()
   } catch (error) {
@@ -3878,24 +3882,30 @@ async function sendContactCardUpdateToContact(contact: ContactItem): Promise<'se
   return result
 }
 
+async function retryStaleContactCardUpdateAcksRaw(): Promise<{ stale: number; retried: number }> {
+  const stale = contactCardUpdateFanoutRecords.value.filter((record) => contactCardUpdateRecordIsStale(record))
+  if (!stale.length) return { stale: 0, retried: 0 }
+  let retried = 0
+  for (const record of stale) {
+    const contact = contacts.value.find((item) => item.user_id === record.peer_user_id)
+    if (!contact) continue
+    record.retry_count = Number(record.retry_count ?? 0) + 1
+    record.last_retry_at = Date.now()
+    await sendContactCardUpdateToContact(contact)
+    retried += 1
+  }
+  persist()
+  return { stale: stale.length, retried }
+}
+
 async function retryStaleContactCardUpdateAcks() {
   await runAsync('重试过期设备证书更新确认', async () => {
-    const stale = contactCardUpdateFanoutRecords.value.filter((record) => contactCardUpdateRecordIsStale(record))
-    if (!stale.length) {
+    const result = await retryStaleContactCardUpdateAcksRaw()
+    if (!result.stale) {
       appendLog('没有过期的设备证书更新确认需要重试')
       return
     }
-    let retried = 0
-    for (const record of stale) {
-      const contact = contacts.value.find((item) => item.user_id === record.peer_user_id)
-      if (!contact) continue
-      record.retry_count = Number(record.retry_count ?? 0) + 1
-      record.last_retry_at = Date.now()
-      await sendContactCardUpdateToContact(contact)
-      retried += 1
-    }
-    appendLog(`已重试过期设备证书更新确认 ${retried}/${stale.length} 条`)
-    persist()
+    appendLog(`已重试过期设备证书更新确认 ${result.retried}/${result.stale} 条`)
   })
 }
 
