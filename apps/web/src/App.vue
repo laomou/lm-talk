@@ -2807,6 +2807,21 @@ async function confirmOutgoingTextIfNeeded(text: string): Promise<boolean> {
   return showConfirm('发送风险内容', reason, filterRank(action) >= filterRank('Hide'))
 }
 
+async function confirmHighRiskDhtContactIfNeeded(contact: ContactItem): Promise<boolean> {
+  if (contact.dht_discovery_risk_level !== 'high') return true
+  if (contact.last_dht_discovery_error_kind !== 'signature') return true
+  const reason = contact.last_dht_discovery_error_kind
+    ? `该联系人最近的 DHT 发现结果存在高风险：${contact.last_dht_discovery_error_kind}。${contact.last_dht_discovery_error || ''}`
+    : '该联系人最近的 DHT 发现结果存在高风险。'
+  return showConfirm(
+    '确认发送给 DHT 高风险联系人',
+    `${reason}
+
+建议先通过指纹/可信渠道核验联系人身份或重新发现 DHT 记录。仍要继续发送吗？`,
+    true,
+  )
+}
+
 function saveSafetyPolicy() {
   persist()
   appendLog('✅ 已保存本地安全策略')
@@ -5278,6 +5293,10 @@ async function findActiveContactMailboxHint() {
   await runAsync('查找联系人 MailboxHint', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
     const contact = activeContact.value
+    if (!(await confirmHighRiskDhtContactIfNeeded(contact))) {
+      appendLog('已取消高风险联系人 DHT 查找')
+      return
+    }
     resetContactDhtDiscoveryBackoff(contact)
     markContactDhtDiscoveryAttempt(contact)
     try {
@@ -5296,6 +5315,10 @@ async function findActiveContactPreKey() {
   await runAsync('查找联系人 PreKey', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
     const contact = activeContact.value
+    if (!(await confirmHighRiskDhtContactIfNeeded(contact))) {
+      appendLog('已取消高风险联系人 DHT 查找')
+      return
+    }
     resetContactDhtDiscoveryBackoff(contact)
     markContactDhtDiscoveryAttempt(contact)
     try {
@@ -5314,6 +5337,10 @@ async function discoverActiveContactDht() {
   await runAsync('发现联系人 DHT 记录', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
     const contact = activeContact.value
+    if (!(await confirmHighRiskDhtContactIfNeeded(contact))) {
+      appendLog('已取消高风险联系人 DHT 发现')
+      return
+    }
     contact.last_secure_session_attempt_at = Date.now()
     resetContactDhtDiscoveryBackoff(contact)
     markContactDhtDiscoveryAttempt(contact)
