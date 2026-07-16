@@ -1,0 +1,17 @@
+# Replace lm-node.example.com with your real domain.
+lm-node.example.com {
+  encode zstd gzip
+
+  # Browsers should access lm_node through HTTPS only.
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "no-referrer"
+  }
+
+  reverse_proxy lm-node:8787 {
+    header_up Host {host}
+    header_up X-Forwarded-Proto {scheme}
+    header_up X-Forwarded-For {remote_host}
+  }
+}

@@ -1,4 +1,17 @@
 services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - lm-node
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
   lm-node:
     build:
       context: ../..
@@ -6,8 +19,8 @@ services:
     image: lm-talk/lm-node-public:local
     restart: unless-stopped
     command: ["serve-control", "--config-file", "/app/config.json"]
-    ports:
-      - "8787:8787"
+    expose:
+      - "8787"
     volumes:
       - lm_node_data:/data
       - ./config.json:/app/config.json:ro
@@ -20,3 +33,5 @@ services:
 
 volumes:
   lm_node_data:
+  caddy_data:
+  caddy_config:
