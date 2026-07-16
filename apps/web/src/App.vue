@@ -132,6 +132,7 @@ type ContactItem = ContactInfo & {
   device_certs?: DeviceCertItem[]
   block_reason?: string
   read_receipts?: 'default' | 'enabled' | 'disabled'
+  mailbox_hint_url?: string
 }
 
 type FilterLevel = 'Off' | 'Relaxed' | 'Standard' | 'Strict'
@@ -5172,7 +5173,12 @@ function applyDhtFindValueRecord(body: any): boolean {
     if (/^(https?:\/\/|libp2p:\/\/|mailbox:\/\/)/i.test(hint)) {
       peerMailboxKey.value = hint
       if (/^https?:\/\//i.test(hint)) discoveredMailboxHintUrl.value = hint
-      mailboxInboxStatus.value = `DHT 查到 MailboxHint：${hint}`
+      const targetUserId = nodeDhtKeyKind.value === 'mailbox-hint' ? nodeDhtKeyValue.value.trim() : ''
+      const contact = contacts.value.find((item) => item.user_id === targetUserId)
+      if (contact) contact.mailbox_hint_url = hint
+      mailboxInboxStatus.value = contact
+        ? `DHT 查到 MailboxHint：${hint}，已关联 ${contact.display_name || contact.user_id}`
+        : `DHT 查到 MailboxHint：${hint}`
     } else {
       mailboxInboxStatus.value = `DHT 查到 MailboxHint，但地址格式异常：${hint.slice(0, 80)}`
       nodeDhtFindValueStatusText.value = mailboxInboxStatus.value
