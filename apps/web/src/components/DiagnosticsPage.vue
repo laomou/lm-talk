@@ -98,6 +98,7 @@ async function runDiagnostics() {
       contact_card_update_fanout_count: props.ctx.contactCardUpdateFanoutCount.value,
       contact_card_update_fanout_skip_count: props.ctx.contactCardUpdateFanoutSkipCount.value,
       contact_card_update_fanout_ack_count: props.ctx.contactCardUpdateFanoutAckCount.value,
+      contact_card_update_pending_ack_count: props.ctx.contactCardUpdatePendingAckCount.value,
       last_contact_card_update_fanout_at: props.ctx.lastContactCardUpdateFanoutAt.value,
       last_full_data_backup_at: props.ctx.lastFullDataBackupAt.value,
       last_self_mailbox_backup_pushed_at: props.ctx.lastSelfMailboxBackupPushedAt.value,
