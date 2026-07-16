@@ -355,6 +355,8 @@ test('消息同步可完成好友请求和消息收发', async ({ browser }) => 
   await expect(bob.getByText(/MailboxHint 已发布并完成 DHT 查找/)).toBeVisible()
   await bob.getByRole('button', { name: '发布并查 PublicPeer' }).click()
   await expect(bob.getByText(/PublicPeer 已发布并完成 DHT 查找/)).toBeVisible()
+  await bob.getByRole('button', { name: '发布并查全部 DHT' }).click()
+  await expect(bob.getByText(/已发布并完成全部 DHT 查找/)).toBeVisible()
   await bob.getByLabel('当前会话自动发送已读回执').check()
 
   await alice.goto('/#/contacts')
