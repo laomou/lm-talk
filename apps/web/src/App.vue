@@ -483,6 +483,7 @@ const fullDataBackupFreshnessLevel = computed<'ok' | 'warning' | 'danger'>(() =>
   const ageDays = (Date.now() - at) / 86_400_000
   return ageDays > 30 ? 'danger' : ageDays > 7 ? 'warning' : 'ok'
 })
+let fullDataBackupFreshnessWarnedThisSession = false
 const fullDataBackupFreshnessText = computed(() => {
   const at = lastFullDataBackupAt.value
   if (!at) return '尚未生成完整数据备份'
@@ -1953,7 +1954,17 @@ function clearSyncRecoveryHistory() {
 }
 
 
+function warnIfFullDataBackupStale() {
+  if (fullDataBackupFreshnessWarnedThisSession) return
+  if (fullDataBackupFreshnessLevel.value === 'ok') return
+  fullDataBackupFreshnessWarnedThisSession = true
+  const message = `${fullDataBackupFreshnessText.value}。建议导出完整数据备份，避免设备丢失后无法恢复联系人信任和会话状态。`
+  appendLog(`⚠️ ${message}`)
+  toast(message, 'info')
+}
+
 async function afterLoginAutomation() {
+  warnIfFullDataBackupStale()
   if (!nodeEnabled.value) return
   if (autoPublishPreKey.value) await ensurePreKeyInventory()
   await ensureOwnMailboxHintDhtRecord()
