@@ -368,6 +368,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
         <div class="row compact">
           <button class="secondary" @click="ctx.exportFullDataBackup">生成备份</button>
           <button class="secondary" :disabled="!ctx.nodeEnabled.value" @click="ctx.pushSelfSyncPackageToOwnMailbox">轻量状态到自己 Mailbox</button>
+          <button class="secondary" :disabled="!ctx.nodeEnabled.value || ctx.selfSyncRecentPackages.value.length === 0" @click="ctx.resendLatestSelfSyncPackageToOwnMailbox">重发最近轻量包</button>
           <button class="secondary" :disabled="!ctx.nodeEnabled.value" @click="ctx.pushFullDataBackupToOwnMailbox">备份到自己 Mailbox</button>
           <button class="secondary" :disabled="!ctx.dataBackupText.value.trim()" @click="ctx.downloadText(ctx.dataBackupText.value, 'lm-talk-data-backup.txt')">下载备份</button>
           <button class="secondary" :disabled="!ctx.dataBackupText.value.trim()" @click="ctx.importFullDataBackupMerge">导入合并</button>
