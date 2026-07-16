@@ -297,6 +297,7 @@ type PersistedState = {
   autoReadReceipts?: boolean
   autoPublishPreKey?: boolean
   autoNodeSync?: boolean
+  autoSelfMailboxSync?: boolean
   lastNodeSnapshotSyncAt?: number
   processedMailboxIds?: Array<string | ProcessedMailboxRecord>
   mailboxFailedItems?: MailboxFailedItem[]
@@ -332,6 +333,7 @@ type PersistedMeta = {
   autoReadReceipts?: boolean
   autoPublishPreKey?: boolean
   autoNodeSync?: boolean
+  autoSelfMailboxSync?: boolean
   lastNodeSnapshotSyncAt?: number
   processedMailboxIds?: Array<string | ProcessedMailboxRecord>
   mailboxFailedItems?: MailboxFailedItem[]
@@ -566,6 +568,7 @@ const autoMailboxTake = ref(true)
 const autoReadReceipts = ref(false)
 const autoPublishPreKey = ref(true)
 const autoNodeSync = ref(false)
+const autoSelfMailboxSync = ref(false)
 let nodeSyncTimer: number | undefined
 let lastVisibilityMailboxTakeAt = 0
 const nodeControlStatus = ref('未连接')
@@ -599,6 +602,7 @@ const syncTriggerPolicyText = computed(() => {
   parts.push(autoReadReceipts.value ? '当前会话可见时自动发送已读回执' : '已读回执关闭')
   parts.push('Outbox 每 30 秒重试到期项')
   if (autoNodeSync.value) parts.push('节点快照每 60 秒同步')
+  if (autoSelfMailboxSync.value) parts.push('手动同步时发送轻量自同步包')
   return parts.join('；')
 })
 const mailboxInboxStatus = ref('尚未同步')
@@ -1299,6 +1303,7 @@ function currentPersistedState(): PersistedState {
     autoReadReceipts: autoReadReceipts.value,
     autoPublishPreKey: autoPublishPreKey.value,
     autoNodeSync: autoNodeSync.value,
+    autoSelfMailboxSync: autoSelfMailboxSync.value,
     lastNodeSnapshotSyncAt: lastNodeSnapshotSyncAt.value ?? undefined,
     processedMailboxIds: processedMailboxIds.value,
     mailboxFailedItems: mailboxFailedItems.value,
@@ -1336,6 +1341,7 @@ function persistedMeta(): PersistedMeta {
     autoReadReceipts: autoReadReceipts.value,
     autoPublishPreKey: autoPublishPreKey.value,
     autoNodeSync: autoNodeSync.value,
+    autoSelfMailboxSync: autoSelfMailboxSync.value,
     lastNodeSnapshotSyncAt: lastNodeSnapshotSyncAt.value ?? undefined,
     processedMailboxIds: processedMailboxIds.value,
     mailboxFailedItems: mailboxFailedItems.value,
@@ -1488,6 +1494,7 @@ async function writeStateToTables(state: PersistedState) {
   autoReadReceipts.value = state.autoReadReceipts ?? false
   autoPublishPreKey.value = state.autoPublishPreKey ?? true
   autoNodeSync.value = state.autoNodeSync ?? false
+  autoSelfMailboxSync.value = state.autoSelfMailboxSync ?? false
   lastNodeSnapshotSyncAt.value = typeof state.lastNodeSnapshotSyncAt === 'number' ? state.lastNodeSnapshotSyncAt : null
   processedMailboxIds.value = normalizeProcessedMailboxRecords(state.processedMailboxIds)
   mailboxFailedItems.value = await Promise.all((state.mailboxFailedItems ?? []).map((m: any) => decryptMailboxFailedItemFromStore(m, key)))
@@ -1529,6 +1536,7 @@ async function loadStateFromTables(): Promise<boolean> {
   autoReadReceipts.value = meta.autoReadReceipts ?? false
   autoPublishPreKey.value = meta.autoPublishPreKey ?? true
   autoNodeSync.value = meta.autoNodeSync ?? false
+  autoSelfMailboxSync.value = meta.autoSelfMailboxSync ?? false
   lastNodeSnapshotSyncAt.value = typeof meta.lastNodeSnapshotSyncAt === 'number' ? meta.lastNodeSnapshotSyncAt : null
   processedMailboxIds.value = normalizeProcessedMailboxRecords(meta.processedMailboxIds)
   mailboxFailedItems.value = await Promise.all((meta.mailboxFailedItems ?? []).map((m: any) => decryptMailboxFailedItemFromStore(m, key)))
@@ -1655,6 +1663,7 @@ function resetAccountScopedState() {
   autoReadReceipts.value = false
   autoPublishPreKey.value = true
   autoNodeSync.value = false
+  autoSelfMailboxSync.value = false
   lastNodeSnapshotSyncAt.value = null
   nodeControlStatus.value = '未连接'
 }
@@ -2194,6 +2203,7 @@ async function syncNow() {
     await ensureOwnPublicPeerDhtRecord()
     if (autoNodeSync.value && nodeSyncPeerUrl.value.trim()) await autoPullSnapshotFromPeerNode()
     await refreshOutgoingMailboxDeliveryStatusesFromNode()
+    if (autoSelfMailboxSync.value) await pushSelfSyncPackageToOwnMailbox()
     await takeMailboxFromNode()
     await refreshOutgoingMailboxDeliveryStatusesFromNode()
     appendLog('✅ 消息同步完成')
@@ -7433,7 +7443,7 @@ const appContext = {
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, registerPeriodicMailboxSync, pwaStatusText, pwaBackgroundCapabilityText, pwaLastBackgroundEventText, pwaBackgroundEventHistory, webVersionText,
   nodeControlUrl, nodeUrlList, nodeEntrySummaries, nodeSettingsSummaryText, nodeTokenStorageText, nodeTokenCount, nodeMissingRemoteTokenCount, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake, autoReadReceipts,
   enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,
-  autoPublishPreKey, autoNodeSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodeStateFileSecurityText, nodeStateFileSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
+  autoPublishPreKey, autoNodeSync, autoSelfMailboxSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodeStateFileSecurityText, nodeStateFileSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutDeviceRevokeToFriends, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
   exportFullDataBackup, pushFullDataBackupToOwnMailbox, pushSelfSyncPackageToOwnMailbox, selfSyncStatusText, processedSelfSyncIds, lastSelfSyncPushedAt, lastSelfSyncMergedAt, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, selfMailboxBackupStatusText, selfMailboxBackupMergePending, selfMailboxBackupMergeStatusText, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,

@@ -137,6 +137,10 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
             <input v-model="ctx.autoNodeSync.value" type="checkbox" />
             <span>自动同步节点快照</span>
           </label>
+          <label class="identity-select">
+            <input v-model="ctx.autoSelfMailboxSync.value" type="checkbox" />
+            <span>手动同步时发送轻量自同步包</span>
+          </label>
         </div>
         <section class="home-card">
           <h3>节点快照同步</h3>
