@@ -581,6 +581,22 @@ const nodeSyncPeerUrl = ref('http://127.0.0.1:8788')
 const nodeSyncSnapshotText = ref('')
 const nodeSyncStatusText = ref('')
 const lastNodeSnapshotSyncAt = ref<number | null>(null)
+const nodeSnapshotSyncFreshnessLevel = computed<'ok' | 'warning' | 'danger'>(() => {
+  if (!autoNodeSync.value) return 'ok'
+  const at = lastNodeSnapshotSyncAt.value
+  if (!at) return 'warning'
+  const ageMinutes = (Date.now() - at) / 60_000
+  return ageMinutes > 180 ? 'danger' : ageMinutes > 70 ? 'warning' : 'ok'
+})
+const nodeSnapshotSyncFreshnessText = computed(() => {
+  if (!autoNodeSync.value) return '节点快照自动同步未开启'
+  const at = lastNodeSnapshotSyncAt.value
+  if (!at) return '节点快照自动同步尚未成功'
+  const ageMinutes = Math.max(0, Math.floor((Date.now() - at) / 60_000))
+  if (ageMinutes < 1) return '节点快照刚刚同步成功'
+  if (ageMinutes < 60) return `节点快照 ${ageMinutes} 分钟前同步成功`
+  return `节点快照 ${Math.floor(ageMinutes / 60)} 小时前同步成功`
+})
 const syncRecoveryStatusText = ref('尚未恢复')
 const syncRecoveryHistory = ref<string[]>([])
 const syncFailureSummaryText = computed(() => {
@@ -7204,7 +7220,7 @@ const appContext = {
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
   nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, findActiveContactMailboxHint, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, startFingerprintQrScan, stopFingerprintQrScan, fingerprintScanOpen, fingerprintScanStatus, copyActiveContactFingerprintProof, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, showMyFingerprintQr, copyMyFingerprintProof, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
-  nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, lastNodeSnapshotSyncAt, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, publishAndCheckMyPreKeyDht, publishAndCheckMyMailboxHintDht, publishAndCheckAllMyDht, clearPreKeyRawState, copyText,
+  nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, lastNodeSnapshotSyncAt, nodeSnapshotSyncFreshnessText, nodeSnapshotSyncFreshnessLevel, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, publishAndCheckMyPreKeyDht, publishAndCheckMyMailboxHintDht, publishAndCheckAllMyDht, clearPreKeyRawState, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
   ratchetDhStepText, saveSafetyPolicy, createPeerAnnounceText, inspectPeerAnnounceText, createPublicPeerAnnounceText, inspectPublicPeerAnnounceText,

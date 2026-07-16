@@ -59,6 +59,8 @@ async function runDiagnostics() {
       node_snapshot_peer: redactDiagnosticReport.value ? redacted(props.ctx.nodeSyncPeerUrl.value) : sanitizeDiagnosticText(props.ctx.nodeSyncPeerUrl.value),
       node_snapshot_status: sanitizeDiagnosticText(props.ctx.nodeSyncStatusText.value),
       last_node_snapshot_sync_at: props.ctx.lastNodeSnapshotSyncAt.value,
+      node_snapshot_sync_freshness: props.ctx.nodeSnapshotSyncFreshnessText.value,
+      node_snapshot_sync_freshness_level: props.ctx.nodeSnapshotSyncFreshnessLevel.value,
     },
     dht: {
       find_value_status: sanitizeDiagnosticText(props.ctx.nodeDhtFindValueStatusText.value),
