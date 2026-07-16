@@ -5146,8 +5146,15 @@ async function runDhtFindValueNow() {
 
 async function deriveAndFindDhtValueNow() {
   await runAsync('派生并查找 DHT 记录', async () => {
-    const keyPayload = await deriveDhtKeyPayload()
-    await runDhtFindValueForKey(String(keyPayload.key || nodeDhtFindValueKey.value).trim())
+    const value = nodeDhtKeyValue.value.trim()
+    if (!value) throw new Error('请输入 peer_id 或 UserID')
+    const body = await nodeFetchJson(`/dht/find-value?kind=${encodeURIComponent(nodeDhtKeyKind.value)}&value=${encodeURIComponent(value)}&limit=8&max_peers=8&alpha=3`)
+    nodeDhtFindValueKey.value = String(body.key || '')
+    nodeDhtFindValueStatusText.value = dhtFindValueSummary(body)
+    recordDhtOperation(`DHT key：${dhtKeyKindLabel(nodeDhtKeyKind.value)} ${value} → ${nodeDhtFindValueKey.value}`)
+    recordDhtOperation(nodeDhtFindValueStatusText.value)
+    nodeClosestInfoText.value = JSON.stringify(body, null, 2)
+    await checkNodeHealth()
   })
 }
 

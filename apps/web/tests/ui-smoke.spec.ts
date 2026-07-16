@@ -56,7 +56,7 @@ async function installMockSyncNode(context: BrowserContext, mailboxes: Map<strin
       return route.fulfill({ json: { kind, value: url.searchParams.get('value'), key: 'b'.repeat(64) } })
     }
     if (url.pathname === '/dht/record') return route.fulfill({ json: { stored: true, inserted: true, key: 'b'.repeat(64), records: 1 } })
-    if (url.pathname === '/dht/find-value') return route.fulfill({ json: { key: url.searchParams.get('key'), found: true, records: 1, stats: { attempts: 2, successes: 2, failures: 0, found_records: 1, closer_records: 0, peers_quarantined: 0 } } })
+    if (url.pathname === '/dht/find-value') return route.fulfill({ json: { key: url.searchParams.get('key') || 'b'.repeat(64), found: true, records: 1, stats: { attempts: 2, successes: 2, failures: 0, found_records: 1, closer_records: 0, peers_quarantined: 0 } } })
     if (url.pathname === '/dht/maintenance') return route.fulfill({ json: { peers: 2, records: 4, routing_peers: 3, replication: { records: 4, attempts: 2, successes: 2, failures: 0, peers_quarantined: 0 }, routing_refresh: { targets: 8, attempts: 2, successes: 2, failures: 0, nodes_returned: 3, nodes_merged: 1, peers_quarantined: 0 } } })
     if (url.pathname === '/dht/replicate') return route.fulfill({ json: { peers: 2, records: 4, stats: { records: 4, attempts: 2, successes: 2, failures: 0, peers_quarantined: 0 } } })
     if (url.pathname === '/dht/routing-refresh') return route.fulfill({ json: { peers: 2, routing_peers: 3, stats: { targets: 8, attempts: 2, successes: 2, failures: 0, nodes_returned: 3, nodes_merged: 1, peers_quarantined: 0 } } })
