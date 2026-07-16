@@ -1770,6 +1770,33 @@ function exportFullDataBackup() {
   })
 }
 
+async function pushFullDataBackupToOwnMailbox() {
+  await runAsync('备份到自己的 Mailbox', async () => {
+    if (!identity.value?.user_id) throw new Error('需要先登录身份')
+    if (!nodeEnabled.value) throw new Error('节点未启用')
+    if (!dataBackupText.value.trim()) exportFullDataBackup()
+    if (!dataBackupText.value.trim()) throw new Error('请先生成完整数据备份')
+    const msg = create_mailbox_message(
+      backupText.value,
+      passphrase.value,
+      identity.value.user_id,
+      'data-backup',
+      dataBackupText.value,
+      BigInt(7 * 24 * 3600),
+    )
+    const body = await nodeFetchJson('/mailbox/push', {
+      method: 'POST',
+      body: JSON.stringify({
+        message_text: msg,
+        from_identity_public_key: identity.value.identity_public_key,
+      }),
+    })
+    nodeControlStatus.value = JSON.stringify(body, null, 2)
+    appendLog(`✅ 完整数据备份已投递到自己的 Mailbox${body?.delivery_id ? '：' + body.delivery_id : ''}`)
+    toast('完整数据备份已投递到自己的 Mailbox', 'success')
+  })
+}
+
 async function importFullDataBackup() {
   try {
     if (!backupText.value || !passphrase.value) throw new Error('需要当前身份备份包和提示词')
@@ -6512,6 +6539,11 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
   const fromUserId = String(message.from_user_id ?? '')
   const ciphertext = String(message.ciphertext ?? '')
   let sender = contactByUserId(fromUserId)
+  if (identity.value?.user_id && fromUserId === identity.value.user_id && (normalizedKind === 'databackup' || ciphertext.startsWith('lm-data-backup-v1:'))) {
+    dataBackupText.value = ciphertext
+    appendLog('✅ 已从自己的 Mailbox 收到完整数据备份，可在设置页导入合并')
+    return { handled: true, deliveryId, event: 'other' }
+  }
   if (!sender && ciphertext.startsWith('lm-friend-request-v1:')) {
     try {
       const info = safeJson<Omit<FriendRequestItem, 'request_text'>>(inspect_friend_request(ciphertext))
@@ -7240,7 +7272,7 @@ const appContext = {
   autoPublishPreKey, autoNodeSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodeStateFileSecurityText, nodeStateFileSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutDeviceRevokeToFriends, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
-  exportFullDataBackup, importFullDataBackup, importFullDataBackupMerge, downloadText, lastFullDataBackupAt, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
+  exportFullDataBackup, pushFullDataBackupToOwnMailbox, importFullDataBackup, importFullDataBackupMerge, downloadText, lastFullDataBackupAt, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
   addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, friendRequestRateRecords, friendRequestRateSummaryText, clearFriendRequestRateRecords, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,

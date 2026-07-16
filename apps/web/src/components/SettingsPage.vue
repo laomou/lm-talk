@@ -350,6 +350,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
         <small v-if="ctx.lastFullDataBackupAt.value">最近生成备份：{{ ctx.formatDateTime(ctx.lastFullDataBackupAt.value) }}</small>
         <div class="row compact">
           <button class="secondary" @click="ctx.exportFullDataBackup">生成备份</button>
+          <button class="secondary" :disabled="!ctx.dataBackupText.value.trim() || !ctx.nodeEnabled.value" @click="ctx.pushFullDataBackupToOwnMailbox">备份到自己 Mailbox</button>
           <button class="secondary" :disabled="!ctx.dataBackupText.value.trim()" @click="ctx.downloadText(ctx.dataBackupText.value, 'lm-talk-data-backup.txt')">下载备份</button>
           <button class="secondary" :disabled="!ctx.dataBackupText.value.trim()" @click="ctx.importFullDataBackupMerge">导入合并</button>
           <button class="secondary danger" :disabled="!ctx.dataBackupText.value.trim()" @click="ctx.importFullDataBackup">导入覆盖</button>
