@@ -12,6 +12,7 @@ lm_core = { path = "../lm_core" }
 base64.workspace = true
 blake3.workspace = true
 futures.workspace = true
+getrandom.workspace = true
 libp2p.workspace = true
 serde.workspace = true
 serde_json.workspace = true

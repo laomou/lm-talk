@@ -28,7 +28,7 @@
 - `lm_node` 仍是控制面 + snapshot sync scaffold，不是真正生产 DHT。
 - Mailbox/PreKey 可支撑 demo；Mailbox 已有基础 TTL/配额/message_id 去重、take 分页、ack 批量限制与拒绝统计、delivery 状态查询和 ACK tombstone 持久化、控制面 per-client IP 限流和 SQLite state_db 持久化，但仍缺完整客户端状态合并、多设备回执同步与更强反滥用。
 - Core 协议对象已可测，属性测试和跨平台测试向量已补齐；Double Ratchet replay、乱序 skipped-key 消费和 skip-window 边界已有属性测试；常见导入文本/附件 JSON 解析已补 malformed 输入不崩溃和超限拒绝覆盖；已新增 cargo-fuzz/libFuzzer harness 脚手架。仍需长时间 fuzz 运行、持续语料回归、AFL/独立安全测试和外部安全审计。
-- 本地持久化仍偏 Web IndexedDB / MemoryStore；Native node 已有 SQLite state_db，SQLCipher/客户端完整数据加密仍未实现。
+- 本地持久化仍偏 Web IndexedDB / MemoryStore；Native node 已有 SQLite state_db，SQLCipher/客户端完整数据加密仍未实现；Native JSON state_file 已支持环境变量口令的应用层加密作为过渡方案。
 
 ---
 

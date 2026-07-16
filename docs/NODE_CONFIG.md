@@ -28,7 +28,7 @@ CLI 参数 > 环境变量 > config file > 默认值
 | `peer_id` | string | `lm-node-dev` | 本节点 public peer id。 |
 | `state_db` | string | 无 | SQLite 正式状态数据库；按表保存 mailbox、prekey bundle、signed one-time-prekey records、consumed prekey、public peer/routing peer、DHT record 等节点状态。 |
 | `state_db_require_encryption` | bool | `false` | 要求数据库级加密时 fail-closed；当前构建仍是 plain SQLite，设为 `true` 会拒绝启动，避免误以为已启用 SQLCipher。 |
-| `state_file` | string | 无 | 兼容 JSON snapshot 状态文件；保存时采用同目录临时文件 + fsync + rename；Unix 下保存后权限收紧为 `0600`。可与 `state_db` 同时配置作为调试导出。 |
+| `state_file` | string | 无 | 兼容 JSON snapshot 状态文件；保存时采用同目录临时文件 + fsync + rename；Unix 下保存后权限收紧为 `0600`。设置 `LM_NODE_STATE_FILE_PASSPHRASE` 后会以应用层加密格式保存/读取。可与 `state_db` 同时配置作为调试导出。 |
 | `control_token` | string | 无 | 控制面 Bearer token。配置后除 `/health` 外都要求 `Authorization: Bearer ...`。 |
 | `control_token_file` | string | 无 | 从文件读取控制面 Bearer token；文件内容会 trim，空文件报错；Unix 下要求 regular file 且权限不能向 group/other 开放（建议 `chmod 600`），并拒绝 symlink。 |
 | `control_previous_tokens` | string[] | `[]` | 旧控制面 Bearer token 列表，用于无停机轮换 grace window；只应短期保留。 |
@@ -71,6 +71,7 @@ CLI 参数 > 环境变量 > config file > 默认值
 | `peer_id` | `--peer-id` | - |
 | `state_db` | `--state-db` | - |
 | `state_db_require_encryption` | `--state-db-require-encryption` | `LM_NODE_STATE_DB_REQUIRE_ENCRYPTION` |
+| `state_file_passphrase` | - | `LM_NODE_STATE_FILE_PASSPHRASE` |
 | `state_file` | `--state-file` | - |
 | `control_token` | `--control-token` | `LM_NODE_CONTROL_TOKEN` |
 | `control_token_file` | `--control-token-file` | `LM_NODE_CONTROL_TOKEN_FILE` |
@@ -362,7 +363,7 @@ docker run -d --name lm-node \
 
 ## 数据备份 / 恢复
 
-当前正式持久化路径是 SQLite `state_db`；连接会启用 WAL、`synchronous=FULL`、`busy_timeout=5000` 和 `foreign_keys=ON`，提升崩溃恢复和短暂锁竞争时的可靠性。Unix 下 `state_db` 主文件及 `-wal` / `-shm` sidecar 会在打开/保存后收紧为 `0600`，降低本机其他用户读取未加密状态的风险；`/health`、`/control/stats` 和 `/control/metrics` 会明确返回/暴露 `state_db_encrypted=false` / `lm_node_state_db_encrypted 0` 与 `state_db_permissions_hardened=true` / `lm_node_state_db_permissions_hardened 1`，避免把权限硬化误认为数据库级加密。若部署要求数据库级加密，可设置 `state_db_require_encryption=true` / `--state-db-require-encryption true` 让当前 plain SQLite 构建 fail-closed；该 fail-closed 同时覆盖 `serve-control` 和 `serve-dht-libp2p`。JSON `state_file` 仅作为兼容 snapshot 导出路径，保存后同样收紧为 `0600`。建议备份：
+当前正式持久化路径是 SQLite `state_db`；连接会启用 WAL、`synchronous=FULL`、`busy_timeout=5000` 和 `foreign_keys=ON`，提升崩溃恢复和短暂锁竞争时的可靠性。Unix 下 `state_db` 主文件及 `-wal` / `-shm` sidecar 会在打开/保存后收紧为 `0600`，降低本机其他用户读取未加密状态的风险；`/health`、`/control/stats` 和 `/control/metrics` 会明确返回/暴露 `state_db_encrypted=false` / `lm_node_state_db_encrypted 0` 与 `state_db_permissions_hardened=true` / `lm_node_state_db_permissions_hardened 1`，避免把权限硬化误认为数据库级加密。若部署要求数据库级加密，可设置 `state_db_require_encryption=true` / `--state-db-require-encryption true` 让当前 plain SQLite 构建 fail-closed；该 fail-closed 同时覆盖 `serve-control` 和 `serve-dht-libp2p`。`state_file` 仍主要作为兼容 snapshot 导出路径；若设置 `LM_NODE_STATE_FILE_PASSPHRASE`，会保存为 `lm-node-state-file-v1:` 前缀的 XChaCha20-Poly1305 应用层加密文本，启动时读取该前缀文件也必须提供同一环境变量；未设置时保持纯 JSON 兼容格式。保存后同样收紧为 `0600`。建议备份：
 
 - `state_db`，例如 `/var/lib/lm-node/state.sqlite3`
 - 如启用了兼容导出，也备份 `state_file`，例如 `/var/lib/lm-node/state.json`

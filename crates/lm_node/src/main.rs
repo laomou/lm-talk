@@ -1,9 +1,10 @@
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use futures::StreamExt;
 use libp2p::{
     Multiaddr, PeerId, StreamProtocol, connection_limits, noise, request_response,
     swarm::NetworkBehaviour, tcp, yamux,
 };
-use lm_core::{PublicPeerAnnounce, UserId};
+use lm_core::{PublicPeerAnnounce, UserId, crypto};
 use lm_node::{
     ConsumedOneTimePreKey, ControlRequest, DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES,
     DhtRecord, DhtRecordReplicationPlan, DhtRpcRequest, DhtRpcResponse, MailboxDelivery,
@@ -28,6 +29,7 @@ use std::{
 #[allow(dead_code)]
 const LIBP2P_DHT_RPC_PROTOCOL: &str = "/lm-talk/dht-rpc/1";
 const MAX_CONTROL_PEER_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+const ENCRYPTED_STATE_FILE_PREFIX: &str = "lm-node-state-file-v1:";
 const CONTROL_PEER_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 const CONTROL_PEER_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const CONTROL_CLIENT_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -2858,14 +2860,80 @@ impl ControlSecurityConfig {
     }
 }
 
+fn state_file_passphrase() -> Option<String> {
+    env::var("LM_NODE_STATE_FILE_PASSPHRASE")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn state_file_key(passphrase: &str) -> [u8; 32] {
+    let mut input = b"lm-node.state-file.v1".to_vec();
+    input.extend_from_slice(passphrase.as_bytes());
+    *blake3::hash(&input).as_bytes()
+}
+
+fn encrypt_state_file_text(
+    plaintext: &str,
+    passphrase: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let key = state_file_key(passphrase);
+    let mut nonce = [0u8; 24];
+    getrandom::getrandom(&mut nonce)?;
+    let ciphertext = crypto::xchacha20poly1305_encrypt(
+        &key,
+        &nonce,
+        plaintext.as_bytes(),
+        b"lm-node.state-file.v1",
+    )?;
+    Ok(format!(
+        "{}{}:{}",
+        ENCRYPTED_STATE_FILE_PREFIX,
+        BASE64.encode(nonce),
+        BASE64.encode(ciphertext)
+    ))
+}
+
+fn decrypt_state_file_text(
+    text: &str,
+    passphrase: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let rest = text
+        .strip_prefix(ENCRYPTED_STATE_FILE_PREFIX)
+        .ok_or("not an encrypted state file")?;
+    let (nonce_text, ciphertext_text) = rest
+        .split_once(':')
+        .ok_or("invalid encrypted state file format")?;
+    let nonce: [u8; 24] = BASE64
+        .decode(nonce_text)?
+        .try_into()
+        .map_err(|_| "invalid encrypted state file nonce")?;
+    let ciphertext = BASE64.decode(ciphertext_text)?;
+    let key = state_file_key(passphrase);
+    let plaintext =
+        crypto::xchacha20poly1305_decrypt(&key, &nonce, &ciphertext, b"lm-node.state-file.v1")?;
+    Ok(String::from_utf8(plaintext)?)
+}
+
 fn load_node_state(path: &str) -> Result<NativeNode, Box<dyn std::error::Error>> {
     let text = fs::read_to_string(path)?;
+    let text = if text.starts_with(ENCRYPTED_STATE_FILE_PREFIX) {
+        let passphrase = state_file_passphrase()
+            .ok_or("encrypted state_file requires LM_NODE_STATE_FILE_PASSPHRASE")?;
+        decrypt_state_file_text(&text, &passphrase)?
+    } else {
+        text
+    };
     let snapshot: NodeStateSnapshot = serde_json::from_str(&text)?;
     Ok(NativeNode::from_state_snapshot(snapshot))
 }
 
 fn save_node_state(path: &str, node: &NativeNode) -> Result<(), Box<dyn std::error::Error>> {
     let text = serde_json::to_string_pretty(&node.to_state_snapshot())?;
+    let text = match state_file_passphrase() {
+        Some(passphrase) => encrypt_state_file_text(&text, &passphrase)?,
+        None => text,
+    };
     atomic_write_text(Path::new(path), &text)?;
     Ok(())
 }
@@ -5281,17 +5349,18 @@ mod tests {
         ControlHttpResponse, ControlLogger, ControlRuntimeStats, ControlSecurityConfig,
         DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES, DhtFindValueRunStats,
         DhtReplicationRunStats, DhtRoutingRefreshRunStats, DhtRunnerConfig, DhtTransport,
-        DhtTransportKind, LIBP2P_DHT_RPC_PROTOCOL, Libp2pDhtTransport, LogFormat,
-        MAX_CONTROL_PEER_RESPONSE_BYTES, MAX_CONTROL_REQUEST_HEADER_LINE_BYTES,
+        DhtTransportKind, ENCRYPTED_STATE_FILE_PREFIX, LIBP2P_DHT_RPC_PROTOCOL, Libp2pDhtTransport,
+        LogFormat, MAX_CONTROL_PEER_RESPONSE_BYTES, MAX_CONTROL_REQUEST_HEADER_LINE_BYTES,
         NodeMaintenanceStats, RateLimitConfig, RateLimiter, ServeControlConfigFile, StateDbStats,
         SyncPeerConfig, atomic_write_text, configure_control_client_stream,
         configure_control_peer_stream, connect_control_peer, control_error_http_response,
-        current_unix_timestamp, dht_find_value_with_transport, dht_runner_peer_configs,
-        dht_runner_peer_configs_with_quarantine_count, dial_libp2p_bootstrap_peers,
-        handle_control_dht_find_value_run, handle_control_dht_maintenance_run,
-        handle_control_dht_replication_run, handle_control_dht_routing_refresh_run,
-        handle_libp2p_dht_rpc_request, handle_libp2p_dht_server_event, http_control_request,
-        libp2p_dht_rpc_behaviour, libp2p_dht_swarm, load_node_state_db, open_state_db,
+        current_unix_timestamp, decrypt_state_file_text, dht_find_value_with_transport,
+        dht_runner_peer_configs, dht_runner_peer_configs_with_quarantine_count,
+        dial_libp2p_bootstrap_peers, encrypt_state_file_text, handle_control_dht_find_value_run,
+        handle_control_dht_maintenance_run, handle_control_dht_replication_run,
+        handle_control_dht_routing_refresh_run, handle_libp2p_dht_rpc_request,
+        handle_libp2p_dht_server_event, http_control_request, libp2p_dht_rpc_behaviour,
+        libp2p_dht_swarm, load_node_state_db, open_state_db,
         parse_content_length_and_validate_headers, parse_dht_transport_kind,
         parse_libp2p_bootstrap_peers, parse_libp2p_dht_peer, parse_log_format, read_secret_file,
         request_is_authorized, run_dht_replication, run_dht_replication_with_transport,
@@ -8382,6 +8451,18 @@ connection: close
         assert_eq!(peer_rows, 1);
         assert_eq!(routing_peer_rows, 1);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn encrypted_state_file_text_roundtrips_and_rejects_wrong_passphrase() {
+        let plaintext = r#"{"version":1,"config":{"peer_id":"encrypted-state"}}"#;
+        let encrypted = encrypt_state_file_text(plaintext, "correct horse battery staple").unwrap();
+        assert!(encrypted.starts_with(ENCRYPTED_STATE_FILE_PREFIX));
+        assert!(!encrypted.contains("encrypted-state"));
+        let decrypted =
+            decrypt_state_file_text(&encrypted, "correct horse battery staple").unwrap();
+        assert_eq!(decrypted, plaintext);
+        assert!(decrypt_state_file_text(&encrypted, "wrong passphrase").is_err());
     }
 
     #[test]
