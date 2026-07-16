@@ -359,6 +359,8 @@ type SelfSyncPackage = {
   type: 'lm-self-sync-v1'
   sync_id: string
   created_at: number
+  from_user_id: string
+  identity_public_key: string
   from_device_id?: string
   contacts: ContactItem[]
   dhtOperationHistory?: string[]
@@ -1896,6 +1898,8 @@ function currentSelfSyncPackage(): SelfSyncPackage {
     type: 'lm-self-sync-v1',
     sync_id: newId(),
     created_at: Date.now(),
+    from_user_id: identity.value?.user_id || '',
+    identity_public_key: identity.value?.identity_public_key || '',
     from_device_id: myDeviceId.value || undefined,
     contacts: contacts.value,
     dhtOperationHistory: nodeDhtOperationHistory.value,
@@ -1907,6 +1911,8 @@ function currentSelfSyncPackage(): SelfSyncPackage {
 
 function applySelfSyncPackage(pkg: SelfSyncPackage) {
   if (!pkg.sync_id) throw new Error('self-sync 缺少 sync_id')
+  if (pkg.from_user_id !== identity.value?.user_id) throw new Error('self-sync user_id 与当前身份不匹配')
+  if (pkg.identity_public_key !== identity.value?.identity_public_key) throw new Error('self-sync identity_public_key 与当前身份不匹配')
   if (pkg.from_device_id && myDeviceId.value && pkg.from_device_id === myDeviceId.value) {
     processedSelfSyncIds.value = [pkg.sync_id, ...processedSelfSyncIds.value.filter((id) => id !== pkg.sync_id)].slice(0, 100)
     selfSyncStatusText.value = `自同步：已跳过本设备包 ${pkg.sync_id}`
