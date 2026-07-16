@@ -226,7 +226,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 &args,
                 "--state-file-passphrase-file",
                 "LM_NODE_STATE_FILE_PASSPHRASE_FILE",
-                None,
+                file_config.state_file_passphrase_file,
             )?;
             install_state_file_passphrase_override(state_file_passphrase_from_file);
             let state_db = optional_arg(&args, "--state-db")?.or(file_config.state_db);
@@ -2847,6 +2847,7 @@ struct ServeControlConfigFile {
     bind: Option<String>,
     peer_id: Option<String>,
     state_file: Option<String>,
+    state_file_passphrase_file: Option<String>,
     state_db: Option<String>,
     state_db_require_encryption: Option<bool>,
     control_token: Option<String>,
@@ -8668,6 +8669,7 @@ connection: close
                 "bind": "127.0.0.1:9999",
                 "peer_id": "cfg-node",
                 "state_file": "state.json",
+                "state_file_passphrase_file": "state.pass",
                 "state_db": "state.sqlite3",
                 "state_db_require_encryption": true,
                 "control_token": "control",
@@ -8700,6 +8702,11 @@ connection: close
         .unwrap();
         assert_eq!(config.bind.as_deref(), Some("127.0.0.1:9999"));
         assert_eq!(config.peer_id.as_deref(), Some("cfg-node"));
+        assert_eq!(config.state_file.as_deref(), Some("state.json"));
+        assert_eq!(
+            config.state_file_passphrase_file.as_deref(),
+            Some("state.pass")
+        );
         assert_eq!(config.state_db.as_deref(), Some("state.sqlite3"));
         assert_eq!(config.state_db_require_encryption, Some(true));
         assert_eq!(config.control_token.as_deref(), Some("control"));
