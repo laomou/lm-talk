@@ -5610,18 +5610,34 @@ function summarizePreKeyStatus(body: any): string {
   return `${userId ? userId + '：' : ''}${keyText}${selected}${signed}${action}`
 }
 
+function applyPreKeyNodeResponse(body: any, sourceLabel: string): boolean {
+  nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
+  if (body.found && body.prekey_bundle_text) {
+    prekeyBundleText.value = body.prekey_bundle_text
+    selectedOneTimePreKeyId.value = typeof body.selected_one_time_prekey_id === 'number' ? body.selected_one_time_prekey_id : null
+    selectedSignedOneTimePreKeyRecordText.value = typeof body.selected_signed_one_time_prekey_record_text === 'string' ? body.selected_signed_one_time_prekey_record_text : ''
+    inspectPreKeyBundleText()
+    appendLog(`✅ 已${sourceLabel} PreKey Bundle${selectedOneTimePreKeyId.value !== null ? '，选中 one-time key ' + selectedOneTimePreKeyId.value : ''}${selectedSignedOneTimePreKeyRecordText.value ? '（signed record）' : ''}`)
+    return true
+  }
+  return false
+}
+
+async function fetchPreKeyViaDht(userId: string): Promise<boolean> {
+  const dht = await nodeFetchJson(`/dht/find-value?kind=prekey&value=${encodeURIComponent(userId)}&limit=8&max_peers=8&alpha=3`)
+  const ok = applyDhtFindValueRecord(dht)
+  nodeDhtFindValueStatusText.value = ok ? dhtFindValueSummary(dht) : nodeDhtFindValueStatusText.value
+  nodeClosestInfoText.value = JSON.stringify(dht, null, 2)
+  return ok && dht?.record?.kind === 'PreKey' && typeof dht.record.value === 'string'
+}
+
 async function fetchPreKeyFromNode() {
   await runAsync('从 lm_node 拉取 PreKey Bundle', async () => {
     const userId = nodePreKeyUserId.value.trim() || activeContact.value?.user_id
     if (!userId) throw new Error('请输入 UserID 或选择联系人')
     const body = await nodeFetchJson(`/prekey/get?user_id=${encodeURIComponent(userId)}&consume=false`)
-    nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
-    if (body.found && body.prekey_bundle_text) {
-      prekeyBundleText.value = body.prekey_bundle_text
-      selectedOneTimePreKeyId.value = typeof body.selected_one_time_prekey_id === 'number' ? body.selected_one_time_prekey_id : null
-      selectedSignedOneTimePreKeyRecordText.value = typeof body.selected_signed_one_time_prekey_record_text === 'string' ? body.selected_signed_one_time_prekey_record_text : ''
-      inspectPreKeyBundleText()
-      appendLog(`✅ 已拉取 PreKey Bundle${selectedOneTimePreKeyId.value !== null ? '，选中 one-time key ' + selectedOneTimePreKeyId.value : ''}${selectedSignedOneTimePreKeyRecordText.value ? '（signed record）' : ''}`)
+    if (!applyPreKeyNodeResponse(body, '从节点拉取')) {
+      await fetchPreKeyViaDht(userId)
     }
   })
 }
@@ -5631,13 +5647,8 @@ async function consumePreKeyFromNode() {
     const userId = nodePreKeyUserId.value.trim() || activeContact.value?.user_id
     if (!userId) throw new Error('请输入 UserID 或选择联系人')
     const body = await nodeFetchJson(`/prekey/get?user_id=${encodeURIComponent(userId)}&consume=true`)
-    nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
-    if (body.found && body.prekey_bundle_text) {
-      prekeyBundleText.value = body.prekey_bundle_text
-      selectedOneTimePreKeyId.value = typeof body.selected_one_time_prekey_id === 'number' ? body.selected_one_time_prekey_id : null
-      selectedSignedOneTimePreKeyRecordText.value = typeof body.selected_signed_one_time_prekey_record_text === 'string' ? body.selected_signed_one_time_prekey_record_text : ''
-      inspectPreKeyBundleText()
-      appendLog(`✅ 已领取 PreKey Bundle；节点端已标记 one-time key ${selectedOneTimePreKeyId.value ?? 'none'} 已消费${selectedSignedOneTimePreKeyRecordText.value ? '（signed record）' : ''}`)
+    if (!applyPreKeyNodeResponse(body, '领取')) {
+      await fetchPreKeyViaDht(userId)
     }
   })
 }
