@@ -319,6 +319,7 @@ type PersistedState = {
   lastSelfSyncSequenceMerged?: number
   selfSyncGapCount?: number
   lastSelfSyncGapAt?: number
+  lastSelfSyncMissingPreviousId?: string
   unverifiedIncomingDropCount?: number
   lastUnverifiedIncomingDropAt?: number
   lastUnverifiedIncomingDropFrom?: string
@@ -362,6 +363,7 @@ type PersistedMeta = {
   lastSelfSyncSequenceMerged?: number
   selfSyncGapCount?: number
   lastSelfSyncGapAt?: number
+  lastSelfSyncMissingPreviousId?: string
   unverifiedIncomingDropCount?: number
   lastUnverifiedIncomingDropAt?: number
   lastUnverifiedIncomingDropFrom?: string
@@ -543,6 +545,7 @@ const lastSelfSyncSequenceSent = ref(0)
 const lastSelfSyncSequenceMerged = ref(0)
 const selfSyncGapCount = ref(0)
 const lastSelfSyncGapAt = ref<number | null>(null)
+const lastSelfSyncMissingPreviousId = ref('')
 const selfMailboxBackupMergePending = computed(() => {
   const receivedAt = lastSelfMailboxBackupReceivedAt.value ?? 0
   const mergedAt = lastSelfMailboxBackupMergedAt.value ?? 0
@@ -1359,6 +1362,7 @@ function currentPersistedState(): PersistedState {
     lastSelfSyncSequenceMerged: lastSelfSyncSequenceMerged.value || undefined,
     selfSyncGapCount: selfSyncGapCount.value || undefined,
     lastSelfSyncGapAt: lastSelfSyncGapAt.value ?? undefined,
+    lastSelfSyncMissingPreviousId: lastSelfSyncMissingPreviousId.value || undefined,
     unverifiedIncomingDropCount: unverifiedIncomingDropCount.value,
     lastUnverifiedIncomingDropAt: lastUnverifiedIncomingDropAt.value ?? undefined,
     lastUnverifiedIncomingDropFrom: lastUnverifiedIncomingDropFrom.value,
@@ -1404,6 +1408,7 @@ function persistedMeta(): PersistedMeta {
     lastSelfSyncSequenceMerged: lastSelfSyncSequenceMerged.value || undefined,
     selfSyncGapCount: selfSyncGapCount.value || undefined,
     lastSelfSyncGapAt: lastSelfSyncGapAt.value ?? undefined,
+    lastSelfSyncMissingPreviousId: lastSelfSyncMissingPreviousId.value || undefined,
     unverifiedIncomingDropCount: unverifiedIncomingDropCount.value,
     lastUnverifiedIncomingDropAt: lastUnverifiedIncomingDropAt.value ?? undefined,
     lastUnverifiedIncomingDropFrom: lastUnverifiedIncomingDropFrom.value,
@@ -1565,6 +1570,7 @@ async function writeStateToTables(state: PersistedState) {
   lastSelfSyncSequenceMerged.value = Number(state.lastSelfSyncSequenceMerged ?? 0)
   selfSyncGapCount.value = Number(state.selfSyncGapCount ?? 0)
   lastSelfSyncGapAt.value = typeof state.lastSelfSyncGapAt === 'number' ? state.lastSelfSyncGapAt : null
+  lastSelfSyncMissingPreviousId.value = state.lastSelfSyncMissingPreviousId ?? ''
   unverifiedIncomingDropCount.value = Number(state.unverifiedIncomingDropCount ?? 0)
   lastUnverifiedIncomingDropAt.value = typeof state.lastUnverifiedIncomingDropAt === 'number' ? state.lastUnverifiedIncomingDropAt : null
   lastUnverifiedIncomingDropFrom.value = state.lastUnverifiedIncomingDropFrom ?? ''
@@ -1614,6 +1620,7 @@ async function loadStateFromTables(): Promise<boolean> {
   lastSelfSyncSequenceMerged.value = Number(meta.lastSelfSyncSequenceMerged ?? 0)
   selfSyncGapCount.value = Number(meta.selfSyncGapCount ?? 0)
   lastSelfSyncGapAt.value = typeof meta.lastSelfSyncGapAt === 'number' ? meta.lastSelfSyncGapAt : null
+  lastSelfSyncMissingPreviousId.value = meta.lastSelfSyncMissingPreviousId ?? ''
   unverifiedIncomingDropCount.value = Number(meta.unverifiedIncomingDropCount ?? 0)
   lastUnverifiedIncomingDropAt.value = typeof meta.lastUnverifiedIncomingDropAt === 'number' ? meta.lastUnverifiedIncomingDropAt : null
   lastUnverifiedIncomingDropFrom.value = meta.lastUnverifiedIncomingDropFrom ?? ''
@@ -1770,6 +1777,7 @@ async function clearPersisted() {
   lastSelfSyncSequenceMerged.value = 0
   selfSyncGapCount.value = 0
   lastSelfSyncGapAt.value = null
+  lastSelfSyncMissingPreviousId.value = ''
   unverifiedIncomingDropCount.value = 0
   lastUnverifiedIncomingDropAt.value = null
   lastUnverifiedIncomingDropFrom.value = ''
@@ -2067,6 +2075,7 @@ function applySelfSyncPackage(pkg: SelfSyncPackage) {
   if (pkg.previous_sync_id && processedSelfSyncIds.value.length > 0 && !processedSelfSyncIds.value.includes(pkg.previous_sync_id)) {
     selfSyncGapCount.value += 1
     lastSelfSyncGapAt.value = Date.now()
+    lastSelfSyncMissingPreviousId.value = pkg.previous_sync_id
     appendLog(`⚠️ 自同步可能存在缺口：previous_sync_id ${pkg.previous_sync_id} 未见过`)
   }
   processedSelfSyncIds.value = [pkg.sync_id, ...processedSelfSyncIds.value.filter((id) => id !== pkg.sync_id), ...(pkg.processedSelfSyncIds ?? [])].filter(Boolean).slice(0, 100)
@@ -2095,6 +2104,7 @@ async function autoPushSelfSyncPackageToOwnMailbox() {
 function clearSelfSyncGapStats() {
   selfSyncGapCount.value = 0
   lastSelfSyncGapAt.value = null
+  lastSelfSyncMissingPreviousId.value = ''
   selfSyncStatusText.value = '自同步：已清空缺口统计'
   appendLog('已清空轻量自同步缺口统计')
   persist()
@@ -2102,8 +2112,14 @@ function clearSelfSyncGapStats() {
 
 async function repairSelfSyncGapNow() {
   await runAsync('补发轻量自同步包', async () => {
-    await pushSelfSyncPackageToOwnMailbox()
-    selfSyncStatusText.value = `${selfSyncStatusText.value}；已用于缺口补偿`
+    const missing = lastSelfSyncMissingPreviousId.value
+    const cached = missing ? selfSyncRecentPackages.value.find((item) => item.sync_id === missing) : undefined
+    if (cached?.payload) {
+      await pushSelfSyncPayloadToOwnMailbox(cached.payload, `自同步：已补发缺失包 #${cached.sequence} 到自己的 Mailbox`)
+    } else {
+      await pushSelfSyncPackageToOwnMailbox()
+      selfSyncStatusText.value = `${selfSyncStatusText.value}；未找到缺失包缓存，已补发当前状态`
+    }
     appendLog('✅ 已补发轻量自同步包用于缺口补偿')
   })
 }
@@ -2302,7 +2318,10 @@ async function importFullDataBackupMerge() {
     lastSelfSyncSequenceSent.value = Math.max(lastSelfSyncSequenceSent.value, Number(state.lastSelfSyncSequenceSent ?? 0))
     lastSelfSyncSequenceMerged.value = Math.max(lastSelfSyncSequenceMerged.value, Number(state.lastSelfSyncSequenceMerged ?? 0))
     selfSyncGapCount.value += Number(state.selfSyncGapCount ?? 0)
-    if (typeof state.lastSelfSyncGapAt === 'number' && state.lastSelfSyncGapAt > (lastSelfSyncGapAt.value ?? 0)) lastSelfSyncGapAt.value = state.lastSelfSyncGapAt
+    if (typeof state.lastSelfSyncGapAt === 'number' && state.lastSelfSyncGapAt > (lastSelfSyncGapAt.value ?? 0)) {
+      lastSelfSyncGapAt.value = state.lastSelfSyncGapAt
+      lastSelfSyncMissingPreviousId.value = state.lastSelfSyncMissingPreviousId ?? lastSelfSyncMissingPreviousId.value
+    }
     unverifiedIncomingDropCount.value += Number(state.unverifiedIncomingDropCount ?? 0)
     if (typeof state.lastUnverifiedIncomingDropAt === 'number' && state.lastUnverifiedIncomingDropAt > (lastUnverifiedIncomingDropAt.value ?? 0)) {
       lastUnverifiedIncomingDropAt.value = state.lastUnverifiedIncomingDropAt
@@ -7638,7 +7657,7 @@ const appContext = {
   autoPublishPreKey, autoNodeSync, autoSelfMailboxSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodeStateFileSecurityText, nodeStateFileSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutDeviceRevokeToFriends, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
-  exportFullDataBackup, pushFullDataBackupToOwnMailbox, pushSelfSyncPackageToOwnMailbox, selfSyncStatusText, processedSelfSyncIds, selfSyncRecentPackages, resendLatestSelfSyncPackageToOwnMailbox, lastSelfSyncPushedAt, lastSelfSyncMergedAt, lastSelfSyncSequenceSent, lastSelfSyncSequenceMerged, selfSyncGapCount, lastSelfSyncGapAt, clearSelfSyncGapStats, repairSelfSyncGapNow, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, selfMailboxBackupStatusText, selfMailboxBackupMergePending, selfMailboxBackupMergeStatusText, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
+  exportFullDataBackup, pushFullDataBackupToOwnMailbox, pushSelfSyncPackageToOwnMailbox, selfSyncStatusText, processedSelfSyncIds, selfSyncRecentPackages, resendLatestSelfSyncPackageToOwnMailbox, lastSelfSyncPushedAt, lastSelfSyncMergedAt, lastSelfSyncSequenceSent, lastSelfSyncSequenceMerged, selfSyncGapCount, lastSelfSyncGapAt, lastSelfSyncMissingPreviousId, clearSelfSyncGapStats, repairSelfSyncGapNow, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, selfMailboxBackupStatusText, selfMailboxBackupMergePending, selfMailboxBackupMergeStatusText, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
   addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, friendRequestRateRecords, friendRequestRateSummaryText, clearFriendRequestRateRecords, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,

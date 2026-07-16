@@ -361,7 +361,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
         <small v-if="ctx.lastSelfSyncPushedAt.value">最近投递轻量自同步：#{{ ctx.lastSelfSyncSequenceSent.value }} · {{ ctx.formatDateTime(ctx.lastSelfSyncPushedAt.value) }}</small>
         <small v-if="ctx.lastSelfSyncMergedAt.value">最近合并轻量自同步：#{{ ctx.lastSelfSyncSequenceMerged.value }} · {{ ctx.formatDateTime(ctx.lastSelfSyncMergedAt.value) }}</small>
         <div v-if="ctx.selfSyncGapCount.value" class="row compact">
-          <small class="danger-text">轻量自同步可能缺口 {{ ctx.selfSyncGapCount.value }} 次<span v-if="ctx.lastSelfSyncGapAt.value">，最近：{{ ctx.formatDateTime(ctx.lastSelfSyncGapAt.value) }}</span></small>
+          <small class="danger-text">轻量自同步可能缺口 {{ ctx.selfSyncGapCount.value }} 次<span v-if="ctx.lastSelfSyncGapAt.value">，最近：{{ ctx.formatDateTime(ctx.lastSelfSyncGapAt.value) }}</span><span v-if="ctx.lastSelfSyncMissingPreviousId.value">，缺失：{{ ctx.lastSelfSyncMissingPreviousId.value.slice(0, 8) }}</span></small>
           <button class="secondary" :disabled="!ctx.nodeEnabled.value" @click="ctx.repairSelfSyncGapNow">补发自同步包</button>
           <button class="secondary" @click="ctx.clearSelfSyncGapStats">清空缺口统计</button>
         </div>
