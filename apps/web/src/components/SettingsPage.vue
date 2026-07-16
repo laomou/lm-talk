@@ -151,6 +151,28 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
               <button class="secondary" @click="ctx.resetDhtPeerHealth(peer.url)">重置 {{ peer.url }}</button>
             </div>
           </div>
+
+          <section class="home-card">
+            <h3>PublicPeer 公网发现</h3>
+            <small>填写可被其他节点访问的 multiaddr；登录/同步时会自动把 PublicPeer 发布到 DHT。能力可包含 bootstrap / dht / relay / mailbox。</small>
+            <label for="public-peer-id-input">Public peer id</label>
+            <input id="public-peer-id-input" v-model="ctx.publicPeerId.value" placeholder="留空自动生成 public-..." />
+            <label for="public-peer-addresses-input">公网地址</label>
+            <textarea id="public-peer-addresses-input" v-model="ctx.publicPeerAddressesText.value" rows="3" placeholder="每行一个 multiaddr，例如 /dns4/example.com/tcp/443/wss" />
+            <div class="policy-grid sync-options">
+              <label v-for="cap in ['bootstrap', 'dht', 'relay', 'mailbox']" :key="cap" class="identity-select">
+                <input v-model="ctx.publicPeerCapabilities.value" type="checkbox" :value="cap" />
+                <span>{{ cap }}</span>
+              </label>
+            </div>
+            <div class="row compact">
+              <button class="secondary" @click="ctx.createPublicPeerAnnounceText">生成 PublicPeer</button>
+              <button class="secondary" :disabled="!ctx.publicPeerAnnounceText.value" @click="ctx.inspectPublicPeerAnnounceText">验签</button>
+              <button class="secondary" :disabled="!ctx.publicPeerAnnounceText.value" @click="ctx.copyText(ctx.publicPeerAnnounceText.value, 'PublicPeerAnnounce')">复制</button>
+              <button class="secondary" :disabled="!ctx.publicPeerAnnounceText.value" @click="ctx.publishAndCheckMyPublicPeerDht">发布 PublicPeer DHT</button>
+            </div>
+            <small v-if="ctx.publicPeerAnnounceInfoText.value">{{ ctx.publicPeerAnnounceInfoText.value.slice(0, 180) }}</small>
+          </section>
           <label for="dht-key-value-input">DHT key 派生</label>
           <div class="inline-field">
             <select v-model="ctx.nodeDhtKeyKind.value" aria-label="DHT key 类型">
