@@ -307,6 +307,8 @@ type ContactCardUpdateFanoutRecord = {
   status: 'sent' | 'queued' | 'acked'
   sent_at: number
   acked_at?: number
+  retry_count?: number
+  last_retry_at?: number
 }
 
 type ProcessedMailboxRecord = {
@@ -607,6 +609,7 @@ const outbox = ref<OutboxItem[]>([])
 const ratchetSessions = ref<RatchetSessionItem[]>([])
 const processedMailboxIds = ref<ProcessedMailboxRecord[]>([])
 const mailboxFailedItems = ref<MailboxFailedItem[]>([])
+const CONTACT_CARD_UPDATE_ACK_STALE_MS = 24 * 60 * 60 * 1000
 const contactCardUpdateFanoutRecords = ref<ContactCardUpdateFanoutRecord[]>([])
 let outboxRetryTimer: number | undefined
 let lastDeliveryError = ''
@@ -973,7 +976,7 @@ const strictE2eeReadinessIssues = computed(() => [
     .map((record) => ({
       user_id: record.peer_user_id,
       display_name: contacts.value.find((contact) => contact.user_id === record.peer_user_id)?.display_name || record.peer_user_id,
-      issue: '设备证书更新等待对方确认合并',
+      issue: contactCardUpdateRecordIsStale(record) ? '设备证书更新确认已过期，等待重试' : '设备证书更新等待对方确认合并',
       issue_kind: 'contact-update-ack',
     })),
 ].slice(0, 12))
@@ -997,10 +1000,7 @@ async function openStrictE2eeReadinessIssue(issue: { user_id: string; issue_kind
   } else if (issue.issue_kind === 'contact-update-ack') {
     appendLog(`严格 E2EE 预检：正在重新向 ${contact.display_name || contact.user_id} 分发设备证书更新`)
     if (!myContactCardText.value.trim()) refreshMyContactCard()
-    const result = await deliverPayloadToContact(contact, myContactCardText.value, '联系人设备证书更新', 'contact-update')
-    const updateId = contactCardUpdateId(myContactCardText.value)
-    if (result === 'sent' || result === 'mailbox') rememberContactCardUpdateFanout(contact.user_id, updateId, 'sent')
-    else rememberContactCardUpdateFanout(contact.user_id, updateId, 'queued')
+    await sendContactCardUpdateToContact(contact)
     persist()
   }
 }
@@ -1830,7 +1830,7 @@ async function writeStateToTables(state: PersistedState) {
   lastNodeSnapshotSyncAt.value = typeof state.lastNodeSnapshotSyncAt === 'number' ? state.lastNodeSnapshotSyncAt : null
   processedMailboxIds.value = normalizeProcessedMailboxRecords(state.processedMailboxIds)
   mailboxFailedItems.value = await Promise.all((state.mailboxFailedItems ?? []).map((m: any) => decryptMailboxFailedItemFromStore(m, key)))
-  contactCardUpdateFanoutRecords.value = (state.contactCardUpdateFanoutRecords ?? []).slice(0, 100)
+  contactCardUpdateFanoutRecords.value = normalizeContactCardUpdateFanoutRecords(state.contactCardUpdateFanoutRecords ?? [])
   syncRecoveryHistory.value = state.syncRecoveryHistory ?? []
   nodeDhtOperationHistory.value = state.dhtOperationHistory ?? []
   pwaBackgroundEventHistory.value = state.pwaBackgroundEventHistory ?? []
@@ -1896,7 +1896,7 @@ async function loadStateFromTables(): Promise<boolean> {
   lastNodeSnapshotSyncAt.value = typeof meta.lastNodeSnapshotSyncAt === 'number' ? meta.lastNodeSnapshotSyncAt : null
   processedMailboxIds.value = normalizeProcessedMailboxRecords(meta.processedMailboxIds)
   mailboxFailedItems.value = await Promise.all((meta.mailboxFailedItems ?? []).map((m: any) => decryptMailboxFailedItemFromStore(m, key)))
-  contactCardUpdateFanoutRecords.value = (meta.contactCardUpdateFanoutRecords ?? []).slice(0, 100)
+  contactCardUpdateFanoutRecords.value = normalizeContactCardUpdateFanoutRecords(meta.contactCardUpdateFanoutRecords ?? [])
   syncRecoveryHistory.value = meta.syncRecoveryHistory ?? []
   nodeDhtOperationHistory.value = meta.dhtOperationHistory ?? []
   pwaBackgroundEventHistory.value = meta.pwaBackgroundEventHistory ?? []
@@ -3324,6 +3324,18 @@ function conversationIdFromEnvelope(envelope: string): string | undefined {
 }
 
 
+
+function normalizeContactCardUpdateFanoutRecords(records: ContactCardUpdateFanoutRecord[]): ContactCardUpdateFanoutRecord[] {
+  return (records ?? [])
+    .filter((record) => record?.peer_user_id && record?.update_id && record?.sent_at)
+    .sort((a, b) => Number(b.sent_at ?? 0) - Number(a.sent_at ?? 0))
+    .slice(0, 100)
+}
+
+function contactCardUpdateRecordIsStale(record: ContactCardUpdateFanoutRecord, now = Date.now()): boolean {
+  return record.status !== 'acked' && now - Number(record.last_retry_at || record.sent_at || 0) >= CONTACT_CARD_UPDATE_ACK_STALE_MS
+}
+
 function contactCardUpdateId(cardText: string): string {
   let hash = 2166136261
   for (let i = 0; i < cardText.length; i += 1) {
@@ -3339,7 +3351,7 @@ function rememberContactCardUpdateFanout(peerUserId: string, updateId: string, s
     existing.status = existing.status === 'acked' ? 'acked' : status
     existing.sent_at = Date.now()
   } else {
-    contactCardUpdateFanoutRecords.value = [{ peer_user_id: peerUserId, update_id: updateId, status, sent_at: Date.now() }, ...contactCardUpdateFanoutRecords.value].slice(0, 100)
+    contactCardUpdateFanoutRecords.value = normalizeContactCardUpdateFanoutRecords([{ peer_user_id: peerUserId, update_id: updateId, status, sent_at: Date.now(), retry_count: 0 }, ...contactCardUpdateFanoutRecords.value])
   }
 }
 
@@ -3355,6 +3367,7 @@ function markContactCardUpdateAck(updateId: string, fromUserId: string): boolean
 
 const contactCardUpdateFanoutAckCount = computed(() => contactCardUpdateFanoutRecords.value.filter((item) => item.status === 'acked').length)
 const contactCardUpdatePendingAckCount = computed(() => contactCardUpdateFanoutRecords.value.filter((item) => item.status !== 'acked').length)
+const contactCardUpdateStaleAckCount = computed(() => contactCardUpdateFanoutRecords.value.filter((item) => contactCardUpdateRecordIsStale(item)).length)
 
 function applyDeliveryAck(messageId: string, fromUserId: string) {
   if (messageId.startsWith('contact-card-update:') && markContactCardUpdateAck(messageId, fromUserId)) return
@@ -3786,6 +3799,39 @@ async function fanoutDeviceRevokeToFriends() {
 }
 
 
+
+async function sendContactCardUpdateToContact(contact: ContactItem): Promise<'sent' | 'mailbox' | 'queued' | 'failed'> {
+  if (!myContactCardText.value.trim()) refreshMyContactCard()
+  if (!myContactCardText.value.trim()) throw new Error('请先生成我的联系人名片')
+  const updateId = contactCardUpdateId(myContactCardText.value)
+  const result = await deliverPayloadToContact(contact, myContactCardText.value, '联系人设备证书更新', 'contact-update')
+  const status = result === 'sent' || result === 'mailbox' ? 'sent' : 'queued'
+  rememberContactCardUpdateFanout(contact.user_id, updateId, status)
+  if (result === 'queued' || result === 'failed') queueOutboxItem(contact, myContactCardText.value, undefined, 'contact-update')
+  return result
+}
+
+async function retryStaleContactCardUpdateAcks() {
+  await runAsync('重试过期设备证书更新确认', async () => {
+    const stale = contactCardUpdateFanoutRecords.value.filter((record) => contactCardUpdateRecordIsStale(record))
+    if (!stale.length) {
+      appendLog('没有过期的设备证书更新确认需要重试')
+      return
+    }
+    let retried = 0
+    for (const record of stale) {
+      const contact = contacts.value.find((item) => item.user_id === record.peer_user_id)
+      if (!contact) continue
+      record.retry_count = Number(record.retry_count ?? 0) + 1
+      record.last_retry_at = Date.now()
+      await sendContactCardUpdateToContact(contact)
+      retried += 1
+    }
+    appendLog(`已重试过期设备证书更新确认 ${retried}/${stale.length} 条`)
+    persist()
+  })
+}
+
 async function fanoutMyContactCardUpdateToFriends(options: { force?: boolean } = {}) {
   await runAsync('向好友分发联系人设备证书更新', async () => {
     if (!myContactCardText.value.trim()) refreshMyContactCard()
@@ -3799,11 +3845,10 @@ async function fanoutMyContactCardUpdateToFriends(options: { force?: boolean } =
     }
     let sent = 0
     let queued = 0
-    const updateId = contactCardUpdateId(myContactCardText.value)
     for (const contact of friendContacts.value) {
-      const result = await deliverPayloadToContact(contact, myContactCardText.value, '联系人设备证书更新', 'contact-update')
-      if (result === 'sent' || result === 'mailbox') { sent += 1; rememberContactCardUpdateFanout(contact.user_id, updateId, 'sent') }
-      else { queued += 1; rememberContactCardUpdateFanout(contact.user_id, updateId, 'queued'); queueOutboxItem(contact, myContactCardText.value, undefined, 'contact-update') }
+      const result = await sendContactCardUpdateToContact(contact)
+      if (result === 'sent' || result === 'mailbox') sent += 1
+      else queued += 1
     }
     contactCardUpdateFanoutCount.value += 1
     lastContactCardUpdateFanoutAt.value = now
@@ -8475,7 +8520,7 @@ const appContext = {
   prekeySignedId, prekeyOneTimeCount, prekeyBundleText, prekeyPrivateBundleJson, prekeySignedOneTimeRecordTexts, prekeyInfoText, x3dhInitialMessageJson,
   selectedOneTimePreKeyId, selectedSignedOneTimePreKeyRecordText, x3dhSharedSecretText, ratchetStateText, ratchetPeerStateText, ratchetLocalDhKeyPairJson, ratchetRemoteDhPublicKeyForInit,
   ratchetInitRole, ratchetHeaderText, ratchetEnvelopeText, ratchetPlainText, ratchetKeyText, ratchetRemoteDhPublicKey,
-  ratchetInfoText, safetyPolicy, enableStrictE2eePolicy, strictE2eePolicyEnabled, strictE2eeReadiness, strictE2eeReadinessIssues, openStrictE2eeReadinessIssue, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, perDeviceEnvelopeSentCount, perDeviceEnvelopeReceivedCount, perDeviceEnvelopeDropCount, lastPerDeviceEnvelopeAt, lastPerDeviceEnvelopeDropAt, lastPerDeviceEnvelopeDropReason, contactCardUpdateFanoutCount, contactCardUpdateFanoutSkipCount, lastContactCardUpdateFanoutAt, contactCardUpdateFanoutRecords, contactCardUpdateFanoutAckCount, contactCardUpdatePendingAckCount, sealedSlotCoverageSummary, sealedSlotRiskContacts, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
+  ratchetInfoText, safetyPolicy, enableStrictE2eePolicy, strictE2eePolicyEnabled, strictE2eeReadiness, strictE2eeReadinessIssues, openStrictE2eeReadinessIssue, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, perDeviceEnvelopeSentCount, perDeviceEnvelopeReceivedCount, perDeviceEnvelopeDropCount, lastPerDeviceEnvelopeAt, lastPerDeviceEnvelopeDropAt, lastPerDeviceEnvelopeDropReason, contactCardUpdateFanoutCount, contactCardUpdateFanoutSkipCount, lastContactCardUpdateFanoutAt, contactCardUpdateFanoutRecords, contactCardUpdateFanoutAckCount, contactCardUpdatePendingAckCount, contactCardUpdateStaleAckCount, retryStaleContactCardUpdateAcks, sealedSlotCoverageSummary, sealedSlotRiskContacts, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
   nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, findActiveContactMailboxHint, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, startFingerprintQrScan, stopFingerprintQrScan, fingerprintScanOpen, fingerprintScanStatus, copyActiveContactFingerprintProof, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, showMyFingerprintQr, copyMyFingerprintProof, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
