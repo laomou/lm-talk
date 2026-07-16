@@ -2879,6 +2879,7 @@ async function confirmOutgoingTextIfNeeded(text: string): Promise<boolean> {
 
 function contactRevokedDeviceIds(contact: ContactItem): string[] {
   const revoked = new Set(contact.revoked_device_ids ?? [])
+  for (const item of contact.device_revocations ?? []) revoked.add(item.device_id)
   const known = (contact.device_certs ?? []).map((cert) => cert.device_id).filter((deviceId) => revoked.has(deviceId))
   const knownSet = new Set(known)
   const unknown = [...revoked].filter((deviceId) => !knownSet.has(deviceId))
