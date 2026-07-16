@@ -1020,6 +1020,7 @@ struct DhtFindValueRunStats {
     successes: usize,
     failures: usize,
     found_records: usize,
+    invalid_found_records: usize,
     closer_records: usize,
     closer_nodes_returned: usize,
     closer_nodes_merged: usize,
@@ -4207,11 +4208,16 @@ fn dht_find_value_with_transport(
                 }) => {
                     stats.successes = stats.successes.saturating_add(1);
                     let mut useful_response = false;
+                    let mut rejected_found_record = false;
                     if let Some(record) = record {
                         if node.accept_dht_record_from_peer(record) {
                             stats.found_records = stats.found_records.saturating_add(1);
                             useful_response = true;
                             found = true;
+                        } else {
+                            stats.invalid_found_records =
+                                stats.invalid_found_records.saturating_add(1);
+                            rejected_found_record = true;
                         }
                     }
                     let before_closer_records = stats.closer_records;
@@ -4248,7 +4254,13 @@ fn dht_find_value_with_transport(
                                 .closer_nodes_rejected_duplicate
                                 .saturating_sub(before_rejected_duplicate),
                         );
-                    if returned > 0 && rejected == returned && !useful_response {
+                    if rejected_found_record {
+                        record_dht_peer_failure(
+                            node,
+                            &peer,
+                            "DHT FindValue response contained an invalid found record",
+                        );
+                    } else if returned > 0 && rejected == returned && !useful_response {
                         record_dht_peer_failure(
                             node,
                             &peer,
@@ -5911,8 +5923,17 @@ mod tests {
         assert_eq!(stats.attempts, 2);
         assert_eq!(stats.successes, 2);
         assert_eq!(stats.found_records, 1);
+        assert_eq!(stats.invalid_found_records, 1);
         assert_eq!(stats.closer_nodes_merged, 1);
         assert_eq!(node.maintenance.dht_record_rejects.invalid_record, 1);
+        assert_eq!(
+            node.sync_status
+                .peers
+                .get("transport://malicious-seed")
+                .unwrap()
+                .consecutive_failures,
+            1
+        );
         assert_eq!(
             node.dht_records.find_value(&key).unwrap().value,
             valid_record.value
