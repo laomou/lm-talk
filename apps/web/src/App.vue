@@ -142,6 +142,8 @@ type ContactItem = ContactInfo & {
   next_dht_discovery_retry_at?: number
   last_prekey_dht_found_at?: number
   last_mailbox_hint_dht_found_at?: number
+  fingerprint_verified_at?: number
+  fingerprint_verified_note?: string
 }
 
 type FilterLevel = 'Off' | 'Relaxed' | 'Standard' | 'Strict'
@@ -2658,6 +2660,8 @@ function mergeContactCard(existing: ContactItem | undefined, info: ContactInfo, 
     revoked_device_ids: existing?.revoked_device_ids,
     block_reason: existing?.block_reason,
     read_receipts: existing?.read_receipts ?? 'default',
+    fingerprint_verified_at: existing?.fingerprint_verified_at,
+    fingerprint_verified_note: existing?.fingerprint_verified_note,
     device_certs: info.device_certs ?? contactCardDeviceCerts(cardText),
   }
 }
@@ -5289,6 +5293,31 @@ function fillMyMailboxHintDhtKeyInput() {
   fillDhtKeyInput('mailbox-hint', identity.value.user_id)
 }
 
+async function verifyActiveContactFingerprint() {
+  await runAsync('核验联系人指纹', async () => {
+    if (!activeContact.value) throw new Error('请选择联系人')
+    const contact = activeContact.value
+    const ok = await showConfirm(
+      '确认联系人指纹已核验',
+      `请确认你已通过线下、语音、视频或可信二维码核对该联系人指纹：
+
+${contact.fingerprint}
+
+确认后会标记为已核验，并清除 DHT 高风险状态。继续？`,
+      true,
+    )
+    if (!ok) return
+    contact.fingerprint_verified_at = Date.now()
+    contact.fingerprint_verified_note = 'fingerprint'
+    resetContactDhtDiscoveryBackoff(contact)
+    contact.dht_discovery_risk_level = undefined
+    contact.last_dht_discovery_error_kind = undefined
+    contact.last_dht_discovery_error = undefined
+    appendLog(`✅ 已标记 ${contact.display_name || contact.user_id} 指纹核验通过`)
+    persist()
+  })
+}
+
 async function clearActiveContactDhtRisk() {
   await runAsync('清除联系人 DHT 风险', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
@@ -6758,7 +6787,7 @@ const appContext = {
   ratchetInfoText, safetyPolicy, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
-  nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, findActiveContactMailboxHint, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
+  nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, findActiveContactMailboxHint, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
   nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, publishAndCheckMyPreKeyDht, publishAndCheckMyMailboxHintDht, publishAndCheckAllMyDht, clearPreKeyRawState, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
