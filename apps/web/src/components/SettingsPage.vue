@@ -359,6 +359,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
         <small v-if="ctx.lastSelfMailboxBackupMergedAt.value">最近合并自己的 Mailbox 备份：{{ ctx.formatDateTime(ctx.lastSelfMailboxBackupMergedAt.value) }}</small>
         <small>{{ ctx.selfSyncStatusText.value }}</small>
         <small v-if="ctx.selfSyncRequestSentCount.value || ctx.selfSyncRequestHitCount.value || ctx.selfSyncRequestMissCount.value">缺包请求：发送 {{ ctx.selfSyncRequestSentCount.value }}，命中 {{ ctx.selfSyncRequestHitCount.value }}，未命中 {{ ctx.selfSyncRequestMissCount.value }}</small>
+        <small v-if="ctx.selfSyncRecentPackages.value.length">最近轻量包缓存：{{ ctx.selfSyncRecentPackages.value.length }}/10</small>
         <small v-if="ctx.lastSelfSyncPushedAt.value">最近投递轻量自同步：#{{ ctx.lastSelfSyncSequenceSent.value }} · {{ ctx.formatDateTime(ctx.lastSelfSyncPushedAt.value) }}</small>
         <small v-if="ctx.lastSelfSyncMergedAt.value">最近合并轻量自同步：#{{ ctx.lastSelfSyncSequenceMerged.value }} · {{ ctx.formatDateTime(ctx.lastSelfSyncMergedAt.value) }}</small>
         <div v-if="ctx.selfSyncGapCount.value" class="row compact">
@@ -370,6 +371,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
           <button class="secondary" @click="ctx.exportFullDataBackup">生成备份</button>
           <button class="secondary" :disabled="!ctx.nodeEnabled.value" @click="ctx.pushSelfSyncPackageToOwnMailbox">轻量状态到自己 Mailbox</button>
           <button class="secondary" :disabled="!ctx.nodeEnabled.value || ctx.selfSyncRecentPackages.value.length === 0" @click="ctx.resendLatestSelfSyncPackageToOwnMailbox">重发最近轻量包</button>
+          <button class="secondary" :disabled="ctx.selfSyncRecentPackages.value.length === 0" @click="ctx.clearSelfSyncRecentPackages">清空轻量包缓存</button>
           <button class="secondary" :disabled="!ctx.nodeEnabled.value" @click="ctx.pushFullDataBackupToOwnMailbox">备份到自己 Mailbox</button>
           <button class="secondary" :disabled="!ctx.dataBackupText.value.trim()" @click="ctx.downloadText(ctx.dataBackupText.value, 'lm-talk-data-backup.txt')">下载备份</button>
           <button class="secondary" :disabled="!ctx.dataBackupText.value.trim()" @click="ctx.importFullDataBackupMerge">导入合并</button>
