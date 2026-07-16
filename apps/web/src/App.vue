@@ -5382,6 +5382,7 @@ function nodeStateDbSecurityFromHealth(health: any): { text: string; level: 'ok'
   const encrypted = Boolean(stateDb?.encrypted ?? health?.state_db_encrypted)
   const hardened = Boolean(stateDb?.permissions_hardened ?? health?.state_db_permissions_hardened)
   const mode = String(stateDb?.encryption_mode || (encrypted ? 'encrypted' : 'plain'))
+  if (mode === 'external') return { text: `state_db：由外部存储加密保护（external）${hardened ? '，权限已硬化' : ''}；仍非数据库级加密`, level: 'warning' }
   if (encrypted) return { text: `state_db：数据库加密已启用（${mode}）${hardened ? '，权限已硬化' : ''}`, level: 'ok' }
   if (hardened) return { text: `state_db：未加密（${mode}），仅权限硬化；生产环境建议启用数据库级加密`, level: 'warning' }
   return { text: `state_db：未加密（${mode}）且权限未硬化；不建议生产使用`, level: 'danger' }

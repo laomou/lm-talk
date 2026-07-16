@@ -3398,7 +3398,7 @@ fn state_db_stats(path: &str) -> Result<StateDbStats, Box<dyn std::error::Error>
         freelist_count,
         file_bytes,
         encryption_mode: state_db_encryption_mode(),
-        encrypted: state_db_encryption_mode() != "plain",
+        encrypted: state_db_encryption_mode() == "sqlcipher",
         permissions_hardened: true,
     })
 }
