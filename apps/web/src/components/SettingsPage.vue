@@ -396,13 +396,17 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
       <section class="home-card">
         <div class="section-title-row">
           <h3>本地安全策略</h3>
-          <button class="secondary" @click="ctx.saveSafetyPolicy">保存</button>
+          <div class="row compact">
+            <button class="secondary" @click="ctx.enableStrictE2eePolicy">一键严格 E2EE</button>
+            <button class="secondary" @click="ctx.saveSafetyPolicy">保存</button>
+          </div>
         </div>
         <label class="identity-select">
           <input v-model="ctx.safetyPolicy.value.enableTextFilter" type="checkbox" />
           <span>启用文本过滤</span>
         </label>
         <p class="muted">好友指纹核验：已核验 {{ ctx.verifiedFriendContactCount.value }}，未核验 {{ ctx.unverifiedFriendContactCount.value }}</p>
+        <p class="muted">严格 E2EE 策略：{{ ctx.strictE2eePolicyEnabled.value ? '已启用' : '未完全启用' }}</p>
         <p class="muted">分设备 sealed slot：{{ ctx.sealedSlotCoverageSummary.value.text }}</p>
         <div v-if="ctx.sealedSlotRiskContacts.value.length" class="callout warning">
           <b>存在 sealed slot 降级风险</b>
