@@ -348,6 +348,12 @@ type PersistedState = {
   revokedDeviceIncomingDropCount?: number
   lastRevokedDeviceIncomingDropAt?: number
   lastRevokedDeviceIncomingDropFrom?: string
+  perDeviceEnvelopeSentCount?: number
+  perDeviceEnvelopeReceivedCount?: number
+  perDeviceEnvelopeDropCount?: number
+  lastPerDeviceEnvelopeAt?: number
+  lastPerDeviceEnvelopeDropAt?: number
+  lastPerDeviceEnvelopeDropReason?: string
 }
 
 type PersistedMeta = {
@@ -397,6 +403,12 @@ type PersistedMeta = {
   revokedDeviceIncomingDropCount?: number
   lastRevokedDeviceIncomingDropAt?: number
   lastRevokedDeviceIncomingDropFrom?: string
+  perDeviceEnvelopeSentCount?: number
+  perDeviceEnvelopeReceivedCount?: number
+  perDeviceEnvelopeDropCount?: number
+  lastPerDeviceEnvelopeAt?: number
+  lastPerDeviceEnvelopeDropAt?: number
+  lastPerDeviceEnvelopeDropReason?: string
   schemaVersion: number
 }
 
@@ -541,6 +553,12 @@ const lastUnverifiedIncomingDropFrom = ref('')
 const revokedDeviceIncomingDropCount = ref(0)
 const lastRevokedDeviceIncomingDropAt = ref<number | null>(null)
 const lastRevokedDeviceIncomingDropFrom = ref('')
+const perDeviceEnvelopeSentCount = ref(0)
+const perDeviceEnvelopeReceivedCount = ref(0)
+const perDeviceEnvelopeDropCount = ref(0)
+const lastPerDeviceEnvelopeAt = ref<number | null>(null)
+const lastPerDeviceEnvelopeDropAt = ref<number | null>(null)
+const lastPerDeviceEnvelopeDropReason = ref('')
 const groups = ref<GroupItem[]>([])
 const groupInvites = ref<GroupInviteItem[]>([])
 const groupSenderKeys = ref<GroupSenderKeyItem[]>([])
@@ -1425,6 +1443,12 @@ function currentPersistedState(): PersistedState {
     revokedDeviceIncomingDropCount: revokedDeviceIncomingDropCount.value,
     lastRevokedDeviceIncomingDropAt: lastRevokedDeviceIncomingDropAt.value ?? undefined,
     lastRevokedDeviceIncomingDropFrom: lastRevokedDeviceIncomingDropFrom.value,
+    perDeviceEnvelopeSentCount: perDeviceEnvelopeSentCount.value || undefined,
+    perDeviceEnvelopeReceivedCount: perDeviceEnvelopeReceivedCount.value || undefined,
+    perDeviceEnvelopeDropCount: perDeviceEnvelopeDropCount.value || undefined,
+    lastPerDeviceEnvelopeAt: lastPerDeviceEnvelopeAt.value ?? undefined,
+    lastPerDeviceEnvelopeDropAt: lastPerDeviceEnvelopeDropAt.value ?? undefined,
+    lastPerDeviceEnvelopeDropReason: lastPerDeviceEnvelopeDropReason.value || undefined,
   }
 }
 
@@ -1643,6 +1667,12 @@ async function writeStateToTables(state: PersistedState) {
   revokedDeviceIncomingDropCount.value = Number(state.revokedDeviceIncomingDropCount ?? 0)
   lastRevokedDeviceIncomingDropAt.value = typeof state.lastRevokedDeviceIncomingDropAt === 'number' ? state.lastRevokedDeviceIncomingDropAt : null
   lastRevokedDeviceIncomingDropFrom.value = state.lastRevokedDeviceIncomingDropFrom ?? ''
+  perDeviceEnvelopeSentCount.value = Number(state.perDeviceEnvelopeSentCount ?? 0)
+  perDeviceEnvelopeReceivedCount.value = Number(state.perDeviceEnvelopeReceivedCount ?? 0)
+  perDeviceEnvelopeDropCount.value = Number(state.perDeviceEnvelopeDropCount ?? 0)
+  lastPerDeviceEnvelopeAt.value = typeof state.lastPerDeviceEnvelopeAt === 'number' ? state.lastPerDeviceEnvelopeAt : null
+  lastPerDeviceEnvelopeDropAt.value = typeof state.lastPerDeviceEnvelopeDropAt === 'number' ? state.lastPerDeviceEnvelopeDropAt : null
+  lastPerDeviceEnvelopeDropReason.value = state.lastPerDeviceEnvelopeDropReason ?? ''
   await persistStateTables()
 }
 
@@ -1698,6 +1728,12 @@ async function loadStateFromTables(): Promise<boolean> {
   revokedDeviceIncomingDropCount.value = Number(meta.revokedDeviceIncomingDropCount ?? 0)
   lastRevokedDeviceIncomingDropAt.value = typeof meta.lastRevokedDeviceIncomingDropAt === 'number' ? meta.lastRevokedDeviceIncomingDropAt : null
   lastRevokedDeviceIncomingDropFrom.value = meta.lastRevokedDeviceIncomingDropFrom ?? ''
+  perDeviceEnvelopeSentCount.value = Number(meta.perDeviceEnvelopeSentCount ?? 0)
+  perDeviceEnvelopeReceivedCount.value = Number(meta.perDeviceEnvelopeReceivedCount ?? 0)
+  perDeviceEnvelopeDropCount.value = Number(meta.perDeviceEnvelopeDropCount ?? 0)
+  lastPerDeviceEnvelopeAt.value = typeof meta.lastPerDeviceEnvelopeAt === 'number' ? meta.lastPerDeviceEnvelopeAt : null
+  lastPerDeviceEnvelopeDropAt.value = typeof meta.lastPerDeviceEnvelopeDropAt === 'number' ? meta.lastPerDeviceEnvelopeDropAt : null
+  lastPerDeviceEnvelopeDropReason.value = meta.lastPerDeviceEnvelopeDropReason ?? ''
   const prefix = ownerPrefix()
   const loadedContacts = await loadTableByPrefixSafe(TABLES.contacts, prefix, (c) => decryptContactFromStore(c, key))
   const loadedFriendRequests = await loadTableByPrefixSafe(TABLES.friendRequests, prefix, (r) => decryptFriendRequestFromStore(r, key))
@@ -1807,6 +1843,12 @@ function resetAccountScopedState() {
   autoNodeSync.value = false
   autoSelfMailboxSync.value = false
   lastNodeSnapshotSyncAt.value = null
+  perDeviceEnvelopeSentCount.value = 0
+  perDeviceEnvelopeReceivedCount.value = 0
+  perDeviceEnvelopeDropCount.value = 0
+  lastPerDeviceEnvelopeAt.value = null
+  lastPerDeviceEnvelopeDropAt.value = null
+  lastPerDeviceEnvelopeDropReason.value = ''
   nodeControlStatus.value = '未连接'
 }
 
@@ -1860,6 +1902,12 @@ async function clearPersisted() {
   revokedDeviceIncomingDropCount.value = 0
   lastRevokedDeviceIncomingDropAt.value = null
   lastRevokedDeviceIncomingDropFrom.value = ''
+  perDeviceEnvelopeSentCount.value = 0
+  perDeviceEnvelopeReceivedCount.value = 0
+  perDeviceEnvelopeDropCount.value = 0
+  lastPerDeviceEnvelopeAt.value = null
+  lastPerDeviceEnvelopeDropAt.value = null
+  lastPerDeviceEnvelopeDropReason.value = ''
   myContactCardText.value = ''
   myDeviceCertJson.value = ''
   myDeviceId.value = ''
@@ -4843,6 +4891,10 @@ async function sendMessage() {
     )
     const targetDeviceIds = contactActiveDeviceIds(activeContact.value)
     const perDeviceEnvelope = createPerDeviceEnvelopeDraft(activeContact.value, conversationId, envelope)
+    if (perDeviceEnvelope) {
+      perDeviceEnvelopeSentCount.value += 1
+      lastPerDeviceEnvelopeAt.value = Date.now()
+    }
     const msg: ChatMessage = {
       id: newId(),
       conversation_id: conversationId,
@@ -4916,25 +4968,37 @@ function unwrapPerDeviceEnvelopeForCurrentDevice(payloadText: string): {
   let parsed: PerDeviceEnvelopeV1 | null = null
   try { parsed = JSON.parse(payloadText) as PerDeviceEnvelopeV1 } catch {}
   if (parsed?.type !== 'lm-per-device-envelope-v1') return { envelopeText: payloadText }
-  if (parsed.version !== 1) throw new Error(`不支持的分设备 envelope 版本：${parsed.version}`)
+  const recordDrop = (reason: string): never => {
+    perDeviceEnvelopeDropCount.value += 1
+    lastPerDeviceEnvelopeDropAt.value = Date.now()
+    lastPerDeviceEnvelopeDropReason.value = reason
+    throw new Error(reason)
+  }
+  if (parsed.version !== 1) recordDrop(`不支持的分设备 envelope 版本：${parsed.version}`)
   const targets = Array.isArray(parsed.target_devices) ? parsed.target_devices : []
   const targetDeviceIds = targets.map((item) => String(item.device_id || '')).filter(Boolean)
   const currentDeviceId = myDeviceId.value
   if (currentDeviceId) {
     const matched = targets.find((item) => item.device_id === currentDeviceId)
-    if (!matched) throw new Error(`分设备 envelope 未投递给当前设备：${currentDeviceId}`)
-    if (!matched.ciphertext) throw new Error('分设备 envelope 缺少当前设备密文')
+    if (!matched) return recordDrop(`分设备 envelope 未投递给当前设备：${currentDeviceId}`)
+    if (!matched.ciphertext) return recordDrop('分设备 envelope 缺少当前设备密文')
+    perDeviceEnvelopeReceivedCount.value += 1
+    lastPerDeviceEnvelopeAt.value = Date.now()
     return { envelopeText: matched.ciphertext, perDeviceEnvelopeJson: payloadText, targetDeviceIds }
   }
   if (parsed.fallback_ciphertext) {
     appendLog('⚠️ 当前设备没有 device_id，使用分设备 envelope fallback 密文')
+    perDeviceEnvelopeReceivedCount.value += 1
+    lastPerDeviceEnvelopeAt.value = Date.now()
     return { envelopeText: parsed.fallback_ciphertext, perDeviceEnvelopeJson: payloadText, targetDeviceIds }
   }
   if (targets.length === 1 && targets[0]?.ciphertext) {
     appendLog('⚠️ 当前设备没有 device_id，使用唯一目标设备密文')
+    perDeviceEnvelopeReceivedCount.value += 1
+    lastPerDeviceEnvelopeAt.value = Date.now()
     return { envelopeText: targets[0].ciphertext, perDeviceEnvelopeJson: payloadText, targetDeviceIds }
   }
-  throw new Error('当前设备没有 device_id，无法选择分设备 envelope 密文')
+  return recordDrop('当前设备没有 device_id，无法选择分设备 envelope 密文')
 }
 
 function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, mailboxDeliveryId?: string): boolean {
@@ -7958,7 +8022,7 @@ const appContext = {
   prekeySignedId, prekeyOneTimeCount, prekeyBundleText, prekeyPrivateBundleJson, prekeySignedOneTimeRecordTexts, prekeyInfoText, x3dhInitialMessageJson,
   selectedOneTimePreKeyId, selectedSignedOneTimePreKeyRecordText, x3dhSharedSecretText, ratchetStateText, ratchetPeerStateText, ratchetLocalDhKeyPairJson, ratchetRemoteDhPublicKeyForInit,
   ratchetInitRole, ratchetHeaderText, ratchetEnvelopeText, ratchetPlainText, ratchetKeyText, ratchetRemoteDhPublicKey,
-  ratchetInfoText, safetyPolicy, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
+  ratchetInfoText, safetyPolicy, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, perDeviceEnvelopeSentCount, perDeviceEnvelopeReceivedCount, perDeviceEnvelopeDropCount, lastPerDeviceEnvelopeAt, lastPerDeviceEnvelopeDropAt, lastPerDeviceEnvelopeDropReason, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
   nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, findActiveContactMailboxHint, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, startFingerprintQrScan, stopFingerprintQrScan, fingerprintScanOpen, fingerprintScanStatus, copyActiveContactFingerprintProof, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, showMyFingerprintQr, copyMyFingerprintProof, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
