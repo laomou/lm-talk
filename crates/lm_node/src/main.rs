@@ -2860,11 +2860,21 @@ impl ControlSecurityConfig {
     }
 }
 
-fn state_file_passphrase() -> Option<String> {
-    env::var("LM_NODE_STATE_FILE_PASSPHRASE")
+fn state_file_passphrase() -> Result<Option<String>, Box<dyn std::error::Error>> {
+    if let Some(value) = env::var("LM_NODE_STATE_FILE_PASSPHRASE")
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+    {
+        return Ok(Some(value));
+    }
+    if let Ok(path) = env::var("LM_NODE_STATE_FILE_PASSPHRASE_FILE") {
+        let path = path.trim();
+        if !path.is_empty() {
+            return read_secret_file(path).map(Some);
+        }
+    }
+    Ok(None)
 }
 
 fn state_file_key(passphrase: &str) -> [u8; 32] {
@@ -2918,8 +2928,8 @@ fn decrypt_state_file_text(
 fn load_node_state(path: &str) -> Result<NativeNode, Box<dyn std::error::Error>> {
     let text = fs::read_to_string(path)?;
     let text = if text.starts_with(ENCRYPTED_STATE_FILE_PREFIX) {
-        let passphrase = state_file_passphrase()
-            .ok_or("encrypted state_file requires LM_NODE_STATE_FILE_PASSPHRASE")?;
+        let passphrase = state_file_passphrase()?
+            .ok_or("encrypted state_file requires LM_NODE_STATE_FILE_PASSPHRASE or LM_NODE_STATE_FILE_PASSPHRASE_FILE")?;
         decrypt_state_file_text(&text, &passphrase)?
     } else {
         text
@@ -2930,7 +2940,7 @@ fn load_node_state(path: &str) -> Result<NativeNode, Box<dyn std::error::Error>>
 
 fn save_node_state(path: &str, node: &NativeNode) -> Result<(), Box<dyn std::error::Error>> {
     let text = serde_json::to_string_pretty(&node.to_state_snapshot())?;
-    let text = match state_file_passphrase() {
+    let text = match state_file_passphrase()? {
         Some(passphrase) => encrypt_state_file_text(&text, &passphrase)?,
         None => text,
     };
