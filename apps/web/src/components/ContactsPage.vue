@@ -209,11 +209,20 @@ function openGroupDetail(groupId: string) {
           </div>
         </div>
         <div class="detail-body">
+          <section v-if="ctx.activeContact.value.state === 'Friend'" class="home-card">
+            <h3>指纹核验</h3>
+            <textarea v-model="ctx.activeFingerprintVerificationText.value" rows="3" placeholder="粘贴对方通过可信渠道展示的 lm-contact-fingerprint-v1 核验码，或直接粘贴指纹文本"></textarea>
+            <div class="row detail-actions">
+              <button class="secondary" @click="ctx.verifyActiveContactFingerprintFromText">核验并标记可信</button>
+              <button class="secondary" @click="ctx.showActiveContactFingerprintQr">显示当前联系人核验码</button>
+            </div>
+          </section>
           <div class="row detail-actions">
             <button @click="ctx.goChatPage()">发消息</button>
             <button v-if="ctx.activeContact.value.state === 'Friend'" class="secondary" @click="ctx.discoverActiveContactDht">发现 DHT</button>
             <button v-if="ctx.activeContact.value.state === 'Friend'" class="secondary" @click="ctx.findActiveContactPreKey">查找 PreKey</button>
             <button v-if="ctx.activeContact.value.state === 'Friend' && !ctx.activeContact.value.fingerprint_verified_at" class="secondary" @click="ctx.verifyActiveContactFingerprint">标记指纹已核验</button>
+            <button v-if="ctx.activeContact.value.state === 'Friend'" class="secondary" @click="ctx.showActiveContactFingerprintQr">指纹核验码</button>
             <button v-if="ctx.activeContact.value.state === 'Friend'" class="secondary" @click="ctx.findActiveContactMailboxHint">查找 MailboxHint</button>
             <button v-if="ctx.activeContact.value.dht_discovery_risk_level === 'high'" class="secondary danger" @click="ctx.clearActiveContactDhtRisk">已核验，清除 DHT 风险</button>
             <button v-if="ctx.activeContact.value.state === 'Friend' && ctx.activeContact.value.last_secure_session_error" class="secondary" @click="ctx.retrySecureSessionForActiveContact">重试建链</button>

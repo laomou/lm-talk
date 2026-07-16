@@ -342,6 +342,7 @@ const log = ref<string[]>([])
 const qrTitle = ref('')
 const qrDataUrl = ref('')
 const qrRawText = ref('')
+const activeFingerprintVerificationText = ref('')
 const route = useRoute()
 const router = useRouter()
 const authMode = computed(() => route.path === '/register' ? 'register' : route.path === '/import' ? 'import' : 'login')
@@ -5293,6 +5294,57 @@ function fillMyMailboxHintDhtKeyInput() {
   fillDhtKeyInput('mailbox-hint', identity.value.user_id)
 }
 
+function contactFingerprintProof(contact: ContactItem): string {
+  return JSON.stringify({
+    type: 'lm-contact-fingerprint-v1',
+    user_id: contact.user_id,
+    fingerprint: contact.fingerprint,
+    identity_public_key: contact.identity_public_key,
+  })
+}
+
+async function showActiveContactFingerprintQr() {
+  if (!activeContact.value) throw new Error('请选择联系人')
+  await showQr(contactFingerprintProof(activeContact.value), '联系人指纹核验码')
+}
+
+function parseFingerprintVerificationText(text: string): { user_id?: string; fingerprint?: string; identity_public_key?: string } {
+  const trimmed = text.trim()
+  if (!trimmed) throw new Error('请粘贴指纹核验码或指纹文本')
+  try {
+    const value = JSON.parse(trimmed)
+    return {
+      user_id: typeof value?.user_id === 'string' ? value.user_id : undefined,
+      fingerprint: typeof value?.fingerprint === 'string' ? value.fingerprint : undefined,
+      identity_public_key: typeof value?.identity_public_key === 'string' ? value.identity_public_key : undefined,
+    }
+  } catch {
+    return { fingerprint: trimmed }
+  }
+}
+
+async function verifyActiveContactFingerprintFromText() {
+  await runAsync('核验联系人指纹码', async () => {
+    if (!activeContact.value) throw new Error('请选择联系人')
+    const contact = activeContact.value
+    const proof = parseFingerprintVerificationText(activeFingerprintVerificationText.value)
+    if (proof.user_id && proof.user_id !== contact.user_id) throw new Error('指纹码 UserID 与当前联系人不一致')
+    if (proof.identity_public_key && proof.identity_public_key !== contact.identity_public_key) throw new Error('指纹码 identity_public_key 与当前联系人不一致')
+    const normalizedInput = (proof.fingerprint || '').replace(/\s+/g, '').toUpperCase()
+    const normalizedContact = contact.fingerprint.replace(/\s+/g, '').toUpperCase()
+    if (!normalizedInput || normalizedInput !== normalizedContact) throw new Error('指纹不匹配')
+    contact.fingerprint_verified_at = Date.now()
+    contact.fingerprint_verified_note = 'fingerprint-code'
+    resetContactDhtDiscoveryBackoff(contact)
+    contact.dht_discovery_risk_level = undefined
+    contact.last_dht_discovery_error_kind = undefined
+    contact.last_dht_discovery_error = undefined
+    activeFingerprintVerificationText.value = ''
+    appendLog(`✅ 已通过指纹核验码确认 ${contact.display_name || contact.user_id}`)
+    persist()
+  })
+}
+
 async function verifyActiveContactFingerprint() {
   await runAsync('核验联系人指纹', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
@@ -6787,7 +6839,7 @@ const appContext = {
   ratchetInfoText, safetyPolicy, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
-  nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, findActiveContactMailboxHint, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
+  nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, findActiveContactMailboxHint, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
   nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, publishAndCheckMyPreKeyDht, publishAndCheckMyMailboxHintDht, publishAndCheckAllMyDht, clearPreKeyRawState, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
