@@ -2090,6 +2090,12 @@ function markContactDhtDiscoveryAttempt(contact: ContactItem) {
   contact.last_dht_discovery_error = undefined
 }
 
+function resetContactDhtDiscoveryBackoff(contact: ContactItem) {
+  contact.dht_discovery_failure_count = 0
+  contact.next_dht_discovery_retry_at = undefined
+  contact.last_dht_discovery_error = undefined
+}
+
 function markContactDhtDiscoverySuccess(contact: ContactItem, kind: 'prekey' | 'mailbox-hint') {
   contact.last_dht_discovery_success_at = Date.now()
   contact.last_dht_discovery_error = undefined
@@ -5218,16 +5224,36 @@ function fillMyMailboxHintDhtKeyInput() {
 async function findActiveContactMailboxHint() {
   await runAsync('查找联系人 MailboxHint', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
-    fillDhtKeyInput('mailbox-hint', activeContact.value.user_id)
-    await deriveAndFindDhtValueNow()
+    const contact = activeContact.value
+    resetContactDhtDiscoveryBackoff(contact)
+    markContactDhtDiscoveryAttempt(contact)
+    try {
+      fillDhtKeyInput('mailbox-hint', contact.user_id)
+      await deriveAndFindDhtValueNow()
+      persist()
+    } catch (error) {
+      markContactDhtDiscoveryError(contact, error)
+      persist()
+      throw error
+    }
   })
 }
 
 async function findActiveContactPreKey() {
   await runAsync('查找联系人 PreKey', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
-    fillDhtKeyInput('prekey', activeContact.value.user_id)
-    await deriveAndFindDhtValueNow()
+    const contact = activeContact.value
+    resetContactDhtDiscoveryBackoff(contact)
+    markContactDhtDiscoveryAttempt(contact)
+    try {
+      fillDhtKeyInput('prekey', contact.user_id)
+      await deriveAndFindDhtValueNow()
+      persist()
+    } catch (error) {
+      markContactDhtDiscoveryError(contact, error)
+      persist()
+      throw error
+    }
   })
 }
 
@@ -5236,11 +5262,26 @@ async function discoverActiveContactDht() {
     if (!activeContact.value) throw new Error('请选择联系人')
     const contact = activeContact.value
     contact.last_secure_session_attempt_at = Date.now()
+    resetContactDhtDiscoveryBackoff(contact)
     markContactDhtDiscoveryAttempt(contact)
-    fillDhtKeyInput('prekey', contact.user_id)
-    await deriveAndFindDhtValueNow()
-    fillDhtKeyInput('mailbox-hint', contact.user_id)
-    await deriveAndFindDhtValueNow()
+    const errors: string[] = []
+    try {
+      fillDhtKeyInput('prekey', contact.user_id)
+      await deriveAndFindDhtValueNow()
+    } catch (error) {
+      errors.push(`PreKey：${userFacingError(error)}`)
+    }
+    try {
+      fillDhtKeyInput('mailbox-hint', contact.user_id)
+      await deriveAndFindDhtValueNow()
+    } catch (error) {
+      errors.push(`MailboxHint：${userFacingError(error)}`)
+    }
+    if (errors.length) {
+      markContactDhtDiscoveryError(contact, new Error(errors.join('；')))
+      persist()
+      throw new Error(errors.join('；'))
+    }
     contact.last_secure_session_error = undefined
     contact.secure_session_failure_count = 0
     contact.last_dht_discovery_success_at = Date.now()
