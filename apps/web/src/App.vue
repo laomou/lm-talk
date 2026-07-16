@@ -488,6 +488,17 @@ const lastFullDataBackupAt = ref<number | null>(null)
 const lastSelfMailboxBackupPushedAt = ref<number | null>(null)
 const lastSelfMailboxBackupReceivedAt = ref<number | null>(null)
 const lastSelfMailboxBackupMergedAt = ref<number | null>(null)
+const selfMailboxBackupMergePending = computed(() => {
+  const receivedAt = lastSelfMailboxBackupReceivedAt.value ?? 0
+  const mergedAt = lastSelfMailboxBackupMergedAt.value ?? 0
+  return receivedAt > 0 && receivedAt > mergedAt
+})
+const selfMailboxBackupMergeStatusText = computed(() => {
+  if (!lastSelfMailboxBackupReceivedAt.value) return '尚未收到自己的 Mailbox 备份'
+  return selfMailboxBackupMergePending.value
+    ? '收到自己的 Mailbox 备份，尚未合并'
+    : '自己的 Mailbox 备份已合并'
+})
 const fullDataBackupFreshnessLevel = computed<'ok' | 'warning' | 'danger'>(() => {
   const at = lastFullDataBackupAt.value
   if (!at) return 'danger'
@@ -7302,7 +7313,7 @@ const appContext = {
   autoPublishPreKey, autoNodeSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodeStateFileSecurityText, nodeStateFileSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutDeviceRevokeToFriends, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
-  exportFullDataBackup, pushFullDataBackupToOwnMailbox, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
+  exportFullDataBackup, pushFullDataBackupToOwnMailbox, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, selfMailboxBackupMergePending, selfMailboxBackupMergeStatusText, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
   addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, friendRequestRateRecords, friendRequestRateSummaryText, clearFriendRequestRateRecords, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
