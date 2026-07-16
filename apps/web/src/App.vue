@@ -2192,7 +2192,8 @@ async function autoPushSelfSyncPackageToOwnMailbox() {
   if (!loggedIn.value || !nodeEnabled.value || !autoSelfMailboxSync.value) return
   if (lastSelfSyncPushedAt.value && Date.now() - lastSelfSyncPushedAt.value < 5 * 60_000) return
   try {
-    await pushSelfSyncPackageToOwnMailbox()
+    if (selfSyncGapCount.value > 0) await repairSelfSyncGapNow()
+    else await pushSelfSyncPackageToOwnMailbox()
   } catch (error) {
     selfSyncStatusText.value = `自同步：自动投递失败：${userFacingError(error)}`
   }
