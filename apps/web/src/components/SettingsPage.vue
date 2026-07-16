@@ -159,6 +159,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
           <small>{{ ctx.nodeRoutingRefreshStatusText.value }}</small>
           <small v-if="ctx.nodeDhtOperationHistory.value.length">DHT 操作历史：{{ ctx.nodeDhtOperationHistory.value.slice(0, 4).join(' ｜ ') }}</small>
           <div v-if="ctx.nodeDhtOperationHistory.value.length" class="row compact">
+            <button class="secondary" @click="ctx.copyDhtOperationHistory">复制 DHT 历史</button>
             <button class="secondary" @click="ctx.exportDhtOperationHistory">导出 DHT 历史</button>
             <button class="secondary" @click="ctx.clearDhtOperationHistory">清空 DHT 历史</button>
           </div>
