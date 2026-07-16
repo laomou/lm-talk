@@ -569,7 +569,7 @@ fn install_state_file_passphrase_override(value: Option<String>) {
     if let Some(value) = value {
         // Safe here because this is called during single-threaded startup before
         // the control/libp2p worker loops are spawned.
-        unsafe { env::set_var("LM_NODE_STATE_FILE_PASSPHRASE", value) }
+        unsafe { std::env::set_var("LM_NODE_STATE_FILE_PASSPHRASE", value) }
     }
 }
 
@@ -2931,6 +2931,7 @@ fn decrypt_state_file_text(
     passphrase: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let rest = text
+        .trim()
         .strip_prefix(ENCRYPTED_STATE_FILE_PREFIX)
         .ok_or("not an encrypted state file")?;
     let (nonce_text, ciphertext_text) = rest
@@ -5392,13 +5393,13 @@ mod tests {
         handle_control_dht_maintenance_run, handle_control_dht_replication_run,
         handle_control_dht_routing_refresh_run, handle_libp2p_dht_rpc_request,
         handle_libp2p_dht_server_event, http_control_request, libp2p_dht_rpc_behaviour,
-        libp2p_dht_swarm, load_node_state_db, open_state_db,
+        libp2p_dht_swarm, load_node_state, load_node_state_db, open_state_db,
         parse_content_length_and_validate_headers, parse_dht_transport_kind,
         parse_libp2p_bootstrap_peers, parse_libp2p_dht_peer, parse_log_format, read_secret_file,
         request_is_authorized, run_dht_replication, run_dht_replication_with_transport,
-        run_dht_routing_refresh, run_dht_routing_refresh_with_transport, save_node_state_db,
-        send_dht_rpc, send_libp2p_dht_rpc_async, status_for_request_error, status_reason,
-        sync_backoff_delay_seconds, validate_state_db_encryption_requirement,
+        run_dht_routing_refresh, run_dht_routing_refresh_with_transport, save_node_state,
+        save_node_state_db, send_dht_rpc, send_libp2p_dht_rpc_async, status_for_request_error,
+        status_reason, sync_backoff_delay_seconds, validate_state_db_encryption_requirement,
     };
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use futures::StreamExt;
@@ -5415,7 +5416,7 @@ mod tests {
         Barrier, Mutex,
         atomic::{AtomicUsize, Ordering},
     };
-    use std::time::Duration;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     #[derive(Default)]
     struct FakeDhtTransport {
@@ -8483,6 +8484,40 @@ connection: close
         assert_eq!(peer_rows, 1);
         assert_eq!(routing_peer_rows, 1);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn encrypted_state_file_save_load_roundtrip_uses_passphrase_env() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("lm-node-encrypted-state-{unique}.json"));
+        let node = NativeNode::new(NodeConfig {
+            peer_id: "encrypted-state-file-node".into(),
+            ..Default::default()
+        });
+        unsafe {
+            std::env::set_var(
+                "LM_NODE_STATE_FILE_PASSPHRASE",
+                "test state file passphrase",
+            )
+        };
+        save_node_state(path.to_str().unwrap(), &node).unwrap();
+        let saved = std::fs::read_to_string(&path).unwrap();
+        assert!(saved.starts_with(ENCRYPTED_STATE_FILE_PREFIX));
+        assert!(!saved.contains("encrypted-state-file-node"));
+        let restored = load_node_state(path.to_str().unwrap()).unwrap();
+        assert_eq!(restored.config.peer_id, "encrypted-state-file-node");
+        unsafe {
+            std::env::set_var(
+                "LM_NODE_STATE_FILE_PASSPHRASE",
+                "wrong state file passphrase",
+            )
+        };
+        assert!(load_node_state(path.to_str().unwrap()).is_err());
+        unsafe { std::env::remove_var("LM_NODE_STATE_FILE_PASSPHRASE") };
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
