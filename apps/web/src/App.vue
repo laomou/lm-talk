@@ -5124,9 +5124,22 @@ async function deriveDhtKeyForFindValue() {
   await runAsync('派生 DHT key', async () => { await deriveDhtKeyPayload() })
 }
 
-function applyDhtFindValueRecord(body: any) {
+function validateDhtRecordEnvelope(body: any, record: any): string | null {
+  if (record?.key && body?.key && String(record.key).toLowerCase() !== String(body.key).toLowerCase()) return 'record key 与查询 key 不一致'
+  const expiresAt = Number(record?.expires_at ?? 0)
+  if (Number.isFinite(expiresAt) && expiresAt > 0 && expiresAt <= Math.floor(Date.now() / 1000)) return 'record 已过期'
+  return null
+}
+
+function applyDhtFindValueRecord(body: any): boolean {
   const record = body?.record ?? body?.value ?? body?.found_record
-  if (!record?.kind || typeof record.value !== 'string') return
+  if (!record?.kind || typeof record.value !== 'string') return true
+  const envelopeError = validateDhtRecordEnvelope(body, record)
+  if (envelopeError) {
+    nodeDhtFindValueStatusText.value = `DHT 查到 ${record.kind} record，但${envelopeError}`
+    recordDhtOperation(nodeDhtFindValueStatusText.value)
+    return false
+  }
   if (record.kind === 'PreKey') {
     try {
       const inspected = JSON.parse(inspect_prekey_bundle(record.value))
@@ -5136,6 +5149,7 @@ function applyDhtFindValueRecord(body: any) {
     } catch (error) {
       nodePreKeyStatusText.value = JSON.stringify({ found: true, source: 'dht', verified: false, error: userFacingError(error), record }, null, 2)
       prekeyStatusSummary.value = `DHT 查到 PreKey record，但验签失败：${userFacingError(error)}`
+      return false
     }
   } else if (record.kind === 'MailboxHint') {
     const hint = record.value.trim()
@@ -5144,6 +5158,9 @@ function applyDhtFindValueRecord(body: any) {
       mailboxInboxStatus.value = `DHT 查到 MailboxHint：${hint}`
     } else {
       mailboxInboxStatus.value = `DHT 查到 MailboxHint，但地址格式异常：${hint.slice(0, 80)}`
+      nodeDhtFindValueStatusText.value = mailboxInboxStatus.value
+      recordDhtOperation(nodeDhtFindValueStatusText.value)
+      return false
     }
   } else if (record.kind === 'PublicPeer') {
     const key = publicPeerAnnounceInspectPublicKey.value.trim() || defaultInspectPublicKey()
@@ -5155,8 +5172,11 @@ function applyDhtFindValueRecord(body: any) {
     } catch (error) {
       publicPeerAnnounceInfoText.value = JSON.stringify({ source: 'dht', verified: false, error: userFacingError(error), record }, null, 2)
       nodeDhtFindValueStatusText.value = `DHT 查到 PublicPeer record，但验签失败：${userFacingError(error)}`
+      recordDhtOperation(nodeDhtFindValueStatusText.value)
+      return false
     }
   }
+  return true
 }
 
 function dhtFindValueSummary(body: any): string {
@@ -5170,9 +5190,10 @@ function dhtFindValueSummary(body: any): string {
 async function runDhtFindValueForKey(key: string) {
   if (!/^[0-9a-fA-F]{64}$/.test(key)) throw new Error('请输入 64 位十六进制 DHT key')
   const body = await nodeFetchJson(`/dht/find-value?key=${encodeURIComponent(key)}&limit=8&max_peers=8&alpha=3`)
-  applyDhtFindValueRecord(body)
-  nodeDhtFindValueStatusText.value = dhtFindValueSummary(body)
-  recordDhtOperation(nodeDhtFindValueStatusText.value)
+  if (applyDhtFindValueRecord(body)) {
+    nodeDhtFindValueStatusText.value = dhtFindValueSummary(body)
+    recordDhtOperation(nodeDhtFindValueStatusText.value)
+  }
   nodeClosestInfoText.value = JSON.stringify(body, null, 2)
   await checkNodeHealth()
 }

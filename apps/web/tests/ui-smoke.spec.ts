@@ -56,7 +56,11 @@ async function installMockSyncNode(context: BrowserContext, mailboxes: Map<strin
       return route.fulfill({ json: { kind, value: url.searchParams.get('value'), key: 'b'.repeat(64) } })
     }
     if (url.pathname === '/dht/record') return route.fulfill({ json: { stored: true, inserted: true, key: 'b'.repeat(64), records: 1 } })
-    if (url.pathname === '/dht/find-value') return route.fulfill({ json: { key: url.searchParams.get('key') || 'b'.repeat(64), found: true, record: { kind: 'PreKey', value: 'lm-prekey-bundle-v1:mock-dht-prekey' }, records: 1, stats: { attempts: 2, successes: 2, failures: 0, found_records: 1, closer_records: 0, peers_quarantined: 0 } } })
+    if (url.pathname === '/dht/find-value') {
+      const key = url.searchParams.get('key') || 'b'.repeat(64)
+      const expired = key === 'c'.repeat(64)
+      return route.fulfill({ json: { key, found: true, record: { key, kind: 'PreKey', value: 'lm-prekey-bundle-v1:mock-dht-prekey', expires_at: expired ? 1 : Math.floor(Date.now() / 1000) + 3600 }, records: 1, stats: { attempts: 2, successes: 2, failures: 0, found_records: 1, closer_records: 0, peers_quarantined: 0 } } })
+    }
     if (url.pathname === '/dht/maintenance') return route.fulfill({ json: { peers: 2, records: 4, routing_peers: 3, replication: { records: 4, attempts: 2, successes: 2, failures: 0, peers_quarantined: 0 }, routing_refresh: { targets: 8, attempts: 2, successes: 2, failures: 0, nodes_returned: 3, nodes_merged: 1, peers_quarantined: 0 } } })
     if (url.pathname === '/dht/replicate') return route.fulfill({ json: { peers: 2, records: 4, stats: { records: 4, attempts: 2, successes: 2, failures: 0, peers_quarantined: 0 } } })
     if (url.pathname === '/dht/routing-refresh') return route.fulfill({ json: { peers: 2, routing_peers: 3, stats: { targets: 8, attempts: 2, successes: 2, failures: 0, nodes_returned: 3, nodes_merged: 1, peers_quarantined: 0 } } })
@@ -352,6 +356,9 @@ test('消息同步可完成好友请求和消息收发', async ({ browser }) => 
   await expect(bob.getByLabel('DHT record key')).toHaveValue('b'.repeat(64))
   await expect(bob.getByText('DHT 查找：找到，kind PreKey，key bbbbbbbbbbbb…，peer 尝试 2，成功 2，失败 0，found 1，closer 0，隔离 0', { exact: true })).toBeVisible()
   await expect(bob.getByText(/DHT 查到 PreKey record，但验签失败/)).toBeVisible()
+  await bob.getByLabel('DHT record key').fill('c'.repeat(64))
+  await bob.getByRole('button', { name: '查找 DHT 记录' }).click()
+  await expect(bob.locator('small').filter({ hasText: /^DHT 查到 PreKey record，但record 已过期/ })).toBeVisible()
   await bob.getByRole('button', { name: '运行 DHT 维护' }).click()
   await expect(bob.getByText('DHT 维护：peer 2，records 4，复制成功 2/2，刷新成功 2/2，合并 1，隔离 0', { exact: true })).toBeVisible()
   await bob.getByRole('button', { name: '复制 DHT 记录' }).click()
