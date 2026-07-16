@@ -202,6 +202,7 @@ function openGroupDetail(groupId: string) {
         <div class="detail-body">
           <div class="row detail-actions">
             <button @click="ctx.goChatPage()">发消息</button>
+            <button v-if="ctx.activeContact.value.state === 'Friend'" class="secondary" @click="ctx.findActiveContactPreKey">查找 PreKey</button>
             <button v-if="ctx.activeContact.value.state === 'Friend'" class="secondary" @click="ctx.findActiveContactMailboxHint">查找 MailboxHint</button>
             <button v-if="ctx.activeContact.value.state === 'Friend' && ctx.activeContact.value.last_secure_session_error" class="secondary" @click="ctx.retrySecureSessionForActiveContact">重试建链</button>
             <button v-if="ctx.activeContact.value.state === 'Friend' && ctx.activeContact.value.last_secure_session_error" class="secondary" @click="ctx.clearActiveSecureSessionError">清除建链错误</button>
