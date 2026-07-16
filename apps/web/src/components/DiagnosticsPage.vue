@@ -94,6 +94,8 @@ async function runDiagnostics() {
       last_self_mailbox_backup_merged_at: props.ctx.lastSelfMailboxBackupMergedAt.value,
       self_mailbox_backup_merge_pending: props.ctx.selfMailboxBackupMergePending.value,
       processed_self_sync_ids: props.ctx.processedSelfSyncIds.value.length,
+      last_self_sync_pushed_at: props.ctx.lastSelfSyncPushedAt.value,
+      last_self_sync_merged_at: props.ctx.lastSelfSyncMergedAt.value,
       full_data_backup_freshness: props.ctx.fullDataBackupFreshnessText.value,
       full_data_backup_freshness_level: props.ctx.fullDataBackupFreshnessLevel.value,
     },

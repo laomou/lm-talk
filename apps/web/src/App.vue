@@ -312,6 +312,8 @@ type PersistedState = {
   lastSelfMailboxBackupReceivedAt?: number
   lastSelfMailboxBackupMergedAt?: number
   processedSelfSyncIds?: string[]
+  lastSelfSyncPushedAt?: number
+  lastSelfSyncMergedAt?: number
   unverifiedIncomingDropCount?: number
   lastUnverifiedIncomingDropAt?: number
   lastUnverifiedIncomingDropFrom?: string
@@ -348,6 +350,8 @@ type PersistedMeta = {
   lastSelfMailboxBackupReceivedAt?: number
   lastSelfMailboxBackupMergedAt?: number
   processedSelfSyncIds?: string[]
+  lastSelfSyncPushedAt?: number
+  lastSelfSyncMergedAt?: number
   unverifiedIncomingDropCount?: number
   lastUnverifiedIncomingDropAt?: number
   lastUnverifiedIncomingDropFrom?: string
@@ -1324,6 +1328,8 @@ function currentPersistedState(): PersistedState {
     lastSelfMailboxBackupReceivedAt: lastSelfMailboxBackupReceivedAt.value ?? undefined,
     lastSelfMailboxBackupMergedAt: lastSelfMailboxBackupMergedAt.value ?? undefined,
     processedSelfSyncIds: processedSelfSyncIds.value,
+    lastSelfSyncPushedAt: lastSelfSyncPushedAt.value ?? undefined,
+    lastSelfSyncMergedAt: lastSelfSyncMergedAt.value ?? undefined,
     unverifiedIncomingDropCount: unverifiedIncomingDropCount.value,
     lastUnverifiedIncomingDropAt: lastUnverifiedIncomingDropAt.value ?? undefined,
     lastUnverifiedIncomingDropFrom: lastUnverifiedIncomingDropFrom.value,
@@ -1362,6 +1368,8 @@ function persistedMeta(): PersistedMeta {
     lastSelfMailboxBackupReceivedAt: lastSelfMailboxBackupReceivedAt.value ?? undefined,
     lastSelfMailboxBackupMergedAt: lastSelfMailboxBackupMergedAt.value ?? undefined,
     processedSelfSyncIds: processedSelfSyncIds.value,
+    lastSelfSyncPushedAt: lastSelfSyncPushedAt.value ?? undefined,
+    lastSelfSyncMergedAt: lastSelfSyncMergedAt.value ?? undefined,
     unverifiedIncomingDropCount: unverifiedIncomingDropCount.value,
     lastUnverifiedIncomingDropAt: lastUnverifiedIncomingDropAt.value ?? undefined,
     lastUnverifiedIncomingDropFrom: lastUnverifiedIncomingDropFrom.value,
@@ -1516,6 +1524,8 @@ async function writeStateToTables(state: PersistedState) {
   lastSelfMailboxBackupReceivedAt.value = typeof state.lastSelfMailboxBackupReceivedAt === 'number' ? state.lastSelfMailboxBackupReceivedAt : null
   lastSelfMailboxBackupMergedAt.value = typeof state.lastSelfMailboxBackupMergedAt === 'number' ? state.lastSelfMailboxBackupMergedAt : null
   processedSelfSyncIds.value = state.processedSelfSyncIds ?? []
+  lastSelfSyncPushedAt.value = typeof state.lastSelfSyncPushedAt === 'number' ? state.lastSelfSyncPushedAt : null
+  lastSelfSyncMergedAt.value = typeof state.lastSelfSyncMergedAt === 'number' ? state.lastSelfSyncMergedAt : null
   unverifiedIncomingDropCount.value = Number(state.unverifiedIncomingDropCount ?? 0)
   lastUnverifiedIncomingDropAt.value = typeof state.lastUnverifiedIncomingDropAt === 'number' ? state.lastUnverifiedIncomingDropAt : null
   lastUnverifiedIncomingDropFrom.value = state.lastUnverifiedIncomingDropFrom ?? ''
@@ -1558,6 +1568,8 @@ async function loadStateFromTables(): Promise<boolean> {
   lastSelfMailboxBackupReceivedAt.value = typeof meta.lastSelfMailboxBackupReceivedAt === 'number' ? meta.lastSelfMailboxBackupReceivedAt : null
   lastSelfMailboxBackupMergedAt.value = typeof meta.lastSelfMailboxBackupMergedAt === 'number' ? meta.lastSelfMailboxBackupMergedAt : null
   processedSelfSyncIds.value = meta.processedSelfSyncIds ?? []
+  lastSelfSyncPushedAt.value = typeof meta.lastSelfSyncPushedAt === 'number' ? meta.lastSelfSyncPushedAt : null
+  lastSelfSyncMergedAt.value = typeof meta.lastSelfSyncMergedAt === 'number' ? meta.lastSelfSyncMergedAt : null
   unverifiedIncomingDropCount.value = Number(meta.unverifiedIncomingDropCount ?? 0)
   lastUnverifiedIncomingDropAt.value = typeof meta.lastUnverifiedIncomingDropAt === 'number' ? meta.lastUnverifiedIncomingDropAt : null
   lastUnverifiedIncomingDropFrom.value = meta.lastUnverifiedIncomingDropFrom ?? ''
@@ -1707,6 +1719,8 @@ async function clearPersisted() {
   lastSelfMailboxBackupReceivedAt.value = null
   lastSelfMailboxBackupMergedAt.value = null
   processedSelfSyncIds.value = []
+  lastSelfSyncPushedAt.value = null
+  lastSelfSyncMergedAt.value = null
   unverifiedIncomingDropCount.value = 0
   lastUnverifiedIncomingDropAt.value = null
   lastUnverifiedIncomingDropFrom.value = ''
@@ -2173,6 +2187,8 @@ async function importFullDataBackupMerge() {
     if (typeof state.lastSelfMailboxBackupReceivedAt === 'number') lastSelfMailboxBackupReceivedAt.value = Math.max(lastSelfMailboxBackupReceivedAt.value ?? 0, state.lastSelfMailboxBackupReceivedAt)
     if (typeof state.lastSelfMailboxBackupMergedAt === 'number') lastSelfMailboxBackupMergedAt.value = Math.max(lastSelfMailboxBackupMergedAt.value ?? 0, state.lastSelfMailboxBackupMergedAt)
     processedSelfSyncIds.value = [...new Set([...processedSelfSyncIds.value, ...(state.processedSelfSyncIds ?? [])])].slice(0, 100)
+    if (typeof state.lastSelfSyncPushedAt === 'number') lastSelfSyncPushedAt.value = Math.max(lastSelfSyncPushedAt.value ?? 0, state.lastSelfSyncPushedAt)
+    if (typeof state.lastSelfSyncMergedAt === 'number') lastSelfSyncMergedAt.value = Math.max(lastSelfSyncMergedAt.value ?? 0, state.lastSelfSyncMergedAt)
     unverifiedIncomingDropCount.value += Number(state.unverifiedIncomingDropCount ?? 0)
     if (typeof state.lastUnverifiedIncomingDropAt === 'number' && state.lastUnverifiedIncomingDropAt > (lastUnverifiedIncomingDropAt.value ?? 0)) {
       lastUnverifiedIncomingDropAt.value = state.lastUnverifiedIncomingDropAt
