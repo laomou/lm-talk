@@ -2011,6 +2011,13 @@ function applySelfSyncPackage(pkg: SelfSyncPackage) {
     persist()
     return
   }
+  if (sequence <= lastSelfSyncSequenceMerged.value) {
+    processedSelfSyncIds.value = [pkg.sync_id, ...processedSelfSyncIds.value.filter((id) => id !== pkg.sync_id)].slice(0, 100)
+    selfSyncStatusText.value = `自同步：已跳过旧序列包 #${sequence} ${pkg.sync_id}`
+    appendLog(selfSyncStatusText.value)
+    persist()
+    return
+  }
   if (pkg.previous_sync_id && processedSelfSyncIds.value.length > 0 && !processedSelfSyncIds.value.includes(pkg.previous_sync_id)) {
     selfSyncGapCount.value += 1
     lastSelfSyncGapAt.value = Date.now()
