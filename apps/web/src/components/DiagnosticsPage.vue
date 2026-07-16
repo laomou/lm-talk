@@ -72,6 +72,14 @@ async function runDiagnostics() {
       outbox: props.ctx.outbox.value.length,
       pending_outbox: props.ctx.outbox.value.filter((x: any) => x.status !== 'sent').length,
       messages: props.ctx.messages.value.length,
+      verified_contacts: props.ctx.contacts.value.filter((x: any) => x.fingerprint_verified_at).length,
+      unverified_incoming_drops: props.ctx.unverifiedIncomingDropCount.value,
+    },
+    security: {
+      require_verified_contacts_for_send: Boolean(props.ctx.safetyPolicy.value.requireVerifiedContactsForSend),
+      require_verified_contacts_for_receive: Boolean(props.ctx.safetyPolicy.value.requireVerifiedContactsForReceive),
+      last_unverified_incoming_drop_at: props.ctx.lastUnverifiedIncomingDropAt.value,
+      last_unverified_incoming_drop_from: redactDiagnosticReport.value ? redacted(props.ctx.lastUnverifiedIncomingDropFrom.value) : sanitizeDiagnosticText(props.ctx.lastUnverifiedIncomingDropFrom.value),
     },
   }
   if (!diagnosticSummaryOnly.value) {

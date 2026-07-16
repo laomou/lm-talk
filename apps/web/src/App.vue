@@ -302,6 +302,9 @@ type PersistedState = {
   dhtOperationHistory?: string[]
   pwaBackgroundEventHistory?: string[]
   friendRequestRateRecords?: FriendRequestRateRecord[]
+  unverifiedIncomingDropCount?: number
+  lastUnverifiedIncomingDropAt?: number
+  lastUnverifiedIncomingDropFrom?: string
 }
 
 type PersistedMeta = {
@@ -325,6 +328,9 @@ type PersistedMeta = {
   dhtOperationHistory?: string[]
   pwaBackgroundEventHistory?: string[]
   friendRequestRateRecords?: FriendRequestRateRecord[]
+  unverifiedIncomingDropCount?: number
+  lastUnverifiedIncomingDropAt?: number
+  lastUnverifiedIncomingDropFrom?: string
   schemaVersion: number
 }
 
@@ -415,6 +421,9 @@ const safetyPolicy = ref<SafetyPolicy>({
 const contacts = ref<ContactItem[]>([])
 const friendRequests = ref<FriendRequestItem[]>([])
 const friendRequestRateRecords = ref<FriendRequestRateRecord[]>([])
+const unverifiedIncomingDropCount = ref(0)
+const lastUnverifiedIncomingDropAt = ref<number | null>(null)
+const lastUnverifiedIncomingDropFrom = ref('')
 const groups = ref<GroupItem[]>([])
 const groupInvites = ref<GroupInviteItem[]>([])
 const groupSenderKeys = ref<GroupSenderKeyItem[]>([])
@@ -1201,6 +1210,9 @@ function currentPersistedState(): PersistedState {
     dhtOperationHistory: nodeDhtOperationHistory.value,
     pwaBackgroundEventHistory: pwaBackgroundEventHistory.value,
     friendRequestRateRecords: friendRequestRateRecords.value,
+    unverifiedIncomingDropCount: unverifiedIncomingDropCount.value,
+    lastUnverifiedIncomingDropAt: lastUnverifiedIncomingDropAt.value ?? undefined,
+    lastUnverifiedIncomingDropFrom: lastUnverifiedIncomingDropFrom.value,
   }
 }
 
@@ -1532,6 +1544,9 @@ async function clearPersisted() {
   pwaBackgroundEventHistory.value = []
   pwaLastBackgroundEventText.value = '尚未收到后台事件'
   friendRequestRateRecords.value = []
+  unverifiedIncomingDropCount.value = 0
+  lastUnverifiedIncomingDropAt.value = null
+  lastUnverifiedIncomingDropFrom.value = ''
   myContactCardText.value = ''
   myDeviceCertJson.value = ''
   myDeviceId.value = ''
@@ -2836,7 +2851,10 @@ function requireVerifiedContactForSend(contact: ContactItem) {
 function allowIncomingFromContact(sender: ContactItem): boolean {
   if (!safetyPolicy.value.requireVerifiedContactsForReceive) return true
   if (sender.fingerprint_verified_at) return true
-  appendLog(`⚠️ 已按安全策略丢弃未核验联系人消息：${sender.display_name || sender.user_id}`)
+  unverifiedIncomingDropCount.value += 1
+  lastUnverifiedIncomingDropAt.value = Date.now()
+  lastUnverifiedIncomingDropFrom.value = sender.display_name || sender.user_id
+  appendLog(`⚠️ 已按安全策略丢弃未核验联系人消息：${lastUnverifiedIncomingDropFrom.value}`)
   return false
 }
 
@@ -6897,7 +6915,7 @@ const appContext = {
   prekeySignedId, prekeyOneTimeCount, prekeyBundleText, prekeyPrivateBundleJson, prekeySignedOneTimeRecordTexts, prekeyInfoText, x3dhInitialMessageJson,
   selectedOneTimePreKeyId, selectedSignedOneTimePreKeyRecordText, x3dhSharedSecretText, ratchetStateText, ratchetPeerStateText, ratchetLocalDhKeyPairJson, ratchetRemoteDhPublicKeyForInit,
   ratchetInitRole, ratchetHeaderText, ratchetEnvelopeText, ratchetPlainText, ratchetKeyText, ratchetRemoteDhPublicKey,
-  ratchetInfoText, safetyPolicy, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
+  ratchetInfoText, safetyPolicy, unverifiedIncomingDropCount, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
   nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, findActiveContactMailboxHint, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, copyActiveContactFingerprintProof, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, showMyFingerprintQr, copyMyFingerprintProof, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,

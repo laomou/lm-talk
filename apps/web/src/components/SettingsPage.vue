@@ -338,6 +338,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
             <input v-model="ctx.safetyPolicy.value.requireVerifiedContactsForReceive" type="checkbox" />
             <span>仅接收已核验指纹的联系人消息</span>
           </label>
+          <small v-if="ctx.unverifiedIncomingDropCount.value" class="danger-text">已丢弃未核验联系人入站消息 {{ ctx.unverifiedIncomingDropCount.value }} 条<span v-if="ctx.lastUnverifiedIncomingDropAt.value">，最近：{{ ctx.lastUnverifiedIncomingDropFrom.value }} · {{ ctx.formatDateTime(ctx.lastUnverifiedIncomingDropAt.value) }}</span></small>
         </div>
       </section>
 
