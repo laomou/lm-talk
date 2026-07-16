@@ -255,6 +255,7 @@ type PerDeviceEnvelopeV1 = {
   }>
   fallback_ciphertext?: string
   created_at: number
+  signature?: string
 }
 
 type RatchetSessionItem = {
@@ -4929,6 +4930,18 @@ async function sendMessage() {
 }
 
 
+function perDeviceEnvelopeSigningPayload(envelope: PerDeviceEnvelopeV1): string {
+  return JSON.stringify({
+    type: envelope.type,
+    version: envelope.version,
+    conversation_id: envelope.conversation_id,
+    sender_user_id: envelope.sender_user_id,
+    target_devices: envelope.target_devices,
+    fallback_ciphertext: envelope.fallback_ciphertext,
+    created_at: envelope.created_at,
+  })
+}
+
 function createPerDeviceEnvelopeDraft(contact: ContactItem, conversationId: string, ciphertext: string): string | undefined {
   const targetDeviceIds = contactActiveDeviceIds(contact)
   if (targetDeviceIds.length === 0) return undefined
@@ -4946,6 +4959,7 @@ function createPerDeviceEnvelopeDraft(contact: ContactItem, conversationId: stri
     fallback_ciphertext: ciphertext,
     created_at: Date.now(),
   }
+  draft.signature = sign_identity_text(backupText.value, passphrase.value, perDeviceEnvelopeSigningPayload(draft))
   return JSON.stringify(draft)
 }
 
@@ -4960,7 +4974,7 @@ function perDeviceEnvelopeTargetCount(message: ChatMessage): number {
 }
 
 
-function unwrapPerDeviceEnvelopeForCurrentDevice(payloadText: string): {
+function unwrapPerDeviceEnvelopeForCurrentDevice(payloadText: string, sender: ContactItem): {
   envelopeText: string
   perDeviceEnvelopeJson?: string
   targetDeviceIds?: string[]
@@ -4975,6 +4989,12 @@ function unwrapPerDeviceEnvelopeForCurrentDevice(payloadText: string): {
     throw new Error(reason)
   }
   if (parsed.version !== 1) recordDrop(`不支持的分设备 envelope 版本：${parsed.version}`)
+  if (parsed.sender_user_id !== sender.user_id) recordDrop(`分设备 envelope 发送者不匹配：${parsed.sender_user_id || 'unknown'}`)
+  const signature = parsed.signature
+  if (!signature) return recordDrop('分设备 envelope 缺少身份签名')
+  if (!verify_identity_text_signature(sender.identity_public_key, perDeviceEnvelopeSigningPayload(parsed), signature)) {
+    recordDrop('分设备 envelope 身份签名无效')
+  }
   const targets = Array.isArray(parsed.target_devices) ? parsed.target_devices : []
   const targetDeviceIds = targets.map((item) => String(item.device_id || '')).filter(Boolean)
   const currentDeviceId = myDeviceId.value
@@ -5005,7 +5025,7 @@ function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, m
   if (sender.state === 'Blocked') throw new Error('发送者已被拉黑')
   if (!allowIncomingFromContact(sender)) { persist(); return false }
   ensureUiTextSize('Envelope', envelopeText, MAX_SIGNAL_BYTES)
-  const unwrappedEnvelope = unwrapPerDeviceEnvelopeForCurrentDevice(envelopeText)
+  const unwrappedEnvelope = unwrapPerDeviceEnvelopeForCurrentDevice(envelopeText, sender)
   const innerEnvelopeText = unwrappedEnvelope.envelopeText
   ensureUiTextSize('Inner Envelope', innerEnvelopeText, MAX_SIGNAL_BYTES)
   const groupSenderPlain = tryDecryptGroupSenderEnvelope(innerEnvelopeText)
