@@ -2076,6 +2076,24 @@ function addDiscoveredMailboxHintToSyncServices() {
   }
 }
 
+async function discoverMailboxHintForContact(contact: ContactItem): Promise<string | undefined> {
+  if (contact.mailbox_hint_url?.trim()) return contact.mailbox_hint_url.trim()
+  try {
+    nodeDhtKeyKind.value = 'mailbox-hint'
+    nodeDhtKeyValue.value = contact.user_id
+    const body = await nodeFetchJson(`/dht/find-value?kind=mailbox-hint&value=${encodeURIComponent(contact.user_id)}&limit=8&max_peers=8&alpha=3`)
+    applyDhtFindValueRecord(body)
+    if (contact.mailbox_hint_url?.trim()) {
+      appendLog(`✅ 已通过 DHT 发现 ${contact.display_name || contact.user_id} 的 MailboxHint`)
+      persist()
+      return contact.mailbox_hint_url.trim()
+    }
+  } catch (error) {
+    appendLog(`⚠️ DHT 查找联系人 MailboxHint 失败：${userFacingError(error)}`)
+  }
+  return undefined
+}
+
 async function pushMailboxPayload(to: ContactItem, kind: string, payload: string): Promise<string> {
   if (!nodeEnabled.value) throw new Error('节点未启用')
   const msg = create_mailbox_message(
@@ -2093,7 +2111,8 @@ async function pushMailboxPayload(to: ContactItem, kind: string, payload: string
       from_identity_public_key: identity.value?.identity_public_key,
     }),
   }
-  const preferredMailboxUrl = to.mailbox_hint_url?.trim().replace(/\/$/, '')
+  const discoveredHint = await discoverMailboxHintForContact(to)
+  const preferredMailboxUrl = discoveredHint?.trim().replace(/\/$/, '')
   let body: any
   if (preferredMailboxUrl && /^https?:\/\//i.test(preferredMailboxUrl)) {
     try {

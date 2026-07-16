@@ -46,7 +46,7 @@ async function installMockSyncNode(context: BrowserContext, mailboxes: Map<strin
   await context.route('**/*', async (route) => {
     const req = route.request()
     const url = new URL(req.url())
-    if (url.hostname !== 'sync.test') return route.continue()
+    if (url.hostname !== 'sync.test' && url.hostname !== 'mailbox.test') return route.continue()
     if (url.pathname === '/health') return route.fulfill({ json: { ok: true, peers: 2, prekeys: 1, mailbox_deliveries: 0, mailbox_bytes: 0, mailbox_max_bytes: 10485760, mailbox_max_bytes_per_user: 2097152, mailbox_max_messages_per_user: 1000 } })
     if (url.pathname === '/prekey/publish') return route.fulfill({ json: { ok: true } })
     if (url.pathname === '/sync/status') return route.fulfill({ json: syncPeerHealth })
