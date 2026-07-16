@@ -196,7 +196,7 @@ function openGroupDetail(groupId: string) {
             <small v-if="ctx.activeContact.value.last_mailbox_hint_dht_found_at">MailboxHint DHT 发现：{{ ctx.formatDateTime(ctx.activeContact.value.last_mailbox_hint_dht_found_at) }}</small>
             <small v-if="ctx.activeContact.value.next_dht_discovery_retry_at">DHT 下次自动重试：{{ ctx.formatDateTime(ctx.activeContact.value.next_dht_discovery_retry_at) }}</small>
             <small v-if="ctx.activeContact.value.dht_discovery_failure_count">DHT 连续失败：{{ ctx.activeContact.value.dht_discovery_failure_count }} 次</small>
-            <small v-if="ctx.activeContact.value.last_dht_discovery_error" class="danger-text">DHT 发现失败：{{ ctx.activeContact.value.last_dht_discovery_error }}</small>
+            <small v-if="ctx.activeContact.value.last_dht_discovery_error" class="danger-text">DHT 发现失败<span v-if="ctx.activeContact.value.last_dht_discovery_error_kind">({{ ctx.activeContact.value.last_dht_discovery_error_kind }})</span>：{{ ctx.activeContact.value.last_dht_discovery_error }}</small>
             <small v-if="ctx.activeContact.value.last_secure_session_attempt_at">最近建链尝试：{{ ctx.formatDateTime(ctx.activeContact.value.last_secure_session_attempt_at) }}</small>
             <small v-if="ctx.activeContact.value.last_secure_session_success_at">最近建链成功：{{ ctx.formatDateTime(ctx.activeContact.value.last_secure_session_success_at) }}</small>
             <small v-if="ctx.activeContact.value.secure_session_failure_count">连续建链失败：{{ ctx.activeContact.value.secure_session_failure_count }} 次</small>

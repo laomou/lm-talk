@@ -136,6 +136,7 @@ type ContactItem = ContactInfo & {
   last_dht_discovery_attempt_at?: number
   last_dht_discovery_success_at?: number
   last_dht_discovery_error?: string
+  last_dht_discovery_error_kind?: 'network' | 'not-found' | 'expired' | 'invalid-record' | 'signature' | 'unknown'
   dht_discovery_failure_count?: number
   next_dht_discovery_retry_at?: number
   last_prekey_dht_found_at?: number
@@ -2088,12 +2089,14 @@ function addDiscoveredMailboxHintToSyncServices() {
 function markContactDhtDiscoveryAttempt(contact: ContactItem) {
   contact.last_dht_discovery_attempt_at = Date.now()
   contact.last_dht_discovery_error = undefined
+  contact.last_dht_discovery_error_kind = undefined
 }
 
 function resetContactDhtDiscoveryBackoff(contact: ContactItem) {
   contact.dht_discovery_failure_count = 0
   contact.next_dht_discovery_retry_at = undefined
   contact.last_dht_discovery_error = undefined
+  contact.last_dht_discovery_error_kind = undefined
 }
 
 function markContactDhtDiscoverySuccess(contact: ContactItem, kind: 'prekey' | 'mailbox-hint') {
@@ -2101,17 +2104,29 @@ function markContactDhtDiscoverySuccess(contact: ContactItem, kind: 'prekey' | '
   contact.last_dht_discovery_error = undefined
   contact.dht_discovery_failure_count = 0
   contact.next_dht_discovery_retry_at = undefined
+  contact.last_dht_discovery_error_kind = undefined
   if (kind === 'prekey') contact.last_prekey_dht_found_at = contact.last_dht_discovery_success_at
   if (kind === 'mailbox-hint') contact.last_mailbox_hint_dht_found_at = contact.last_dht_discovery_success_at
 }
 
-function markContactDhtDiscoveryError(contact: ContactItem, error: unknown) {
+function classifyDhtDiscoveryError(error: unknown): ContactItem['last_dht_discovery_error_kind'] {
+  const message = userFacingError(error)
+  if (/过期/.test(message)) return 'expired'
+  if (/验签|签名|signature/i.test(message)) return 'signature'
+  if (/未找到|无记录|not found/i.test(message)) return 'not-found'
+  if (/record|格式|异常|不一致|invalid/i.test(message)) return 'invalid-record'
+  if (/超时|网络|连接|不可用|timeout|failed to fetch/i.test(message)) return 'network'
+  return 'unknown'
+}
+
+function markContactDhtDiscoveryError(contact: ContactItem, error: unknown, kind?: ContactItem['last_dht_discovery_error_kind']) {
   const now = Date.now()
   const failures = Math.min(8, (contact.dht_discovery_failure_count ?? 0) + 1)
   const retryDelayMs = Math.min(15 * 60_000, 30_000 * 2 ** (failures - 1))
   contact.dht_discovery_failure_count = failures
   contact.next_dht_discovery_retry_at = now + retryDelayMs
   contact.last_dht_discovery_error = userFacingError(error)
+  contact.last_dht_discovery_error_kind = kind || classifyDhtDiscoveryError(error)
 }
 
 function contactDhtDiscoveryRetryWaitMs(contact: ContactItem): number {
@@ -5310,6 +5325,12 @@ async function deriveDhtKeyForFindValue() {
   await runAsync('派生 DHT key', async () => { await deriveDhtKeyPayload() })
 }
 
+function currentDhtTargetContact(kind: 'prekey' | 'mailbox-hint'): ContactItem | undefined {
+  if (nodeDhtKeyKind.value !== kind) return undefined
+  const userId = nodeDhtKeyValue.value.trim()
+  return userId ? contacts.value.find((item) => item.user_id === userId) : undefined
+}
+
 function validateDhtRecordEnvelope(body: any, record: any): string | null {
   if (record?.key && body?.key && String(record.key).toLowerCase() !== String(body.key).toLowerCase()) return 'record key 与查询 key 不一致'
   const expiresAt = Number(record?.expires_at ?? 0)
@@ -5323,6 +5344,8 @@ function applyDhtFindValueRecord(body: any): boolean {
   const envelopeError = validateDhtRecordEnvelope(body, record)
   if (envelopeError) {
     nodeDhtFindValueStatusText.value = `DHT 查到 ${record.kind} record，但${envelopeError}`
+    const contact = record.kind === 'PreKey' ? currentDhtTargetContact('prekey') : record.kind === 'MailboxHint' ? currentDhtTargetContact('mailbox-hint') : undefined
+    if (contact) markContactDhtDiscoveryError(contact, new Error(envelopeError), envelopeError.includes('过期') ? 'expired' : 'invalid-record')
     recordDhtOperation(nodeDhtFindValueStatusText.value)
     return false
   }
@@ -5330,14 +5353,15 @@ function applyDhtFindValueRecord(body: any): boolean {
     try {
       const inspected = JSON.parse(inspect_prekey_bundle(record.value))
       prekeyBundleText.value = record.value
-      const targetUserId = nodeDhtKeyKind.value === 'prekey' ? nodeDhtKeyValue.value.trim() : ''
-      const contact = contacts.value.find((item) => item.user_id === targetUserId)
+      const contact = currentDhtTargetContact('prekey')
       if (contact) markContactDhtDiscoverySuccess(contact, 'prekey')
       nodePreKeyStatusText.value = JSON.stringify({ found: true, source: 'dht', verified: true, record, inspected }, null, 2)
       prekeyStatusSummary.value = 'DHT 查到 PreKey record，已验签并填入本地 PreKey 文本'
     } catch (error) {
       nodePreKeyStatusText.value = JSON.stringify({ found: true, source: 'dht', verified: false, error: userFacingError(error), record }, null, 2)
       prekeyStatusSummary.value = `DHT 查到 PreKey record，但验签失败：${userFacingError(error)}`
+      const contact = currentDhtTargetContact('prekey')
+      if (contact) markContactDhtDiscoveryError(contact, error, 'signature')
       return false
     }
   } else if (record.kind === 'MailboxHint') {
@@ -5345,8 +5369,7 @@ function applyDhtFindValueRecord(body: any): boolean {
     if (/^(https?:\/\/|libp2p:\/\/|mailbox:\/\/)/i.test(hint)) {
       peerMailboxKey.value = hint
       if (/^https?:\/\//i.test(hint)) discoveredMailboxHintUrl.value = hint
-      const targetUserId = nodeDhtKeyKind.value === 'mailbox-hint' ? nodeDhtKeyValue.value.trim() : ''
-      const contact = contacts.value.find((item) => item.user_id === targetUserId)
+      const contact = currentDhtTargetContact('mailbox-hint')
       if (contact) {
         contact.mailbox_hint_url = hint
         markContactDhtDiscoverySuccess(contact, 'mailbox-hint')
@@ -5356,6 +5379,8 @@ function applyDhtFindValueRecord(body: any): boolean {
         : `DHT 查到 MailboxHint：${hint}`
     } else {
       mailboxInboxStatus.value = `DHT 查到 MailboxHint，但地址格式异常：${hint.slice(0, 80)}`
+      const contact = currentDhtTargetContact('mailbox-hint')
+      if (contact) markContactDhtDiscoveryError(contact, new Error(mailboxInboxStatus.value), 'invalid-record')
       nodeDhtFindValueStatusText.value = mailboxInboxStatus.value
       recordDhtOperation(nodeDhtFindValueStatusText.value)
       return false
@@ -5389,6 +5414,14 @@ async function runDhtFindValueForKey(key: string) {
   if (!/^[0-9a-fA-F]{64}$/.test(key)) throw new Error('请输入 64 位十六进制 DHT key')
   const body = await nodeFetchJson(`/dht/find-value?key=${encodeURIComponent(key)}&limit=8&max_peers=8&alpha=3`)
   if (applyDhtFindValueRecord(body)) {
+    if (!body?.found) {
+      const contact = nodeDhtKeyKind.value === 'prekey'
+        ? currentDhtTargetContact('prekey')
+        : nodeDhtKeyKind.value === 'mailbox-hint'
+          ? currentDhtTargetContact('mailbox-hint')
+          : undefined
+      if (contact) markContactDhtDiscoveryError(contact, new Error('DHT 未找到记录'), 'not-found')
+    }
     nodeDhtFindValueStatusText.value = dhtFindValueSummary(body)
     recordDhtOperation(nodeDhtFindValueStatusText.value)
   }
@@ -5409,6 +5442,14 @@ async function deriveAndFindDhtValueNow() {
     const body = await nodeFetchJson(`/dht/find-value?kind=${encodeURIComponent(nodeDhtKeyKind.value)}&value=${encodeURIComponent(value)}&limit=8&max_peers=8&alpha=3`)
     nodeDhtFindValueKey.value = String(body.key || '')
     applyDhtFindValueRecord(body)
+    if (!body?.found) {
+      const contact = nodeDhtKeyKind.value === 'prekey'
+        ? currentDhtTargetContact('prekey')
+        : nodeDhtKeyKind.value === 'mailbox-hint'
+          ? currentDhtTargetContact('mailbox-hint')
+          : undefined
+      if (contact) markContactDhtDiscoveryError(contact, new Error('DHT 未找到记录'), 'not-found')
+    }
     nodeDhtFindValueStatusText.value = dhtFindValueSummary(body)
     recordDhtOperation(`DHT key：${dhtKeyKindLabel(nodeDhtKeyKind.value)} ${value} → ${nodeDhtFindValueKey.value}`)
     recordDhtOperation(nodeDhtFindValueStatusText.value)
