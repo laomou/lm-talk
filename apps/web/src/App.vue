@@ -368,6 +368,9 @@ type PersistedState = {
   lastPerDeviceEnvelopeAt?: number
   lastPerDeviceEnvelopeDropAt?: number
   lastPerDeviceEnvelopeDropReason?: string
+  contactCardUpdateFanoutCount?: number
+  contactCardUpdateFanoutSkipCount?: number
+  lastContactCardUpdateFanoutAt?: number
 }
 
 type PersistedMeta = {
@@ -424,6 +427,9 @@ type PersistedMeta = {
   lastPerDeviceEnvelopeAt?: number
   lastPerDeviceEnvelopeDropAt?: number
   lastPerDeviceEnvelopeDropReason?: string
+  contactCardUpdateFanoutCount?: number
+  contactCardUpdateFanoutSkipCount?: number
+  lastContactCardUpdateFanoutAt?: number
   schemaVersion: number
 }
 
@@ -580,6 +586,9 @@ const perDeviceEnvelopeDropCount = ref(0)
 const lastPerDeviceEnvelopeAt = ref<number | null>(null)
 const lastPerDeviceEnvelopeDropAt = ref<number | null>(null)
 const lastPerDeviceEnvelopeDropReason = ref('')
+const contactCardUpdateFanoutCount = ref(0)
+const contactCardUpdateFanoutSkipCount = ref(0)
+const lastContactCardUpdateFanoutAt = ref<number | null>(null)
 const groups = ref<GroupItem[]>([])
 const groupInvites = ref<GroupInviteItem[]>([])
 const groupSenderKeys = ref<GroupSenderKeyItem[]>([])
@@ -1594,6 +1603,9 @@ function currentPersistedState(): PersistedState {
     lastPerDeviceEnvelopeAt: lastPerDeviceEnvelopeAt.value ?? undefined,
     lastPerDeviceEnvelopeDropAt: lastPerDeviceEnvelopeDropAt.value ?? undefined,
     lastPerDeviceEnvelopeDropReason: lastPerDeviceEnvelopeDropReason.value || undefined,
+    contactCardUpdateFanoutCount: contactCardUpdateFanoutCount.value || undefined,
+    contactCardUpdateFanoutSkipCount: contactCardUpdateFanoutSkipCount.value || undefined,
+    lastContactCardUpdateFanoutAt: lastContactCardUpdateFanoutAt.value ?? undefined,
   }
 }
 
@@ -1820,6 +1832,9 @@ async function writeStateToTables(state: PersistedState) {
   lastPerDeviceEnvelopeAt.value = typeof state.lastPerDeviceEnvelopeAt === 'number' ? state.lastPerDeviceEnvelopeAt : null
   lastPerDeviceEnvelopeDropAt.value = typeof state.lastPerDeviceEnvelopeDropAt === 'number' ? state.lastPerDeviceEnvelopeDropAt : null
   lastPerDeviceEnvelopeDropReason.value = state.lastPerDeviceEnvelopeDropReason ?? ''
+  contactCardUpdateFanoutCount.value = Number(state.contactCardUpdateFanoutCount ?? 0)
+  contactCardUpdateFanoutSkipCount.value = Number(state.contactCardUpdateFanoutSkipCount ?? 0)
+  lastContactCardUpdateFanoutAt.value = typeof state.lastContactCardUpdateFanoutAt === 'number' ? state.lastContactCardUpdateFanoutAt : null
   await persistStateTables()
 }
 
@@ -1882,6 +1897,9 @@ async function loadStateFromTables(): Promise<boolean> {
   lastPerDeviceEnvelopeAt.value = typeof meta.lastPerDeviceEnvelopeAt === 'number' ? meta.lastPerDeviceEnvelopeAt : null
   lastPerDeviceEnvelopeDropAt.value = typeof meta.lastPerDeviceEnvelopeDropAt === 'number' ? meta.lastPerDeviceEnvelopeDropAt : null
   lastPerDeviceEnvelopeDropReason.value = meta.lastPerDeviceEnvelopeDropReason ?? ''
+  contactCardUpdateFanoutCount.value = Number(meta.contactCardUpdateFanoutCount ?? 0)
+  contactCardUpdateFanoutSkipCount.value = Number(meta.contactCardUpdateFanoutSkipCount ?? 0)
+  lastContactCardUpdateFanoutAt.value = typeof meta.lastContactCardUpdateFanoutAt === 'number' ? meta.lastContactCardUpdateFanoutAt : null
   const prefix = ownerPrefix()
   const loadedContacts = await loadTableByPrefixSafe(TABLES.contacts, prefix, (c) => decryptContactFromStore(c, key))
   const loadedFriendRequests = await loadTableByPrefixSafe(TABLES.friendRequests, prefix, (r) => decryptFriendRequestFromStore(r, key))
@@ -2000,6 +2018,9 @@ function resetAccountScopedState() {
   lastPerDeviceEnvelopeAt.value = null
   lastPerDeviceEnvelopeDropAt.value = null
   lastPerDeviceEnvelopeDropReason.value = ''
+  contactCardUpdateFanoutCount.value = 0
+  contactCardUpdateFanoutSkipCount.value = 0
+  lastContactCardUpdateFanoutAt.value = null
   nodeControlStatus.value = '未连接'
 }
 
@@ -2059,6 +2080,9 @@ async function clearPersisted() {
   lastPerDeviceEnvelopeAt.value = null
   lastPerDeviceEnvelopeDropAt.value = null
   lastPerDeviceEnvelopeDropReason.value = ''
+  contactCardUpdateFanoutCount.value = 0
+  contactCardUpdateFanoutSkipCount.value = 0
+  lastContactCardUpdateFanoutAt.value = null
   myContactCardText.value = ''
   myDeviceCertJson.value = ''
   myDeviceBackupText.value = ''
@@ -3691,10 +3715,17 @@ async function fanoutDeviceRevokeToFriends() {
 }
 
 
-async function fanoutMyContactCardUpdateToFriends() {
+async function fanoutMyContactCardUpdateToFriends(options: { force?: boolean } = {}) {
   await runAsync('向好友分发联系人设备证书更新', async () => {
     if (!myContactCardText.value.trim()) refreshMyContactCard()
     if (!myContactCardText.value.trim()) throw new Error('请先生成我的联系人名片')
+    const now = Date.now()
+    if (!options.force && lastContactCardUpdateFanoutAt.value && now - lastContactCardUpdateFanoutAt.value < 5 * 60_000) {
+      contactCardUpdateFanoutSkipCount.value += 1
+      appendLog('联系人设备证书更新分发已节流，避免重复广播')
+      persist()
+      return
+    }
     let sent = 0
     let queued = 0
     for (const contact of friendContacts.value) {
@@ -3702,6 +3733,8 @@ async function fanoutMyContactCardUpdateToFriends() {
       if (result === 'sent' || result === 'mailbox') sent += 1
       else { queued += 1; queueOutboxItem(contact, myContactCardText.value, undefined, 'contact-update') }
     }
+    contactCardUpdateFanoutCount.value += 1
+    lastContactCardUpdateFanoutAt.value = now
     appendLog(`联系人设备证书更新分发完成：已投递 ${sent}，queued ${queued}`)
     persist()
   })
@@ -8369,7 +8402,7 @@ const appContext = {
   prekeySignedId, prekeyOneTimeCount, prekeyBundleText, prekeyPrivateBundleJson, prekeySignedOneTimeRecordTexts, prekeyInfoText, x3dhInitialMessageJson,
   selectedOneTimePreKeyId, selectedSignedOneTimePreKeyRecordText, x3dhSharedSecretText, ratchetStateText, ratchetPeerStateText, ratchetLocalDhKeyPairJson, ratchetRemoteDhPublicKeyForInit,
   ratchetInitRole, ratchetHeaderText, ratchetEnvelopeText, ratchetPlainText, ratchetKeyText, ratchetRemoteDhPublicKey,
-  ratchetInfoText, safetyPolicy, enableStrictE2eePolicy, strictE2eePolicyEnabled, strictE2eeReadiness, strictE2eeReadinessIssues, openStrictE2eeReadinessIssue, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, perDeviceEnvelopeSentCount, perDeviceEnvelopeReceivedCount, perDeviceEnvelopeDropCount, lastPerDeviceEnvelopeAt, lastPerDeviceEnvelopeDropAt, lastPerDeviceEnvelopeDropReason, sealedSlotCoverageSummary, sealedSlotRiskContacts, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
+  ratchetInfoText, safetyPolicy, enableStrictE2eePolicy, strictE2eePolicyEnabled, strictE2eeReadiness, strictE2eeReadinessIssues, openStrictE2eeReadinessIssue, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, perDeviceEnvelopeSentCount, perDeviceEnvelopeReceivedCount, perDeviceEnvelopeDropCount, lastPerDeviceEnvelopeAt, lastPerDeviceEnvelopeDropAt, lastPerDeviceEnvelopeDropReason, contactCardUpdateFanoutCount, contactCardUpdateFanoutSkipCount, lastContactCardUpdateFanoutAt, sealedSlotCoverageSummary, sealedSlotRiskContacts, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
   nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, findActiveContactMailboxHint, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, startFingerprintQrScan, stopFingerprintQrScan, fingerprintScanOpen, fingerprintScanStatus, copyActiveContactFingerprintProof, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, showMyFingerprintQr, copyMyFingerprintProof, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,

@@ -84,10 +84,11 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
         </div>
         <small>设备证书用于后续多设备信任；撤销事件可分发给好友，提醒对方停止信任已丢失或废弃设备。</small>
         <small v-if="ctx.myDeviceId.value">当前设备：{{ ctx.myDeviceId.value }}</small>
+        <small v-if="ctx.contactCardUpdateFanoutCount.value || ctx.contactCardUpdateFanoutSkipCount.value">设备证书更新分发：{{ ctx.contactCardUpdateFanoutCount.value }} 次，节流 {{ ctx.contactCardUpdateFanoutSkipCount.value }} 次<span v-if="ctx.lastContactCardUpdateFanoutAt.value">，最近 {{ ctx.formatDateTime(ctx.lastContactCardUpdateFanoutAt.value) }}</span></small>
         <div class="row compact" v-if="ctx.myDeviceCertJson.value">
           <button class="secondary" @click="ctx.copyText(ctx.myDeviceCertJson.value, '设备证书')">复制设备证书</button>
           <button class="secondary" @click="ctx.showQr(ctx.myDeviceCertJson.value, '设备证书')">设备证书二维码</button>
-          <button class="secondary" @click="ctx.fanoutMyContactCardUpdateToFriends">分发设备证书更新</button>
+          <button class="secondary" @click="ctx.fanoutMyContactCardUpdateToFriends({ force: true })">分发设备证书更新</button>
         </div>
         <label for="device-revoke-id-input">撤销 Device ID</label>
         <input id="device-revoke-id-input" v-model="ctx.revokeDeviceId.value" placeholder="输入要撤销的 device_id" />
