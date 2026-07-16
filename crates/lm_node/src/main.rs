@@ -5960,11 +5960,22 @@ mod tests {
         let (identity, _) = Identity::create_with_passphrase("multi poisoned identity").unwrap();
         let (target_user, _) = Identity::create_with_passphrase("multi poisoned target").unwrap();
         let key = DhtRecordKey::for_mailbox_hint(target_user.user_id());
+        let target_node_id = key.to_node_id();
         let now = current_unix_timestamp();
-        let make_peer = |peer_id: &str, url: &str| {
+        let closer_one_id = "multi-poisoned-hop-one".to_string();
+        let closer_one_distance =
+            lm_node::KademliaNodeId::from_peer_id(&closer_one_id).xor_distance(&target_node_id);
+        let closer_two_id = (0..10_000)
+            .map(|index| format!("multi-poisoned-hop-two-{index}"))
+            .find(|peer_id| {
+                lm_node::KademliaNodeId::from_peer_id(peer_id).xor_distance(&target_node_id)
+                    < closer_one_distance
+            })
+            .expect("test should find a second-hop peer closer to target");
+        let make_peer = |peer_id: String, url: String| {
             let announce = NodeConfig {
-                peer_id: peer_id.into(),
-                addresses: vec![url.into()],
+                peer_id,
+                addresses: vec![url],
                 ..Default::default()
             }
             .create_announce(&identity)
@@ -5976,14 +5987,8 @@ mod tests {
                 last_seen_at: now,
             }
         };
-        let closer_one = make_peer(
-            "multi-poisoned-hop-one",
-            "transport://multi-poisoned-hop-one",
-        );
-        let closer_two = make_peer(
-            "multi-poisoned-hop-two",
-            "transport://multi-poisoned-hop-two",
-        );
+        let closer_one = make_peer(closer_one_id, "transport://multi-poisoned-hop-one".into());
+        let closer_two = make_peer(closer_two_id, "transport://multi-poisoned-hop-two".into());
         let poisoned_record = || DhtRecord {
             key,
             kind: DhtRecordKind::PreKey,
@@ -6602,6 +6607,74 @@ mod tests {
             transport.max_in_flight.load(Ordering::SeqCst) > 1,
             "alpha=3 should issue more than one FindValue request concurrently"
         );
+    }
+
+    #[test]
+    fn dht_find_value_poisoned_records_trigger_quarantine() {
+        let (target_user, _) =
+            Identity::create_with_passphrase("poison quarantine target").unwrap();
+        let key = DhtRecordKey::for_mailbox_hint(target_user.user_id());
+        let now = current_unix_timestamp();
+        let peer = SyncPeerConfig {
+            url: "transport://poison-quarantine-peer".into(),
+            token: None,
+            peer_id: Some("poison-quarantine-peer".into()),
+        };
+        let poisoned_record = DhtRecord {
+            key,
+            kind: DhtRecordKind::PreKey,
+            value: "not-a-prekey-bundle".into(),
+            created_at: now,
+            expires_at: now.saturating_add(60),
+            republish_at: now,
+        };
+        let mut responses = Vec::new();
+        for index in 0..DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES {
+            responses.push(DhtRpcResponse::Value {
+                request_id: format!("poison-quarantine-{index}"),
+                record: Some(poisoned_record.clone()),
+                closer_records: Vec::new(),
+                closer_nodes: Vec::new(),
+            });
+        }
+        responses.reverse();
+        let transport = FakeDhtTransport {
+            responses: Mutex::new(responses),
+            ..Default::default()
+        };
+        let mut node = NativeNode::new(NodeConfig::default());
+        for _ in 0..DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES {
+            let stats = dht_find_value_with_transport(
+                &mut node,
+                std::slice::from_ref(&peer),
+                key,
+                8,
+                1,
+                1,
+                &transport,
+            );
+            assert_eq!(stats.successes, 1);
+            assert_eq!(stats.invalid_found_records, 1);
+            assert_eq!(stats.found_records, 0);
+        }
+        let status = node.sync_status.peers.get(&peer.url).unwrap();
+        assert_eq!(
+            status.consecutive_failures,
+            DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES
+        );
+        assert!(status.next_attempt_at.unwrap() > current_unix_timestamp());
+        assert_eq!(
+            node.maintenance.dht_record_rejects.invalid_record,
+            DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES as u64
+        );
+        let (eligible, quarantined) = dht_runner_peer_configs_with_quarantine_count(
+            &node,
+            std::slice::from_ref(&peer),
+            DhtTransportKind::HttpControl,
+            DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES,
+        );
+        assert!(eligible.is_empty());
+        assert_eq!(quarantined, 1);
     }
 
     #[test]
