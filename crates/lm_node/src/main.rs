@@ -184,6 +184,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             validate_state_db_encryption_requirement(
                 state_db_require_encryption,
                 &state_db_encryption_mode,
+                state_db.as_deref(),
             )?;
             let mut node = if let Some(path) = &state_db {
                 load_node_state_db(path).unwrap_or_else(|_| {
@@ -270,6 +271,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             validate_state_db_encryption_requirement(
                 state_db_require_encryption,
                 &state_db_encryption_mode,
+                state_db.as_deref(),
             )?;
             let sync_peer_token_direct = optional_arg(&args, "--sync-peer-token")?
                 .or_else(|| env::var("LM_NODE_SYNC_PEER_TOKEN").ok());
@@ -669,8 +671,15 @@ fn state_db_encryption_mode() -> String {
 fn validate_state_db_encryption_requirement(
     required: bool,
     mode: &str,
+    state_db: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if required && mode == "plain" {
+    if !required {
+        return Ok(());
+    }
+    if state_db.is_none() {
+        return Err("state_db encryption is required but no state_db is configured".into());
+    }
+    if mode == "plain" {
         Err("state_db encryption is required but encryption_mode is plain; use SQLCipher/equivalent or explicitly configure external encrypted storage".into())
     } else {
         Ok(())
@@ -8770,10 +8779,16 @@ connection: close
 
     #[test]
     fn state_db_encryption_requirement_fails_closed_until_supported() {
-        assert!(validate_state_db_encryption_requirement(false, "plain").is_ok());
-        let err = validate_state_db_encryption_requirement(true, "plain").unwrap_err();
+        assert!(validate_state_db_encryption_requirement(false, "plain", None).is_ok());
+        let err = validate_state_db_encryption_requirement(true, "plain", Some("state.sqlite3"))
+            .unwrap_err();
         assert!(err.to_string().contains("encryption_mode is plain"));
-        assert!(validate_state_db_encryption_requirement(true, "external").is_ok());
+        assert!(
+            validate_state_db_encryption_requirement(true, "external", Some("state.sqlite3"))
+                .is_ok()
+        );
+        let err = validate_state_db_encryption_requirement(true, "external", None).unwrap_err();
+        assert!(err.to_string().contains("no state_db"));
         let err = normalize_state_db_encryption_mode(Some("sqlcipher".into())).unwrap_err();
         assert!(err.to_string().contains("not supported"));
     }
