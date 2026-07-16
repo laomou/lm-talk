@@ -2064,11 +2064,14 @@ function addDiscoveredMailboxHintToSyncServices() {
   const url = discoveredMailboxHintUrl.value.trim().replace(/\/$/, '')
   if (!url) throw new Error('没有可加入的 MailboxHint URL')
   const entries = nodeEntries()
-  if (!entries.some((entry) => entry.url === url)) {
+  const alreadyConfigured = entries.some((entry) => entry.url === url)
+  if (!alreadyConfigured) {
     nodeControlUrl.value = [...entries.map(nodeEntryLine), url].join('\n')
   }
   if (saveNetworkSettings()) {
-    mailboxInboxStatus.value = `已加入 MailboxHint 同步服务：${url}`
+    mailboxInboxStatus.value = alreadyConfigured
+      ? `MailboxHint 同步服务已存在：${url}`
+      : `已加入 MailboxHint 同步服务：${url}`
   }
 }
 
