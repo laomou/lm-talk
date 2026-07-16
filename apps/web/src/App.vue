@@ -155,6 +155,7 @@ type SafetyPolicy = {
   warnExecutableFiles: boolean
   dropFilteredIncoming: boolean
   requireVerifiedContactsForSend: boolean
+  requireVerifiedContactsForReceive: boolean
 }
 
 type GroupInviteItem = {
@@ -408,6 +409,7 @@ const safetyPolicy = ref<SafetyPolicy>({
   warnExecutableFiles: true,
   dropFilteredIncoming: false,
   requireVerifiedContactsForSend: false,
+  requireVerifiedContactsForReceive: false,
 })
 
 const contacts = ref<ContactItem[]>([])
@@ -1494,6 +1496,7 @@ function resetAccountScopedState() {
     warnExecutableFiles: true,
     dropFilteredIncoming: false,
     requireVerifiedContactsForSend: false,
+    requireVerifiedContactsForReceive: false,
   }
   nodeEnabled.value = false
   autoMailboxTake.value = true
@@ -1544,6 +1547,7 @@ async function clearPersisted() {
     warnExecutableFiles: true,
     dropFilteredIncoming: false,
     requireVerifiedContactsForSend: false,
+    requireVerifiedContactsForReceive: false,
   }
   nodeEnabled.value = false
   autoMailboxTake.value = true
@@ -2829,6 +2833,13 @@ function requireVerifiedContactForSend(contact: ContactItem) {
   throw new Error(`安全策略要求先核验联系人指纹：${contact.display_name || contact.user_id}`)
 }
 
+function allowIncomingFromContact(sender: ContactItem): boolean {
+  if (!safetyPolicy.value.requireVerifiedContactsForReceive) return true
+  if (sender.fingerprint_verified_at) return true
+  appendLog(`⚠️ 已按安全策略丢弃未核验联系人消息：${sender.display_name || sender.user_id}`)
+  return false
+}
+
 async function confirmHighRiskDhtContactIfNeeded(contact: ContactItem): Promise<boolean> {
   if (contact.dht_discovery_risk_level !== 'high') return true
   if (contact.last_dht_discovery_error_kind !== 'signature') return true
@@ -4043,6 +4054,7 @@ async function sendMessage() {
 
 function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, mailboxDeliveryId?: string) {
   if (sender.state === 'Blocked') throw new Error('发送者已被拉黑')
+  if (!allowIncomingFromContact(sender)) { persist(); return }
   ensureUiTextSize('Envelope', envelopeText, MAX_SIGNAL_BYTES)
   const groupSenderPlain = tryDecryptGroupSenderEnvelope(envelopeText)
   if (groupSenderPlain) {
