@@ -51,6 +51,8 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
         </div>
         <div class="row compact me-hero-actions">
           <button class="secondary" @click="ctx.showQr(ctx.myContactCardText.value, '我的名片')">我的名片</button>
+          <button class="secondary" @click="ctx.showMyFingerprintQr">我的指纹核验码</button>
+          <button class="secondary" @click="ctx.copyMyFingerprintProof">复制指纹核验码</button>
           <button class="secondary" @click="ctx.showQr(ctx.backupText.value, '导出身份')">导出身份</button>
         </div>
       </header>

@@ -215,6 +215,7 @@ function openGroupDetail(groupId: string) {
             <div class="row detail-actions">
               <button class="secondary" @click="ctx.verifyActiveContactFingerprintFromText">核验并标记可信</button>
               <button class="secondary" @click="ctx.showActiveContactFingerprintQr">显示当前联系人核验码</button>
+              <button class="secondary" @click="ctx.copyActiveContactFingerprintProof">复制当前联系人核验码</button>
             </div>
           </section>
           <div class="row detail-actions">
