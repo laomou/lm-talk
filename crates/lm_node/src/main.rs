@@ -1348,6 +1348,7 @@ impl ControlRuntimeStats {
         &self,
         maintenance: &NodeMaintenanceStats,
         state_db: Option<&StateDbStats>,
+        state_file: Option<&StateFileStats>,
         sync_status: Option<&NodeSyncStatus>,
         dht_peer_quarantine_threshold: u32,
     ) -> String {
@@ -2255,6 +2256,41 @@ impl ControlRuntimeStats {
                 &mut out,
                 "lm_node_maintenance_last_pruned_at",
                 last_pruned_at,
+            );
+        }
+        if let Some(state_file) = state_file {
+            push_metric_help(
+                &mut out,
+                "lm_node_state_file_bytes",
+                "JSON state_file size in bytes.",
+            );
+            push_metric_type(&mut out, "lm_node_state_file_bytes", "gauge");
+            push_metric_value(&mut out, "lm_node_state_file_bytes", state_file.file_bytes);
+            push_metric_help(
+                &mut out,
+                "lm_node_state_file_encrypted",
+                "Whether the JSON state_file is encrypted with the application-layer format.",
+            );
+            push_metric_type(&mut out, "lm_node_state_file_encrypted", "gauge");
+            push_metric_value(
+                &mut out,
+                "lm_node_state_file_encrypted",
+                if state_file.encrypted { 1 } else { 0 },
+            );
+            push_metric_help(
+                &mut out,
+                "lm_node_state_file_permissions_hardened",
+                "Whether the JSON state_file permissions are restricted to the node user.",
+            );
+            push_metric_type(&mut out, "lm_node_state_file_permissions_hardened", "gauge");
+            push_metric_value(
+                &mut out,
+                "lm_node_state_file_permissions_hardened",
+                if state_file.permissions_hardened {
+                    1
+                } else {
+                    0
+                },
             );
         }
         if let Some(state_db) = state_db {
@@ -4829,6 +4865,7 @@ fn handle_stream(
             &runtime_stats.to_openmetrics(
                 node.maintenance_stats(),
                 state_db_stats_opt(state_db).as_ref(),
+                state_file_stats_opt(state_file).as_ref(),
                 Some(&node.sync_status),
                 dht_runner.peer_quarantine_consecutive_failures,
             ),
@@ -5423,7 +5460,7 @@ mod tests {
         DhtTransportKind, ENCRYPTED_STATE_FILE_PREFIX, LIBP2P_DHT_RPC_PROTOCOL, Libp2pDhtTransport,
         LogFormat, MAX_CONTROL_PEER_RESPONSE_BYTES, MAX_CONTROL_REQUEST_HEADER_LINE_BYTES,
         NodeMaintenanceStats, RateLimitConfig, RateLimiter, ServeControlConfigFile, StateDbStats,
-        SyncPeerConfig, atomic_write_text, configure_control_client_stream,
+        StateFileStats, SyncPeerConfig, atomic_write_text, configure_control_client_stream,
         configure_control_peer_stream, connect_control_peer, control_error_http_response,
         current_unix_timestamp, decrypt_state_file_text, dht_find_value_with_transport,
         dht_runner_peer_configs, dht_runner_peer_configs_with_quarantine_count,
@@ -8157,6 +8194,11 @@ connection: close
                 freelist_count: 2,
                 file_bytes: 40960,
                 encrypted: false,
+                permissions_hardened: true,
+            }),
+            Some(&StateFileStats {
+                file_bytes: 2048,
+                encrypted: true,
                 permissions_hardened: true,
             }),
             Some(&NodeSyncStatus {
