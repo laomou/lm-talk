@@ -842,6 +842,27 @@ const activeRatchetStatusText = computed(() => {
   if (activeContact.value.state !== 'Friend') return '未建链'
   return activeRatchetSession.value ? '已建链' : '未建链'
 })
+
+function contactSealedSlotStatusText(contact: ContactItem): string {
+  const activeDeviceIds = contactActiveDeviceIds(contact)
+  if (activeDeviceIds.length === 0) return '联系人没有活跃设备证书，无法使用 sealed slot 投递。'
+  const certs = contact.device_certs ?? []
+  const sealed = activeDeviceIds.filter((deviceId) => certs.find((cert) => cert.device_id === deviceId)?.device_box_public_key).length
+  if (sealed === activeDeviceIds.length) return `sealed slot 就绪：${sealed}/${activeDeviceIds.length} 个活跃设备支持设备级加密。`
+  return `兼容模式风险：${activeDeviceIds.length - sealed}/${activeDeviceIds.length} 个活跃设备缺少 device_box_public_key，将使用 placeholder/fallback；可在设置中开启“仅发送到支持 sealed slot 的设备”阻止降级。`
+}
+
+const activeContactSealedSlotStatusText = computed(() => activeContact.value ? contactSealedSlotStatusText(activeContact.value) : '')
+const activeContactSealedSlotRiskLevel = computed(() => {
+  const contact = activeContact.value
+  if (!contact) return 'none'
+  const activeDeviceIds = contactActiveDeviceIds(contact)
+  if (activeDeviceIds.length === 0) return 'high'
+  const certs = contact.device_certs ?? []
+  const missing = activeDeviceIds.some((deviceId) => !certs.find((cert) => cert.device_id === deviceId)?.device_box_public_key)
+  return missing ? 'high' : 'ok'
+})
+
 const activeSecureSessionOutboxCount = computed(() => {
   const peerId = activeContact.value?.user_id
   if (!peerId) return 0
@@ -8146,7 +8167,7 @@ const appContext = {
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
   newGroupName, friendContacts, selectedGroupMembers, createGroup, groups, activeGroupId,
-  selectGroup, activeContact, activeGroup, activeRatchetSession, activeRatchetStatusText, activeSecureSessionOutboxCount, activeGroupMembers, activeGroupWarningText, blockReason, blockActiveContact, readReceiptsEnabledFor, setActiveContactReadReceipts,
+  selectGroup, activeContact, activeGroup, activeRatchetSession, activeRatchetStatusText, activeContactSealedSlotStatusText, activeContactSealedSlotRiskLevel, activeSecureSessionOutboxCount, activeGroupMembers, activeGroupWarningText, blockReason, blockActiveContact, readReceiptsEnabledFor, setActiveContactReadReceipts,
   unblockActiveContact, removeActiveContact, clearActiveConversation, createFriendRequestForActive, clearActiveFriendRequestError, createInviteForActiveGroup, groupInviteText, groupFanoutJson,
   removeActiveGroup, leaveActiveGroupWithNotice, messages, activeMessages, formatTime, formatDateTime, statusLabel, copyMessageEnvelope, perDeviceEnvelopeTargetCount, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,

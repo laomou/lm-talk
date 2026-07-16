@@ -129,6 +129,7 @@ function onComposerKeydown(e: KeyboardEvent) {
         <small v-if="ctx.activeContact.value.secure_session_failure_count">连续建链失败：{{ ctx.activeContact.value.secure_session_failure_count }} 次</small>
         <small v-if="ctx.activeSecureSessionOutboxCount.value">安全建链待重试：{{ ctx.activeSecureSessionOutboxCount.value }} 条</small>
         <small v-if="ctx.activeContact.value.last_secure_session_error" class="outbox-error">安全建链失败：{{ ctx.activeContact.value.last_secure_session_error }}</small>
+        <small v-if="ctx.activeContact.value.state === 'Friend' && ctx.activeContactSealedSlotStatusText.value" :class="{ 'danger-text': ctx.activeContactSealedSlotRiskLevel.value === 'high' }">分设备 sealed slot：{{ ctx.activeContactSealedSlotStatusText.value }}</small>
       </div>
       <div v-else-if="ctx.activeGroup.value" class="chat-title-block">
         <h2>{{ ctx.activeGroup.value.name }}</h2>
@@ -189,6 +190,13 @@ function onComposerKeydown(e: KeyboardEvent) {
         <button v-if="ctx.activeContact.value.state === 'Blocked'" @click="ctx.unblockActiveContact">解除拉黑</button>
       </div>
 
+    </section>
+
+    <section v-if="ctx.activeContact.value?.state === 'Friend' && ctx.activeContactSealedSlotRiskLevel.value === 'high'" class="chat-notice-panel">
+      <div class="notice-text">
+        <b>分设备加密降级风险</b>
+        <span>{{ ctx.activeContactSealedSlotStatusText.value }}</span>
+      </div>
     </section>
 
     <section v-if="ctx.activeGroup.value && ctx.activeGroupWarningText.value" class="chat-notice-panel">
