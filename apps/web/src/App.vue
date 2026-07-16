@@ -154,6 +154,7 @@ type SafetyPolicy = {
   warnExternalLinks: boolean
   warnExecutableFiles: boolean
   dropFilteredIncoming: boolean
+  requireVerifiedContactsForSend: boolean
 }
 
 type GroupInviteItem = {
@@ -406,6 +407,7 @@ const safetyPolicy = ref<SafetyPolicy>({
   warnExternalLinks: true,
   warnExecutableFiles: true,
   dropFilteredIncoming: false,
+  requireVerifiedContactsForSend: false,
 })
 
 const contacts = ref<ContactItem[]>([])
@@ -1491,6 +1493,7 @@ function resetAccountScopedState() {
     warnExternalLinks: true,
     warnExecutableFiles: true,
     dropFilteredIncoming: false,
+    requireVerifiedContactsForSend: false,
   }
   nodeEnabled.value = false
   autoMailboxTake.value = true
@@ -1540,6 +1543,7 @@ async function clearPersisted() {
     warnExternalLinks: true,
     warnExecutableFiles: true,
     dropFilteredIncoming: false,
+    requireVerifiedContactsForSend: false,
   }
   nodeEnabled.value = false
   autoMailboxTake.value = true
@@ -2411,6 +2415,13 @@ function markOutboxSent(item: OutboxItem) {
 async function deliverPayloadToContact(contact: ContactItem, payload: string, label: string, kind: OutboxItem['kind'] = 'direct-envelope'): Promise<'sent' | 'mailbox' | 'queued' | 'failed'> {
   lastDeliveryError = ''
   try {
+    requireVerifiedContactForSend(contact)
+  } catch (e) {
+    lastDeliveryError = classifyDeliveryError(e)
+    appendLog(`❌ ${label} 投递被安全策略阻止：${lastDeliveryError}`)
+    return 'failed'
+  }
+  try {
     if (dc && dc.readyState === 'open' && activePeerId.value === contact.user_id && kind !== 'group-fanout') {
       sendRtcText(payload, label)
       return 'sent'
@@ -2810,6 +2821,12 @@ async function confirmOutgoingTextIfNeeded(text: string): Promise<boolean> {
     ? '消息中包含外部链接。请确认链接可信，避免钓鱼或泄露身份信息。'
     : '消息中包含可执行/脚本文件名等高风险内容。请确认这是你想发送的内容。'
   return showConfirm('发送风险内容', reason, filterRank(action) >= filterRank('Hide'))
+}
+
+function requireVerifiedContactForSend(contact: ContactItem) {
+  if (!safetyPolicy.value.requireVerifiedContactsForSend) return
+  if (contact.fingerprint_verified_at) return
+  throw new Error(`安全策略要求先核验联系人指纹：${contact.display_name || contact.user_id}`)
 }
 
 async function confirmHighRiskDhtContactIfNeeded(contact: ContactItem): Promise<boolean> {
@@ -3931,6 +3948,15 @@ async function sendMessage() {
   if (pendingText.trim() && !(await confirmOutgoingTextIfNeeded(pendingText))) {
     appendLog('已取消发送风险文本')
     return
+  }
+  if (pendingText.trim() && activeContact.value && !activeGroup.value) {
+    try {
+      requireVerifiedContactForSend(activeContact.value)
+    } catch (error) {
+      showAlert('发送被安全策略阻止', userFacingError(error), 'warning')
+      appendLog(`已阻止发送给未核验联系人：${userFacingError(error)}`)
+      return
+    }
   }
   run('发送消息', () => {
     if (!composerText.value.trim()) return

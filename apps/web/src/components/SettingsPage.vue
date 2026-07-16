@@ -330,6 +330,10 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
             <input v-model="ctx.safetyPolicy.value.dropFilteredIncoming" type="checkbox" />
             <span>丢弃高风险入站消息</span>
           </label>
+          <label class="identity-select">
+            <input v-model="ctx.safetyPolicy.value.requireVerifiedContactsForSend" type="checkbox" />
+            <span>仅向已核验指纹的联系人发送</span>
+          </label>
         </div>
       </section>
 
