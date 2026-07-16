@@ -308,6 +308,7 @@ type PersistedState = {
   lastSelfMailboxBackupPushedAt?: number
   lastSelfMailboxBackupReceivedAt?: number
   lastSelfMailboxBackupMergedAt?: number
+  processedSelfSyncIds?: string[]
   unverifiedIncomingDropCount?: number
   lastUnverifiedIncomingDropAt?: number
   lastUnverifiedIncomingDropFrom?: string
@@ -342,6 +343,7 @@ type PersistedMeta = {
   lastSelfMailboxBackupPushedAt?: number
   lastSelfMailboxBackupReceivedAt?: number
   lastSelfMailboxBackupMergedAt?: number
+  processedSelfSyncIds?: string[]
   unverifiedIncomingDropCount?: number
   lastUnverifiedIncomingDropAt?: number
   lastUnverifiedIncomingDropFrom?: string
@@ -353,9 +355,12 @@ type PersistedMeta = {
 
 type SelfSyncPackage = {
   type: 'lm-self-sync-v1'
+  sync_id: string
   created_at: number
+  from_device_id?: string
   contacts: ContactItem[]
   dhtOperationHistory?: string[]
+  processedSelfSyncIds?: string[]
   unverifiedIncomingDropCount?: number
   revokedDeviceIncomingDropCount?: number
 }
@@ -499,6 +504,7 @@ const lastSelfMailboxBackupReceivedAt = ref<number | null>(null)
 const lastSelfMailboxBackupMergedAt = ref<number | null>(null)
 const selfMailboxBackupStatusText = ref('自 Mailbox 备份：尚未运行')
 const selfSyncStatusText = ref('自同步：尚未运行')
+const processedSelfSyncIds = ref<string[]>([])
 const lastSelfSyncPushedAt = ref<number | null>(null)
 const lastSelfSyncMergedAt = ref<number | null>(null)
 const selfMailboxBackupMergePending = computed(() => {
@@ -1304,6 +1310,7 @@ function currentPersistedState(): PersistedState {
     lastSelfMailboxBackupPushedAt: lastSelfMailboxBackupPushedAt.value ?? undefined,
     lastSelfMailboxBackupReceivedAt: lastSelfMailboxBackupReceivedAt.value ?? undefined,
     lastSelfMailboxBackupMergedAt: lastSelfMailboxBackupMergedAt.value ?? undefined,
+    processedSelfSyncIds: processedSelfSyncIds.value,
     unverifiedIncomingDropCount: unverifiedIncomingDropCount.value,
     lastUnverifiedIncomingDropAt: lastUnverifiedIncomingDropAt.value ?? undefined,
     lastUnverifiedIncomingDropFrom: lastUnverifiedIncomingDropFrom.value,
@@ -1336,6 +1343,17 @@ function persistedMeta(): PersistedMeta {
     dhtOperationHistory: nodeDhtOperationHistory.value,
     pwaBackgroundEventHistory: pwaBackgroundEventHistory.value,
     friendRequestRateRecords: friendRequestRateRecords.value,
+    lastFullDataBackupAt: lastFullDataBackupAt.value ?? undefined,
+    lastSelfMailboxBackupPushedAt: lastSelfMailboxBackupPushedAt.value ?? undefined,
+    lastSelfMailboxBackupReceivedAt: lastSelfMailboxBackupReceivedAt.value ?? undefined,
+    lastSelfMailboxBackupMergedAt: lastSelfMailboxBackupMergedAt.value ?? undefined,
+    processedSelfSyncIds: processedSelfSyncIds.value,
+    unverifiedIncomingDropCount: unverifiedIncomingDropCount.value,
+    lastUnverifiedIncomingDropAt: lastUnverifiedIncomingDropAt.value ?? undefined,
+    lastUnverifiedIncomingDropFrom: lastUnverifiedIncomingDropFrom.value,
+    revokedDeviceIncomingDropCount: revokedDeviceIncomingDropCount.value,
+    lastRevokedDeviceIncomingDropAt: lastRevokedDeviceIncomingDropAt.value ?? undefined,
+    lastRevokedDeviceIncomingDropFrom: lastRevokedDeviceIncomingDropFrom.value,
     schemaVersion: 3,
   }
 }
@@ -1478,6 +1496,17 @@ async function writeStateToTables(state: PersistedState) {
   pwaBackgroundEventHistory.value = state.pwaBackgroundEventHistory ?? []
   pwaLastBackgroundEventText.value = pwaBackgroundEventHistory.value[0] ?? '尚未收到后台事件'
   friendRequestRateRecords.value = state.friendRequestRateRecords ?? []
+  lastFullDataBackupAt.value = typeof state.lastFullDataBackupAt === 'number' ? state.lastFullDataBackupAt : null
+  lastSelfMailboxBackupPushedAt.value = typeof state.lastSelfMailboxBackupPushedAt === 'number' ? state.lastSelfMailboxBackupPushedAt : null
+  lastSelfMailboxBackupReceivedAt.value = typeof state.lastSelfMailboxBackupReceivedAt === 'number' ? state.lastSelfMailboxBackupReceivedAt : null
+  lastSelfMailboxBackupMergedAt.value = typeof state.lastSelfMailboxBackupMergedAt === 'number' ? state.lastSelfMailboxBackupMergedAt : null
+  processedSelfSyncIds.value = state.processedSelfSyncIds ?? []
+  unverifiedIncomingDropCount.value = Number(state.unverifiedIncomingDropCount ?? 0)
+  lastUnverifiedIncomingDropAt.value = typeof state.lastUnverifiedIncomingDropAt === 'number' ? state.lastUnverifiedIncomingDropAt : null
+  lastUnverifiedIncomingDropFrom.value = state.lastUnverifiedIncomingDropFrom ?? ''
+  revokedDeviceIncomingDropCount.value = Number(state.revokedDeviceIncomingDropCount ?? 0)
+  lastRevokedDeviceIncomingDropAt.value = typeof state.lastRevokedDeviceIncomingDropAt === 'number' ? state.lastRevokedDeviceIncomingDropAt : null
+  lastRevokedDeviceIncomingDropFrom.value = state.lastRevokedDeviceIncomingDropFrom ?? ''
   await persistStateTables()
 }
 
@@ -1508,6 +1537,17 @@ async function loadStateFromTables(): Promise<boolean> {
   pwaBackgroundEventHistory.value = meta.pwaBackgroundEventHistory ?? []
   pwaLastBackgroundEventText.value = pwaBackgroundEventHistory.value[0] ?? '尚未收到后台事件'
   friendRequestRateRecords.value = meta.friendRequestRateRecords ?? []
+  lastFullDataBackupAt.value = typeof meta.lastFullDataBackupAt === 'number' ? meta.lastFullDataBackupAt : null
+  lastSelfMailboxBackupPushedAt.value = typeof meta.lastSelfMailboxBackupPushedAt === 'number' ? meta.lastSelfMailboxBackupPushedAt : null
+  lastSelfMailboxBackupReceivedAt.value = typeof meta.lastSelfMailboxBackupReceivedAt === 'number' ? meta.lastSelfMailboxBackupReceivedAt : null
+  lastSelfMailboxBackupMergedAt.value = typeof meta.lastSelfMailboxBackupMergedAt === 'number' ? meta.lastSelfMailboxBackupMergedAt : null
+  processedSelfSyncIds.value = meta.processedSelfSyncIds ?? []
+  unverifiedIncomingDropCount.value = Number(meta.unverifiedIncomingDropCount ?? 0)
+  lastUnverifiedIncomingDropAt.value = typeof meta.lastUnverifiedIncomingDropAt === 'number' ? meta.lastUnverifiedIncomingDropAt : null
+  lastUnverifiedIncomingDropFrom.value = meta.lastUnverifiedIncomingDropFrom ?? ''
+  revokedDeviceIncomingDropCount.value = Number(meta.revokedDeviceIncomingDropCount ?? 0)
+  lastRevokedDeviceIncomingDropAt.value = typeof meta.lastRevokedDeviceIncomingDropAt === 'number' ? meta.lastRevokedDeviceIncomingDropAt : null
+  lastRevokedDeviceIncomingDropFrom.value = meta.lastRevokedDeviceIncomingDropFrom ?? ''
   const prefix = ownerPrefix()
   const loadedContacts = await loadTableByPrefixSafe(TABLES.contacts, prefix, (c) => decryptContactFromStore(c, key))
   const loadedFriendRequests = await loadTableByPrefixSafe(TABLES.friendRequests, prefix, (r) => decryptFriendRequestFromStore(r, key))
@@ -1649,6 +1689,7 @@ async function clearPersisted() {
   lastSelfMailboxBackupPushedAt.value = null
   lastSelfMailboxBackupReceivedAt.value = null
   lastSelfMailboxBackupMergedAt.value = null
+  processedSelfSyncIds.value = []
   unverifiedIncomingDropCount.value = 0
   lastUnverifiedIncomingDropAt.value = null
   lastUnverifiedIncomingDropFrom.value = ''
@@ -1842,21 +1883,32 @@ async function pushFullDataBackupToOwnMailbox() {
 function currentSelfSyncPackage(): SelfSyncPackage {
   return {
     type: 'lm-self-sync-v1',
+    sync_id: newId(),
     created_at: Date.now(),
+    from_device_id: myDeviceId.value || undefined,
     contacts: contacts.value,
     dhtOperationHistory: nodeDhtOperationHistory.value,
+    processedSelfSyncIds: processedSelfSyncIds.value,
     unverifiedIncomingDropCount: unverifiedIncomingDropCount.value,
     revokedDeviceIncomingDropCount: revokedDeviceIncomingDropCount.value,
   }
 }
 
 function applySelfSyncPackage(pkg: SelfSyncPackage) {
+  if (!pkg.sync_id) throw new Error('self-sync 缺少 sync_id')
+  if (processedSelfSyncIds.value.includes(pkg.sync_id)) {
+    selfSyncStatusText.value = `自同步：已跳过重复包 ${pkg.sync_id}`
+    appendLog(selfSyncStatusText.value)
+    return
+  }
+  processedSelfSyncIds.value = [pkg.sync_id, ...processedSelfSyncIds.value.filter((id) => id !== pkg.sync_id), ...(pkg.processedSelfSyncIds ?? [])].filter(Boolean).slice(0, 100)
+  processedSelfSyncIds.value = [...new Set(processedSelfSyncIds.value)].slice(0, 100)
   contacts.value = mergeContactDeviceAndTrustState(contacts.value, pkg.contacts ?? [])
   nodeDhtOperationHistory.value = [...new Set([...(pkg.dhtOperationHistory ?? []), ...nodeDhtOperationHistory.value])].slice(0, DHT_OPERATION_HISTORY_MAX_RECORDS)
   unverifiedIncomingDropCount.value = Math.max(unverifiedIncomingDropCount.value, Number(pkg.unverifiedIncomingDropCount ?? 0))
   revokedDeviceIncomingDropCount.value = Math.max(revokedDeviceIncomingDropCount.value, Number(pkg.revokedDeviceIncomingDropCount ?? 0))
   lastSelfSyncMergedAt.value = Date.now()
-  selfSyncStatusText.value = `自同步：已合并 ${pkg.contacts?.length ?? 0} 个联系人状态`
+  selfSyncStatusText.value = `自同步：已合并 ${pkg.contacts?.length ?? 0} 个联系人状态（${pkg.sync_id.slice(0, 8)}）`
   appendLog(`✅ ${selfSyncStatusText.value}`)
   persist()
 }
@@ -2055,6 +2107,7 @@ async function importFullDataBackupMerge() {
     if (typeof state.lastSelfMailboxBackupPushedAt === 'number') lastSelfMailboxBackupPushedAt.value = Math.max(lastSelfMailboxBackupPushedAt.value ?? 0, state.lastSelfMailboxBackupPushedAt)
     if (typeof state.lastSelfMailboxBackupReceivedAt === 'number') lastSelfMailboxBackupReceivedAt.value = Math.max(lastSelfMailboxBackupReceivedAt.value ?? 0, state.lastSelfMailboxBackupReceivedAt)
     if (typeof state.lastSelfMailboxBackupMergedAt === 'number') lastSelfMailboxBackupMergedAt.value = Math.max(lastSelfMailboxBackupMergedAt.value ?? 0, state.lastSelfMailboxBackupMergedAt)
+    processedSelfSyncIds.value = [...new Set([...processedSelfSyncIds.value, ...(state.processedSelfSyncIds ?? [])])].slice(0, 100)
     unverifiedIncomingDropCount.value += Number(state.unverifiedIncomingDropCount ?? 0)
     if (typeof state.lastUnverifiedIncomingDropAt === 'number' && state.lastUnverifiedIncomingDropAt > (lastUnverifiedIncomingDropAt.value ?? 0)) {
       lastUnverifiedIncomingDropAt.value = state.lastUnverifiedIncomingDropAt
@@ -7383,7 +7436,7 @@ const appContext = {
   autoPublishPreKey, autoNodeSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodeStateFileSecurityText, nodeStateFileSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutDeviceRevokeToFriends, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
-  exportFullDataBackup, pushFullDataBackupToOwnMailbox, pushSelfSyncPackageToOwnMailbox, selfSyncStatusText, lastSelfSyncPushedAt, lastSelfSyncMergedAt, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, selfMailboxBackupStatusText, selfMailboxBackupMergePending, selfMailboxBackupMergeStatusText, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
+  exportFullDataBackup, pushFullDataBackupToOwnMailbox, pushSelfSyncPackageToOwnMailbox, selfSyncStatusText, processedSelfSyncIds, lastSelfSyncPushedAt, lastSelfSyncMergedAt, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, selfMailboxBackupStatusText, selfMailboxBackupMergePending, selfMailboxBackupMergeStatusText, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
   addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, friendRequestRateRecords, friendRequestRateSummaryText, clearFriendRequestRateRecords, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
