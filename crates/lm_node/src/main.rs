@@ -1189,6 +1189,14 @@ struct ControlStatsResponse<'a> {
     runtime: &'a ControlRuntimeStats,
     maintenance: NodeMaintenanceStats,
     state_db: Option<StateDbStats>,
+    state_file: Option<StateFileStats>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct StateFileStats {
+    file_bytes: u64,
+    encrypted: bool,
+    permissions_hardened: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -3254,6 +3262,33 @@ fn state_db_stats_opt(path: Option<&str>) -> Option<StateDbStats> {
     path.and_then(|path| state_db_stats(path).ok())
 }
 
+#[cfg(unix)]
+fn file_permissions_hardened(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    fs::metadata(path)
+        .map(|metadata| metadata.permissions().mode() & 0o077 == 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn file_permissions_hardened(_path: &Path) -> bool {
+    true
+}
+
+fn state_file_stats(path: &str) -> Result<StateFileStats, Box<dyn std::error::Error>> {
+    let path_ref = Path::new(path);
+    let text = fs::read_to_string(path_ref)?;
+    Ok(StateFileStats {
+        file_bytes: fs::metadata(path_ref).map(|m| m.len()).unwrap_or(0),
+        encrypted: text.trim().starts_with(ENCRYPTED_STATE_FILE_PREFIX),
+        permissions_hardened: file_permissions_hardened(path_ref),
+    })
+}
+
+fn state_file_stats_opt(path: Option<&str>) -> Option<StateFileStats> {
+    path.and_then(|path| state_file_stats(path).ok())
+}
+
 fn db_get_json<T: DeserializeOwned>(
     conn: &Connection,
     key: &str,
@@ -3726,6 +3761,7 @@ fn serve_control(
                     &mut rate_limiter,
                     rate_limit,
                     &mut runtime_stats,
+                    state_file,
                     state_db,
                     &dht_configured_peers,
                     dht_runner,
@@ -4751,6 +4787,7 @@ fn handle_stream(
     rate_limiter: &mut RateLimiter,
     rate_limit: RateLimitConfig,
     runtime_stats: &mut ControlRuntimeStats,
+    state_file: Option<&str>,
     state_db: Option<&str>,
     dht_configured_peers: &[SyncPeerConfig],
     dht_runner: DhtRunnerConfig,
@@ -4782,6 +4819,7 @@ fn handle_stream(
                 runtime: runtime_stats,
                 maintenance: node.maintenance_stats().clone(),
                 state_db: state_db_stats_opt(state_db),
+                state_file: state_file_stats_opt(state_file),
             },
         )
     } else if request.method == "GET" && request.path.starts_with("/control/metrics") {
