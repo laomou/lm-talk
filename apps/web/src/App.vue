@@ -2047,6 +2047,14 @@ function clearSelfSyncGapStats() {
   persist()
 }
 
+async function repairSelfSyncGapNow() {
+  await runAsync('补发轻量自同步包', async () => {
+    await pushSelfSyncPackageToOwnMailbox()
+    selfSyncStatusText.value = `${selfSyncStatusText.value}；已用于缺口补偿`
+    appendLog('✅ 已补发轻量自同步包用于缺口补偿')
+  })
+}
+
 async function pushSelfSyncPackageToOwnMailbox() {
   await runAsync('同步状态到自己的 Mailbox', async () => {
     if (!identity.value?.user_id) throw new Error('需要先登录身份')
@@ -7585,7 +7593,7 @@ const appContext = {
   autoPublishPreKey, autoNodeSync, autoSelfMailboxSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodeStateFileSecurityText, nodeStateFileSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutDeviceRevokeToFriends, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
-  exportFullDataBackup, pushFullDataBackupToOwnMailbox, pushSelfSyncPackageToOwnMailbox, selfSyncStatusText, processedSelfSyncIds, lastSelfSyncPushedAt, lastSelfSyncMergedAt, lastSelfSyncSequenceSent, lastSelfSyncSequenceMerged, selfSyncGapCount, lastSelfSyncGapAt, clearSelfSyncGapStats, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, selfMailboxBackupStatusText, selfMailboxBackupMergePending, selfMailboxBackupMergeStatusText, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
+  exportFullDataBackup, pushFullDataBackupToOwnMailbox, pushSelfSyncPackageToOwnMailbox, selfSyncStatusText, processedSelfSyncIds, lastSelfSyncPushedAt, lastSelfSyncMergedAt, lastSelfSyncSequenceSent, lastSelfSyncSequenceMerged, selfSyncGapCount, lastSelfSyncGapAt, clearSelfSyncGapStats, repairSelfSyncGapNow, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, selfMailboxBackupStatusText, selfMailboxBackupMergePending, selfMailboxBackupMergeStatusText, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
   addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, friendRequestRateRecords, friendRequestRateSummaryText, clearFriendRequestRateRecords, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
