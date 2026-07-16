@@ -28,7 +28,7 @@
 - `lm_node` 仍是控制面 + snapshot sync scaffold，不是真正生产 DHT。
 - Mailbox/PreKey 可支撑 demo；Mailbox 已有基础 TTL/配额/message_id 去重、take 分页、ack 批量限制与拒绝统计、delivery 状态查询和 ACK tombstone 持久化、控制面 per-client IP 限流和 SQLite state_db 持久化，但仍缺完整客户端状态合并、多设备回执同步与更强反滥用。
 - Core 协议对象已可测，属性测试和跨平台测试向量已补齐；Double Ratchet replay、乱序 skipped-key 消费和 skip-window 边界已有属性测试；常见导入文本/附件 JSON 解析已补 malformed 输入不崩溃和超限拒绝覆盖；已新增 cargo-fuzz/libFuzzer harness 脚手架。仍需长时间 fuzz 运行、持续语料回归、AFL/独立安全测试和外部安全审计。
-- 本地持久化仍偏 Web IndexedDB / MemoryStore；Native node 已有 SQLite state_db，SQLCipher/客户端完整数据加密仍未实现；Native JSON state_file 已支持环境变量口令的应用层加密作为过渡方案。
+- 本地持久化仍偏 Web IndexedDB / MemoryStore；Native node 已有 SQLite state_db，SQLCipher/客户端完整数据加密仍未实现；Native JSON state_file 已支持环境变量/secret file/config 口令的应用层加密、fail-closed 要求、stats/metrics/Web 诊断作为过渡方案。
 
 ---
 
@@ -1054,7 +1054,7 @@ MVP 群聊采用逐个加密。
    - [x] `/control/metrics` 暴露每个 sync peer 的 attempts、successes、failures、consecutive_failures 和 next_attempt_at，便于部署观察自动同步退避状态。
    - [x] `/control/stats` / `/control/metrics` 暴露后台任务调度延迟：`lm_node_background_schedule_delay_micros_*`。
    - [x] `/control/stats` / `/control/metrics` 暴露持久化 SQLite 数据库页/空间指标：`lm_node_state_db_*`。
-   - [x] SQLite `state_db` 连接启用 WAL、`synchronous=FULL`、`busy_timeout=5000` 和 `foreign_keys=ON`，并有单元测试覆盖；Unix 下 `state_db` 主文件和 WAL/SHM sidecar 以及兼容 `state_file` 保存结果会收紧为 `0600`，降低未加密本地状态泄漏风险；`/health`、`/control/stats` 和 `/control/metrics` 明示 `state_db_encrypted=false` / `lm_node_state_db_encrypted 0` 和权限硬化状态，避免部署方误判 SQLCipher 已完成；新增 `state_db_require_encryption` / `--state-db-require-encryption` / `LM_NODE_STATE_DB_REQUIRE_ENCRYPTION` fail-closed 开关，要求数据库级加密时当前 plain SQLite 构建会拒绝启动；`serve-control` 与 `serve-dht-libp2p` 真实进程路径均有覆盖。
+   - [x] SQLite `state_db` 连接启用 WAL、`synchronous=FULL`、`busy_timeout=5000` 和 `foreign_keys=ON`，并有单元测试覆盖；Unix 下 `state_db` 主文件和 WAL/SHM sidecar 以及兼容 `state_file` 保存结果会收紧为 `0600`，降低未加密本地状态泄漏风险；`/health`、`/control/stats` 和 `/control/metrics` 明示 `state_db_encrypted=false` / `lm_node_state_db_encrypted 0` 和权限硬化状态，避免部署方误判 SQLCipher 已完成；新增 `state_db_encryption_mode`（plain/external）、`state_db_require_encryption` / `--state-db-require-encryption` / `LM_NODE_STATE_DB_REQUIRE_ENCRYPTION` fail-closed 开关，要求非明文状态库时 plain SQLite 会拒绝启动；`serve-control` 与 `serve-dht-libp2p` 真实进程路径均有覆盖；JSON `state_file` 也支持 `lm-node-state-file-v1:` XChaCha20-Poly1305 加密、passphrase file、require-encryption fail-closed、stats/metrics 暴露。
 
 ### P2：生产网络能力
 
