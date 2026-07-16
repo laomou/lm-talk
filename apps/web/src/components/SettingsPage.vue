@@ -154,6 +154,10 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
             <button v-if="hasRawSyncStatus" class="secondary" @click="showRawSyncStatus = !showRawSyncStatus">{{ showRawSyncStatus ? '隐藏原始状态' : '显示原始状态' }}</button>
           </div>
           <small>{{ ctx.nodeDhtFindValueStatusText.value }}</small>
+          <div v-if="ctx.discoveredMailboxHintUrl.value" class="row compact">
+            <small>发现 MailboxHint：{{ ctx.discoveredMailboxHintUrl.value }}</small>
+            <button class="secondary" @click="ctx.addDiscoveredMailboxHintToSyncServices">加入同步服务</button>
+          </div>
           <small>{{ ctx.nodeDhtMaintenanceStatusText.value }}</small>
           <small>{{ ctx.nodeDhtReplicationStatusText.value }}</small>
           <small>{{ ctx.nodeRoutingRefreshStatusText.value }}</small>
