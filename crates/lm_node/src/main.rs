@@ -155,6 +155,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or_default();
             let peer_id = optional_arg(&args, "--peer-id")?.unwrap_or("lm-node-dev".into());
             let state_file = optional_arg(&args, "--state-file")?;
+            let state_file_passphrase_from_file = optional_secret_file_arg(
+                &args,
+                "--state-file-passphrase-file",
+                "LM_NODE_STATE_FILE_PASSPHRASE_FILE",
+                None,
+            )?;
+            install_state_file_passphrase_override(state_file_passphrase_from_file);
             let state_db = optional_arg(&args, "--state-db")?;
             let state_db_require_encryption = optional_arg(&args, "--state-db-require-encryption")?
                 .or_else(|| env::var("LM_NODE_STATE_DB_REQUIRE_ENCRYPTION").ok())
@@ -215,6 +222,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .or(file_config.peer_id)
                 .unwrap_or("lm-node-dev".into());
             let state_file = optional_arg(&args, "--state-file")?.or(file_config.state_file);
+            let state_file_passphrase_from_file = optional_secret_file_arg(
+                &args,
+                "--state-file-passphrase-file",
+                "LM_NODE_STATE_FILE_PASSPHRASE_FILE",
+                None,
+            )?;
+            install_state_file_passphrase_override(state_file_passphrase_from_file);
             let state_db = optional_arg(&args, "--state-db")?.or(file_config.state_db);
             let state_db_require_encryption = optional_arg(&args, "--state-db-require-encryption")?
                 .or_else(|| env::var("LM_NODE_STATE_DB_REQUIRE_ENCRYPTION").ok())
@@ -549,6 +563,14 @@ fn optional_secret_file_arg(
 
 fn choose_secret(direct: Option<String>, file_value: Option<String>) -> Option<String> {
     direct.or(file_value)
+}
+
+fn install_state_file_passphrase_override(value: Option<String>) {
+    if let Some(value) = value {
+        // Safe here because this is called during single-threaded startup before
+        // the control/libp2p worker loops are spawned.
+        unsafe { env::set_var("LM_NODE_STATE_FILE_PASSPHRASE", value) }
+    }
 }
 
 fn validate_state_db_encryption_requirement(

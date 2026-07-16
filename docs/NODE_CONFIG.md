@@ -71,7 +71,7 @@ CLI 参数 > 环境变量 > config file > 默认值
 | `peer_id` | `--peer-id` | - |
 | `state_db` | `--state-db` | - |
 | `state_db_require_encryption` | `--state-db-require-encryption` | `LM_NODE_STATE_DB_REQUIRE_ENCRYPTION` |
-| `state_file_passphrase` | - | `LM_NODE_STATE_FILE_PASSPHRASE` / `LM_NODE_STATE_FILE_PASSPHRASE_FILE` |
+| `state_file_passphrase` | `--state-file-passphrase-file` | `LM_NODE_STATE_FILE_PASSPHRASE` / `LM_NODE_STATE_FILE_PASSPHRASE_FILE` |
 | `state_file` | `--state-file` | - |
 | `control_token` | `--control-token` | `LM_NODE_CONTROL_TOKEN` |
 | `control_token_file` | `--control-token-file` | `LM_NODE_CONTROL_TOKEN_FILE` |
