@@ -2566,6 +2566,7 @@ function applySelfSyncPackage(pkg: SelfSyncPackage) {
   if (ownDeviceCertsChanged && friendContacts.value.length) {
     appendLog('自同步合并了新的本机设备证书，正在向好友分发联系人更新')
     void fanoutMyContactCardUpdateToFriends()
+    if (nodeEnabled.value) void ensureOwnContactCardDhtRecord()
   }
 }
 
@@ -2939,6 +2940,7 @@ async function afterLoginAutomation() {
   if (!nodeEnabled.value) return
   if (autoPublishPreKey.value) await ensurePreKeyInventory()
   await ensureOwnMailboxHintDhtRecord()
+  await ensureOwnContactCardDhtRecord()
   await ensureOwnPublicPeerDhtRecord()
   if (autoMailboxTake.value) await takeMailboxFromNode()
 }
@@ -2953,6 +2955,7 @@ async function syncNow() {
   try {
     if (autoPublishPreKey.value) await ensurePreKeyInventory()
     await ensureOwnMailboxHintDhtRecord()
+    await ensureOwnContactCardDhtRecord()
     await ensureOwnPublicPeerDhtRecord()
     if (autoNodeSync.value && nodeSyncPeerUrl.value.trim()) await autoPullSnapshotFromPeerNode()
     await refreshOutgoingMailboxDeliveryStatusesFromNode()
@@ -3838,6 +3841,7 @@ function createMyDeviceCert() {
       appendLog(`正在自动向 ${friendContacts.value.length} 个好友分发新的设备证书更新`)
       void fanoutMyContactCardUpdateToFriends()
     }
+    if (nodeEnabled.value) void ensureOwnContactCardDhtRecord()
   })
 }
 
@@ -7610,6 +7614,17 @@ async function publishContactCardDhtRecord(options: { recordHistory?: boolean } 
   nodeClosestInfoText.value = JSON.stringify(store, null, 2)
   if (options.recordHistory !== false) recordDhtOperation(`ContactCard 已发布到 DHT：${record.key.slice(0, 12)}…`)
   return { key: record.key, store }
+}
+
+
+async function ensureOwnContactCardDhtRecord() {
+  if (!identity.value?.user_id || !nodeEnabled.value) return
+  try {
+    const { key } = await publishContactCardDhtRecord({ recordHistory: false })
+    appendLog(`✅ ContactCard 已自动发布到 DHT：${key.slice(0, 12)}…`)
+  } catch (e) {
+    appendLog(`⚠️ ContactCard 自动发布到 DHT 失败：${userFacingError(e)}`)
+  }
 }
 
 async function publishAndCheckMyContactCardDht() {
