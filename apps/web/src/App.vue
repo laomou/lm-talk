@@ -305,6 +305,7 @@ type PersistedState = {
   pwaBackgroundEventHistory?: string[]
   friendRequestRateRecords?: FriendRequestRateRecord[]
   lastFullDataBackupAt?: number
+  lastSelfMailboxBackupReceivedAt?: number
   unverifiedIncomingDropCount?: number
   lastUnverifiedIncomingDropAt?: number
   lastUnverifiedIncomingDropFrom?: string
@@ -336,6 +337,7 @@ type PersistedMeta = {
   pwaBackgroundEventHistory?: string[]
   friendRequestRateRecords?: FriendRequestRateRecord[]
   lastFullDataBackupAt?: number
+  lastSelfMailboxBackupReceivedAt?: number
   unverifiedIncomingDropCount?: number
   lastUnverifiedIncomingDropAt?: number
   lastUnverifiedIncomingDropFrom?: string
@@ -479,6 +481,7 @@ const selectedGroupMembers = ref<string[]>([])
 const groupFanoutJson = ref('')
 const dataBackupText = ref('')
 const lastFullDataBackupAt = ref<number | null>(null)
+const lastSelfMailboxBackupReceivedAt = ref<number | null>(null)
 const fullDataBackupFreshnessLevel = computed<'ok' | 'warning' | 'danger'>(() => {
   const at = lastFullDataBackupAt.value
   if (!at) return 'danger'
@@ -1268,6 +1271,7 @@ function currentPersistedState(): PersistedState {
     pwaBackgroundEventHistory: pwaBackgroundEventHistory.value,
     friendRequestRateRecords: friendRequestRateRecords.value,
     lastFullDataBackupAt: lastFullDataBackupAt.value ?? undefined,
+    lastSelfMailboxBackupReceivedAt: lastSelfMailboxBackupReceivedAt.value ?? undefined,
     unverifiedIncomingDropCount: unverifiedIncomingDropCount.value,
     lastUnverifiedIncomingDropAt: lastUnverifiedIncomingDropAt.value ?? undefined,
     lastUnverifiedIncomingDropFrom: lastUnverifiedIncomingDropFrom.value,
@@ -1610,6 +1614,7 @@ async function clearPersisted() {
   pwaLastBackgroundEventText.value = '尚未收到后台事件'
   friendRequestRateRecords.value = []
   lastFullDataBackupAt.value = null
+  lastSelfMailboxBackupReceivedAt.value = null
   unverifiedIncomingDropCount.value = 0
   lastUnverifiedIncomingDropAt.value = null
   lastUnverifiedIncomingDropFrom.value = ''
@@ -1954,6 +1959,7 @@ async function importFullDataBackupMerge() {
     pwaLastBackgroundEventText.value = pwaBackgroundEventHistory.value[0] ?? '尚未收到后台事件'
     friendRequestRateRecords.value = mergeUniqueBy(friendRequestRateRecords.value, state.friendRequestRateRecords ?? [], (x) => x.from_user_id).items
     if (typeof state.lastFullDataBackupAt === 'number') lastFullDataBackupAt.value = Math.max(lastFullDataBackupAt.value ?? 0, state.lastFullDataBackupAt)
+    if (typeof state.lastSelfMailboxBackupReceivedAt === 'number') lastSelfMailboxBackupReceivedAt.value = Math.max(lastSelfMailboxBackupReceivedAt.value ?? 0, state.lastSelfMailboxBackupReceivedAt)
     unverifiedIncomingDropCount.value += Number(state.unverifiedIncomingDropCount ?? 0)
     if (typeof state.lastUnverifiedIncomingDropAt === 'number' && state.lastUnverifiedIncomingDropAt > (lastUnverifiedIncomingDropAt.value ?? 0)) {
       lastUnverifiedIncomingDropAt.value = state.lastUnverifiedIncomingDropAt
@@ -6541,6 +6547,7 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
   let sender = contactByUserId(fromUserId)
   if (identity.value?.user_id && fromUserId === identity.value.user_id && (normalizedKind === 'databackup' || ciphertext.startsWith('lm-data-backup-v1:'))) {
     dataBackupText.value = ciphertext
+    lastSelfMailboxBackupReceivedAt.value = Date.now()
     appendLog('✅ 已从自己的 Mailbox 收到完整数据备份，可在设置页导入合并')
     mailboxInboxStatus.value = '已从自己的 Mailbox 收到完整数据备份，可在设置页导入合并'
     return { handled: true, deliveryId, event: 'data-backup' }
@@ -7274,7 +7281,7 @@ const appContext = {
   autoPublishPreKey, autoNodeSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodeStateFileSecurityText, nodeStateFileSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutDeviceRevokeToFriends, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
-  exportFullDataBackup, pushFullDataBackupToOwnMailbox, importFullDataBackup, importFullDataBackupMerge, downloadText, lastFullDataBackupAt, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
+  exportFullDataBackup, pushFullDataBackupToOwnMailbox, importFullDataBackup, importFullDataBackupMerge, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupReceivedAt, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
   addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, friendRequestRateRecords, friendRequestRateSummaryText, clearFriendRequestRateRecords, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
