@@ -1215,6 +1215,7 @@ struct ControlRuntimeStats {
     dht_find_value_successes: u64,
     dht_find_value_failures: u64,
     dht_find_value_found_records: u64,
+    dht_find_value_invalid_found_records: u64,
     dht_find_value_closer_records: u64,
     dht_find_value_closer_nodes_returned: u64,
     dht_find_value_closer_nodes_merged: u64,
@@ -1287,6 +1288,7 @@ impl ControlRuntimeStats {
             dht_find_value_successes: 0,
             dht_find_value_failures: 0,
             dht_find_value_found_records: 0,
+            dht_find_value_invalid_found_records: 0,
             dht_find_value_closer_records: 0,
             dht_find_value_closer_nodes_returned: 0,
             dht_find_value_closer_nodes_merged: 0,
@@ -1703,6 +1705,13 @@ impl ControlRuntimeStats {
             "kind",
             "found",
             self.dht_find_value_found_records,
+        );
+        push_labeled_metric_value(
+            &mut out,
+            "lm_node_dht_find_value_records_total",
+            "kind",
+            "invalid_found",
+            self.dht_find_value_invalid_found_records,
         );
         push_labeled_metric_value(
             &mut out,
@@ -2437,6 +2446,9 @@ impl ControlRuntimeStats {
         self.dht_find_value_found_records = self
             .dht_find_value_found_records
             .saturating_add(stats.found_records as u64);
+        self.dht_find_value_invalid_found_records = self
+            .dht_find_value_invalid_found_records
+            .saturating_add(stats.invalid_found_records as u64);
         self.dht_find_value_closer_records = self
             .dht_find_value_closer_records
             .saturating_add(stats.closer_records as u64);
@@ -7688,6 +7700,7 @@ connection: close
                 successes: 3,
                 failures: 1,
                 found_records: 1,
+                invalid_found_records: 7,
                 closer_records: 2,
                 closer_nodes_returned: 5,
                 closer_nodes_merged: 2,
@@ -7704,6 +7717,7 @@ connection: close
         assert_eq!(stats.dht_find_value_successes, 3);
         assert_eq!(stats.dht_find_value_failures, 1);
         assert_eq!(stats.dht_find_value_found_records, 1);
+        assert_eq!(stats.dht_find_value_invalid_found_records, 7);
         assert_eq!(stats.dht_find_value_closer_nodes_rejected_non_closer, 4);
         assert_eq!(stats.dht_find_value_closer_nodes_rejected_duplicate, 6);
         assert_eq!(stats.dht_find_value_peers_quarantined, 1);
