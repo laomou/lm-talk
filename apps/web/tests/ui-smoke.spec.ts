@@ -528,6 +528,9 @@ test('设置页可导出并导入完整数据备份恢复本地同步设置', as
   await enableSync(page)
   await page.goto('/#/me')
   await page.getByLabel('当前会话自动发送已读回执').uncheck()
+  await page.evaluate(() => {
+    ;(window as any).setDhtDiagnosticsForTests?.('DHT 查找：备份测试', ['2026/07/16 10:10 · DHT 查找：备份测试'])
+  })
   await page.getByRole('button', { name: '显示备份文本' }).click()
   await page.getByRole('button', { name: '生成备份' }).click()
   const backupTextArea = page.getByLabel('完整数据备份文本')
@@ -546,6 +549,7 @@ test('设置页可导出并导入完整数据备份恢复本地同步设置', as
   await expect(page.getByText('完整数据备份已导入')).toBeVisible()
   await expect(syncInput).toHaveValue('http://sync.test')
   await expect(page.getByLabel('当前会话自动发送已读回执')).not.toBeChecked()
+  await expect(page.getByText(/DHT 操作历史：.*备份测试/)).toBeVisible()
 })
 
 test('消息合并会保留更高回执状态和时间戳', async ({ page }) => {

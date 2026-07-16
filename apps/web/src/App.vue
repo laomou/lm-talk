@@ -285,6 +285,7 @@ type PersistedState = {
   processedMailboxIds?: Array<string | ProcessedMailboxRecord>
   mailboxFailedItems?: MailboxFailedItem[]
   syncRecoveryHistory?: string[]
+  dhtOperationHistory?: string[]
   pwaBackgroundEventHistory?: string[]
   friendRequestRateRecords?: FriendRequestRateRecord[]
 }
@@ -307,6 +308,7 @@ type PersistedMeta = {
   processedMailboxIds?: Array<string | ProcessedMailboxRecord>
   mailboxFailedItems?: MailboxFailedItem[]
   syncRecoveryHistory?: string[]
+  dhtOperationHistory?: string[]
   pwaBackgroundEventHistory?: string[]
   friendRequestRateRecords?: FriendRequestRateRecord[]
   schemaVersion: number
@@ -1173,6 +1175,7 @@ function currentPersistedState(): PersistedState {
     processedMailboxIds: processedMailboxIds.value,
     mailboxFailedItems: mailboxFailedItems.value,
     syncRecoveryHistory: syncRecoveryHistory.value,
+    dhtOperationHistory: nodeDhtOperationHistory.value,
     pwaBackgroundEventHistory: pwaBackgroundEventHistory.value,
     friendRequestRateRecords: friendRequestRateRecords.value,
   }
@@ -1197,6 +1200,7 @@ function persistedMeta(): PersistedMeta {
     processedMailboxIds: processedMailboxIds.value,
     mailboxFailedItems: mailboxFailedItems.value,
     syncRecoveryHistory: syncRecoveryHistory.value,
+    dhtOperationHistory: nodeDhtOperationHistory.value,
     pwaBackgroundEventHistory: pwaBackgroundEventHistory.value,
     friendRequestRateRecords: friendRequestRateRecords.value,
     schemaVersion: 3,
@@ -1303,6 +1307,7 @@ if (typeof window !== 'undefined') {
   ;(window as any).setDhtDiagnosticsForTests = (status: string, history: string[] = []) => {
     nodeDhtFindValueStatusText.value = status
     nodeDhtOperationHistory.value = history
+    persist()
   }
   ;(window as any).mergeMessagesForTests = mergeMessagesForState
   ;(window as any).handlePwaBackgroundSyncForTests = handlePwaBackgroundSyncMessage
@@ -1335,6 +1340,7 @@ async function writeStateToTables(state: PersistedState) {
   processedMailboxIds.value = normalizeProcessedMailboxRecords(state.processedMailboxIds)
   mailboxFailedItems.value = await Promise.all((state.mailboxFailedItems ?? []).map((m: any) => decryptMailboxFailedItemFromStore(m, key)))
   syncRecoveryHistory.value = state.syncRecoveryHistory ?? []
+  nodeDhtOperationHistory.value = state.dhtOperationHistory ?? []
   pwaBackgroundEventHistory.value = state.pwaBackgroundEventHistory ?? []
   pwaLastBackgroundEventText.value = pwaBackgroundEventHistory.value[0] ?? '尚未收到后台事件'
   friendRequestRateRecords.value = state.friendRequestRateRecords ?? []
@@ -1363,6 +1369,7 @@ async function loadStateFromTables(): Promise<boolean> {
   processedMailboxIds.value = normalizeProcessedMailboxRecords(meta.processedMailboxIds)
   mailboxFailedItems.value = await Promise.all((meta.mailboxFailedItems ?? []).map((m: any) => decryptMailboxFailedItemFromStore(m, key)))
   syncRecoveryHistory.value = meta.syncRecoveryHistory ?? []
+  nodeDhtOperationHistory.value = meta.dhtOperationHistory ?? []
   pwaBackgroundEventHistory.value = meta.pwaBackgroundEventHistory ?? []
   pwaLastBackgroundEventText.value = pwaBackgroundEventHistory.value[0] ?? '尚未收到后台事件'
   friendRequestRateRecords.value = meta.friendRequestRateRecords ?? []
@@ -1445,6 +1452,7 @@ function resetAccountScopedState() {
   processedMailboxIds.value = []
   mailboxFailedItems.value = []
   syncRecoveryHistory.value = []
+  nodeDhtOperationHistory.value = []
   pwaBackgroundEventHistory.value = []
   pwaLastBackgroundEventText.value = '尚未收到后台事件'
   friendRequestRateRecords.value = []
@@ -1495,6 +1503,7 @@ async function clearPersisted() {
   processedMailboxIds.value = []
   mailboxFailedItems.value = []
   syncRecoveryHistory.value = []
+  nodeDhtOperationHistory.value = []
   pwaBackgroundEventHistory.value = []
   pwaLastBackgroundEventText.value = '尚未收到后台事件'
   friendRequestRateRecords.value = []
@@ -1773,6 +1782,7 @@ async function importFullDataBackupMerge() {
     processedMailboxIds.value = mergeProcessedMailboxRecords(processedMailboxIds.value, state.processedMailboxIds)
     mailboxFailedItems.value = mergeUniqueBy(mailboxFailedItems.value, state.mailboxFailedItems ?? [], (x) => x.id).items
     syncRecoveryHistory.value = [...new Set([...syncRecoveryHistory.value, ...(state.syncRecoveryHistory ?? [])])].slice(0, 5)
+    nodeDhtOperationHistory.value = [...new Set([...nodeDhtOperationHistory.value, ...(state.dhtOperationHistory ?? [])])].slice(0, 8)
     pwaBackgroundEventHistory.value = [...new Set([...pwaBackgroundEventHistory.value, ...(state.pwaBackgroundEventHistory ?? [])])].slice(0, 5)
     pwaLastBackgroundEventText.value = pwaBackgroundEventHistory.value[0] ?? '尚未收到后台事件'
     friendRequestRateRecords.value = mergeUniqueBy(friendRequestRateRecords.value, state.friendRequestRateRecords ?? [], (x) => x.from_user_id).items
@@ -4987,11 +4997,13 @@ async function submitPublicPeerToNode() {
 function recordDhtOperation(summary: string) {
   const line = `${formatDateTime(Date.now())} · ${summary}`
   nodeDhtOperationHistory.value = [line, ...nodeDhtOperationHistory.value.filter((item) => item !== line)].slice(0, 8)
+  persist()
 }
 
 function clearDhtOperationHistory() {
   nodeDhtOperationHistory.value = []
   nodeDhtFindValueStatusText.value = 'DHT 查找：已清空操作历史'
+  persist()
 }
 
 function dhtKeyKindLabel(kind: string): string {
