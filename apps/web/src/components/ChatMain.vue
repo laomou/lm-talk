@@ -211,7 +211,7 @@ function onComposerKeydown(e: KeyboardEvent) {
               <span v-if="item.m.read_at"> · 已读 {{ ctx.formatDateTime(item.m.read_at) }}</span>
               <span v-else-if="item.m.delivered_at"> · 送达 {{ ctx.formatDateTime(item.m.delivered_at) }}</span>
               <span v-if="item.m.direction === 'out' && item.m.protocol_message_id"> · {{ shortMessageId(item.m.protocol_message_id) }}</span>
-              <span v-if="item.m.direction === 'out' && item.m.target_device_ids?.length"> · 目标设备 {{ item.m.target_device_ids.length }}</span>
+              <span v-if="item.m.direction === 'out' && ctx.perDeviceEnvelopeTargetCount(item.m)"> · 分设备草稿 {{ ctx.perDeviceEnvelopeTargetCount(item.m) }}</span>
               <span v-if="item.m.file_downloaded_at"> · 已下载 {{ ctx.formatDateTime(item.m.file_downloaded_at) }}</span>
             </small>
           </div>

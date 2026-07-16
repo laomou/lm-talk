@@ -237,7 +237,23 @@ type ChatMessage = {
   read_at?: number
   file_downloaded_at?: number
   target_device_ids?: string[]
+  per_device_envelope_json?: string
+  per_device_envelope_version?: number
   status: MessageStatus
+  created_at: number
+}
+
+
+type PerDeviceEnvelopeV1 = {
+  type: 'lm-per-device-envelope-v1'
+  version: 1
+  conversation_id: string
+  sender_user_id: string
+  target_devices: Array<{
+    device_id: string
+    ciphertext: string
+  }>
+  fallback_ciphertext?: string
   created_at: number
 }
 
@@ -4819,20 +4835,25 @@ async function sendMessage() {
     if (!activeContact.value) throw new Error('请选择联系人')
     if (activeContact.value.state === 'Blocked') throw new Error('联系人已被拉黑')
     if (activeContact.value.state !== 'Friend') throw new Error('对方通过好友请求后才能聊天')
+    const conversationId = `conv-${activeContact.value.user_id}`
     const envelope = encryptEnvelopeForContact(
       activeContact.value,
-      `conv-${activeContact.value.user_id}`,
+      conversationId,
       outgoingFiltered.text,
     )
+    const targetDeviceIds = contactActiveDeviceIds(activeContact.value)
+    const perDeviceEnvelope = createPerDeviceEnvelopeDraft(activeContact.value, conversationId, envelope)
     const msg: ChatMessage = {
       id: newId(),
-      conversation_id: `conv-${activeContact.value.user_id}`,
+      conversation_id: conversationId,
       peer_user_id: activeContact.value.user_id,
       direction: 'out',
       text: outgoingFiltered.text,
       envelope_json: envelope,
       protocol_message_id: messageProtocolIdFromEnvelope(envelope),
-      target_device_ids: contactActiveDeviceIds(activeContact.value),
+      target_device_ids: targetDeviceIds,
+      per_device_envelope_json: perDeviceEnvelope,
+      per_device_envelope_version: perDeviceEnvelope ? 1 : undefined,
       status: 'queued',
       created_at: Date.now(),
     }
@@ -4852,6 +4873,37 @@ async function sendMessage() {
     composerText.value = ''
     persist()
   })
+}
+
+
+function createPerDeviceEnvelopeDraft(contact: ContactItem, conversationId: string, ciphertext: string): string | undefined {
+  const targetDeviceIds = contactActiveDeviceIds(contact)
+  if (targetDeviceIds.length === 0) return undefined
+  const draft: PerDeviceEnvelopeV1 = {
+    type: 'lm-per-device-envelope-v1',
+    version: 1,
+    conversation_id: conversationId,
+    sender_user_id: identity.value?.user_id || '',
+    target_devices: targetDeviceIds.map((deviceId) => ({
+      device_id: deviceId,
+      ciphertext,
+    })),
+    // Scaffold only: each device currently references the same conversation envelope.
+    // A later crypto step should replace this with per-device sealed sender keys/envelopes.
+    fallback_ciphertext: ciphertext,
+    created_at: Date.now(),
+  }
+  return JSON.stringify(draft)
+}
+
+function perDeviceEnvelopeTargetCount(message: ChatMessage): number {
+  if (message.per_device_envelope_json) {
+    try {
+      const parsed = JSON.parse(message.per_device_envelope_json) as PerDeviceEnvelopeV1
+      if (Array.isArray(parsed.target_devices)) return parsed.target_devices.length
+    } catch {}
+  }
+  return message.target_device_ids?.length ?? 0
 }
 
 function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, mailboxDeliveryId?: string): boolean {
@@ -7847,7 +7899,7 @@ const appContext = {
   newGroupName, friendContacts, selectedGroupMembers, createGroup, groups, activeGroupId,
   selectGroup, activeContact, activeGroup, activeRatchetSession, activeRatchetStatusText, activeSecureSessionOutboxCount, activeGroupMembers, activeGroupWarningText, blockReason, blockActiveContact, readReceiptsEnabledFor, setActiveContactReadReceipts,
   unblockActiveContact, removeActiveContact, clearActiveConversation, createFriendRequestForActive, clearActiveFriendRequestError, createInviteForActiveGroup, groupInviteText, groupFanoutJson,
-  removeActiveGroup, leaveActiveGroupWithNotice, messages, activeMessages, formatTime, formatDateTime, statusLabel, copyMessageEnvelope, composerText,
+  removeActiveGroup, leaveActiveGroupWithNotice, messages, activeMessages, formatTime, formatDateTime, statusLabel, copyMessageEnvelope, perDeviceEnvelopeTargetCount, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
   flushOutboxForActive, retryAllOutbox, cancelOutboxForActive, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
