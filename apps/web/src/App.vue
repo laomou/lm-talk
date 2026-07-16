@@ -2983,6 +2983,7 @@ async function syncNow() {
     await ensureOwnContactCardDhtRecord()
     await ensureOwnPublicPeerDhtRecord()
     if (autoNodeSync.value && nodeSyncPeerUrl.value.trim()) await autoPullSnapshotFromPeerNode()
+    await autoRefreshStaleContactCardDht()
     await refreshOutgoingMailboxDeliveryStatusesFromNode()
     if (autoSelfMailboxSync.value) await pushSelfSyncPackageToOwnMailbox()
     await takeMailboxFromNode()
@@ -7916,9 +7917,33 @@ function startNodeSyncLoop() {
   nodeSyncTimer = window.setInterval(() => { void autoPullSnapshotFromPeerNode() }, 60_000)
 }
 
+
+async function autoRefreshStaleContactCardDht() {
+  if (!loggedIn.value || !nodeEnabled.value || !autoNodeSync.value) return
+  const stale = friendContacts.value
+    .filter((contact) => contactCardDhtDiscoveryIsStale(contact))
+    .slice(0, 3)
+  if (!stale.length) return
+  let refreshed = 0
+  for (const contact of stale) {
+    selectContact(contact.user_id)
+    try {
+      fillDhtKeyInput('contact-card', contact.user_id)
+      await deriveAndFindDhtValueNow()
+      refreshed += 1
+    } catch (error) {
+      appendLog(`后台 ContactCard DHT 刷新失败：${contact.display_name || contact.user_id}：${userFacingError(error)}`)
+    }
+  }
+  if (refreshed) appendLog(`后台 ContactCard DHT 已刷新 ${refreshed}/${stale.length} 个联系人`)
+}
+
 function startSelfSyncLoop() {
   if (selfSyncTimer) return
-  selfSyncTimer = window.setInterval(() => { void autoPushSelfSyncPackageToOwnMailbox() }, 60_000)
+  selfSyncTimer = window.setInterval(() => {
+    void autoPushSelfSyncPackageToOwnMailbox()
+    void autoRefreshStaleContactCardDht()
+  }, 60_000)
 }
 
 function contactByUserId(userId: string): ContactItem | null {
