@@ -4,7 +4,7 @@ use libp2p::{
     Multiaddr, PeerId, StreamProtocol, connection_limits, noise, request_response,
     swarm::NetworkBehaviour, tcp, yamux,
 };
-use lm_core::{Identity, PublicPeerAnnounce, UserId, crypto};
+use lm_core::{Identity, MailboxMessage, MailboxMessageKind, PublicPeerAnnounce, UserId, crypto};
 use lm_node::{
     ConsumedOneTimePreKey, ControlRequest, DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES,
     DhtRecord, DhtRecordReplicationPlan, DhtRpcRequest, DhtRpcResponse, MailboxDelivery,
@@ -119,6 +119,25 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let identity = restore_identity_from_backup_text(backup_text.trim(), &passphrase)?;
             let card = identity.export_contact_card(display_name, None, vec![])?;
             println!("{}", card.to_export_text()?);
+        }
+
+        "mailbox-message" => {
+            let backup_file = required_arg(&args, "--backup-file")?;
+            let passphrase = required_arg(&args, "--passphrase")?;
+            let to_user_id = UserId::from_raw(required_arg(&args, "--to-user-id")?)?;
+            let kind = parse_mailbox_message_kind(
+                &optional_arg(&args, "--kind")?.unwrap_or("other".into()),
+            )?;
+            let ciphertext = required_arg(&args, "--ciphertext")?;
+            let ttl_seconds = optional_arg(&args, "--ttl-seconds")?
+                .map(|value| value.parse::<u64>())
+                .transpose()?
+                .unwrap_or(24 * 3600);
+            let backup_text = fs::read_to_string(backup_file)?;
+            let identity = restore_identity_from_backup_text(backup_text.trim(), &passphrase)?;
+            let message =
+                MailboxMessage::new(&identity, to_user_id, kind, ciphertext, ttl_seconds)?;
+            println!("{}", message.to_export_text()?);
         }
         "announce" => {
             let backup_file = required_arg(&args, "--backup-file")?;
@@ -5579,6 +5598,21 @@ impl ControlHttpResponse {
 
 fn find_header_end(buffer: &[u8]) -> Option<usize> {
     buffer.windows(4).position(|window| window == b"\r\n\r\n")
+}
+
+fn parse_mailbox_message_kind(
+    value: &str,
+) -> Result<MailboxMessageKind, Box<dyn std::error::Error>> {
+    match value.replace(['-', '_'], "").to_ascii_lowercase().as_str() {
+        "signaloffer" => Ok(MailboxMessageKind::SignalOffer),
+        "signalanswer" => Ok(MailboxMessageKind::SignalAnswer),
+        "directenvelope" | "direct" => Ok(MailboxMessageKind::DirectEnvelope),
+        "groupfanout" | "group" => Ok(MailboxMessageKind::GroupFanout),
+        "deliveryreceipt" | "delivered" => Ok(MailboxMessageKind::DeliveryReceipt),
+        "readreceipt" | "read" => Ok(MailboxMessageKind::ReadReceipt),
+        "other" => Ok(MailboxMessageKind::Other),
+        _ => Err(format!("unsupported mailbox kind: {value}").into()),
+    }
 }
 
 fn print_help() {
