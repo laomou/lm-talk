@@ -1905,9 +1905,17 @@ function currentSelfSyncPackage(): SelfSyncPackage {
 
 function applySelfSyncPackage(pkg: SelfSyncPackage) {
   if (!pkg.sync_id) throw new Error('self-sync 缺少 sync_id')
+  if (pkg.from_device_id && myDeviceId.value && pkg.from_device_id === myDeviceId.value) {
+    processedSelfSyncIds.value = [pkg.sync_id, ...processedSelfSyncIds.value.filter((id) => id !== pkg.sync_id)].slice(0, 100)
+    selfSyncStatusText.value = `自同步：已跳过本设备包 ${pkg.sync_id}`
+    appendLog(selfSyncStatusText.value)
+    persist()
+    return
+  }
   if (processedSelfSyncIds.value.includes(pkg.sync_id)) {
     selfSyncStatusText.value = `自同步：已跳过重复包 ${pkg.sync_id}`
     appendLog(selfSyncStatusText.value)
+    persist()
     return
   }
   processedSelfSyncIds.value = [pkg.sync_id, ...processedSelfSyncIds.value.filter((id) => id !== pkg.sync_id), ...(pkg.processedSelfSyncIds ?? [])].filter(Boolean).slice(0, 100)
