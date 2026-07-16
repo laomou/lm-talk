@@ -163,6 +163,11 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
             <button class="secondary" @click="ctx.exportDhtOperationHistory">导出 DHT 历史</button>
             <button class="secondary" @click="ctx.clearDhtOperationHistory">清空 DHT 历史</button>
           </div>
+          <details class="advanced-block">
+            <summary>导入 DHT 历史</summary>
+            <textarea v-model="ctx.nodeDhtOperationHistoryImportText.value" class="mono" rows="3" aria-label="DHT 操作历史 JSON" placeholder='粘贴 {"history":[...]} 或 JSON 数组' />
+            <button class="secondary" :disabled="!ctx.nodeDhtOperationHistoryImportText.value.trim()" @click="ctx.importDhtOperationHistory">导入 DHT 历史</button>
+          </details>
           <small :class="{ 'danger-text': ctx.syncFailureSummaryText.value !== '暂无同步失败' }">{{ ctx.syncFailureSummaryText.value }}</small>
           <small>{{ ctx.syncRecoveryStatusText.value }}</small>
           <input v-if="ctx.syncRecoveryHistory.value.length" v-model="syncRecoveryQuery" type="search" aria-label="筛选同步恢复历史" placeholder="筛选恢复历史" />
