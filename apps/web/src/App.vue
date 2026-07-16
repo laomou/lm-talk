@@ -2484,6 +2484,7 @@ async function tryMailboxDeliveryForMessage(contact: ContactItem, envelope: stri
 }
 
 async function ensureRatchetSessionFromNode(contact: ContactItem): Promise<boolean> {
+  requireContactHasActiveDevice(contact)
   if (!nodeEnabled.value || ratchetSessionFor(contact.user_id)) return Boolean(ratchetSessionFor(contact.user_id))
   let body = await nodeFetchJson(`/prekey/get?user_id=${encodeURIComponent(contact.user_id)}&consume=true`)
   nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
@@ -2849,7 +2850,25 @@ async function confirmOutgoingTextIfNeeded(text: string): Promise<boolean> {
   return showConfirm('发送风险内容', reason, filterRank(action) >= filterRank('Hide'))
 }
 
+function contactRevokedDeviceCount(contact: ContactItem): number {
+  const revoked = new Set(contact.revoked_device_ids ?? [])
+  return (contact.device_certs ?? []).filter((cert) => revoked.has(cert.device_id)).length
+}
+
+function contactAllKnownDevicesRevoked(contact: ContactItem): boolean {
+  const certs = contact.device_certs ?? []
+  if (certs.length === 0) return false
+  const revoked = new Set(contact.revoked_device_ids ?? [])
+  return certs.every((cert) => revoked.has(cert.device_id))
+}
+
+function requireContactHasActiveDevice(contact: ContactItem) {
+  if (!contactAllKnownDevicesRevoked(contact)) return
+  throw new Error(`联系人全部已知设备均已撤销：${contact.display_name || contact.user_id}`)
+}
+
 function requireVerifiedContactForSend(contact: ContactItem) {
+  requireContactHasActiveDevice(contact)
   if (!safetyPolicy.value.requireVerifiedContactsForSend) return
   if (contact.fingerprint_verified_at) return
   throw new Error(`安全策略要求先核验联系人指纹：${contact.display_name || contact.user_id}`)
@@ -3923,6 +3942,7 @@ function recordSecureSessionError(contact: ContactItem, error: unknown, logPrefi
 }
 
 function encryptEnvelopeForContact(contact: ContactItem, conversationId: string, text: string): string {
+  requireContactHasActiveDevice(contact)
   const session = ratchetSessionFor(contact.user_id)
   if (session) {
     const out = JSON.parse(ratchet_encrypt_text_message(session.state_text, conversationId, text)) as { state_text: string; envelope_json: string }
@@ -6980,7 +7000,7 @@ const appContext = {
   prekeySignedId, prekeyOneTimeCount, prekeyBundleText, prekeyPrivateBundleJson, prekeySignedOneTimeRecordTexts, prekeyInfoText, x3dhInitialMessageJson,
   selectedOneTimePreKeyId, selectedSignedOneTimePreKeyRecordText, x3dhSharedSecretText, ratchetStateText, ratchetPeerStateText, ratchetLocalDhKeyPairJson, ratchetRemoteDhPublicKeyForInit,
   ratchetInitRole, ratchetHeaderText, ratchetEnvelopeText, ratchetPlainText, ratchetKeyText, ratchetRemoteDhPublicKey,
-  ratchetInfoText, safetyPolicy, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
+  ratchetInfoText, safetyPolicy, contactRevokedDeviceCount, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
   nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, findActiveContactMailboxHint, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, startFingerprintQrScan, stopFingerprintQrScan, fingerprintScanOpen, fingerprintScanStatus, copyActiveContactFingerprintProof, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, showMyFingerprintQr, copyMyFingerprintProof, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
