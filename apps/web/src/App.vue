@@ -5124,6 +5124,22 @@ async function deriveDhtKeyForFindValue() {
   await runAsync('派生 DHT key', async () => { await deriveDhtKeyPayload() })
 }
 
+function applyDhtFindValueRecord(body: any) {
+  const record = body?.record ?? body?.value ?? body?.found_record
+  if (!record?.kind || typeof record.value !== 'string') return
+  if (record.kind === 'PreKey') {
+    prekeyBundleText.value = record.value
+    nodePreKeyStatusText.value = JSON.stringify({ found: true, source: 'dht', record }, null, 2)
+    prekeyStatusSummary.value = 'DHT 查到 PreKey record，已填入本地 PreKey 文本'
+  } else if (record.kind === 'MailboxHint') {
+    peerMailboxKey.value = record.value
+    mailboxInboxStatus.value = `DHT 查到 MailboxHint：${record.value}`
+  } else if (record.kind === 'PublicPeer') {
+    publicPeerAnnounceText.value = record.value
+    publicPeerAnnounceInfoText.value = JSON.stringify({ source: 'dht', record }, null, 2)
+  }
+}
+
 function dhtFindValueSummary(body: any): string {
   const stats = body?.stats ?? {}
   const record = body?.record ?? body?.value ?? body?.found_record
@@ -5135,6 +5151,7 @@ function dhtFindValueSummary(body: any): string {
 async function runDhtFindValueForKey(key: string) {
   if (!/^[0-9a-fA-F]{64}$/.test(key)) throw new Error('请输入 64 位十六进制 DHT key')
   const body = await nodeFetchJson(`/dht/find-value?key=${encodeURIComponent(key)}&limit=8&max_peers=8&alpha=3`)
+  applyDhtFindValueRecord(body)
   nodeDhtFindValueStatusText.value = dhtFindValueSummary(body)
   recordDhtOperation(nodeDhtFindValueStatusText.value)
   nodeClosestInfoText.value = JSON.stringify(body, null, 2)
@@ -5153,6 +5170,7 @@ async function deriveAndFindDhtValueNow() {
     if (!value) throw new Error('请输入 peer_id 或 UserID')
     const body = await nodeFetchJson(`/dht/find-value?kind=${encodeURIComponent(nodeDhtKeyKind.value)}&value=${encodeURIComponent(value)}&limit=8&max_peers=8&alpha=3`)
     nodeDhtFindValueKey.value = String(body.key || '')
+    applyDhtFindValueRecord(body)
     nodeDhtFindValueStatusText.value = dhtFindValueSummary(body)
     recordDhtOperation(`DHT key：${dhtKeyKindLabel(nodeDhtKeyKind.value)} ${value} → ${nodeDhtFindValueKey.value}`)
     recordDhtOperation(nodeDhtFindValueStatusText.value)
