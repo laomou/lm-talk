@@ -74,3 +74,8 @@ MESSAGE_COUNT=100 ./run-all.sh
 LM_NODE_FEDERATION_SKIP_UP=1 ./run-all.sh
 LM_NODE_FEDERATION_REPORT=/tmp/lm-federation-report.json ./run-all.sh
 ```
+
+
+## GitHub Actions
+
+`.github/workflows/federation-smoke.yml` provides a manual `workflow_dispatch` job that creates fresh node secrets, runs `./run-all.sh`, uploads `federation-report.json` as an artifact, and dumps compose logs on failure. Use it for heavier federation validation outside the normal quick CI path.

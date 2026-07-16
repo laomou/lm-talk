@@ -1,0 +1,56 @@
+name: Federation Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      message_count:
+        description: 'Mailbox messages for load-smoke.sh'
+        required: false
+        default: '25'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  federation-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Run federation validation
+        env:
+          MESSAGE_COUNT: ${{ inputs.message_count || '25' }}
+          LM_NODE_FEDERATION_REPORT: ${{ github.workspace }}/federation-report.json
+        run: |
+          set -euo pipefail
+          cd deploy/lm-node-federation
+          mkdir -p secrets
+          for n in a b c; do
+            openssl rand -base64 32 > "secrets/node-$n-token"
+            openssl rand -base64 32 > "secrets/state-file-passphrase-$n"
+          done
+          chmod 600 secrets/*
+          ./run-all.sh
+
+      - name: Upload federation report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: federation-report
+          path: federation-report.json
+          if-no-files-found: warn
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: |
+          cd deploy/lm-node-federation
+          docker compose logs --no-color --tail=300
+
+      - name: Stop federation stack
+        if: always()
+        run: |
+          cd deploy/lm-node-federation
+          docker compose down -v || true
