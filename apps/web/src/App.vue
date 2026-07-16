@@ -4857,16 +4857,17 @@ async function sendMessage() {
       status: 'queued',
       created_at: Date.now(),
     }
-    inboundEnvelopeText.value = envelope
+    const deliveryPayload = perDeviceEnvelope ?? envelope
+    inboundEnvelopeText.value = deliveryPayload
     if (dc && dc.readyState === 'open') {
-      sendRtcText(envelope, '消息')
+      sendRtcText(deliveryPayload, '消息')
       msg.status = 'sent'
-      appendLog('✅ 消息已发送')
+      appendLog(perDeviceEnvelope ? '✅ 分设备 envelope 已发送' : '✅ 消息已发送')
     } else if (nodeEnabled.value) {
-      appendLog('正在通过消息同步发送')
-      void tryMailboxDeliveryForMessage(activeContact.value, envelope, msg)
+      appendLog(perDeviceEnvelope ? '正在通过消息同步发送分设备 envelope' : '正在通过消息同步发送')
+      void tryMailboxDeliveryForMessage(activeContact.value, deliveryPayload, msg)
     } else {
-      outbox.value.push(createOutboxItem(activeContact.value, envelope, msg.id, 'direct-envelope'))
+      outbox.value.push(createOutboxItem(activeContact.value, deliveryPayload, msg.id, 'direct-envelope'))
       appendLog('未开启消息同步，消息已暂存，开启同步后会自动重发')
     }
     messages.value.push(msg)
@@ -4906,11 +4907,44 @@ function perDeviceEnvelopeTargetCount(message: ChatMessage): number {
   return message.target_device_ids?.length ?? 0
 }
 
+
+function unwrapPerDeviceEnvelopeForCurrentDevice(payloadText: string): {
+  envelopeText: string
+  perDeviceEnvelopeJson?: string
+  targetDeviceIds?: string[]
+} {
+  let parsed: PerDeviceEnvelopeV1 | null = null
+  try { parsed = JSON.parse(payloadText) as PerDeviceEnvelopeV1 } catch {}
+  if (parsed?.type !== 'lm-per-device-envelope-v1') return { envelopeText: payloadText }
+  if (parsed.version !== 1) throw new Error(`不支持的分设备 envelope 版本：${parsed.version}`)
+  const targets = Array.isArray(parsed.target_devices) ? parsed.target_devices : []
+  const targetDeviceIds = targets.map((item) => String(item.device_id || '')).filter(Boolean)
+  const currentDeviceId = myDeviceId.value
+  if (currentDeviceId) {
+    const matched = targets.find((item) => item.device_id === currentDeviceId)
+    if (!matched) throw new Error(`分设备 envelope 未投递给当前设备：${currentDeviceId}`)
+    if (!matched.ciphertext) throw new Error('分设备 envelope 缺少当前设备密文')
+    return { envelopeText: matched.ciphertext, perDeviceEnvelopeJson: payloadText, targetDeviceIds }
+  }
+  if (parsed.fallback_ciphertext) {
+    appendLog('⚠️ 当前设备没有 device_id，使用分设备 envelope fallback 密文')
+    return { envelopeText: parsed.fallback_ciphertext, perDeviceEnvelopeJson: payloadText, targetDeviceIds }
+  }
+  if (targets.length === 1 && targets[0]?.ciphertext) {
+    appendLog('⚠️ 当前设备没有 device_id，使用唯一目标设备密文')
+    return { envelopeText: targets[0].ciphertext, perDeviceEnvelopeJson: payloadText, targetDeviceIds }
+  }
+  throw new Error('当前设备没有 device_id，无法选择分设备 envelope 密文')
+}
+
 function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, mailboxDeliveryId?: string): boolean {
   if (sender.state === 'Blocked') throw new Error('发送者已被拉黑')
   if (!allowIncomingFromContact(sender)) { persist(); return false }
   ensureUiTextSize('Envelope', envelopeText, MAX_SIGNAL_BYTES)
-  const groupSenderPlain = tryDecryptGroupSenderEnvelope(envelopeText)
+  const unwrappedEnvelope = unwrapPerDeviceEnvelopeForCurrentDevice(envelopeText)
+  const innerEnvelopeText = unwrappedEnvelope.envelopeText
+  ensureUiTextSize('Inner Envelope', innerEnvelopeText, MAX_SIGNAL_BYTES)
+  const groupSenderPlain = tryDecryptGroupSenderEnvelope(innerEnvelopeText)
   if (groupSenderPlain) {
     const filtered = applyLocalTextFilter(groupSenderPlain.text, 'in')
     if (!filtered.allow) { persist(); return true }
@@ -4921,7 +4955,10 @@ function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, m
       group_id: groupSenderPlain.group_id,
       direction: 'in',
       text: filtered.text,
-      envelope_json: envelopeText,
+      envelope_json: innerEnvelopeText,
+      per_device_envelope_json: unwrappedEnvelope.perDeviceEnvelopeJson,
+      per_device_envelope_version: unwrappedEnvelope.perDeviceEnvelopeJson ? 1 : undefined,
+      target_device_ids: unwrappedEnvelope.targetDeviceIds,
       status: 'received',
       created_at: Date.now(),
     })
@@ -4930,7 +4967,7 @@ function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, m
     persist()
     return true
   }
-  const plain = decryptEnvelopeForContact(envelopeText, sender)
+  const plain = decryptEnvelopeForContact(innerEnvelopeText, sender)
   const rawText = plain.body?.Text?.text ?? JSON.stringify(plain.body)
   if (typeof rawText === 'string' && rawText.startsWith(GROUP_SENDER_KEY_PAYLOAD_PREFIX)) {
     const distribution = rawText.slice(GROUP_SENDER_KEY_PAYLOAD_PREFIX.length)
@@ -4951,7 +4988,10 @@ function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, m
       group_id: parsed.group_id,
       direction: 'in',
       text: '[群 Sender Key] 已导入新的 Sender Key Distribution',
-      envelope_json: envelopeText,
+      envelope_json: innerEnvelopeText,
+      per_device_envelope_json: unwrappedEnvelope.perDeviceEnvelopeJson,
+      per_device_envelope_version: unwrappedEnvelope.perDeviceEnvelopeJson ? 1 : undefined,
+      target_device_ids: unwrappedEnvelope.targetDeviceIds,
       status: 'received',
       created_at: Date.now(),
     })
@@ -4975,7 +5015,10 @@ function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, m
       group_id: result.group_id,
       direction: 'in',
       text: `[群事件] ${result.summary}`,
-      envelope_json: envelopeText,
+      envelope_json: innerEnvelopeText,
+      per_device_envelope_json: unwrappedEnvelope.perDeviceEnvelopeJson,
+      per_device_envelope_version: unwrappedEnvelope.perDeviceEnvelopeJson ? 1 : undefined,
+      target_device_ids: unwrappedEnvelope.targetDeviceIds,
       status: 'received',
       created_at: Date.now(),
     })
@@ -5008,12 +5051,15 @@ function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, m
     group_id: groupId,
     direction: 'in',
     text,
-    envelope_json: envelopeText,
-    protocol_message_id: messageProtocolIdFromEnvelope(envelopeText),
+    envelope_json: innerEnvelopeText,
+    per_device_envelope_json: unwrappedEnvelope.perDeviceEnvelopeJson,
+    per_device_envelope_version: unwrappedEnvelope.perDeviceEnvelopeJson ? 1 : undefined,
+    target_device_ids: unwrappedEnvelope.targetDeviceIds,
+    protocol_message_id: messageProtocolIdFromEnvelope(innerEnvelopeText),
     status: 'received',
     created_at: Date.now(),
   })
-  const protocolMessageId = messageProtocolIdFromEnvelope(envelopeText)
+  const protocolMessageId = messageProtocolIdFromEnvelope(innerEnvelopeText)
   void sendDeliveryAck(sender, protocolMessageId, conversationId, mailboxDeliveryId)
   if (!groupId && activePeerId.value === sender.user_id) {
     void sendReadReceipt(sender, protocolMessageId, conversationId, mailboxDeliveryId)
