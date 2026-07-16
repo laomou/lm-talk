@@ -643,7 +643,7 @@ fn real_serve_control_rejects_required_state_db_encryption_until_supported() {
         .expect("failed to execute lm_node serve-control");
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("plain SQLite"), "{stderr}");
+    assert!(stderr.contains("encryption_mode is plain"), "{stderr}");
     cleanup_state_path(&state_db);
 }
 
@@ -675,7 +675,7 @@ fn real_libp2p_dht_rejects_required_state_db_encryption_until_supported() {
         .expect("failed to execute lm_node serve-dht-libp2p");
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("plain SQLite"), "{stderr}");
+    assert!(stderr.contains("encryption_mode is plain"), "{stderr}");
     cleanup_state_path(&state_db);
 }
 

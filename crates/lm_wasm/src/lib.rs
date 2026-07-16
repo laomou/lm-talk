@@ -332,7 +332,11 @@ pub fn create_identity(_passphrase: &str) -> Result<String, JsValue> {
 }
 
 #[wasm_bindgen]
-pub fn sign_identity_text(backup_text: &str, passphrase: &str, text: &str) -> Result<String, JsValue> {
+pub fn sign_identity_text(
+    backup_text: &str,
+    passphrase: &str,
+    text: &str,
+) -> Result<String, JsValue> {
     ensure_js_len(text, lm_core::limits::MAX_MAILBOX_CIPHERTEXT_BYTES)?;
     let identity = restore_identity_any(backup_text, passphrase)?;
     let signature = identity.signing_key().sign(text.as_bytes());
@@ -347,7 +351,8 @@ pub fn verify_identity_text_signature(
 ) -> Result<bool, JsValue> {
     ensure_js_len(text, lm_core::limits::MAX_MAILBOX_CIPHERTEXT_BYTES)?;
     let pk = decode_key_32(identity_public_key)?;
-    let verifying_key = VerifyingKey::from_bytes(&pk).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let verifying_key =
+        VerifyingKey::from_bytes(&pk).map_err(|e| JsValue::from_str(&e.to_string()))?;
     let sig_bytes: [u8; 64] = BASE64
         .decode(signature_base64.as_bytes())
         .map_err(|_| JsValue::from_str("invalid signature base64"))?
