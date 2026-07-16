@@ -133,6 +133,11 @@ type ContactItem = ContactInfo & {
   block_reason?: string
   read_receipts?: 'default' | 'enabled' | 'disabled'
   mailbox_hint_url?: string
+  last_dht_discovery_attempt_at?: number
+  last_dht_discovery_success_at?: number
+  last_dht_discovery_error?: string
+  last_prekey_dht_found_at?: number
+  last_mailbox_hint_dht_found_at?: number
 }
 
 type FilterLevel = 'Off' | 'Relaxed' | 'Standard' | 'Strict'
@@ -2078,20 +2083,40 @@ function addDiscoveredMailboxHintToSyncServices() {
   }
 }
 
+function markContactDhtDiscoveryAttempt(contact: ContactItem) {
+  contact.last_dht_discovery_attempt_at = Date.now()
+  contact.last_dht_discovery_error = undefined
+}
+
+function markContactDhtDiscoverySuccess(contact: ContactItem, kind: 'prekey' | 'mailbox-hint') {
+  contact.last_dht_discovery_success_at = Date.now()
+  contact.last_dht_discovery_error = undefined
+  if (kind === 'prekey') contact.last_prekey_dht_found_at = contact.last_dht_discovery_success_at
+  if (kind === 'mailbox-hint') contact.last_mailbox_hint_dht_found_at = contact.last_dht_discovery_success_at
+}
+
+function markContactDhtDiscoveryError(contact: ContactItem, error: unknown) {
+  contact.last_dht_discovery_error = userFacingError(error)
+}
+
 async function discoverMailboxHintForContact(contact: ContactItem): Promise<string | undefined> {
   if (contact.mailbox_hint_url?.trim()) return contact.mailbox_hint_url.trim()
+  markContactDhtDiscoveryAttempt(contact)
   try {
     nodeDhtKeyKind.value = 'mailbox-hint'
     nodeDhtKeyValue.value = contact.user_id
     const body = await nodeFetchJson(`/dht/find-value?kind=mailbox-hint&value=${encodeURIComponent(contact.user_id)}&limit=8&max_peers=8&alpha=3`)
     applyDhtFindValueRecord(body)
     if (contact.mailbox_hint_url?.trim()) {
+      markContactDhtDiscoverySuccess(contact, 'mailbox-hint')
       appendLog(`✅ 已通过 DHT 发现 ${contact.display_name || contact.user_id} 的 MailboxHint`)
       persist()
       return contact.mailbox_hint_url.trim()
     }
   } catch (error) {
+    markContactDhtDiscoveryError(contact, error)
     appendLog(`⚠️ DHT 查找联系人 MailboxHint 失败：${userFacingError(error)}`)
+    persist()
   }
   return undefined
 }
@@ -2346,13 +2371,18 @@ async function ensureRatchetSessionFromNode(contact: ContactItem): Promise<boole
   nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
   if (!body.found || !body.prekey_bundle_text) {
     try {
+      markContactDhtDiscoveryAttempt(contact)
+      nodeDhtKeyKind.value = 'prekey'
+      nodeDhtKeyValue.value = contact.user_id
       const dht = await nodeFetchJson(`/dht/find-value?kind=prekey&value=${encodeURIComponent(contact.user_id)}&limit=8&max_peers=8&alpha=3`)
       if (applyDhtFindValueRecord(dht) && dht?.record?.kind === 'PreKey' && typeof dht.record.value === 'string') {
         body = { found: true, prekey_bundle_text: dht.record.value }
+        markContactDhtDiscoverySuccess(contact, 'prekey')
         nodePreKeyStatusText.value = JSON.stringify({ found: true, source: 'dht', record: dht.record }, null, 2)
         appendLog(`✅ 已通过 DHT 发现 ${contact.display_name || contact.user_id} 的 PreKey`)
       }
     } catch (error) {
+      markContactDhtDiscoveryError(contact, error)
       appendLog(`⚠️ DHT 查找联系人 PreKey 失败：${userFacingError(error)}`)
     }
   }
@@ -5186,12 +5216,15 @@ async function discoverActiveContactDht() {
     if (!activeContact.value) throw new Error('请选择联系人')
     const contact = activeContact.value
     contact.last_secure_session_attempt_at = Date.now()
+    markContactDhtDiscoveryAttempt(contact)
     fillDhtKeyInput('prekey', contact.user_id)
     await deriveAndFindDhtValueNow()
     fillDhtKeyInput('mailbox-hint', contact.user_id)
     await deriveAndFindDhtValueNow()
     contact.last_secure_session_error = undefined
     contact.secure_session_failure_count = 0
+    contact.last_dht_discovery_success_at = Date.now()
+    contact.last_dht_discovery_error = undefined
     appendLog(`✅ 已完成 ${contact.display_name || contact.user_id} 的 PreKey / MailboxHint DHT 发现`)
     persist()
   })
@@ -5236,6 +5269,9 @@ function applyDhtFindValueRecord(body: any): boolean {
     try {
       const inspected = JSON.parse(inspect_prekey_bundle(record.value))
       prekeyBundleText.value = record.value
+      const targetUserId = nodeDhtKeyKind.value === 'prekey' ? nodeDhtKeyValue.value.trim() : ''
+      const contact = contacts.value.find((item) => item.user_id === targetUserId)
+      if (contact) markContactDhtDiscoverySuccess(contact, 'prekey')
       nodePreKeyStatusText.value = JSON.stringify({ found: true, source: 'dht', verified: true, record, inspected }, null, 2)
       prekeyStatusSummary.value = 'DHT 查到 PreKey record，已验签并填入本地 PreKey 文本'
     } catch (error) {
@@ -5250,7 +5286,10 @@ function applyDhtFindValueRecord(body: any): boolean {
       if (/^https?:\/\//i.test(hint)) discoveredMailboxHintUrl.value = hint
       const targetUserId = nodeDhtKeyKind.value === 'mailbox-hint' ? nodeDhtKeyValue.value.trim() : ''
       const contact = contacts.value.find((item) => item.user_id === targetUserId)
-      if (contact) contact.mailbox_hint_url = hint
+      if (contact) {
+        contact.mailbox_hint_url = hint
+        markContactDhtDiscoverySuccess(contact, 'mailbox-hint')
+      }
       mailboxInboxStatus.value = contact
         ? `DHT 查到 MailboxHint：${hint}，已关联 ${contact.display_name || contact.user_id}`
         : `DHT 查到 MailboxHint：${hint}`

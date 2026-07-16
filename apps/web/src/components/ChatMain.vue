@@ -113,6 +113,10 @@ function onComposerKeydown(e: KeyboardEvent) {
         <small v-else>还不是好友</small>
         <small v-if="ctx.activeContact.value.state === 'Friend'">端到端会话：{{ ctx.activeRatchetStatusText.value }}</small>
         <small v-if="ctx.activeContact.value.mailbox_hint_url">MailboxHint：{{ ctx.activeContact.value.mailbox_hint_url }}</small>
+        <small v-if="ctx.activeContact.value.last_dht_discovery_attempt_at">最近 DHT 发现尝试：{{ ctx.formatDateTime(ctx.activeContact.value.last_dht_discovery_attempt_at) }}</small>
+        <small v-if="ctx.activeContact.value.last_prekey_dht_found_at">PreKey DHT 发现：{{ ctx.formatDateTime(ctx.activeContact.value.last_prekey_dht_found_at) }}</small>
+        <small v-if="ctx.activeContact.value.last_mailbox_hint_dht_found_at">MailboxHint DHT 发现：{{ ctx.formatDateTime(ctx.activeContact.value.last_mailbox_hint_dht_found_at) }}</small>
+        <small v-if="ctx.activeContact.value.last_dht_discovery_error" class="danger-text">DHT 发现失败：{{ ctx.activeContact.value.last_dht_discovery_error }}</small>
         <small v-if="ctx.activeContact.value.last_secure_session_attempt_at">最近建链尝试：{{ ctx.formatDateTime(ctx.activeContact.value.last_secure_session_attempt_at) }}</small>
         <small v-if="ctx.activeContact.value.last_secure_session_success_at">最近建链成功：{{ ctx.formatDateTime(ctx.activeContact.value.last_secure_session_success_at) }}</small>
         <small v-if="ctx.activeContact.value.secure_session_failure_count">连续建链失败：{{ ctx.activeContact.value.secure_session_failure_count }} 次</small>
