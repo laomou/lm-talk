@@ -303,6 +303,7 @@ type PersistedState = {
   dhtOperationHistory?: string[]
   pwaBackgroundEventHistory?: string[]
   friendRequestRateRecords?: FriendRequestRateRecord[]
+  lastFullDataBackupAt?: number
   unverifiedIncomingDropCount?: number
   lastUnverifiedIncomingDropAt?: number
   lastUnverifiedIncomingDropFrom?: string
@@ -332,6 +333,7 @@ type PersistedMeta = {
   dhtOperationHistory?: string[]
   pwaBackgroundEventHistory?: string[]
   friendRequestRateRecords?: FriendRequestRateRecord[]
+  lastFullDataBackupAt?: number
   unverifiedIncomingDropCount?: number
   lastUnverifiedIncomingDropAt?: number
   lastUnverifiedIncomingDropFrom?: string
@@ -474,6 +476,7 @@ const newGroupName = ref('')
 const selectedGroupMembers = ref<string[]>([])
 const groupFanoutJson = ref('')
 const dataBackupText = ref('')
+const lastFullDataBackupAt = ref<number | null>(null)
 const groupInviteText = ref('')
 const incomingGroupInviteText = ref('')
 const groupEventText = ref('')
@@ -1227,6 +1230,7 @@ function currentPersistedState(): PersistedState {
     dhtOperationHistory: nodeDhtOperationHistory.value,
     pwaBackgroundEventHistory: pwaBackgroundEventHistory.value,
     friendRequestRateRecords: friendRequestRateRecords.value,
+    lastFullDataBackupAt: lastFullDataBackupAt.value ?? undefined,
     unverifiedIncomingDropCount: unverifiedIncomingDropCount.value,
     lastUnverifiedIncomingDropAt: lastUnverifiedIncomingDropAt.value ?? undefined,
     lastUnverifiedIncomingDropFrom: lastUnverifiedIncomingDropFrom.value,
@@ -1564,6 +1568,7 @@ async function clearPersisted() {
   pwaBackgroundEventHistory.value = []
   pwaLastBackgroundEventText.value = '尚未收到后台事件'
   friendRequestRateRecords.value = []
+  lastFullDataBackupAt.value = null
   unverifiedIncomingDropCount.value = 0
   lastUnverifiedIncomingDropAt.value = null
   lastUnverifiedIncomingDropFrom.value = ''
@@ -1719,6 +1724,8 @@ function exportFullDataBackup() {
       passphrase.value,
       JSON.stringify(currentPersistedState()),
     )
+    lastFullDataBackupAt.value = Date.now()
+    persist()
   })
 }
 
@@ -1878,6 +1885,7 @@ async function importFullDataBackupMerge() {
     pwaBackgroundEventHistory.value = [...new Set([...pwaBackgroundEventHistory.value, ...(state.pwaBackgroundEventHistory ?? [])])].slice(0, 5)
     pwaLastBackgroundEventText.value = pwaBackgroundEventHistory.value[0] ?? '尚未收到后台事件'
     friendRequestRateRecords.value = mergeUniqueBy(friendRequestRateRecords.value, state.friendRequestRateRecords ?? [], (x) => x.from_user_id).items
+    if (typeof state.lastFullDataBackupAt === 'number') lastFullDataBackupAt.value = Math.max(lastFullDataBackupAt.value ?? 0, state.lastFullDataBackupAt)
     unverifiedIncomingDropCount.value += Number(state.unverifiedIncomingDropCount ?? 0)
     if (typeof state.lastUnverifiedIncomingDropAt === 'number' && state.lastUnverifiedIncomingDropAt > (lastUnverifiedIncomingDropAt.value ?? 0)) {
       lastUnverifiedIncomingDropAt.value = state.lastUnverifiedIncomingDropAt
@@ -7134,7 +7142,7 @@ const appContext = {
   autoPublishPreKey, autoNodeSync, nodeControlStatus, nodeHealthSummaryText, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutDeviceRevokeToFriends, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
-  exportFullDataBackup, importFullDataBackup, importFullDataBackupMerge, downloadText, addContactText, addContact, incomingFriendRequestText,
+  exportFullDataBackup, importFullDataBackup, importFullDataBackupMerge, downloadText, lastFullDataBackupAt, addContactText, addContact, incomingFriendRequestText,
   addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, friendRequestRateRecords, friendRequestRateSummaryText, clearFriendRequestRateRecords, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,

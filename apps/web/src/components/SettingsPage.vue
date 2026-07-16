@@ -342,6 +342,8 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
           <button class="secondary" @click="showDataBackupEditor = !showDataBackupEditor">{{ showDataBackupEditor ? '隐藏备份文本' : '显示备份文本' }}</button>
         </div>
         <small>完整数据备份会加密导出本机联系人、群聊、消息、待发送队列、同步设置和安全会话状态；可选择“导入合并”只补缺失数据，或“导入覆盖”替换当前身份的本地数据。</small>
+        <small v-if="ctx.lastFullDataBackupAt.value">最近生成备份：{{ ctx.formatDateTime(ctx.lastFullDataBackupAt.value) }}</small>
+        <small v-else class="danger-text">尚未生成完整数据备份。</small>
         <div class="row compact">
           <button class="secondary" @click="ctx.exportFullDataBackup">生成备份</button>
           <button class="secondary" :disabled="!ctx.dataBackupText.value.trim()" @click="ctx.downloadText(ctx.dataBackupText.value, 'lm-talk-data-backup.txt')">下载备份</button>

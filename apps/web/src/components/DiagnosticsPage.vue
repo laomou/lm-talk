@@ -81,6 +81,7 @@ async function runDiagnostics() {
       revoked_devices: props.ctx.contacts.value.reduce((sum: number, x: any) => sum + (x.revoked_device_ids || []).length, 0),
       unverified_incoming_drops: props.ctx.unverifiedIncomingDropCount.value,
       revoked_device_incoming_drops: props.ctx.revokedDeviceIncomingDropCount.value,
+      last_full_data_backup_at: props.ctx.lastFullDataBackupAt.value,
     },
     security: {
       require_verified_contacts_for_send: Boolean(props.ctx.safetyPolicy.value.requireVerifiedContactsForSend),
