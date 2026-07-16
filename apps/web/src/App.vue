@@ -1841,6 +1841,7 @@ function clearSyncRecoveryHistory() {
 async function afterLoginAutomation() {
   if (!nodeEnabled.value) return
   if (autoPublishPreKey.value) await ensurePreKeyInventory()
+  await ensureOwnMailboxHintDhtRecord()
   if (autoMailboxTake.value) await takeMailboxFromNode()
 }
 
@@ -1853,6 +1854,7 @@ async function syncNow() {
   appendLog('🔄 开始消息同步')
   try {
     if (autoPublishPreKey.value) await ensurePreKeyInventory()
+    await ensureOwnMailboxHintDhtRecord()
     await refreshOutgoingMailboxDeliveryStatusesFromNode()
     await takeMailboxFromNode()
     await refreshOutgoingMailboxDeliveryStatusesFromNode()
@@ -5496,28 +5498,49 @@ async function publishAndCheckMyPublicPeerDht() {
   })
 }
 
+async function publishMailboxHintDhtRecordFor(url: string, options: { recordHistory?: boolean } = {}): Promise<{ key: string; store: any }> {
+  if (!identity.value?.user_id) throw new Error('需要先登录身份')
+  const mailboxUrl = url.trim().replace(/\/$/, '')
+  if (!mailboxUrl) throw new Error('请先填写同步节点')
+  fillDhtKeyInput('mailbox-hint', identity.value.user_id)
+  const keyPayload = await deriveDhtKeyPayload()
+  const now = Math.floor(Date.now() / 1000)
+  const record = {
+    key: String(keyPayload.key || nodeDhtFindValueKey.value).trim(),
+    kind: 'MailboxHint',
+    value: mailboxUrl,
+    created_at: now,
+    expires_at: now + 24 * 3600,
+    republish_at: now,
+  }
+  const store = await nodeFetchJson('/dht/record', {
+    method: 'POST',
+    body: JSON.stringify({ record }),
+  })
+  nodeClosestInfoText.value = JSON.stringify(store, null, 2)
+  if (options.recordHistory !== false) recordDhtOperation(`MailboxHint 已发布到 DHT：${mailboxUrl}`)
+  return { key: record.key, store }
+}
+
+async function ensureOwnMailboxHintDhtRecord() {
+  const primaryNode = nodeEntries()[0]?.url
+  if (!identity.value?.user_id || !primaryNode) return
+  try {
+    const { key } = await publishMailboxHintDhtRecordFor(primaryNode, { recordHistory: false })
+    mailboxInboxStatus.value = 'MailboxHint 已自动发布到 DHT'
+    appendLog(`✅ MailboxHint 已自动发布到 DHT：${key.slice(0, 12)}…`)
+  } catch (e) {
+    const message = userFacingError(e)
+    appendLog(`⚠️ MailboxHint 自动发布到 DHT 失败：${message}`)
+  }
+}
+
 async function publishAndCheckMyMailboxHintDht() {
   await runAsync('发布并检查我的 MailboxHint DHT', async () => {
-    if (!identity.value?.user_id) throw new Error('需要先登录身份')
     const primaryNode = nodeEntries()[0]?.url
     if (!primaryNode) throw new Error('请先填写同步节点')
-    fillDhtKeyInput('mailbox-hint', identity.value.user_id)
-    const keyPayload = await deriveDhtKeyPayload()
-    const now = Math.floor(Date.now() / 1000)
-    const record = {
-      key: String(keyPayload.key || nodeDhtFindValueKey.value).trim(),
-      kind: 'MailboxHint',
-      value: primaryNode,
-      created_at: now,
-      expires_at: now + 24 * 3600,
-      republish_at: now,
-    }
-    const store = await nodeFetchJson('/dht/record', {
-      method: 'POST',
-      body: JSON.stringify({ record }),
-    })
-    nodeClosestInfoText.value = JSON.stringify(store, null, 2)
-    await runDhtFindValueForKey(record.key)
+    const { key } = await publishMailboxHintDhtRecordFor(primaryNode)
+    await runDhtFindValueForKey(key)
     nodeDhtFindValueStatusText.value = `MailboxHint 已发布并完成 DHT 查找：${primaryNode}；${nodeDhtFindValueStatusText.value}`
     recordDhtOperation(`MailboxHint 已发布并完成 DHT 查找：${primaryNode}`)
     mailboxInboxStatus.value = `MailboxHint 已发布并完成 DHT 查找：${primaryNode}`
