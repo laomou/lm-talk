@@ -2767,6 +2767,12 @@ function applyDeviceRevokeToActiveContact() {
     activeContact.value.revoked_device_ids = [...list]
     const existing = activeContact.value.device_revocations ?? []
     activeContact.value.device_revocations = [info, ...existing.filter((item) => item.device_id !== info.device_id)]
+    if (contactAllKnownDevicesRevoked(activeContact.value)) {
+      removeRatchetSession(activeContact.value.user_id)
+      activeContact.value.last_secure_session_error = '所有已知设备均已撤销，已清理本地 Ratchet session'
+      activeContact.value.secure_session_failure_count = (activeContact.value.secure_session_failure_count ?? 0) + 1
+      appendLog(`⚠️ ${activeContact.value.display_name || activeContact.value.user_id} 所有已知设备均已撤销，已清理 Ratchet session`)
+    }
     incomingDeviceRevokeText.value = ''
     persist()
   })
@@ -3978,6 +3984,10 @@ function saveRatchetSession(userId: string, stateText: string) {
   const index = ratchetSessions.value.findIndex((r) => r.peer_user_id === userId)
   if (index >= 0) ratchetSessions.value[index] = item
   else ratchetSessions.value.push(item)
+}
+
+function removeRatchetSession(userId: string) {
+  ratchetSessions.value = ratchetSessions.value.filter((r) => r.peer_user_id !== userId)
 }
 
 function recordSecureSessionError(contact: ContactItem, error: unknown, logPrefix: string) {
