@@ -208,10 +208,12 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
               <option value="prekey">PreKey(UserID)</option>
               <option value="mailbox-hint">MailboxHint(UserID)</option>
               <option value="public-peer">PublicPeer(peer_id)</option>
+              <option value="contact-card">ContactCard(UserID)</option>
             </select>
             <input id="dht-key-value-input" v-model="ctx.nodeDhtKeyValue.value" aria-label="DHT key 输入值" placeholder="UserID 或 peer_id" />
             <button class="secondary" @click="ctx.fillMyPreKeyDhtKeyInput">我的 PreKey</button>
             <button class="secondary" @click="ctx.fillMyMailboxHintDhtKeyInput">我的 MailboxHint</button>
+            <button class="secondary" @click="ctx.fillMyContactCardDhtKeyInput">我的 ContactCard</button>
             <button class="secondary" @click="ctx.fillCurrentPublicPeerDhtKeyInput">当前 PublicPeer</button>
             <button class="secondary" @click="ctx.deriveDhtKeyForFindValue">派生 key</button>
             <button class="secondary" @click="ctx.deriveAndFindDhtValueNow">派生并查找</button>
@@ -221,6 +223,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
             <input id="dht-find-key-input" v-model="ctx.nodeDhtFindValueKey.value" aria-label="DHT record key" placeholder="64 位十六进制 key" />
             <button class="secondary" @click="ctx.runDhtFindValueNow">查找 DHT 记录</button>
             <button class="secondary" @click="ctx.publishAndCheckMyMailboxHintDht">发布并查 MailboxHint</button>
+            <button class="secondary" @click="ctx.publishAndCheckMyContactCardDht">发布并查 ContactCard</button>
             <button class="secondary" @click="ctx.publishAndCheckMyPublicPeerDht">发布并查 PublicPeer</button>
           </div>
           <div class="row compact">

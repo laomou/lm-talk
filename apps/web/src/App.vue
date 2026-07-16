@@ -732,7 +732,7 @@ const nodePeerHealthRiskLevel = ref<'ok' | 'warning' | 'danger'>('ok')
 const nodePeerHealthPeers = ref<Array<{ url: string; consecutive_failures: number; failures: number; quarantined: boolean; last_error?: string }>>([])
 const nodeClosestTarget = ref('')
 const nodeDhtFindValueKey = ref('')
-const nodeDhtKeyKind = ref<'prekey' | 'mailbox-hint' | 'public-peer'>('prekey')
+const nodeDhtKeyKind = ref<'prekey' | 'mailbox-hint' | 'public-peer' | 'contact-card'>('prekey')
 const nodeDhtKeyValue = ref('')
 const nodeDhtFindValueStatusText = ref('DHT 查找：尚未运行')
 const nodeClosestInfoText = ref('')
@@ -6886,10 +6886,10 @@ async function importDhtOperationHistory() {
 }
 
 function dhtKeyKindLabel(kind: string): string {
-  return kind === 'public-peer' ? 'PublicPeer' : kind === 'mailbox-hint' ? 'MailboxHint' : 'PreKey'
+  return kind === 'public-peer' ? 'PublicPeer' : kind === 'mailbox-hint' ? 'MailboxHint' : kind === 'contact-card' ? 'ContactCard' : 'PreKey'
 }
 
-function fillDhtKeyInput(kind: 'prekey' | 'mailbox-hint' | 'public-peer', value: string) {
+function fillDhtKeyInput(kind: 'prekey' | 'mailbox-hint' | 'public-peer' | 'contact-card', value: string) {
   nodeDhtKeyKind.value = kind
   nodeDhtKeyValue.value = value
   nodeDhtFindValueStatusText.value = `DHT key：已填入 ${dhtKeyKindLabel(kind)}，点击“派生 key”生成查询 key`
@@ -6904,6 +6904,11 @@ function fillMyPreKeyDhtKeyInput() {
 function fillMyMailboxHintDhtKeyInput() {
   if (!identity.value?.user_id) throw new Error('需要先登录身份')
   fillDhtKeyInput('mailbox-hint', identity.value.user_id)
+}
+
+function fillMyContactCardDhtKeyInput() {
+  if (!identity.value?.user_id) throw new Error('需要先登录身份')
+  fillDhtKeyInput('contact-card', identity.value.user_id)
 }
 
 function fingerprintProofFromInfo(info: ContactInfo): string {
@@ -7181,7 +7186,7 @@ async function deriveDhtKeyForFindValue() {
   await runAsync('派生 DHT key', async () => { await deriveDhtKeyPayload() })
 }
 
-function currentDhtTargetContact(kind: 'prekey' | 'mailbox-hint'): ContactItem | undefined {
+function currentDhtTargetContact(kind: 'prekey' | 'mailbox-hint' | 'contact-card'): ContactItem | undefined {
   if (nodeDhtKeyKind.value !== kind) return undefined
   const userId = nodeDhtKeyValue.value.trim()
   return userId ? contacts.value.find((item) => item.user_id === userId) : undefined
@@ -7200,7 +7205,7 @@ function applyDhtFindValueRecord(body: any): boolean {
   const envelopeError = validateDhtRecordEnvelope(body, record)
   if (envelopeError) {
     nodeDhtFindValueStatusText.value = `DHT 查到 ${record.kind} record，但${envelopeError}`
-    const contact = record.kind === 'PreKey' ? currentDhtTargetContact('prekey') : record.kind === 'MailboxHint' ? currentDhtTargetContact('mailbox-hint') : undefined
+    const contact = record.kind === 'PreKey' ? currentDhtTargetContact('prekey') : record.kind === 'MailboxHint' ? currentDhtTargetContact('mailbox-hint') : record.kind === 'ContactCard' ? currentDhtTargetContact('contact-card') : undefined
     if (contact) markContactDhtDiscoveryError(contact, new Error(envelopeError), envelopeError.includes('过期') ? 'expired' : 'invalid-record')
     recordDhtOperation(nodeDhtFindValueStatusText.value)
     return false
@@ -7241,6 +7246,25 @@ function applyDhtFindValueRecord(body: any): boolean {
       recordDhtOperation(nodeDhtFindValueStatusText.value)
       return false
     }
+  } else if (record.kind === 'ContactCard') {
+    try {
+      const info = safeJson<ContactInfo>(inspect_contact_card(record.value))
+      const index = contacts.value.findIndex((c) => c.user_id === info.user_id)
+      const existing = index >= 0 ? contacts.value[index] : undefined
+      const merged = mergeContactCard(existing, info, record.value)
+      if (index >= 0) contacts.value[index] = merged
+      else contacts.value.push(merged)
+      const contact = currentDhtTargetContact('contact-card') ?? merged
+      if (contact) markContactDhtDiscoverySuccess(contact, 'contact-card' as any)
+      appendLog(`✅ DHT 查到并合并 ContactCard：${merged.display_name || merged.user_id}`)
+      persist()
+    } catch (error) {
+      nodeDhtFindValueStatusText.value = `DHT 查到 ContactCard record，但验签失败：${userFacingError(error)}`
+      const contact = currentDhtTargetContact('contact-card')
+      if (contact) markContactDhtDiscoveryError(contact, error, 'signature')
+      recordDhtOperation(nodeDhtFindValueStatusText.value)
+      return false
+    }
   } else if (record.kind === 'PublicPeer') {
     const key = publicPeerAnnounceInspectPublicKey.value.trim() || defaultInspectPublicKey()
     try {
@@ -7275,7 +7299,9 @@ async function runDhtFindValueForKey(key: string) {
         ? currentDhtTargetContact('prekey')
         : nodeDhtKeyKind.value === 'mailbox-hint'
           ? currentDhtTargetContact('mailbox-hint')
-          : undefined
+          : nodeDhtKeyKind.value === 'contact-card'
+            ? currentDhtTargetContact('contact-card')
+            : undefined
       if (contact) markContactDhtDiscoveryError(contact, new Error('DHT 未找到记录'), 'not-found')
     }
     nodeDhtFindValueStatusText.value = dhtFindValueSummary(body)
@@ -7303,7 +7329,9 @@ async function deriveAndFindDhtValueNow() {
         ? currentDhtTargetContact('prekey')
         : nodeDhtKeyKind.value === 'mailbox-hint'
           ? currentDhtTargetContact('mailbox-hint')
-          : undefined
+          : nodeDhtKeyKind.value === 'contact-card'
+            ? currentDhtTargetContact('contact-card')
+            : undefined
       if (contact) markContactDhtDiscoveryError(contact, new Error('DHT 未找到记录'), 'not-found')
     }
     nodeDhtFindValueStatusText.value = dhtFindValueSummary(body)
@@ -7439,6 +7467,9 @@ async function publishAndCheckAllMyDht() {
     })
     await runDhtFindValueForKey(mailboxRecord.key)
 
+    const contactCard = await publishContactCardDhtRecord({ recordHistory: false })
+    await runDhtFindValueForKey(contactCard.key)
+
     if (!publicPeerAnnounceText.value.trim()) createPublicPeerAnnounceText()
     if (!publicPeerAnnounceText.value.trim()) throw new Error('请先生成 PublicPeerAnnounce')
     const peerId = publicPeerId.value.trim()
@@ -7461,9 +7492,9 @@ async function publishAndCheckAllMyDht() {
     await runDhtFindValueForKey(publicPeerRecord.key)
 
     prekeyStatusSummary.value = `${summarizePreKeyStatus(prekeyBody)}，已发布并完成全部 DHT 查找`
-    mailboxInboxStatus.value = `PreKey / MailboxHint / PublicPeer 已发布并完成 DHT 查找`
-    nodeDhtFindValueStatusText.value = `全部 DHT 发布已验证：PreKey、MailboxHint、PublicPeer；${nodeDhtFindValueStatusText.value}`
-    recordDhtOperation('全部 DHT 发布已验证：PreKey、MailboxHint、PublicPeer')
+    mailboxInboxStatus.value = `PreKey / MailboxHint / ContactCard / PublicPeer 已发布并完成 DHT 查找`
+    nodeDhtFindValueStatusText.value = `全部 DHT 发布已验证：PreKey、MailboxHint、ContactCard、PublicPeer；${nodeDhtFindValueStatusText.value}`
+    recordDhtOperation('全部 DHT 发布已验证：PreKey、MailboxHint、ContactCard、PublicPeer')
   })
 }
 
@@ -7554,6 +7585,40 @@ async function ensureOwnMailboxHintDhtRecord() {
     const message = userFacingError(e)
     appendLog(`⚠️ MailboxHint 自动发布到 DHT 失败：${message}`)
   }
+}
+
+
+async function publishContactCardDhtRecord(options: { recordHistory?: boolean } = {}): Promise<{ key: string; store: any }> {
+  if (!identity.value?.user_id) throw new Error('需要先登录身份')
+  if (!myContactCardText.value.trim()) refreshMyContactCard()
+  if (!myContactCardText.value.trim()) throw new Error('请先生成我的联系人名片')
+  fillDhtKeyInput('contact-card', identity.value.user_id)
+  const keyPayload = await deriveDhtKeyPayload()
+  const now = Math.floor(Date.now() / 1000)
+  const record = {
+    key: String(keyPayload.key || nodeDhtFindValueKey.value).trim(),
+    kind: 'ContactCard',
+    value: myContactCardText.value,
+    created_at: now,
+    expires_at: now + 24 * 3600,
+    republish_at: now,
+  }
+  const store = await nodeFetchJson('/dht/record', {
+    method: 'POST',
+    body: JSON.stringify({ record }),
+  })
+  nodeClosestInfoText.value = JSON.stringify(store, null, 2)
+  if (options.recordHistory !== false) recordDhtOperation(`ContactCard 已发布到 DHT：${record.key.slice(0, 12)}…`)
+  return { key: record.key, store }
+}
+
+async function publishAndCheckMyContactCardDht() {
+  await runAsync('发布并检查我的 ContactCard DHT', async () => {
+    const { key } = await publishContactCardDhtRecord()
+    await runDhtFindValueForKey(key)
+    nodeDhtFindValueStatusText.value = `ContactCard 已发布并完成 DHT 查找；${nodeDhtFindValueStatusText.value}`
+    recordDhtOperation('ContactCard 已发布并完成 DHT 查找')
+  })
 }
 
 async function publishAndCheckMyMailboxHintDht() {
@@ -8600,8 +8665,8 @@ const appContext = {
   ratchetInfoText, safetyPolicy, enableStrictE2eePolicy, strictE2eePolicyEnabled, strictE2eeReadiness, strictE2eeReadinessIssues, openStrictE2eeReadinessIssue, repairStrictE2eeBlockers, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, perDeviceEnvelopeSentCount, perDeviceEnvelopeReceivedCount, perDeviceEnvelopeDropCount, lastPerDeviceEnvelopeAt, lastPerDeviceEnvelopeDropAt, lastPerDeviceEnvelopeDropReason, contactCardUpdateFanoutCount, contactCardUpdateFanoutSkipCount, lastContactCardUpdateFanoutAt, contactCardUpdateFanoutRecords, contactCardUpdateFanoutAckCount, contactCardUpdatePendingAckCount, contactCardUpdateStaleAckCount, retryStaleContactCardUpdateAcks, contactCardUpdateAckStatusFor, contactStrictE2eeStatusText, contactStrictE2eeRiskLevel, sealedSlotCoverageSummary, sealedSlotRiskContacts, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
-  nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, findActiveContactMailboxHint, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, startFingerprintQrScan, stopFingerprintQrScan, fingerprintScanOpen, fingerprintScanStatus, copyActiveContactFingerprintProof, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, showMyFingerprintQr, copyMyFingerprintProof, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
-  nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, lastNodeSnapshotSyncAt, nodeSnapshotSyncFreshnessText, nodeSnapshotSyncFreshnessLevel, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, publishAndCheckMyPreKeyDht, publishAndCheckMyMailboxHintDht, publishAndCheckAllMyDht, clearPreKeyRawState, copyText,
+  nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, fillMyContactCardDhtKeyInput, findActiveContactMailboxHint, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, startFingerprintQrScan, stopFingerprintQrScan, fingerprintScanOpen, fingerprintScanStatus, copyActiveContactFingerprintProof, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, showMyFingerprintQr, copyMyFingerprintProof, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
+  nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, lastNodeSnapshotSyncAt, nodeSnapshotSyncFreshnessText, nodeSnapshotSyncFreshnessLevel, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, publishAndCheckMyPreKeyDht, publishAndCheckMyMailboxHintDht, publishAndCheckMyContactCardDht, publishAndCheckAllMyDht, clearPreKeyRawState, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
   ratchetDhStepText, saveSafetyPolicy, createPeerAnnounceText, inspectPeerAnnounceText, createPublicPeerAnnounceText, inspectPublicPeerAnnounceText,

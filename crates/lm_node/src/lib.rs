@@ -10,8 +10,8 @@ pub const MAX_ROUTING_PEER_ADDRESSES: usize = 16;
 pub const MAX_ROUTING_PEER_ADDRESS_BYTES: usize = 512;
 
 use lm_core::{
-    Identity, IdentityBackupPackage, LmError, MailboxMessage, PreKeyBundle, PublicPeerAnnounce,
-    PublicPeerCapability, Result, SignedOneTimePreKeyRecord, UserId,
+    ContactCard, Identity, IdentityBackupPackage, LmError, MailboxMessage, PreKeyBundle,
+    PublicPeerAnnounce, PublicPeerCapability, Result, SignedOneTimePreKeyRecord, UserId,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -128,6 +128,10 @@ impl DhtRecordKey {
         Self::derive("mailbox-hint", user_id.as_str().as_bytes())
     }
 
+    pub fn for_contact_card(user_id: &UserId) -> Self {
+        Self::derive("contact-card", user_id.as_str().as_bytes())
+    }
+
     fn derive(namespace: &str, value: &[u8]) -> Self {
         let mut hasher = blake3::Hasher::new();
         hasher.update(b"lm-talk:dht-record:v1:");
@@ -161,6 +165,7 @@ pub enum DhtRecordKind {
     PublicPeer,
     PreKey,
     MailboxHint,
+    ContactCard,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -212,6 +217,16 @@ impl DhtRecord {
         )
     }
 
+    pub fn contact_card(user_id: &UserId, value: String, ttl_seconds: u64) -> Self {
+        Self::new(
+            DhtRecordKey::for_contact_card(user_id),
+            DhtRecordKind::ContactCard,
+            value,
+            ttl_seconds,
+            ttl_seconds / 2,
+        )
+    }
+
     pub fn mailbox_hint(user_id: &UserId, value: String, ttl_seconds: u64) -> Self {
         Self::new(
             DhtRecordKey::for_mailbox_hint(user_id),
@@ -256,6 +271,18 @@ impl DhtRecord {
                 }
                 if bundle.expires_at <= now {
                     return Err(LmError::ExpiredObject);
+                }
+            }
+            DhtRecordKind::ContactCard => {
+                let card = ContactCard::from_export_text(&self.value)?;
+                card.verify()?;
+                if DhtRecordKey::for_contact_card(&card.user_id) != self.key {
+                    return Err(LmError::InvalidSignature);
+                }
+                if let Some(expires_at) = card.expires_at {
+                    if expires_at <= now {
+                        return Err(LmError::ExpiredObject);
+                    }
                 }
             }
             DhtRecordKind::MailboxHint => {
@@ -3491,6 +3518,16 @@ impl NativeNode {
                 };
                 (DhtRecordKind::PreKey, DhtRecordKey::for_prekey(&user_id))
             }
+            "contact-card" | "contact_card" | "contact" => {
+                let user_id = match UserId::from_raw(value.to_string()) {
+                    Ok(user_id) => user_id,
+                    Err(err) => return ControlResponse::text(400, err.to_string()),
+                };
+                (
+                    DhtRecordKind::ContactCard,
+                    DhtRecordKey::for_contact_card(&user_id),
+                )
+            }
             "mailbox-hint" | "mailbox_hint" | "mailbox" => {
                 let user_id = match UserId::from_raw(value.to_string()) {
                     Ok(user_id) => user_id,
@@ -3504,7 +3541,7 @@ impl NativeNode {
             _ => {
                 return ControlResponse::text(
                     400,
-                    "unsupported dht key kind; expected public-peer, prekey, or mailbox-hint",
+                    "unsupported dht key kind; expected public-peer, prekey, mailbox-hint, or contact-card",
                 );
             }
         };
@@ -4758,6 +4795,20 @@ mod tests {
         assert_eq!(
             body["key"],
             DhtRecordKey::for_mailbox_hint(identity.user_id()).to_hex()
+        );
+
+        let contact_card = node.handle_control_request(ControlRequest {
+            method: "GET".into(),
+            path: format!("/dht/key?kind=contact-card&value={}", identity.user_id()),
+            body: String::new(),
+            headers: Vec::new(),
+        });
+        assert_eq!(contact_card.status, 200, "{}", contact_card.body);
+        let body: serde_json::Value = serde_json::from_str(&contact_card.body).unwrap();
+        assert_eq!(body["kind"], "ContactCard");
+        assert_eq!(
+            body["key"],
+            DhtRecordKey::for_contact_card(identity.user_id()).to_hex()
         );
 
         let peer = node.handle_control_request(ControlRequest {
