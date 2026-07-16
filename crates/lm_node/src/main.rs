@@ -8676,6 +8676,31 @@ connection: close
     }
 
     #[test]
+    fn state_file_encryption_requirement_rejects_plaintext_existing_file() {
+        let _guard = TEST_ENV_MUTEX.lock().unwrap();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("lm-node-plaintext-state-{unique}.json"));
+        std::fs::write(&path, "{\"version\":1}\n").unwrap();
+        unsafe {
+            std::env::set_var(
+                "LM_NODE_STATE_FILE_PASSPHRASE",
+                "state file require passphrase",
+            )
+        };
+        let err = validate_state_file_encryption_requirement(true, path.to_str()).unwrap_err();
+        assert!(err.to_string().contains("existing state_file is plaintext"));
+        let encrypted =
+            encrypt_state_file_text("{\"version\":1}", "state file require passphrase").unwrap();
+        std::fs::write(&path, format!("{encrypted}\n")).unwrap();
+        assert!(validate_state_file_encryption_requirement(true, path.to_str()).is_ok());
+        unsafe { std::env::remove_var("LM_NODE_STATE_FILE_PASSPHRASE") };
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
     fn state_db_encryption_requirement_fails_closed_until_supported() {
         assert!(validate_state_db_encryption_requirement(false).is_ok());
         let err = validate_state_db_encryption_requirement(true).unwrap_err();
