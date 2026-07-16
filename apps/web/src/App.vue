@@ -417,6 +417,7 @@ type SelfSyncCachedPackage = {
   sync_id: string
   sequence: number
   created_at: number
+  expires_at?: number
   payload: string
 }
 
@@ -1610,7 +1611,7 @@ async function writeStateToTables(state: PersistedState) {
   selfSyncRequestSentCount.value = Number(state.selfSyncRequestSentCount ?? 0)
   selfSyncRequestHitCount.value = Number(state.selfSyncRequestHitCount ?? 0)
   selfSyncRequestMissCount.value = Number(state.selfSyncRequestMissCount ?? 0)
-  selfSyncRecentPackages.value = state.selfSyncRecentPackages ?? []
+  selfSyncRecentPackages.value = normalizeSelfSyncRecentPackages(state.selfSyncRecentPackages ?? [])
   lastSelfSyncPushedAt.value = typeof state.lastSelfSyncPushedAt === 'number' ? state.lastSelfSyncPushedAt : null
   lastSelfSyncMergedAt.value = typeof state.lastSelfSyncMergedAt === 'number' ? state.lastSelfSyncMergedAt : null
   lastSelfSyncSequenceSent.value = Number(state.lastSelfSyncSequenceSent ?? 0)
@@ -1665,7 +1666,7 @@ async function loadStateFromTables(): Promise<boolean> {
   selfSyncRequestSentCount.value = Number(meta.selfSyncRequestSentCount ?? 0)
   selfSyncRequestHitCount.value = Number(meta.selfSyncRequestHitCount ?? 0)
   selfSyncRequestMissCount.value = Number(meta.selfSyncRequestMissCount ?? 0)
-  selfSyncRecentPackages.value = meta.selfSyncRecentPackages ?? []
+  selfSyncRecentPackages.value = normalizeSelfSyncRecentPackages(meta.selfSyncRecentPackages ?? [])
   lastSelfSyncPushedAt.value = typeof meta.lastSelfSyncPushedAt === 'number' ? meta.lastSelfSyncPushedAt : null
   lastSelfSyncMergedAt.value = typeof meta.lastSelfSyncMergedAt === 'number' ? meta.lastSelfSyncMergedAt : null
   lastSelfSyncSequenceSent.value = Number(meta.lastSelfSyncSequenceSent ?? 0)
@@ -2094,11 +2095,20 @@ function currentSelfSyncPackage(): SelfSyncPackage {
   return pkg
 }
 
+function normalizeSelfSyncRecentPackages(items: SelfSyncCachedPackage[]): SelfSyncCachedPackage[] {
+  const now = Date.now()
+  return items
+    .filter((item) => item?.sync_id && item?.payload && (item.expires_at ?? item.created_at + 7 * 24 * 3600 * 1000) > now)
+    .filter((item, index, all) => all.findIndex((x) => x.sync_id === item.sync_id) === index)
+    .sort((a, b) => Number(b.created_at ?? 0) - Number(a.created_at ?? 0))
+    .slice(0, 10)
+}
+
 function rememberSelfSyncPackage(pkg: SelfSyncPackage, payload: string) {
-  selfSyncRecentPackages.value = [
-    { sync_id: pkg.sync_id, sequence: pkg.sequence, created_at: pkg.created_at, payload },
+  selfSyncRecentPackages.value = normalizeSelfSyncRecentPackages([
+    { sync_id: pkg.sync_id, sequence: pkg.sequence, created_at: pkg.created_at, expires_at: pkg.created_at + 7 * 24 * 3600 * 1000, payload },
     ...selfSyncRecentPackages.value.filter((item) => item.sync_id !== pkg.sync_id),
-  ].slice(0, 10)
+  ])
 }
 
 async function pushSelfSyncPayloadToOwnMailbox(payload: string, label: string, kind = 'self-sync') {
@@ -2248,6 +2258,7 @@ async function applySelfSyncRequestPackage(pkg: SelfSyncRequestPackage) {
 
 async function repairSelfSyncGapNow() {
   await runAsync('补发轻量自同步包', async () => {
+    selfSyncRecentPackages.value = normalizeSelfSyncRecentPackages(selfSyncRecentPackages.value)
     const missing = lastSelfSyncMissingPreviousId.value
     const cached = missing ? selfSyncRecentPackages.value.find((item) => item.sync_id === missing) : undefined
     if (cached?.payload) {
@@ -2272,6 +2283,7 @@ async function pushSelfSyncPackageToOwnMailbox() {
 
 async function resendLatestSelfSyncPackageToOwnMailbox() {
   await runAsync('重发最近轻量自同步包', async () => {
+    selfSyncRecentPackages.value = normalizeSelfSyncRecentPackages(selfSyncRecentPackages.value)
     const latest = selfSyncRecentPackages.value[0]
     if (!latest?.payload) throw new Error('暂无可重发的轻量自同步包')
     await pushSelfSyncPayloadToOwnMailbox(latest.payload, `自同步：已重发 #${latest.sequence} 到自己的 Mailbox`)
@@ -2460,9 +2472,7 @@ async function importFullDataBackupMerge() {
     selfSyncRequestSentCount.value += Number(state.selfSyncRequestSentCount ?? 0)
     selfSyncRequestHitCount.value += Number(state.selfSyncRequestHitCount ?? 0)
     selfSyncRequestMissCount.value += Number(state.selfSyncRequestMissCount ?? 0)
-    selfSyncRecentPackages.value = [...(state.selfSyncRecentPackages ?? []), ...selfSyncRecentPackages.value]
-      .filter((item, index, all) => item?.sync_id && all.findIndex((x) => x.sync_id === item.sync_id) === index)
-      .slice(0, 10)
+    selfSyncRecentPackages.value = normalizeSelfSyncRecentPackages([...(state.selfSyncRecentPackages ?? []), ...selfSyncRecentPackages.value])
     if (typeof state.lastSelfSyncPushedAt === 'number') lastSelfSyncPushedAt.value = Math.max(lastSelfSyncPushedAt.value ?? 0, state.lastSelfSyncPushedAt)
     if (typeof state.lastSelfSyncMergedAt === 'number') lastSelfSyncMergedAt.value = Math.max(lastSelfSyncMergedAt.value ?? 0, state.lastSelfSyncMergedAt)
     lastSelfSyncSequenceSent.value = Math.max(lastSelfSyncSequenceSent.value, Number(state.lastSelfSyncSequenceSent ?? 0))
