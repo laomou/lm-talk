@@ -308,6 +308,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
           <input v-model="ctx.safetyPolicy.value.enableTextFilter" type="checkbox" />
           <span>启用文本过滤</span>
         </label>
+        <p class="muted">好友指纹核验：已核验 {{ ctx.verifiedFriendContactCount.value }}，未核验 {{ ctx.unverifiedFriendContactCount.value }}</p>
         <div class="policy-grid">
           <label>
             <span>过滤级别</span>
