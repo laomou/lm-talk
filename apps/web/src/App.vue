@@ -1983,6 +1983,7 @@ async function syncNow() {
     if (autoPublishPreKey.value) await ensurePreKeyInventory()
     await ensureOwnMailboxHintDhtRecord()
     await ensureOwnPublicPeerDhtRecord()
+    if (autoNodeSync.value && nodeSyncPeerUrl.value.trim()) await autoPullSnapshotFromPeerNode()
     await refreshOutgoingMailboxDeliveryStatusesFromNode()
     await takeMailboxFromNode()
     await refreshOutgoingMailboxDeliveryStatusesFromNode()
