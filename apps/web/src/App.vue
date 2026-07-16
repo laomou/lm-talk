@@ -5044,6 +5044,7 @@ function normalizeDhtHistoryItems(value: unknown): string[] {
   return raw
     .map((item) => String(item ?? '').trim())
     .filter((item) => item.length > 0)
+    .filter((item) => !item.includes('[已脱敏]') && !item.includes('[已截断]'))
     .slice(0, 32)
 }
 
