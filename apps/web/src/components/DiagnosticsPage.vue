@@ -55,6 +55,8 @@ async function runDiagnostics() {
       node_health_summary: sanitizeDiagnosticText(props.ctx.nodeHealthSummaryText.value),
       state_db_security: sanitizeDiagnosticText(props.ctx.nodeStateDbSecurityText.value),
       state_db_security_level: props.ctx.nodeStateDbSecurityLevel.value,
+      state_file_security: sanitizeDiagnosticText(props.ctx.nodeStateFileSecurityText.value),
+      state_file_security_level: props.ctx.nodeStateFileSecurityLevel.value,
       dht_peer_health_summary: sanitizeDiagnosticText(props.ctx.nodePeerHealthStatusText.value),
       dht_peer_health_risk: props.ctx.nodePeerHealthRiskLevel.value,
       node_snapshot_sync_enabled: props.ctx.autoNodeSync.value,

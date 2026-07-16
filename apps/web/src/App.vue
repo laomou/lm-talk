@@ -533,6 +533,8 @@ const nodeControlStatus = ref('未连接')
 const nodeHealthSummaryText = ref('节点健康：尚未检查')
 const nodeStateDbSecurityText = ref('state_db：尚未查询')
 const nodeStateDbSecurityLevel = ref<'ok' | 'warning' | 'danger'>('warning')
+const nodeStateFileSecurityText = ref('state_file：未配置')
+const nodeStateFileSecurityLevel = ref<'ok' | 'warning' | 'danger'>('ok')
 const nodePeerHealthStatusText = ref('DHT peer：尚未检查')
 const nodePeerHealthRiskLevel = ref<'ok' | 'warning' | 'danger'>('ok')
 const nodePeerHealthPeers = ref<Array<{ url: string; consecutive_failures: number; failures: number; quarantined: boolean; last_error?: string }>>([])
@@ -5383,6 +5385,18 @@ function nodeStateDbSecurityFromHealth(health: any): { text: string; level: 'ok'
   return { text: 'state_db：未加密且权限未硬化；不建议生产使用', level: 'danger' }
 }
 
+function nodeStateFileSecurityFromStats(stats: any): { text: string; level: 'ok' | 'warning' | 'danger' } {
+  const stateFile = stats?.state_file
+  if (!stateFile) return { text: 'state_file：未配置', level: 'ok' }
+  const encrypted = Boolean(stateFile.encrypted)
+  const hardened = Boolean(stateFile.permissions_hardened)
+  const size = Number(stateFile.file_bytes ?? 0)
+  if (encrypted && hardened) return { text: `state_file：已加密，权限已硬化，${formatBytes(size)}`, level: 'ok' }
+  if (encrypted) return { text: `state_file：已加密但权限未硬化，${formatBytes(size)}`, level: 'warning' }
+  if (hardened) return { text: `state_file：未加密，仅权限硬化，${formatBytes(size)}`, level: 'warning' }
+  return { text: `state_file：未加密且权限未硬化，${formatBytes(size)}`, level: 'danger' }
+}
+
 function nodeHealthSummaryFromResponse(health: any): string {
   const parts: string[] = []
   const peers = Number(health?.peers ?? 0)
@@ -5440,6 +5454,15 @@ async function checkNodeHealth() {
         nodePeerHealthRiskLevel.value = 'warning'
         nodeControlStatus.value = `节点在线，但控制接口异常。\n\n${msg}`
       }
+    }
+    try {
+      const stats = await nodeFetchJson('/control/stats')
+      const stateFile = nodeStateFileSecurityFromStats(stats)
+      nodeStateFileSecurityText.value = stateFile.text
+      nodeStateFileSecurityLevel.value = stateFile.level
+    } catch (error) {
+      nodeStateFileSecurityText.value = `state_file：状态查询失败：${userFacingError(error)}`
+      nodeStateFileSecurityLevel.value = 'warning'
     }
   })
 }
@@ -7206,7 +7229,7 @@ const appContext = {
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, registerPeriodicMailboxSync, pwaStatusText, pwaBackgroundCapabilityText, pwaLastBackgroundEventText, pwaBackgroundEventHistory, webVersionText,
   nodeControlUrl, nodeUrlList, nodeEntrySummaries, nodeSettingsSummaryText, nodeTokenStorageText, nodeTokenCount, nodeMissingRemoteTokenCount, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake, autoReadReceipts,
   enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,
-  autoPublishPreKey, autoNodeSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
+  autoPublishPreKey, autoNodeSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodeStateFileSecurityText, nodeStateFileSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutDeviceRevokeToFriends, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
   exportFullDataBackup, importFullDataBackup, importFullDataBackupMerge, downloadText, lastFullDataBackupAt, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,

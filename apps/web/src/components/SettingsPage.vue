@@ -158,6 +158,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
           <small>{{ showRawSyncStatus ? syncStatusText : syncStatusSummary }}</small>
           <small>{{ ctx.nodeHealthSummaryText.value }}</small>
           <small :class="{ 'danger-text': ctx.nodeStateDbSecurityLevel.value !== 'ok' }">{{ ctx.nodeStateDbSecurityText.value }}</small>
+          <small :class="{ 'danger-text': ctx.nodeStateFileSecurityLevel.value !== 'ok' }">{{ ctx.nodeStateFileSecurityText.value }}</small>
           <small :class="{ 'danger-text': ctx.nodePeerHealthRiskLevel.value !== 'ok' }">{{ ctx.nodePeerHealthStatusText.value }}</small>
           <div v-if="ctx.nodePeerHealthPeers.value.length" class="outbox-list">
             <div v-for="peer in ctx.nodePeerHealthPeers.value.filter((p: any) => p.consecutive_failures > 0 || p.quarantined).slice(0, 4)" :key="peer.url" class="outbox-row">
