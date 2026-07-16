@@ -213,6 +213,16 @@ function openGroupDetail(groupId: string) {
           </div>
         </div>
         <div class="detail-body">
+          <section v-if="ctx.contactRevokedDeviceIds(ctx.activeContact.value).length" class="home-card">
+            <h3>已撤销设备</h3>
+            <div class="outbox-list">
+              <div v-for="deviceId in ctx.contactRevokedDeviceIds(ctx.activeContact.value)" :key="deviceId" class="outbox-row">
+                <b>{{ deviceId }}</b>
+                <small>该设备已标记撤销，不应再用于信任或建链。</small>
+                <button class="secondary danger" @click="ctx.unmarkActiveContactRevokedDevice(deviceId)">解除撤销标记</button>
+              </div>
+            </div>
+          </section>
           <section v-if="ctx.activeContact.value.state === 'Friend'" class="home-card">
             <h3>指纹核验</h3>
             <textarea v-model="ctx.activeFingerprintVerificationText.value" rows="3" placeholder="粘贴对方通过可信渠道展示的 lm-contact-fingerprint-v1 核验码，或直接粘贴指纹文本"></textarea>
