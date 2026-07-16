@@ -359,6 +359,7 @@ type PersistedMeta = {
 
 type SelfSyncPackage = {
   type: 'lm-self-sync-v1'
+  version: number
   sync_id: string
   created_at: number
   from_user_id: string
@@ -1899,6 +1900,7 @@ async function pushFullDataBackupToOwnMailbox() {
 function selfSyncSigningPayload(pkg: SelfSyncPackage): string {
   return JSON.stringify({
     type: pkg.type,
+    version: pkg.version,
     sync_id: pkg.sync_id,
     created_at: pkg.created_at,
     from_user_id: pkg.from_user_id,
@@ -1915,6 +1917,7 @@ function selfSyncSigningPayload(pkg: SelfSyncPackage): string {
 function currentSelfSyncPackage(): SelfSyncPackage {
   const pkg: SelfSyncPackage = {
     type: 'lm-self-sync-v1',
+    version: 1,
     sync_id: newId(),
     created_at: Date.now(),
     from_user_id: identity.value?.user_id || '',
@@ -1931,7 +1934,12 @@ function currentSelfSyncPackage(): SelfSyncPackage {
 }
 
 function applySelfSyncPackage(pkg: SelfSyncPackage) {
+  if (pkg.version !== 1) throw new Error('self-sync version 不支持')
   if (!pkg.sync_id) throw new Error('self-sync 缺少 sync_id')
+  const createdAt = Number(pkg.created_at ?? 0)
+  if (!Number.isFinite(createdAt) || createdAt <= 0) throw new Error('self-sync created_at 无效')
+  const ageMs = Math.abs(Date.now() - createdAt)
+  if (ageMs > 30 * 24 * 3600 * 1000) throw new Error('self-sync 已超过 30 天时间窗口')
   if (pkg.from_user_id !== identity.value?.user_id) throw new Error('self-sync user_id 与当前身份不匹配')
   if (pkg.identity_public_key !== identity.value?.identity_public_key) throw new Error('self-sync identity_public_key 与当前身份不匹配')
   if (!pkg.signature || !verify_identity_text_signature(pkg.identity_public_key, selfSyncSigningPayload(pkg), pkg.signature)) throw new Error('self-sync 签名无效')
