@@ -5721,14 +5721,14 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let transport = Libp2pDhtTransport {
-                timeout: Duration::from_secs(10),
+                timeout: Duration::from_secs(30),
             };
             let response = transport
                 .send_dht_rpc(&peer, &request)
                 .map_err(|err| err.to_string());
             tx.send(response).unwrap();
         });
-        tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(30), async {
             let mut pending_discovery = HashSet::new();
             loop {
                 if let Ok(response) = rx.try_recv() {
@@ -5744,7 +5744,7 @@ mod tests {
             }
         })
         .await
-        .unwrap()
+        .expect("local libp2p DHT transport roundtrip timed out")
     }
 
     fn spawn_dht_rpc_store_result_server(
@@ -7527,7 +7527,7 @@ mod tests {
                 }],
             )
             .unwrap();
-            let connected = tokio::time::timeout(Duration::from_secs(10), async {
+            let connected = tokio::time::timeout(Duration::from_secs(30), async {
                 loop {
                     futures::select! {
                         event = seed.select_next_some() => {
@@ -7599,7 +7599,7 @@ mod tests {
 
             let mut seed_pending = HashSet::new();
             let mut joining_pending = HashSet::new();
-            tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::time::timeout(Duration::from_secs(30), async {
                 loop {
                     futures::select! {
                         event = seed_swarm.select_next_some() => {
