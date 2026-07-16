@@ -570,6 +570,7 @@ const autoPublishPreKey = ref(true)
 const autoNodeSync = ref(false)
 const autoSelfMailboxSync = ref(false)
 let nodeSyncTimer: number | undefined
+let selfSyncTimer: number | undefined
 let lastVisibilityMailboxTakeAt = 0
 const nodeControlStatus = ref('未连接')
 const nodeHealthSummaryText = ref('节点健康：尚未检查')
@@ -602,7 +603,7 @@ const syncTriggerPolicyText = computed(() => {
   parts.push(autoReadReceipts.value ? '当前会话可见时自动发送已读回执' : '已读回执关闭')
   parts.push('Outbox 每 30 秒重试到期项')
   if (autoNodeSync.value) parts.push('节点快照每 60 秒同步')
-  if (autoSelfMailboxSync.value) parts.push('手动同步时发送轻量自同步包')
+  if (autoSelfMailboxSync.value) parts.push('手动/定时发送轻量自同步包')
   return parts.join('；')
 })
 const mailboxInboxStatus = ref('尚未同步')
@@ -806,6 +807,7 @@ onMounted(async () => {
     loadLocalIdentityList()
     startOutboxRetryLoop()
     startNodeSyncLoop()
+    startSelfSyncLoop()
     document.addEventListener('visibilitychange', () => {
       refreshRuntimeStatus()
       if (document.visibilityState === 'visible' && loggedIn.value && nodeEnabled.value && autoMailboxTake.value) {
@@ -1928,6 +1930,16 @@ function applySelfSyncPackage(pkg: SelfSyncPackage) {
   selfSyncStatusText.value = `自同步：已合并 ${pkg.contacts?.length ?? 0} 个联系人状态（${pkg.sync_id.slice(0, 8)}）`
   appendLog(`✅ ${selfSyncStatusText.value}`)
   persist()
+}
+
+async function autoPushSelfSyncPackageToOwnMailbox() {
+  if (!loggedIn.value || !nodeEnabled.value || !autoSelfMailboxSync.value) return
+  if (lastSelfSyncPushedAt.value && Date.now() - lastSelfSyncPushedAt.value < 5 * 60_000) return
+  try {
+    await pushSelfSyncPackageToOwnMailbox()
+  } catch (error) {
+    selfSyncStatusText.value = `自同步：自动投递失败：${userFacingError(error)}`
+  }
 }
 
 async function pushSelfSyncPackageToOwnMailbox() {
@@ -6681,6 +6693,11 @@ async function autoPullSnapshotFromPeerNode() {
 function startNodeSyncLoop() {
   if (nodeSyncTimer) return
   nodeSyncTimer = window.setInterval(() => { void autoPullSnapshotFromPeerNode() }, 60_000)
+}
+
+function startSelfSyncLoop() {
+  if (selfSyncTimer) return
+  selfSyncTimer = window.setInterval(() => { void autoPushSelfSyncPackageToOwnMailbox() }, 60_000)
 }
 
 function contactByUserId(userId: string): ContactItem | null {
