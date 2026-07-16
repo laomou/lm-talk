@@ -1036,6 +1036,7 @@ struct DhtFindValueRunStats {
 struct DhtFindValueRunResponse {
     key: String,
     found: bool,
+    record: Option<DhtRecord>,
     records: usize,
     stats: DhtFindValueRunStats,
 }
@@ -4925,12 +4926,14 @@ fn handle_control_dht_find_value_run(
     if let Some(runtime_stats) = runtime_stats {
         runtime_stats.record_dht_find_value_run(stats, current_unix_timestamp());
     }
-    let found = node.dht_records.find_value(&key).is_some();
+    let record = node.dht_records.find_value(&key);
+    let found = record.is_some();
     ControlHttpResponse::json(
         200,
         &DhtFindValueRunResponse {
             key: key.to_hex(),
             found,
+            record,
             records: node.dht_records.len(),
             stats,
         },
@@ -6216,6 +6219,28 @@ mod tests {
             DhtRecordKey::for_mailbox_hint(target_identity.user_id()).to_hex()
         );
         assert_eq!(body["found"], false);
+
+        let found_record = DhtRecord::mailbox_hint(
+            target_identity.user_id(),
+            "mailbox://control-found".into(),
+            3600,
+        );
+        assert!(node.dht_records.store(found_record.clone()));
+        let found = handle_control_dht_find_value_run(
+            &mut node,
+            &[],
+            DhtRunnerConfig::default(),
+            &format!(
+                "/dht/find-value?kind=mailbox-hint&value={}&limit=8&max_peers=2",
+                target_identity.user_id()
+            ),
+            None,
+        );
+        assert_eq!(found.status, 200, "{}", found.body);
+        let body: serde_json::Value = serde_json::from_str(&found.body).unwrap();
+        assert_eq!(body["found"], true);
+        assert_eq!(body["record"]["kind"], "MailboxHint");
+        assert_eq!(body["record"]["value"], found_record.value);
 
         for failure in 0..DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES {
             node.sync_status.record_failure(
