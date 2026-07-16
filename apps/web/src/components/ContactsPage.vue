@@ -59,6 +59,7 @@ function openGroupDetail(groupId: string) {
           <option value="revoked">有撤销设备</option>
           <option value="strict-blocked">严格 E2EE 阻塞</option>
         </select>
+        <button v-if="trustFilter === 'strict-blocked'" class="secondary" @click="ctx.repairStrictE2eeBlockers">批量处理阻塞</button>
       </div>
 
       <div class="conversation-list">
