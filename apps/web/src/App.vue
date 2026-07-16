@@ -137,6 +137,7 @@ type ContactItem = ContactInfo & {
   last_dht_discovery_success_at?: number
   last_dht_discovery_error?: string
   last_dht_discovery_error_kind?: 'network' | 'not-found' | 'expired' | 'invalid-record' | 'signature' | 'unknown'
+  dht_discovery_risk_level?: 'low' | 'medium' | 'high'
   dht_discovery_failure_count?: number
   next_dht_discovery_retry_at?: number
   last_prekey_dht_found_at?: number
@@ -2090,6 +2091,7 @@ function markContactDhtDiscoveryAttempt(contact: ContactItem) {
   contact.last_dht_discovery_attempt_at = Date.now()
   contact.last_dht_discovery_error = undefined
   contact.last_dht_discovery_error_kind = undefined
+  contact.dht_discovery_risk_level = undefined
 }
 
 function resetContactDhtDiscoveryBackoff(contact: ContactItem) {
@@ -2097,6 +2099,7 @@ function resetContactDhtDiscoveryBackoff(contact: ContactItem) {
   contact.next_dht_discovery_retry_at = undefined
   contact.last_dht_discovery_error = undefined
   contact.last_dht_discovery_error_kind = undefined
+  contact.dht_discovery_risk_level = undefined
 }
 
 function markContactDhtDiscoverySuccess(contact: ContactItem, kind: 'prekey' | 'mailbox-hint') {
@@ -2105,6 +2108,7 @@ function markContactDhtDiscoverySuccess(contact: ContactItem, kind: 'prekey' | '
   contact.dht_discovery_failure_count = 0
   contact.next_dht_discovery_retry_at = undefined
   contact.last_dht_discovery_error_kind = undefined
+  contact.dht_discovery_risk_level = undefined
   if (kind === 'prekey') contact.last_prekey_dht_found_at = contact.last_dht_discovery_success_at
   if (kind === 'mailbox-hint') contact.last_mailbox_hint_dht_found_at = contact.last_dht_discovery_success_at
 }
@@ -2119,14 +2123,28 @@ function classifyDhtDiscoveryError(error: unknown): ContactItem['last_dht_discov
   return 'unknown'
 }
 
+function dhtDiscoveryRiskLevel(kind: ContactItem['last_dht_discovery_error_kind']): ContactItem['dht_discovery_risk_level'] {
+  if (kind === 'signature' || kind === 'invalid-record') return 'high'
+  if (kind === 'expired') return 'medium'
+  return 'low'
+}
+
+function dhtDiscoveryRetryDelayMs(kind: ContactItem['last_dht_discovery_error_kind'], failures: number): number {
+  if (kind === 'signature' || kind === 'invalid-record') return 60 * 60_000
+  if (kind === 'not-found' || kind === 'expired') return Math.min(60 * 60_000, 5 * 60_000 * 2 ** (failures - 1))
+  if (kind === 'network') return Math.min(10 * 60_000, 15_000 * 2 ** (failures - 1))
+  return Math.min(15 * 60_000, 30_000 * 2 ** (failures - 1))
+}
+
 function markContactDhtDiscoveryError(contact: ContactItem, error: unknown, kind?: ContactItem['last_dht_discovery_error_kind']) {
   const now = Date.now()
+  const errorKind = kind || classifyDhtDiscoveryError(error)
   const failures = Math.min(8, (contact.dht_discovery_failure_count ?? 0) + 1)
-  const retryDelayMs = Math.min(15 * 60_000, 30_000 * 2 ** (failures - 1))
   contact.dht_discovery_failure_count = failures
-  contact.next_dht_discovery_retry_at = now + retryDelayMs
+  contact.next_dht_discovery_retry_at = now + dhtDiscoveryRetryDelayMs(errorKind, failures)
   contact.last_dht_discovery_error = userFacingError(error)
-  contact.last_dht_discovery_error_kind = kind || classifyDhtDiscoveryError(error)
+  contact.last_dht_discovery_error_kind = errorKind
+  contact.dht_discovery_risk_level = dhtDiscoveryRiskLevel(errorKind)
 }
 
 function contactDhtDiscoveryRetryWaitMs(contact: ContactItem): number {
