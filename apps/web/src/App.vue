@@ -351,6 +351,15 @@ type PersistedMeta = {
   schemaVersion: number
 }
 
+type SelfSyncPackage = {
+  type: 'lm-self-sync-v1'
+  created_at: number
+  contacts: ContactItem[]
+  dhtOperationHistory?: string[]
+  unverifiedIncomingDropCount?: number
+  revokedDeviceIncomingDropCount?: number
+}
+
 type LocalIdentityRecord = {
   id: string
   user_id: string
@@ -489,6 +498,9 @@ const lastSelfMailboxBackupPushedAt = ref<number | null>(null)
 const lastSelfMailboxBackupReceivedAt = ref<number | null>(null)
 const lastSelfMailboxBackupMergedAt = ref<number | null>(null)
 const selfMailboxBackupStatusText = ref('自 Mailbox 备份：尚未运行')
+const selfSyncStatusText = ref('自同步：尚未运行')
+const lastSelfSyncPushedAt = ref<number | null>(null)
+const lastSelfSyncMergedAt = ref<number | null>(null)
 const selfMailboxBackupMergePending = computed(() => {
   const receivedAt = lastSelfMailboxBackupReceivedAt.value ?? 0
   const mergedAt = lastSelfMailboxBackupMergedAt.value ?? 0
@@ -1824,6 +1836,55 @@ async function pushFullDataBackupToOwnMailbox() {
     persist()
     appendLog(`✅ ${selfMailboxBackupStatusText.value}`)
     toast('完整数据备份已投递到自己的 Mailbox', 'success')
+  })
+}
+
+function currentSelfSyncPackage(): SelfSyncPackage {
+  return {
+    type: 'lm-self-sync-v1',
+    created_at: Date.now(),
+    contacts: contacts.value,
+    dhtOperationHistory: nodeDhtOperationHistory.value,
+    unverifiedIncomingDropCount: unverifiedIncomingDropCount.value,
+    revokedDeviceIncomingDropCount: revokedDeviceIncomingDropCount.value,
+  }
+}
+
+function applySelfSyncPackage(pkg: SelfSyncPackage) {
+  contacts.value = mergeContactDeviceAndTrustState(contacts.value, pkg.contacts ?? [])
+  nodeDhtOperationHistory.value = [...new Set([...(pkg.dhtOperationHistory ?? []), ...nodeDhtOperationHistory.value])].slice(0, DHT_OPERATION_HISTORY_MAX_RECORDS)
+  unverifiedIncomingDropCount.value = Math.max(unverifiedIncomingDropCount.value, Number(pkg.unverifiedIncomingDropCount ?? 0))
+  revokedDeviceIncomingDropCount.value = Math.max(revokedDeviceIncomingDropCount.value, Number(pkg.revokedDeviceIncomingDropCount ?? 0))
+  lastSelfSyncMergedAt.value = Date.now()
+  selfSyncStatusText.value = `自同步：已合并 ${pkg.contacts?.length ?? 0} 个联系人状态`
+  appendLog(`✅ ${selfSyncStatusText.value}`)
+  persist()
+}
+
+async function pushSelfSyncPackageToOwnMailbox() {
+  await runAsync('同步状态到自己的 Mailbox', async () => {
+    if (!identity.value?.user_id) throw new Error('需要先登录身份')
+    if (!nodeEnabled.value) throw new Error('节点未启用')
+    const payload = JSON.stringify(currentSelfSyncPackage())
+    const msg = create_mailbox_message(
+      backupText.value,
+      passphrase.value,
+      identity.value.user_id,
+      'self-sync',
+      payload,
+      BigInt(7 * 24 * 3600),
+    )
+    const body = await nodeFetchJson('/mailbox/push', {
+      method: 'POST',
+      body: JSON.stringify({
+        message_text: msg,
+        from_identity_public_key: identity.value.identity_public_key,
+      }),
+    })
+    lastSelfSyncPushedAt.value = Date.now()
+    selfSyncStatusText.value = `自同步：已投递到自己的 Mailbox${body?.delivery_id ? '：' + body.delivery_id : ''}`
+    appendLog(`✅ ${selfSyncStatusText.value}`)
+    persist()
   })
 }
 
@@ -6579,6 +6640,12 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
   const fromUserId = String(message.from_user_id ?? '')
   const ciphertext = String(message.ciphertext ?? '')
   let sender = contactByUserId(fromUserId)
+  if (identity.value?.user_id && fromUserId === identity.value.user_id && normalizedKind === 'selfsync') {
+    const pkg = JSON.parse(ciphertext) as SelfSyncPackage
+    if (pkg?.type !== 'lm-self-sync-v1') throw new Error('self-sync package 类型不匹配')
+    applySelfSyncPackage(pkg)
+    return { handled: true, deliveryId, event: 'other' }
+  }
   if (identity.value?.user_id && fromUserId === identity.value.user_id && (normalizedKind === 'databackup' || ciphertext.startsWith('lm-data-backup-v1:'))) {
     dataBackupText.value = ciphertext
     lastSelfMailboxBackupReceivedAt.value = Date.now()
@@ -7316,7 +7383,7 @@ const appContext = {
   autoPublishPreKey, autoNodeSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodeStateFileSecurityText, nodeStateFileSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutDeviceRevokeToFriends, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
-  exportFullDataBackup, pushFullDataBackupToOwnMailbox, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, selfMailboxBackupStatusText, selfMailboxBackupMergePending, selfMailboxBackupMergeStatusText, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
+  exportFullDataBackup, pushFullDataBackupToOwnMailbox, pushSelfSyncPackageToOwnMailbox, selfSyncStatusText, lastSelfSyncPushedAt, lastSelfSyncMergedAt, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, selfMailboxBackupStatusText, selfMailboxBackupMergePending, selfMailboxBackupMergeStatusText, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
   addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, friendRequestRateRecords, friendRequestRateSummaryText, clearFriendRequestRateRecords, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
