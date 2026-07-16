@@ -6832,7 +6832,7 @@ function unwrapMailboxDelivery(item: any): { deliveryId?: string; message: any }
   return { message: item }
 }
 
-type MailboxEventKind = 'message' | 'file' | 'friend-request' | 'friend-response' | 'group-invite' | 'delivery-ack' | 'read-receipt' | 'device-revoke' | 'secure-session' | 'data-backup' | 'other'
+type MailboxEventKind = 'message' | 'file' | 'friend-request' | 'friend-response' | 'group-invite' | 'delivery-ack' | 'read-receipt' | 'device-revoke' | 'secure-session' | 'data-backup' | 'self-sync' | 'other'
 
 function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: string; event?: MailboxEventKind; reason?: string } {
   const { deliveryId, message } = unwrapMailboxDelivery(item)
@@ -6845,7 +6845,7 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
     const pkg = JSON.parse(ciphertext) as SelfSyncPackage
     if (pkg?.type !== 'lm-self-sync-v1') throw new Error('self-sync package 类型不匹配')
     applySelfSyncPackage(pkg)
-    return { handled: true, deliveryId, event: 'other' }
+    return { handled: true, deliveryId, event: 'self-sync' }
   }
   if (identity.value?.user_id && fromUserId === identity.value.user_id && (normalizedKind === 'databackup' || ciphertext.startsWith('lm-data-backup-v1:'))) {
     dataBackupText.value = ciphertext
@@ -6977,6 +6977,7 @@ function mailboxNotificationText(events: MailboxEventKind[]): string {
     ['群邀请', count('group-invite')],
     ['安全会话', count('secure-session')],
     ['完整备份', count('data-backup')],
+    ['自同步', count('self-sync')],
     ['回执', count('delivery-ack') + count('read-receipt')],
   ].filter(([, n]) => Number(n) > 0).map(([label, n]) => `${label} ${n}`)
   return parts.length ? parts.join('，') : `已处理 ${events.length} 条`
