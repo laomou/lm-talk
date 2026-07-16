@@ -7149,8 +7149,7 @@ async function findActiveContactContactCard() {
     resetContactDhtDiscoveryBackoff(contact)
     markContactDhtDiscoveryAttempt(contact)
     try {
-      fillDhtKeyInput('contact-card', contact.user_id)
-      await deriveAndFindDhtValueNow()
+      await refreshContactCardDhtForContact(contact)
       persist()
     } catch (error) {
       markContactDhtDiscoveryError(contact, error)
@@ -7918,6 +7917,27 @@ function startNodeSyncLoop() {
 }
 
 
+async function refreshContactCardDhtForContact(contact: ContactItem, options: { preserveUi?: boolean } = {}): Promise<boolean> {
+  const previousPeerId = activePeerId.value
+  const previousGroupId = activeGroupId.value
+  const previousKind = nodeDhtKeyKind.value
+  const previousValue = nodeDhtKeyValue.value
+  const previousKey = nodeDhtFindValueKey.value
+  try {
+    fillDhtKeyInput('contact-card', contact.user_id)
+    await deriveAndFindDhtValueNow()
+    return true
+  } finally {
+    if (options.preserveUi) {
+      activePeerId.value = previousPeerId
+      activeGroupId.value = previousGroupId
+      nodeDhtKeyKind.value = previousKind
+      nodeDhtKeyValue.value = previousValue
+      nodeDhtFindValueKey.value = previousKey
+    }
+  }
+}
+
 async function autoRefreshStaleContactCardDht() {
   if (!loggedIn.value || !nodeEnabled.value || !autoNodeSync.value) return
   const stale = friendContacts.value
@@ -7926,10 +7946,8 @@ async function autoRefreshStaleContactCardDht() {
   if (!stale.length) return
   let refreshed = 0
   for (const contact of stale) {
-    selectContact(contact.user_id)
     try {
-      fillDhtKeyInput('contact-card', contact.user_id)
-      await deriveAndFindDhtValueNow()
+      await refreshContactCardDhtForContact(contact, { preserveUi: true })
       refreshed += 1
     } catch (error) {
       appendLog(`后台 ContactCard DHT 刷新失败：${contact.display_name || contact.user_id}：${userFacingError(error)}`)
