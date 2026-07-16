@@ -4,7 +4,7 @@ import { avatarColor } from '../avatarColor'
 
 const props = defineProps<{ ctx: any }>()
 const keyword = ref('')
-const trustFilter = ref<'all' | 'unverified' | 'verified' | 'revoked'>('all')
+const trustFilter = ref<'all' | 'unverified' | 'verified' | 'revoked' | 'strict-blocked'>('all')
 type View = 'welcome' | 'requests' | 'detail' | 'add' | 'group'
 const view = ref<View>('welcome')
 
@@ -15,6 +15,7 @@ const filteredContacts = computed(() => {
   if (trustFilter.value === 'verified') list = list.filter((c: any) => c.state === 'Friend' && c.fingerprint_verified_at)
   else if (trustFilter.value === 'unverified') list = list.filter((c: any) => c.state === 'Friend' && !c.fingerprint_verified_at)
   else if (trustFilter.value === 'revoked') list = list.filter((c: any) => (c.revoked_device_ids || []).length > 0)
+  else if (trustFilter.value === 'strict-blocked') list = list.filter((c: any) => c.state === 'Friend' && props.ctx.contactStrictE2eeRiskLevel(c) === 'high')
   if (!q) return list
   return list.filter((c: any) => `${c.display_name || ''} ${c.user_id || ''} ${c.state || ''}`.toLowerCase().includes(q))
 })
@@ -56,6 +57,7 @@ function openGroupDetail(groupId: string) {
           <option value="unverified">未核验好友</option>
           <option value="verified">已核验好友</option>
           <option value="revoked">有撤销设备</option>
+          <option value="strict-blocked">严格 E2EE 阻塞</option>
         </select>
       </div>
 
