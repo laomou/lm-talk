@@ -5128,12 +5128,23 @@ function applyDhtFindValueRecord(body: any) {
   const record = body?.record ?? body?.value ?? body?.found_record
   if (!record?.kind || typeof record.value !== 'string') return
   if (record.kind === 'PreKey') {
-    prekeyBundleText.value = record.value
-    nodePreKeyStatusText.value = JSON.stringify({ found: true, source: 'dht', record }, null, 2)
-    prekeyStatusSummary.value = 'DHT 查到 PreKey record，已填入本地 PreKey 文本'
+    try {
+      const inspected = JSON.parse(inspect_prekey_bundle(record.value))
+      prekeyBundleText.value = record.value
+      nodePreKeyStatusText.value = JSON.stringify({ found: true, source: 'dht', verified: true, record, inspected }, null, 2)
+      prekeyStatusSummary.value = 'DHT 查到 PreKey record，已验签并填入本地 PreKey 文本'
+    } catch (error) {
+      nodePreKeyStatusText.value = JSON.stringify({ found: true, source: 'dht', verified: false, error: userFacingError(error), record }, null, 2)
+      prekeyStatusSummary.value = `DHT 查到 PreKey record，但验签失败：${userFacingError(error)}`
+    }
   } else if (record.kind === 'MailboxHint') {
-    peerMailboxKey.value = record.value
-    mailboxInboxStatus.value = `DHT 查到 MailboxHint：${record.value}`
+    const hint = record.value.trim()
+    if (/^(https?:\/\/|libp2p:\/\/|mailbox:\/\/)/i.test(hint)) {
+      peerMailboxKey.value = hint
+      mailboxInboxStatus.value = `DHT 查到 MailboxHint：${hint}`
+    } else {
+      mailboxInboxStatus.value = `DHT 查到 MailboxHint，但地址格式异常：${hint.slice(0, 80)}`
+    }
   } else if (record.kind === 'PublicPeer') {
     const key = publicPeerAnnounceInspectPublicKey.value.trim() || defaultInspectPublicKey()
     try {

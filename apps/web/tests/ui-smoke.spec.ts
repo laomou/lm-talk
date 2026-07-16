@@ -351,7 +351,7 @@ test('消息同步可完成好友请求和消息收发', async ({ browser }) => 
   await bob.getByRole('button', { name: '派生并查找' }).click()
   await expect(bob.getByLabel('DHT record key')).toHaveValue('b'.repeat(64))
   await expect(bob.getByText('DHT 查找：找到，kind PreKey，key bbbbbbbbbbbb…，peer 尝试 2，成功 2，失败 0，found 1，closer 0，隔离 0', { exact: true })).toBeVisible()
-  await expect(bob.getByText(/DHT 查到 PreKey record/)).toBeVisible()
+  await expect(bob.getByText(/DHT 查到 PreKey record，但验签失败/)).toBeVisible()
   await bob.getByRole('button', { name: '运行 DHT 维护' }).click()
   await expect(bob.getByText('DHT 维护：peer 2，records 4，复制成功 2/2，刷新成功 2/2，合并 1，隔离 0', { exact: true })).toBeVisible()
   await bob.getByRole('button', { name: '复制 DHT 记录' }).click()
