@@ -1250,6 +1250,7 @@ struct StateDbStats {
     freelist_count: u64,
     file_bytes: u64,
     encrypted: bool,
+    encryption_mode: String,
     permissions_hardened: bool,
 }
 
@@ -2389,6 +2390,19 @@ impl ControlRuntimeStats {
             );
             push_metric_help(
                 &mut out,
+                "lm_node_state_db_encryption_mode",
+                "SQLite state database encryption mode. Current plain mode is not database encryption.",
+            );
+            push_metric_type(&mut out, "lm_node_state_db_encryption_mode", "gauge");
+            push_labeled_metric_value(
+                &mut out,
+                "lm_node_state_db_encryption_mode",
+                "mode",
+                &state_db.encryption_mode,
+                1,
+            );
+            push_metric_help(
+                &mut out,
                 "lm_node_state_db_permissions_hardened",
                 "Whether the state database files are expected to be restricted to the node user.",
             );
@@ -3336,6 +3350,7 @@ fn state_db_stats(path: &str) -> Result<StateDbStats, Box<dyn std::error::Error>
         freelist_count,
         file_bytes,
         encrypted: false,
+        encryption_mode: "plain".into(),
         permissions_hardened: true,
     })
 }
@@ -8243,6 +8258,7 @@ connection: close
                 freelist_count: 2,
                 file_bytes: 40960,
                 encrypted: false,
+                encryption_mode: "plain".into(),
                 permissions_hardened: true,
             }),
             Some(&StateFileStats {
@@ -8404,6 +8420,7 @@ connection: close
         assert!(metrics.contains("lm_node_state_db_page_size_bytes 4096"));
         assert!(metrics.contains("lm_node_state_db_file_bytes 40960"));
         assert!(metrics.contains("lm_node_state_db_encrypted 0"));
+        assert!(metrics.contains(r#"lm_node_state_db_encryption_mode{mode="plain"} 1"#));
         assert!(metrics.contains("lm_node_state_db_permissions_hardened 1"));
         assert!(metrics.ends_with("# EOF\n"));
     }
