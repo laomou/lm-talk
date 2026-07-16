@@ -358,8 +358,8 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
         <small v-if="ctx.lastSelfMailboxBackupReceivedAt.value">最近收到自己的 Mailbox 备份：{{ ctx.formatDateTime(ctx.lastSelfMailboxBackupReceivedAt.value) }}</small>
         <small v-if="ctx.lastSelfMailboxBackupMergedAt.value">最近合并自己的 Mailbox 备份：{{ ctx.formatDateTime(ctx.lastSelfMailboxBackupMergedAt.value) }}</small>
         <small>{{ ctx.selfSyncStatusText.value }}</small>
-        <small v-if="ctx.lastSelfSyncPushedAt.value">最近投递轻量自同步：{{ ctx.formatDateTime(ctx.lastSelfSyncPushedAt.value) }}</small>
-        <small v-if="ctx.lastSelfSyncMergedAt.value">最近合并轻量自同步：{{ ctx.formatDateTime(ctx.lastSelfSyncMergedAt.value) }}</small>
+        <small v-if="ctx.lastSelfSyncPushedAt.value">最近投递轻量自同步：#{{ ctx.lastSelfSyncSequenceSent.value }} · {{ ctx.formatDateTime(ctx.lastSelfSyncPushedAt.value) }}</small>
+        <small v-if="ctx.lastSelfSyncMergedAt.value">最近合并轻量自同步：#{{ ctx.lastSelfSyncSequenceMerged.value }} · {{ ctx.formatDateTime(ctx.lastSelfSyncMergedAt.value) }}</small>
         <div class="row compact">
           <button class="secondary" @click="ctx.exportFullDataBackup">生成备份</button>
           <button class="secondary" :disabled="!ctx.nodeEnabled.value" @click="ctx.pushSelfSyncPackageToOwnMailbox">轻量状态到自己 Mailbox</button>
