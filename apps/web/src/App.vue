@@ -531,6 +531,8 @@ let nodeSyncTimer: number | undefined
 let lastVisibilityMailboxTakeAt = 0
 const nodeControlStatus = ref('未连接')
 const nodeHealthSummaryText = ref('节点健康：尚未检查')
+const nodeStateDbSecurityText = ref('state_db：尚未查询')
+const nodeStateDbSecurityLevel = ref<'ok' | 'warning' | 'danger'>('warning')
 const nodePeerHealthStatusText = ref('DHT peer：尚未检查')
 const nodePeerHealthRiskLevel = ref<'ok' | 'warning' | 'danger'>('ok')
 const nodePeerHealthPeers = ref<Array<{ url: string; consecutive_failures: number; failures: number; quarantined: boolean; last_error?: string }>>([])
@@ -5373,6 +5375,14 @@ function nodePeerHealthSummaryFromPeers(peers: Array<{ consecutive_failures: num
   return { text: `DHT peer：${peers.length} 个，失败 ${failed.length}，隔离 ${quarantined.length}，最高连续失败 ${worst}${suffix}`, level }
 }
 
+function nodeStateDbSecurityFromHealth(health: any): { text: string; level: 'ok' | 'warning' | 'danger' } {
+  const encrypted = Boolean(health?.state_db_encrypted)
+  const hardened = Boolean(health?.state_db_permissions_hardened)
+  if (encrypted) return { text: `state_db：数据库加密已启用${hardened ? '，权限已硬化' : ''}`, level: 'ok' }
+  if (hardened) return { text: 'state_db：未加密，仅权限硬化；生产环境建议启用数据库级加密', level: 'warning' }
+  return { text: 'state_db：未加密且权限未硬化；不建议生产使用', level: 'danger' }
+}
+
 function nodeHealthSummaryFromResponse(health: any): string {
   const parts: string[] = []
   const peers = Number(health?.peers ?? 0)
@@ -5402,6 +5412,9 @@ async function checkNodeHealth() {
   await runAsync('检查 lm_node 控制面', async () => {
     const health = await nodeFetchJson('/health')
     nodeHealthSummaryText.value = nodeHealthSummaryFromResponse(health)
+    const stateDb = nodeStateDbSecurityFromHealth(health)
+    nodeStateDbSecurityText.value = stateDb.text
+    nodeStateDbSecurityLevel.value = stateDb.level
     updateMailboxQuotaStatus({
       pending_bytes: Number(health?.mailbox_bytes ?? 0),
       max_bytes_per_user: health?.mailbox_max_bytes_per_user,
@@ -7193,7 +7206,7 @@ const appContext = {
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, registerPeriodicMailboxSync, pwaStatusText, pwaBackgroundCapabilityText, pwaLastBackgroundEventText, pwaBackgroundEventHistory, webVersionText,
   nodeControlUrl, nodeUrlList, nodeEntrySummaries, nodeSettingsSummaryText, nodeTokenStorageText, nodeTokenCount, nodeMissingRemoteTokenCount, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake, autoReadReceipts,
   enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,
-  autoPublishPreKey, autoNodeSync, nodeControlStatus, nodeHealthSummaryText, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
+  autoPublishPreKey, autoNodeSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutDeviceRevokeToFriends, myDeviceCertJson,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
   exportFullDataBackup, importFullDataBackup, importFullDataBackupMerge, downloadText, lastFullDataBackupAt, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,

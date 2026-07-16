@@ -53,6 +53,8 @@ async function runDiagnostics() {
       missing_remote_token_count: props.ctx.nodeMissingRemoteTokenCount.value,
       status: sanitizeDiagnosticText(props.ctx.nodeControlStatus.value),
       node_health_summary: sanitizeDiagnosticText(props.ctx.nodeHealthSummaryText.value),
+      state_db_security: sanitizeDiagnosticText(props.ctx.nodeStateDbSecurityText.value),
+      state_db_security_level: props.ctx.nodeStateDbSecurityLevel.value,
       dht_peer_health_summary: sanitizeDiagnosticText(props.ctx.nodePeerHealthStatusText.value),
       dht_peer_health_risk: props.ctx.nodePeerHealthRiskLevel.value,
       node_snapshot_sync_enabled: props.ctx.autoNodeSync.value,
