@@ -348,6 +348,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
         <small>完整数据备份会加密导出本机联系人、群聊、消息、待发送队列、同步设置和安全会话状态；可选择“导入合并”只补缺失数据，或“导入覆盖”替换当前身份的本地数据。</small>
         <small :class="{ 'danger-text': ctx.fullDataBackupFreshnessLevel.value !== 'ok' }">{{ ctx.fullDataBackupFreshnessText.value }}</small>
         <small v-if="ctx.lastFullDataBackupAt.value">最近生成备份：{{ ctx.formatDateTime(ctx.lastFullDataBackupAt.value) }}</small>
+        <small v-if="ctx.lastSelfMailboxBackupPushedAt.value">最近备份到自己的 Mailbox：{{ ctx.formatDateTime(ctx.lastSelfMailboxBackupPushedAt.value) }}</small>
         <small v-if="ctx.lastSelfMailboxBackupReceivedAt.value">最近收到自己的 Mailbox 备份：{{ ctx.formatDateTime(ctx.lastSelfMailboxBackupReceivedAt.value) }}</small>
         <div class="row compact">
           <button class="secondary" @click="ctx.exportFullDataBackup">生成备份</button>
