@@ -93,6 +93,7 @@ type ReencryptIdentityBackupOutput = {
 type DeviceOutput = {
   device_id: string
   device_public_key: string
+  device_box_public_key?: string
   device_cert_json: string
   device_backup_text?: string
 }
@@ -108,6 +109,7 @@ type DeviceCertItem = {
   device_id: string
   device_name?: string
   device_public_key?: string
+  device_box_public_key?: string
   created_at?: number
 }
 

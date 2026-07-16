@@ -6,6 +6,7 @@ use data_encoding::BASE32_NOPAD;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use getrandom::getrandom;
 use serde::{Deserialize, Serialize};
+use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519Secret};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 pub const DEVICE_SEED_LEN: usize = 32;
@@ -74,6 +75,7 @@ pub struct DeviceIdentity {
     device_id: DeviceId,
     _seed: DeviceSeed,
     signing_key: SigningKey,
+    box_secret: X25519Secret,
 }
 
 impl std::fmt::Debug for DeviceIdentity {
@@ -94,11 +96,13 @@ impl DeviceIdentity {
 
     pub fn from_seed(seed: DeviceSeed) -> Result<Self> {
         let signing_key = SigningKey::from_bytes(seed.as_bytes());
+        let box_secret = X25519Secret::from(*seed.as_bytes());
         let device_id = DeviceId::from_device_public_key(signing_key.verifying_key().as_bytes());
         Ok(Self {
             device_id,
             _seed: seed,
             signing_key,
+            box_secret,
         })
     }
 
@@ -112,6 +116,10 @@ impl DeviceIdentity {
 
     pub fn device_public_key(&self) -> [u8; 32] {
         self.signing_key.verifying_key().to_bytes()
+    }
+
+    pub fn device_box_public_key(&self) -> [u8; 32] {
+        X25519PublicKey::from(&self.box_secret).to_bytes()
     }
 
     pub fn create_cert(
@@ -130,6 +138,7 @@ pub struct DeviceCert {
     pub user_id: UserId,
     pub device_id: DeviceId,
     pub device_public_key: String,
+    pub device_box_public_key: String,
     pub device_name: Option<String>,
     pub created_at: u64,
     pub expires_at: Option<u64>,
@@ -143,6 +152,7 @@ struct DeviceCertSignedFields {
     user_id: UserId,
     device_id: DeviceId,
     device_public_key: String,
+    device_box_public_key: String,
     device_name: Option<String>,
     created_at: u64,
     expires_at: Option<u64>,
@@ -160,6 +170,7 @@ impl DeviceCert {
             user_id: identity.user_id().clone(),
             device_id: device.device_id().clone(),
             device_public_key: BASE64.encode(device.device_public_key()),
+            device_box_public_key: BASE64.encode(device.device_box_public_key()),
             device_name,
             created_at: current_unix_timestamp(),
             expires_at: None,
@@ -172,6 +183,7 @@ impl DeviceCert {
             user_id: signed.user_id,
             device_id: signed.device_id,
             device_public_key: signed.device_public_key,
+            device_box_public_key: signed.device_box_public_key,
             device_name: signed.device_name,
             created_at: signed.created_at,
             expires_at: signed.expires_at,
@@ -198,12 +210,14 @@ impl DeviceCert {
         if !self.device_id.verify_public_key(&device_public_key) {
             return Err(LmError::InvalidDeviceId);
         }
+        let _device_box_public_key = decode_key_32(&self.device_box_public_key)?;
         let signed = DeviceCertSignedFields {
             r#type: self.r#type.clone(),
             version: self.version,
             user_id: self.user_id.clone(),
             device_id: self.device_id.clone(),
             device_public_key: self.device_public_key.clone(),
+            device_box_public_key: self.device_box_public_key.clone(),
             device_name: self.device_name.clone(),
             created_at: self.created_at,
             expires_at: self.expires_at,

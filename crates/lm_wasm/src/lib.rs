@@ -419,6 +419,7 @@ pub fn restore_identity(backup_text: &str, passphrase: &str) -> Result<String, J
 struct DeviceOutput {
     device_id: String,
     device_public_key: String,
+    device_box_public_key: String,
     device_cert_json: String,
     device_backup_text: String,
 }
@@ -442,6 +443,7 @@ struct DeviceBackupInfo {
     user_id: String,
     device_id: String,
     device_public_key: String,
+    device_box_public_key: String,
     created_at: u64,
 }
 
@@ -503,6 +505,7 @@ pub fn inspect_device_backup(
         user_id: package.user_id,
         device_id: package.device_id,
         device_public_key: BASE64.encode(device.device_public_key()),
+        device_box_public_key: BASE64.encode(device.device_box_public_key()),
         created_at: package.created_at,
     })
 }
@@ -549,6 +552,7 @@ pub fn create_device_cert(
     let out = DeviceOutput {
         device_id: device.device_id().to_string(),
         device_public_key: BASE64.encode(device.device_public_key()),
+        device_box_public_key: BASE64.encode(device.device_box_public_key()),
         device_cert_json: to_json_string(&cert)?,
         device_backup_text: device_backup_text(&identity, &device)?,
     };
@@ -1958,6 +1962,10 @@ mod tests {
         assert_eq!(
             backup_info["device_public_key"],
             device_v["device_public_key"]
+        );
+        assert_eq!(
+            backup_info["device_box_public_key"],
+            device_v["device_box_public_key"]
         );
         let revoke =
             create_device_revoke(backup, "alice pass", device_id, Some("lost".into())).unwrap();
