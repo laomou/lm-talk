@@ -148,6 +148,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
             <button class="secondary" @click="ctx.importNodeSnapshot">导入到本节点</button>
             <button class="secondary" @click="ctx.pullSnapshotFromPeerNode">从对端拉取并导入</button>
           </div>
+          <small v-if="ctx.lastNodeSnapshotSyncAt.value">最近快照导入：{{ ctx.formatDateTime(ctx.lastNodeSnapshotSyncAt.value) }}</small>
           <small v-if="ctx.nodeSyncStatusText.value">{{ ctx.nodeSyncStatusText.value.slice(0, 180) }}</small>
           <textarea v-model="ctx.nodeSyncSnapshotText.value" class="mono" rows="4" placeholder="节点 snapshot JSON，可粘贴后导入" />
         </section>

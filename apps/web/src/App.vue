@@ -578,6 +578,7 @@ const prekeyAutoErrorText = ref('')
 const nodeSyncPeerUrl = ref('http://127.0.0.1:8788')
 const nodeSyncSnapshotText = ref('')
 const nodeSyncStatusText = ref('')
+const lastNodeSnapshotSyncAt = ref<number | null>(null)
 const syncRecoveryStatusText = ref('尚未恢复')
 const syncRecoveryHistory = ref<string[]>([])
 const syncFailureSummaryText = computed(() => {
@@ -6372,6 +6373,7 @@ async function importNodeSnapshot() {
       method: 'POST',
       body: JSON.stringify({ snapshot }),
     })
+    lastNodeSnapshotSyncAt.value = Date.now()
     nodeSyncStatusText.value = JSON.stringify(body, null, 2)
   })
 }
@@ -6387,6 +6389,7 @@ async function pullSnapshotFromPeerNode() {
       method: 'POST',
       body: JSON.stringify({ snapshot }),
     })
+    lastNodeSnapshotSyncAt.value = Date.now()
     nodeSyncStatusText.value = JSON.stringify(body, null, 2)
   })
 }
@@ -6399,6 +6402,7 @@ async function autoPullSnapshotFromPeerNode() {
     if (!res.ok) throw new Error(await res.text())
     const snapshot = await res.json()
     const body = await nodeFetchJson('/sync/import', { method: 'POST', body: JSON.stringify({ snapshot }) })
+    lastNodeSnapshotSyncAt.value = Date.now()
     nodeSyncStatusText.value = `auto sync ok: ${JSON.stringify(body)}`
   } catch (e) {
     nodeSyncStatusText.value = `auto sync failed: ${String(e)}`
@@ -7190,7 +7194,7 @@ const appContext = {
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
   nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, findActiveContactMailboxHint, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, startFingerprintQrScan, stopFingerprintQrScan, fingerprintScanOpen, fingerprintScanStatus, copyActiveContactFingerprintProof, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, showMyFingerprintQr, copyMyFingerprintProof, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
-  nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, publishAndCheckMyPreKeyDht, publishAndCheckMyMailboxHintDht, publishAndCheckAllMyDht, clearPreKeyRawState, copyText,
+  nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, lastNodeSnapshotSyncAt, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, publishAndCheckMyPreKeyDht, publishAndCheckMyMailboxHintDht, publishAndCheckAllMyDht, clearPreKeyRawState, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
   ratchetDhStepText, saveSafetyPolicy, createPeerAnnounceText, inspectPeerAnnounceText, createPublicPeerAnnounceText, inspectPublicPeerAnnounceText,
