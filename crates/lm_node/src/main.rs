@@ -638,9 +638,12 @@ fn normalize_state_db_encryption_mode(
         .trim()
         .to_ascii_lowercase();
     match mode.as_str() {
-        "plain" | "external" | "sqlcipher" => Ok(mode),
+        "plain" | "external" => Ok(mode),
+        "sqlcipher" => Err(
+            "state_db_encryption_mode=sqlcipher is reserved but not supported by this build".into(),
+        ),
         _ => Err(format!(
-            "unsupported state_db_encryption_mode: {mode}; expected plain, external, or sqlcipher"
+            "unsupported state_db_encryption_mode: {mode}; expected plain or external"
         )
         .into()),
     }
@@ -5554,8 +5557,8 @@ Commands:\n  \
 announce --backup-file <file> --passphrase <text> [--peer-id <id>] [--addr <multiaddr,csv>] [--cap <bootstrap,dht,relay,mailbox>]\n  \
 inspect-public --text-file <file> --identity-public-key <base64>\n  \
 run [--peer-id <id>] [--addr <multiaddr>]\n  \
-serve-dht-libp2p [--listen <multiaddr>] [--bootstrap-peer <libp2p://multiaddr|peer_id,csv>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>] [--state-db-encryption-mode <plain|external|sqlcipher>] [--state-db-require-encryption <true|false>]\n  \
-serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>] [--state-db-encryption-mode <plain|external|sqlcipher>] [--state-db-require-encryption <true|false>] [--control-token <token>] [--control-previous-token <old-token,csv>] [--sync-peer <url,csv>] [--sync-interval-seconds <n>] [--dht-transport <http-control|libp2p>] [--dht-peer-quarantine-consecutive-failures <n>] [--rate-limit-window-seconds <n>] [--rate-limit-max-requests <n>] [--log-format <text|json>] [--mailbox-global-rate-limit-window-seconds <n>] [--mailbox-global-rate-limit-max-messages <n>] [--mailbox-sender-rate-limit-window-seconds <n>] [--mailbox-sender-rate-limit-max-messages <n>]\n"
+serve-dht-libp2p [--listen <multiaddr>] [--bootstrap-peer <libp2p://multiaddr|peer_id,csv>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>] [--state-db-encryption-mode <plain|external>] [--state-db-require-encryption <true|false>]\n  \
+serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>] [--state-db-encryption-mode <plain|external>] [--state-db-require-encryption <true|false>] [--control-token <token>] [--control-previous-token <old-token,csv>] [--sync-peer <url,csv>] [--sync-interval-seconds <n>] [--dht-transport <http-control|libp2p>] [--dht-peer-quarantine-consecutive-failures <n>] [--rate-limit-window-seconds <n>] [--rate-limit-max-requests <n>] [--log-format <text|json>] [--mailbox-global-rate-limit-window-seconds <n>] [--mailbox-global-rate-limit-max-messages <n>] [--mailbox-sender-rate-limit-window-seconds <n>] [--mailbox-sender-rate-limit-max-messages <n>]\n"
     );
 }
 
@@ -5577,8 +5580,8 @@ mod tests {
         handle_control_dht_maintenance_run, handle_control_dht_replication_run,
         handle_control_dht_routing_refresh_run, handle_libp2p_dht_rpc_request,
         handle_libp2p_dht_server_event, http_control_request, libp2p_dht_rpc_behaviour,
-        libp2p_dht_swarm, load_node_state, load_node_state_db, open_state_db,
-        parse_content_length_and_validate_headers, parse_dht_transport_kind,
+        libp2p_dht_swarm, load_node_state, load_node_state_db, normalize_state_db_encryption_mode,
+        open_state_db, parse_content_length_and_validate_headers, parse_dht_transport_kind,
         parse_libp2p_bootstrap_peers, parse_libp2p_dht_peer, parse_log_format, read_secret_file,
         request_is_authorized, run_dht_replication, run_dht_replication_with_transport,
         run_dht_routing_refresh, run_dht_routing_refresh_with_transport, save_node_state,
@@ -8771,6 +8774,8 @@ connection: close
         let err = validate_state_db_encryption_requirement(true, "plain").unwrap_err();
         assert!(err.to_string().contains("encryption_mode is plain"));
         assert!(validate_state_db_encryption_requirement(true, "external").is_ok());
+        let err = normalize_state_db_encryption_mode(Some("sqlcipher".into())).unwrap_err();
+        assert!(err.to_string().contains("not supported"));
     }
 
     #[test]
