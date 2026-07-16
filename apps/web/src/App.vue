@@ -6003,9 +6003,16 @@ async function publishPublicPeerDhtRecord(options: { recordHistory?: boolean } =
   return { key: record.key, peerId, store }
 }
 
+function hasConfiguredPublicPeerForAutoPublish(): boolean {
+  if (publicPeerAnnounceText.value.trim()) return true
+  const addresses = parseLines(publicPeerAddressesText.value)
+  if (addresses.length === 0) return false
+  return addresses.some((address) => address !== '/dns4/example.com/tcp/443/wss')
+}
+
 async function ensureOwnPublicPeerDhtRecord() {
   if (!identity.value || !nodeEnabled.value) return
-  if (!publicPeerAnnounceText.value.trim() && parseLines(publicPeerAddressesText.value).length === 0) return
+  if (!hasConfiguredPublicPeerForAutoPublish()) return
   try {
     const { key } = await publishPublicPeerDhtRecord({ recordHistory: false })
     appendLog(`✅ PublicPeer 已自动发布到 DHT：${key.slice(0, 12)}…`)
