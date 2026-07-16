@@ -103,6 +103,7 @@ async function runDiagnostics() {
       contact_card_dht_auto_refresh_count: props.ctx.contactCardDhtAutoRefreshCount.value,
       last_contact_card_dht_auto_refresh_at: props.ctx.lastContactCardDhtAutoRefreshAt.value,
       last_contact_card_dht_auto_refresh_error: sanitizeDiagnosticText(props.ctx.lastContactCardDhtAutoRefreshError.value),
+      contact_card_dht_auto_refresh_history: props.ctx.contactCardDhtAutoRefreshHistory.value.slice(0, 8).map((item: any) => ({ ...item, display_name: redactDiagnosticReport.value ? redacted(item.display_name) : sanitizeDiagnosticText(item.display_name || ''), error: sanitizeDiagnosticText(item.error || '') })),
       last_contact_card_update_fanout_at: props.ctx.lastContactCardUpdateFanoutAt.value,
       last_full_data_backup_at: props.ctx.lastFullDataBackupAt.value,
       last_self_mailbox_backup_pushed_at: props.ctx.lastSelfMailboxBackupPushedAt.value,

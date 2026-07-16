@@ -312,6 +312,14 @@ type ContactCardUpdateFanoutRecord = {
   last_retry_at?: number
 }
 
+type ContactCardDhtAutoRefreshRecord = {
+  user_id: string
+  display_name?: string
+  status: 'success' | 'failed'
+  refreshed_at: number
+  error?: string
+}
+
 type ProcessedMailboxRecord = {
   id: string
   processed_at: number
@@ -386,6 +394,7 @@ type PersistedState = {
   contactCardDhtAutoRefreshCount?: number
   lastContactCardDhtAutoRefreshAt?: number
   lastContactCardDhtAutoRefreshError?: string
+  contactCardDhtAutoRefreshHistory?: ContactCardDhtAutoRefreshRecord[]
 }
 
 type PersistedMeta = {
@@ -449,6 +458,7 @@ type PersistedMeta = {
   contactCardDhtAutoRefreshCount?: number
   lastContactCardDhtAutoRefreshAt?: number
   lastContactCardDhtAutoRefreshError?: string
+  contactCardDhtAutoRefreshHistory?: ContactCardDhtAutoRefreshRecord[]
   schemaVersion: number
 }
 
@@ -611,6 +621,7 @@ const lastContactCardUpdateFanoutAt = ref<number | null>(null)
 const contactCardDhtAutoRefreshCount = ref(0)
 const lastContactCardDhtAutoRefreshAt = ref<number | null>(null)
 const lastContactCardDhtAutoRefreshError = ref('')
+const contactCardDhtAutoRefreshHistory = ref<ContactCardDhtAutoRefreshRecord[]>([])
 const groups = ref<GroupItem[]>([])
 const groupInvites = ref<GroupInviteItem[]>([])
 const groupSenderKeys = ref<GroupSenderKeyItem[]>([])
@@ -1742,6 +1753,7 @@ function currentPersistedState(): PersistedState {
     contactCardDhtAutoRefreshCount: contactCardDhtAutoRefreshCount.value || undefined,
     lastContactCardDhtAutoRefreshAt: lastContactCardDhtAutoRefreshAt.value ?? undefined,
     lastContactCardDhtAutoRefreshError: lastContactCardDhtAutoRefreshError.value || undefined,
+    contactCardDhtAutoRefreshHistory: contactCardDhtAutoRefreshHistory.value,
   }
 }
 
@@ -1976,6 +1988,7 @@ async function writeStateToTables(state: PersistedState) {
   contactCardDhtAutoRefreshCount.value = Number(state.contactCardDhtAutoRefreshCount ?? 0)
   lastContactCardDhtAutoRefreshAt.value = typeof state.lastContactCardDhtAutoRefreshAt === 'number' ? state.lastContactCardDhtAutoRefreshAt : null
   lastContactCardDhtAutoRefreshError.value = state.lastContactCardDhtAutoRefreshError ?? ''
+  contactCardDhtAutoRefreshHistory.value = (state.contactCardDhtAutoRefreshHistory ?? []).slice(0, 20)
   await persistStateTables()
 }
 
@@ -2045,6 +2058,7 @@ async function loadStateFromTables(): Promise<boolean> {
   contactCardDhtAutoRefreshCount.value = Number(meta.contactCardDhtAutoRefreshCount ?? 0)
   lastContactCardDhtAutoRefreshAt.value = typeof meta.lastContactCardDhtAutoRefreshAt === 'number' ? meta.lastContactCardDhtAutoRefreshAt : null
   lastContactCardDhtAutoRefreshError.value = meta.lastContactCardDhtAutoRefreshError ?? ''
+  contactCardDhtAutoRefreshHistory.value = (meta.contactCardDhtAutoRefreshHistory ?? []).slice(0, 20)
   const prefix = ownerPrefix()
   const loadedContacts = await loadTableByPrefixSafe(TABLES.contacts, prefix, (c) => decryptContactFromStore(c, key))
   const loadedFriendRequests = await loadTableByPrefixSafe(TABLES.friendRequests, prefix, (r) => decryptFriendRequestFromStore(r, key))
@@ -2170,6 +2184,7 @@ function resetAccountScopedState() {
   contactCardDhtAutoRefreshCount.value = 0
   lastContactCardDhtAutoRefreshAt.value = null
   lastContactCardDhtAutoRefreshError.value = ''
+  contactCardDhtAutoRefreshHistory.value = []
   nodeControlStatus.value = '未连接'
 }
 
@@ -2236,6 +2251,7 @@ async function clearPersisted() {
   contactCardDhtAutoRefreshCount.value = 0
   lastContactCardDhtAutoRefreshAt.value = null
   lastContactCardDhtAutoRefreshError.value = ''
+  contactCardDhtAutoRefreshHistory.value = []
   myContactCardText.value = ''
   myDeviceCertJson.value = ''
   myDeviceBackupText.value = ''
@@ -7941,6 +7957,11 @@ function startNodeSyncLoop() {
 }
 
 
+
+function recordContactCardDhtAutoRefresh(item: ContactCardDhtAutoRefreshRecord) {
+  contactCardDhtAutoRefreshHistory.value = [item, ...contactCardDhtAutoRefreshHistory.value].slice(0, 20)
+}
+
 async function refreshContactCardDhtForContact(contact: ContactItem, options: { preserveUi?: boolean } = {}): Promise<boolean> {
   const previousPeerId = activePeerId.value
   const previousGroupId = activeGroupId.value
@@ -7974,9 +7995,11 @@ async function autoRefreshStaleContactCardDht() {
     try {
       await refreshContactCardDhtForContact(contact, { preserveUi: true })
       refreshed += 1
+      recordContactCardDhtAutoRefresh({ user_id: contact.user_id, display_name: contact.display_name, status: 'success', refreshed_at: Date.now() })
     } catch (error) {
       const message = `${contact.display_name || contact.user_id}：${userFacingError(error)}`
       errors.push(message)
+      recordContactCardDhtAutoRefresh({ user_id: contact.user_id, display_name: contact.display_name, status: 'failed', refreshed_at: Date.now(), error: userFacingError(error) })
       appendLog(`后台 ContactCard DHT 刷新失败：${message}`)
     }
   }
@@ -8810,7 +8833,7 @@ const appContext = {
   prekeySignedId, prekeyOneTimeCount, prekeyBundleText, prekeyPrivateBundleJson, prekeySignedOneTimeRecordTexts, prekeyInfoText, x3dhInitialMessageJson,
   selectedOneTimePreKeyId, selectedSignedOneTimePreKeyRecordText, x3dhSharedSecretText, ratchetStateText, ratchetPeerStateText, ratchetLocalDhKeyPairJson, ratchetRemoteDhPublicKeyForInit,
   ratchetInitRole, ratchetHeaderText, ratchetEnvelopeText, ratchetPlainText, ratchetKeyText, ratchetRemoteDhPublicKey,
-  ratchetInfoText, safetyPolicy, enableStrictE2eePolicy, strictE2eePolicyEnabled, strictE2eeReadiness, strictE2eeReadinessIssues, openStrictE2eeReadinessIssue, repairStrictE2eeBlockers, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, perDeviceEnvelopeSentCount, perDeviceEnvelopeReceivedCount, perDeviceEnvelopeDropCount, lastPerDeviceEnvelopeAt, lastPerDeviceEnvelopeDropAt, lastPerDeviceEnvelopeDropReason, contactCardUpdateFanoutCount, contactCardUpdateFanoutSkipCount, lastContactCardUpdateFanoutAt, contactCardUpdateFanoutRecords, contactCardUpdateFanoutAckCount, contactCardUpdatePendingAckCount, contactCardUpdateStaleAckCount, retryStaleContactCardUpdateAcks, contactCardUpdateAckStatusFor, contactStrictE2eeStatusText, contactStrictE2eeRiskLevel, contactCardDhtDiscoveryIsStale, contactCardDhtAutoRefreshCount, lastContactCardDhtAutoRefreshAt, lastContactCardDhtAutoRefreshError, sealedSlotCoverageSummary, sealedSlotRiskContacts, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
+  ratchetInfoText, safetyPolicy, enableStrictE2eePolicy, strictE2eePolicyEnabled, strictE2eeReadiness, strictE2eeReadinessIssues, openStrictE2eeReadinessIssue, repairStrictE2eeBlockers, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, perDeviceEnvelopeSentCount, perDeviceEnvelopeReceivedCount, perDeviceEnvelopeDropCount, lastPerDeviceEnvelopeAt, lastPerDeviceEnvelopeDropAt, lastPerDeviceEnvelopeDropReason, contactCardUpdateFanoutCount, contactCardUpdateFanoutSkipCount, lastContactCardUpdateFanoutAt, contactCardUpdateFanoutRecords, contactCardUpdateFanoutAckCount, contactCardUpdatePendingAckCount, contactCardUpdateStaleAckCount, retryStaleContactCardUpdateAcks, contactCardUpdateAckStatusFor, contactStrictE2eeStatusText, contactStrictE2eeRiskLevel, contactCardDhtDiscoveryIsStale, contactCardDhtAutoRefreshCount, lastContactCardDhtAutoRefreshAt, lastContactCardDhtAutoRefreshError, contactCardDhtAutoRefreshHistory, sealedSlotCoverageSummary, sealedSlotRiskContacts, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
   nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, fillMyContactCardDhtKeyInput, findActiveContactMailboxHint, findActiveContactContactCard, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, startFingerprintQrScan, stopFingerprintQrScan, fingerprintScanOpen, fingerprintScanStatus, copyActiveContactFingerprintProof, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, showMyFingerprintQr, copyMyFingerprintProof, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
