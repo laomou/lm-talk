@@ -437,6 +437,10 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
             <input v-model="ctx.safetyPolicy.value.requireSealedPerDeviceSlotsForSend" type="checkbox" />
             <span>仅发送到支持 sealed slot 的设备</span>
           </label>
+          <label class="identity-select">
+            <input v-model="ctx.safetyPolicy.value.requireSealedPerDeviceSlotsForReceive" type="checkbox" />
+            <span>仅接收 sealed slot 入站消息</span>
+          </label>
           <div v-if="ctx.unverifiedIncomingDropCount.value" class="row compact">
             <small class="danger-text">已丢弃未核验联系人入站消息 {{ ctx.unverifiedIncomingDropCount.value }} 条<span v-if="ctx.lastUnverifiedIncomingDropAt.value">，最近：{{ ctx.lastUnverifiedIncomingDropFrom.value }} · {{ ctx.formatDateTime(ctx.lastUnverifiedIncomingDropAt.value) }}</span></small>
             <button class="secondary" @click="ctx.clearUnverifiedIncomingDropStats">清空丢弃统计</button>

@@ -165,6 +165,7 @@ type SafetyPolicy = {
   requireVerifiedContactsForSend: boolean
   requireVerifiedContactsForReceive: boolean
   requireSealedPerDeviceSlotsForSend: boolean
+  requireSealedPerDeviceSlotsForReceive: boolean
 }
 
 type GroupInviteItem = {
@@ -558,6 +559,7 @@ const safetyPolicy = ref<SafetyPolicy>({
   requireVerifiedContactsForSend: false,
   requireVerifiedContactsForReceive: false,
   requireSealedPerDeviceSlotsForSend: false,
+  requireSealedPerDeviceSlotsForReceive: false,
 })
 
 const contacts = ref<ContactItem[]>([])
@@ -1877,6 +1879,7 @@ function resetAccountScopedState() {
     requireVerifiedContactsForSend: false,
     requireVerifiedContactsForReceive: false,
     requireSealedPerDeviceSlotsForSend: false,
+    requireSealedPerDeviceSlotsForReceive: false,
   }
   nodeEnabled.value = false
   autoMailboxTake.value = true
@@ -1968,6 +1971,7 @@ async function clearPersisted() {
     requireVerifiedContactsForSend: false,
     requireVerifiedContactsForReceive: false,
     requireSealedPerDeviceSlotsForSend: false,
+    requireSealedPerDeviceSlotsForReceive: false,
   }
   nodeEnabled.value = false
   autoMailboxTake.value = true
@@ -5066,6 +5070,7 @@ function unwrapPerDeviceEnvelopeForCurrentDevice(payloadText: string, sender: Co
   envelopeText: string
   perDeviceEnvelopeJson?: string
   targetDeviceIds?: string[]
+  slotCrypto?: string
 } {
   let parsed: PerDeviceEnvelopeV1 | null = null
   try { parsed = JSON.parse(payloadText) as PerDeviceEnvelopeV1 } catch {}
@@ -5112,19 +5117,19 @@ function unwrapPerDeviceEnvelopeForCurrentDevice(payloadText: string, sender: Co
     }
     perDeviceEnvelopeReceivedCount.value += 1
     lastPerDeviceEnvelopeAt.value = Date.now()
-    return { envelopeText, perDeviceEnvelopeJson: payloadText, targetDeviceIds }
+    return { envelopeText, perDeviceEnvelopeJson: payloadText, targetDeviceIds, slotCrypto: matched.crypto }
   }
   if (parsed.fallback_ciphertext) {
     appendLog('⚠️ 当前设备没有 device_id，使用分设备 envelope fallback 密文')
     perDeviceEnvelopeReceivedCount.value += 1
     lastPerDeviceEnvelopeAt.value = Date.now()
-    return { envelopeText: parsed.fallback_ciphertext, perDeviceEnvelopeJson: payloadText, targetDeviceIds }
+    return { envelopeText: parsed.fallback_ciphertext, perDeviceEnvelopeJson: payloadText, targetDeviceIds, slotCrypto: 'fallback-ciphertext' }
   }
   if (targets.length === 1 && targets[0]?.ciphertext) {
     appendLog('⚠️ 当前设备没有 device_id，使用唯一目标设备密文')
     perDeviceEnvelopeReceivedCount.value += 1
     lastPerDeviceEnvelopeAt.value = Date.now()
-    return { envelopeText: targets[0].ciphertext, perDeviceEnvelopeJson: payloadText, targetDeviceIds }
+    return { envelopeText: targets[0].ciphertext, perDeviceEnvelopeJson: payloadText, targetDeviceIds, slotCrypto: targets[0].crypto }
   }
   return recordDrop('当前设备没有 device_id，无法选择分设备 envelope 密文')
 }
@@ -5134,6 +5139,12 @@ function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, m
   if (!allowIncomingFromContact(sender)) { persist(); return false }
   ensureUiTextSize('Envelope', envelopeText, MAX_SIGNAL_BYTES)
   const unwrappedEnvelope = unwrapPerDeviceEnvelopeForCurrentDevice(envelopeText, sender)
+  if (safetyPolicy.value.requireSealedPerDeviceSlotsForReceive && unwrappedEnvelope.slotCrypto !== 'x25519-ephemeral-hkdf-xchacha20poly1305-device-slot-v1') {
+    perDeviceEnvelopeDropCount.value += 1
+    lastPerDeviceEnvelopeDropAt.value = Date.now()
+    lastPerDeviceEnvelopeDropReason.value = `安全策略要求 sealed slot 入站，但收到 ${unwrappedEnvelope.slotCrypto || 'direct-envelope'}`
+    throw new Error(lastPerDeviceEnvelopeDropReason.value)
+  }
   const innerEnvelopeText = unwrappedEnvelope.envelopeText
   ensureUiTextSize('Inner Envelope', innerEnvelopeText, MAX_SIGNAL_BYTES)
   const groupSenderPlain = tryDecryptGroupSenderEnvelope(innerEnvelopeText)
