@@ -3,7 +3,7 @@ name = "lm_wasm"
 version = "0.1.0"
 description = "WebAssembly bindings for LM Talk core"
 edition.workspace = true
-license.workspace = true
+license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 

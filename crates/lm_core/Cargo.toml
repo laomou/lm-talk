@@ -3,7 +3,7 @@ name = "lm_core"
 version = "0.1.0"
 description = "Core protocol and crypto library for LM Talk"
 edition.workspace = true
-license.workspace = true
+license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
