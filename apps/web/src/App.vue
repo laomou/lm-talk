@@ -2179,6 +2179,24 @@ async function discoverMailboxHintForContact(contact: ContactItem): Promise<stri
   return undefined
 }
 
+async function prepareContactDhtForSend(contact: ContactItem, options: { prekey?: boolean } = {}) {
+  if (!nodeEnabled.value || contact.state !== 'Friend') return
+  const errors: string[] = []
+  if (options.prekey && !ratchetSessionFor(contact.user_id)) {
+    try {
+      await ensureRatchetSessionFromNode(contact)
+    } catch (error) {
+      errors.push(`PreKey：${userFacingError(error)}`)
+    }
+  }
+  try {
+    await discoverMailboxHintForContact(contact)
+  } catch (error) {
+    errors.push(`MailboxHint：${userFacingError(error)}`)
+  }
+  if (errors.length) appendLog(`⚠️ 发送前 DHT 预发现未完全成功：${errors.join('；')}`)
+}
+
 async function pushMailboxPayload(to: ContactItem, kind: string, payload: string): Promise<string> {
   if (!nodeEnabled.value) throw new Error('节点未启用')
   const msg = create_mailbox_message(
@@ -2395,6 +2413,7 @@ async function deliverPayloadToContact(contact: ContactItem, payload: string, la
       return 'sent'
     }
     if (nodeEnabled.value) {
+      await prepareContactDhtForSend(contact, { prekey: kind === 'direct-envelope' })
       await pushMailboxPayload(contact, mailboxKindForOutboxKind(kind), payload)
       return 'mailbox'
     }
@@ -2408,6 +2427,7 @@ async function deliverPayloadToContact(contact: ContactItem, payload: string, la
 
 async function tryMailboxDeliveryForMessage(contact: ContactItem, envelope: string, msg: ChatMessage) {
   try {
+    await prepareContactDhtForSend(contact, { prekey: true })
     const deliveryId = await pushMailboxPayload(contact, 'direct-envelope', envelope)
     msg.status = 'mailbox'
     if (deliveryId) msg.mailbox_delivery_id = deliveryId
