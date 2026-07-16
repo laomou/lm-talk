@@ -73,6 +73,9 @@ async function runDiagnostics() {
       pending_outbox: props.ctx.outbox.value.filter((x: any) => x.status !== 'sent').length,
       messages: props.ctx.messages.value.length,
       verified_contacts: props.ctx.contacts.value.filter((x: any) => x.fingerprint_verified_at).length,
+      contacts_with_revoked_devices: props.ctx.contacts.value.filter((x: any) => (x.revoked_device_ids || []).length > 0).length,
+      fully_revoked_contacts: props.ctx.contacts.value.filter((x: any) => props.ctx.contactAllKnownDevicesRevoked(x)).length,
+      revoked_devices: props.ctx.contacts.value.reduce((sum: number, x: any) => sum + (x.revoked_device_ids || []).length, 0),
       unverified_incoming_drops: props.ctx.unverifiedIncomingDropCount.value,
     },
     security: {
@@ -80,6 +83,15 @@ async function runDiagnostics() {
       require_verified_contacts_for_receive: Boolean(props.ctx.safetyPolicy.value.requireVerifiedContactsForReceive),
       last_unverified_incoming_drop_at: props.ctx.lastUnverifiedIncomingDropAt.value,
       last_unverified_incoming_drop_from: redactDiagnosticReport.value ? redacted(props.ctx.lastUnverifiedIncomingDropFrom.value) : sanitizeDiagnosticText(props.ctx.lastUnverifiedIncomingDropFrom.value),
+      revoked_device_contacts: props.ctx.contacts.value
+        .filter((x: any) => (x.revoked_device_ids || []).length > 0)
+        .slice(0, 8)
+        .map((x: any) => ({
+          user_id: redactDiagnosticReport.value ? redacted(x.user_id || '') : x.user_id,
+          display_name: redactDiagnosticReport.value ? redacted(x.display_name || '') : sanitizeDiagnosticText(x.display_name || ''),
+          revoked_devices: (x.revoked_device_ids || []).length,
+          fully_revoked: props.ctx.contactAllKnownDevicesRevoked(x),
+        })),
     },
   }
   if (!diagnosticSummaryOnly.value) {
