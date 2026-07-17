@@ -264,6 +264,44 @@ function openGroupDetail(groupId: string) {
               <button class="secondary" @click="ctx.copyActiveContactFingerprintProof">复制当前联系人核验码</button>
             </div>
           </section>
+          <section v-if="ctx.activeContact.value.state === 'Friend'" class="home-card">
+            <div class="section-title-row">
+              <h3>严格 E2EE 修复向导</h3>
+              <span :class="{ 'danger-text': ctx.contactStrictE2eeRiskLevel(ctx.activeContact.value) === 'high' }">{{ ctx.contactStrictE2eeStatusText(ctx.activeContact.value) }}</span>
+            </div>
+            <div class="outbox-list">
+              <div class="outbox-row">
+                <b>1. 身份指纹核验</b>
+                <small v-if="ctx.activeContact.value.fingerprint_verified_at">已核验 · {{ ctx.formatDateTime(ctx.activeContact.value.fingerprint_verified_at) }}</small>
+                <small v-else class="danger-text">未核验。请通过线下/可信渠道核对核验码，避免中间人冒充。</small>
+                <div class="row compact">
+                  <button class="secondary" @click="ctx.showActiveContactFingerprintQr">显示核验码</button>
+                  <button class="secondary" @click="ctx.copyActiveContactFingerprintProof">复制核验码</button>
+                  <button v-if="!ctx.activeContact.value.fingerprint_verified_at" class="secondary" @click="ctx.verifyActiveContactFingerprint">已人工核验，标记可信</button>
+                </div>
+              </div>
+              <div class="outbox-row">
+                <b>2. ContactCard DHT 新鲜度</b>
+                <small v-if="ctx.activeContact.value.last_contact_card_dht_found_at">最近发现：{{ ctx.formatDateTime(ctx.activeContact.value.last_contact_card_dht_found_at) }}</small>
+                <small v-else class="danger-text">尚未发现 ContactCard DHT，可能缺少最新设备证书或撤销状态。</small>
+                <small v-if="ctx.contactCardDhtDiscoveryIsStale(ctx.activeContact.value)" class="danger-text">发现结果已过期或缺失，建议刷新。</small>
+                <button class="secondary" @click="ctx.findActiveContactContactCard">刷新 ContactCard</button>
+              </div>
+              <div class="outbox-row">
+                <b>3. 分设备 sealed slot 覆盖</b>
+                <small :class="{ 'danger-text': ctx.activeContactSealedSlotRiskLevel.value === 'high' }">{{ ctx.activeContactSealedSlotStatusText.value }}</small>
+                <div class="row compact">
+                  <button class="secondary" @click="ctx.discoverActiveContactDht">发现全部 DHT</button>
+                  <button class="secondary" @click="ctx.findActiveContactPreKey">查找 PreKey</button>
+                </div>
+              </div>
+              <div class="outbox-row">
+                <b>4. 设备证书更新 ACK</b>
+                <small>待确认 {{ ctx.contactCardUpdateAckStatusFor(ctx.activeContact.value).pending }}；过期 {{ ctx.contactCardUpdateAckStatusFor(ctx.activeContact.value).stale }}；已确认 {{ ctx.contactCardUpdateAckStatusFor(ctx.activeContact.value).acked }}</small>
+                <button class="secondary" :disabled="ctx.contactCardUpdateAckStatusFor(ctx.activeContact.value).pending === 0" @click="ctx.retryStaleContactCardUpdateAcks">重试过期 ACK</button>
+              </div>
+            </div>
+          </section>
           <div class="row detail-actions">
             <button @click="ctx.goChatPage()">发消息</button>
             <button v-if="ctx.activeContact.value.state === 'Friend'" class="secondary" @click="ctx.discoverActiveContactDht">发现 DHT</button>
