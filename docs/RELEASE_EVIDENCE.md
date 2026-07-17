@@ -19,7 +19,7 @@ Use this file as the evidence template for every release candidate. Copy it to a
 | SQLCipher smoke | `./scripts/sqlcipher-smoke.sh` or SQLCipher Smoke workflow artifact |  |  |
 | SQLCipher release binary smoke | `lm_node-linux-x86_64-sqlcipher-smoke` artifact from release workflow |  |  |
 | Federation validation | `federation-report.json` from `deploy/lm-node-federation/run-all.sh` or workflow artifact |  |  |
-| Fuzz smoke | `./scripts/release-check.sh fuzz-smoke` or `./scripts/fuzz-smoke.sh` output |  |  |
+| Fuzz smoke | `FUZZ_SMOKE_REPORT=fuzz-smoke-report.json ./scripts/fuzz-smoke.sh` output/report or `./scripts/release-check.sh fuzz-smoke` log |  |  |
 
 ## Native node release artifacts
 
