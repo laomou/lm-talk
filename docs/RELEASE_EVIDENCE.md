@@ -92,3 +92,22 @@ RELEASE_VERSION=vX.Y.Z RELEASE_EVIDENCE_DIR=release-evidence ./scripts/collect-r
 ```
 
 The helper copies known report files when present and writes `release-evidence-index.json` with a `complete` / `incomplete` status. This does not replace manual review; fill the tables above with links to CI artifacts, release assets, audits, and approvals.
+
+
+## Pre-production evidence runner
+
+For a local pre-production evidence bundle, run:
+
+```bash
+RELEASE_VERSION=preprod-local ./scripts/preprod-evidence.sh
+```
+
+Optional flags:
+
+```bash
+RUN_FULL=0 RUN_FUZZ_SMOKE=1 RUN_SQLCIPHER=1 ./scripts/preprod-evidence.sh
+RUN_FUZZ_CAMPAIGN=1 FUZZ_CAMPAIGN_DURATION=3600 ./scripts/preprod-evidence.sh
+RUN_FEDERATION=1 ./scripts/preprod-evidence.sh
+```
+
+The script writes known logs/reports and then calls `scripts/collect-release-evidence.sh`. It is an evidence collection helper, not a replacement for release owner/security reviewer sign-off.
