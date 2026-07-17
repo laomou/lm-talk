@@ -11,6 +11,8 @@ RUN_FUZZ_SMOKE="${RUN_FUZZ_SMOKE:-1}"
 RUN_FUZZ_CAMPAIGN="${RUN_FUZZ_CAMPAIGN:-0}"
 RUN_SQLCIPHER="${RUN_SQLCIPHER:-1}"
 RUN_FEDERATION="${RUN_FEDERATION:-0}"
+RUN_RELEASE_ASSET_VERIFY="${RUN_RELEASE_ASSET_VERIFY:-0}"
+RELEASE_TAG_VERIFY="${RELEASE_TAG_VERIFY:-$RELEASE_VERSION}"
 
 mkdir -p "$EVIDENCE_DIR"
 
@@ -55,6 +57,14 @@ if [[ "$RUN_FEDERATION" == "1" ]]; then
   (cd deploy/lm-node-federation && ./run-all.sh)
 else
   echo "== federation validation skipped =="
+fi
+
+if [[ "$RUN_RELEASE_ASSET_VERIFY" == "1" ]]; then
+  echo "== release asset verification: $RELEASE_TAG_VERIFY =="
+  RELEASE_VERIFY_REPORT="$ROOT/release-asset-verify-report.json" \
+    ./scripts/verify-node-release.sh "$RELEASE_TAG_VERIFY" "$EVIDENCE_DIR/release-assets-$RELEASE_TAG_VERIFY"
+else
+  echo "== release asset verification skipped =="
 fi
 
 echo "== collect release evidence =="

@@ -50,6 +50,8 @@ else
   DOWNLOAD_DIR="$(mktemp -d -t lm-talk-release-${TAG}.XXXXXX)"
 fi
 
+REPORT_FILE="${RELEASE_VERIFY_REPORT:-}"
+
 EXPECTED_ASSETS=(
   "lm_node-linux-x86_64.tar.gz"
   "lm_node-linux-x86_64-sqlcipher.tar.gz"
@@ -116,5 +118,43 @@ if not (detailed_ok or legacy_ok):
     raise SystemExit('SQLCipher smoke report did not prove encrypted state_db metrics and wrong-passphrase rejection')
 print('SQLCipher smoke report proves encrypted state_db metrics and wrong-passphrase rejection')
 PY
+
+if [[ -n "$REPORT_FILE" ]]; then
+  printf '== Writing release verification report: %s ==\n' "$REPORT_FILE"
+  python3 - <<'PY' "$REPORT_FILE" "$TAG" "$DOWNLOAD_DIR"
+import hashlib, json, pathlib, sys, time
+report_file, tag, download_dir = sys.argv[1:4]
+root = pathlib.Path(download_dir)
+assets = []
+for path in sorted(root.iterdir()):
+    if path.is_file():
+        assets.append({
+            "name": path.name,
+            "size": path.stat().st_size,
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        })
+report = {
+    "tag": tag,
+    "status": "ok",
+    "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    "download_dir": download_dir,
+    "expected_platform_archives": [
+        "lm_node-linux-x86_64.tar.gz",
+        "lm_node-linux-x86_64-sqlcipher.tar.gz",
+        "lm_node-macos-x86_64.tar.gz",
+        "lm_node-macos-arm64.tar.gz",
+        "lm_node-windows-x86_64.zip",
+    ],
+    "checks": {
+        "expected_assets_present": True,
+        "combined_sha256sums_verified": True,
+        "per_artifact_sha256_verified": True,
+        "sqlcipher_smoke_report_verified": True,
+    },
+    "assets": assets,
+}
+pathlib.Path(report_file).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+PY
+fi
 
 printf '== Release %s verified successfully ==\n' "$TAG"

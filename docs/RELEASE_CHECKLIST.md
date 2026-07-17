@@ -60,6 +60,14 @@ After the release workflow finishes, verify the published assets and SQLCipher r
 
 This downloads the release assets, verifies `SHA256SUMS.txt`, verifies every per-platform `.sha256` file, and checks the archived SQLCipher smoke report proves encrypted `state_db` metrics for the SQLCipher artifact.
 
+To include published artifact verification in the automated evidence bundle:
+
+```bash
+RUN_RELEASE_ASSET_VERIFY=1 RELEASE_TAG_VERIFY=v0.1.0 RELEASE_VERSION=v0.1.0 ./scripts/preprod-evidence.sh
+```
+
+The evidence collector will archive `release-asset-verify-report.json` alongside the normal release-check, fuzz, SQLCipher, and federation reports.
+
 To cut a release candidate from the current commit:
 
 ```bash
