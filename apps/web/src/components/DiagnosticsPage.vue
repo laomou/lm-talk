@@ -126,6 +126,7 @@ async function runDiagnostics() {
       last_self_sync_gap_at: props.ctx.lastSelfSyncGapAt.value,
       last_self_sync_missing_previous_id: props.ctx.lastSelfSyncMissingPreviousId.value,
       last_self_sync_receipt_states_sent: props.ctx.lastSelfSyncReceiptStatesSent.value,
+      outbound_messages_with_mailbox_delivery_id: props.ctx.messages.value.filter((m: any) => m.direction === 'out' && m.mailbox_delivery_id).length,
       last_self_sync_receipt_states_merged: props.ctx.lastSelfSyncReceiptStatesMerged.value,
       total_self_sync_receipt_states_merged: props.ctx.totalSelfSyncReceiptStatesMerged.value,
       full_data_backup_freshness: props.ctx.fullDataBackupFreshnessText.value,

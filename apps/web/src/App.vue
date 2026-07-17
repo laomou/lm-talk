@@ -275,8 +275,10 @@ type MessageReceiptSyncItem = {
   peer_user_id: string
   protocol_message_id: string
   status: MessageStatus
+  mailbox_delivery_id?: string
   delivered_at?: number
   read_at?: number
+  created_at?: number
 }
 
 type RatchetSessionItem = {
@@ -2527,13 +2529,19 @@ function currentSelfSyncRequestPackage(missingSyncId: string): SelfSyncRequestPa
 function currentMessageReceiptSyncItems(): MessageReceiptSyncItem[] {
   return messages.value
     .filter((message) => message.direction === 'out' && message.peer_user_id && message.protocol_message_id)
-    .filter((message) => message.delivered_at || message.read_at || message.status === 'delivered' || message.status === 'read')
+    .filter((message) =>
+      message.mailbox_delivery_id
+      || message.delivered_at
+      || message.read_at
+      || ['sent', 'mailbox', 'delivered', 'read'].includes(message.status))
     .map((message) => ({
       peer_user_id: message.peer_user_id,
       protocol_message_id: message.protocol_message_id!,
       status: message.status,
+      mailbox_delivery_id: message.mailbox_delivery_id,
       delivered_at: message.delivered_at,
       read_at: message.read_at,
+      created_at: message.created_at,
     }))
     .slice(-200)
 }
@@ -2551,8 +2559,10 @@ function applyMessageReceiptSyncItems(items: MessageReceiptSyncItem[] | undefine
     mergeMessageStateInto(message, {
       ...message,
       status: item.status,
+      mailbox_delivery_id: item.mailbox_delivery_id,
       delivered_at: item.delivered_at,
       read_at: item.read_at,
+      created_at: item.created_at ?? message.created_at,
     })
     const after = `${message.status}:${message.delivered_at || ''}:${message.read_at || ''}`
     if (after !== before) merged += 1
