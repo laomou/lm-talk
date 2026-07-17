@@ -1,0 +1,13 @@
+{
+  "alice_seed_hex": "0707070707070707070707070707070707070707070707070707070707070707",
+  "alice_user_id": "lm1_s4yqkfcdxh4zhuzf3fwzykzgalz2xrvct3eoimxz",
+  "bob_seed_hex": "0808080808080808080808080808080808080808080808080808080808080808",
+  "bob_user_id": "lm1_wax2yganx3ghwztwvkwthxpciz42xzrsoakznrqz",
+  "chunk_index": 0,
+  "chunk_json": "{\"type\":\"lm-file-chunk-v1\",\"version\":1,\"crypto\":\"x25519-static-hkdf-xchacha20poly1305-file-v1\",\"file_id\":\"faf2e247-c560-42b8-a820-ab395165372e\",\"chunk_index\":0,\"from_user_id\":\"lm1_s4yqkfcdxh4zhuzf3fwzykzgalz2xrvct3eoimxz\",\"to_user_id\":\"lm1_wax2yganx3ghwztwvkwthxpciz42xzrsoakznrqz\",\"nonce\":\"rfkslmXfVEu1SG6IJFgWG4GZzeP8zCzU\",\"ciphertext\":\"+J/ecETzzsWGUSOr2fggKHptAT1DQ44UtsMGuoSBBkhbzvbL7LkcKbUxfDLEq3UHeM9XwPKr7/Q4x8ZgCQ==\"}",
+  "file_hash_base64": "gfZzC0jqQmYYEs0JquMBSNxlXGXdmZWjQOzC8OVbuDw=",
+  "file_name": "hello.txt",
+  "manifest_text": "lm-file-manifest-v1:eyJ0eXBlIjoibG0tZmlsZS1tYW5pZmVzdC12MSIsInZlcnNpb24iOjEsImZpbGVfaWQiOiJmYWYyZTI0Ny1jNTYwLTQyYjgtYTgyMC1hYjM5NTE2NTM3MmUiLCJmcm9tX3VzZXJfaWQiOiJsbTFfczR5cWtmY2R4aDR6aHV6ZjNmd3p5a3pnYWx6MnhydmN0M2VvaW14eiIsInRvX3VzZXJfaWQiOiJsbTFfd2F4MnlnYW54M2dod3p0d3Zrd3RoeHBjaXo0Mnh6cnNvYWt6bnJxeiIsIm5hbWUiOiJoZWxsby50eHQiLCJtaW1lX3R5cGUiOiJ0ZXh0L3BsYWluIiwic2l6ZSI6MjYsImNodW5rX3NpemUiOjI2LCJjaHVua19jb3VudCI6MSwiZmlsZV9oYXNoIjoiZ2ZaekMwanFRbVlZRXMwSnF1TUJTTnhsWEdYZG1aV2pRT3pDOE9WYnVEdz0iLCJjcmVhdGVkX2F0IjoxNzg0MjU2MzAyfQ",
+  "mime_type": "text/plain",
+  "plaintext_utf8": "hello encrypted file chunk"
+}

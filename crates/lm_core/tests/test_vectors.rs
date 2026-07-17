@@ -1,8 +1,9 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use lm_core::{
-    device::DeviceSeed, ContactCard, DeviceCert, DeviceIdentity, DeviceRevoke, DirectEnvelope, FriendRequest, Identity, IdentityBackupPackage,
-    IdentitySeed, MailboxMessage, MessageReceipt, MessageReceiptKind, PreKeyBundle, RatchetHeader, RatchetRole, RatchetSessionState, SignedOneTimePreKeyRecord,
-    normalize_passphrase,
+    device::DeviceSeed, ContactCard, DeviceCert, file_hash_base64, verify_file_hash, DeviceIdentity, DeviceRevoke, DirectEnvelope, FileChunkEnvelope,
+    FileManifest, FriendRequest, Identity, IdentityBackupPackage, IdentitySeed, MailboxMessage,
+    MessageReceipt, MessageReceiptKind, PreKeyBundle, RatchetHeader, RatchetRole,
+    RatchetSessionState, SignedOneTimePreKeyRecord, normalize_passphrase,
 };
 use serde_json::Value;
 
@@ -237,6 +238,40 @@ fn receipt_and_mailbox_vectors_verify() {
     assert_eq!(mailbox.to_user_id.to_string(), v["bob_user_id"]);
     assert_eq!(format!("{:?}", mailbox.kind), v["mailbox_kind"]);
     assert_eq!(mailbox.ciphertext, v["mailbox_ciphertext"]);
+}
+
+
+#[test]
+fn file_package_vectors_verify() {
+    let v = fixture("file_package_v1.json");
+    let alice = identity(7);
+    let bob = identity(8);
+    let plaintext = v["plaintext_utf8"].as_str().unwrap().as_bytes().to_vec();
+    assert_eq!(v["alice_user_id"], alice.user_id().to_string());
+    assert_eq!(v["bob_user_id"], bob.user_id().to_string());
+    assert_eq!(v["file_hash_base64"], file_hash_base64(&plaintext));
+    assert!(verify_file_hash(&plaintext, v["file_hash_base64"].as_str().unwrap()));
+
+    let manifest = FileManifest::from_export_text(v["manifest_text"].as_str().unwrap()).unwrap();
+    assert_eq!(manifest.from_user_id, *alice.user_id());
+    assert_eq!(manifest.to_user_id, *bob.user_id());
+    assert_eq!(manifest.name, v["file_name"]);
+    assert_eq!(manifest.mime_type, v["mime_type"]);
+    assert_eq!(manifest.size, plaintext.len() as u64);
+    assert_eq!(manifest.chunk_count, 1);
+    assert_eq!(manifest.file_hash, v["file_hash_base64"]);
+
+    let chunk = FileChunkEnvelope::from_json(v["chunk_json"].as_str().unwrap()).unwrap();
+    assert_eq!(chunk.file_id, manifest.file_id);
+    assert_eq!(chunk.chunk_index, v["chunk_index"].as_u64().unwrap() as u32);
+    assert_eq!(chunk.from_user_id, *alice.user_id());
+    assert_eq!(chunk.to_user_id, *bob.user_id());
+    let decrypted = chunk.decrypt_chunk(&bob, &alice.x25519_public_key()).unwrap();
+    assert_eq!(decrypted, plaintext);
+
+    let mut tampered = chunk.clone();
+    tampered.ciphertext.push('A');
+    assert!(tampered.decrypt_chunk(&bob, &alice.x25519_public_key()).is_err());
 }
 
 #[test]

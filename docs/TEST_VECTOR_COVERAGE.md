@@ -16,6 +16,7 @@ This file tracks which protocol objects have stable cross-platform test vectors 
 | `test-vectors/ratchet_v1.json` | deterministic shared secret, ratchet initial keys, first sending/receiving message key, exported states, replay rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
 | `test-vectors/contact_card_dht_v1.json` | DHT ContactCard key derivation, record JSON, signed ContactCard value, store validation, wrong-key rejection | `crates/lm_node/src/lib.rs` | Covered |
 | `test-vectors/per_device_envelope_v1.json` | per-device envelope v1 outer shape, sealed slot metadata, AAD target binding, legacy fallback slot marker | `apps/web/tests/ui-smoke.spec.ts` | Covered |
+| `test-vectors/file_package_v1.json` | file manifest, encrypted file chunk, decrypt verification, hash verification, ciphertext tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
 | `test-vectors/message_crypto_v1.json` | legacy DirectEnvelope encryption/decryption, conversation id, plaintext, tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
 
 ## Missing stable vectors before protocol freeze
@@ -25,7 +26,6 @@ These objects have unit/e2e coverage but do not yet have committed cross-platfor
 | Object | Needed vector evidence | Priority |
 | --- | --- | --- |
 | PublicPeer announce | `lm-public-peer-v1:` text, peer id, addresses, capabilities, DHT key namespace | Medium |
-| File package | encrypted file package, manifest, chunk decrypt, tamper rejection | Medium |
 | Group invite/event | invite text, group event text, policy transition, signature verification | Medium |
 | Group sender key distribution | distribution text, sender key state import/export, sender envelope decrypt | Medium |
 | Self-sync package/request | signed `lm-self-sync-v1`, request package, sequence/gap fields, signature verification | Medium |
