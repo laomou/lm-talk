@@ -233,6 +233,18 @@ function onComposerKeydown(e: KeyboardEvent) {
       </div>
     </section>
 
+    <section v-if="ctx.activeGroup.value && ctx.activeGroupStrictE2eeRiskText.value" class="chat-notice-panel">
+      <div class="notice-text">
+        <b>群聊严格 E2EE 风险</b>
+        <span>{{ ctx.activeGroupStrictE2eeRiskText.value }}</span>
+        <span>建议先修复群成员的指纹、ContactCard DHT 和 sealed slot 覆盖。</span>
+      </div>
+      <div class="row compact">
+        <button class="secondary" @click="ctx.enableStrictE2eePolicy">一键严格 E2EE</button>
+        <button class="secondary" @click="ctx.goContactsPage">修复联系人</button>
+      </div>
+    </section>
+
     <div class="messages clean-messages" ref="messagesEl" role="log" aria-label="消息列表" aria-live="polite">
       <template v-if="ctx.activeContact.value || ctx.activeGroup.value">
         <template v-for="item in thread" :key="item.id">

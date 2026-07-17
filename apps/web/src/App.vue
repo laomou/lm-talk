@@ -1192,6 +1192,28 @@ const activeGroupWarningText = computed(() => {
   if (activeGroup.value.last_sender_key_error) warnings.push(`Sender Key 异常：${activeGroup.value.last_sender_key_error}`)
   return warnings.join('；')
 })
+
+function groupStrictE2eeRiskReasons(group: GroupItem | null): string[] {
+  if (!group) return []
+  const reasons: string[] = []
+  if (!strictE2eePolicyEnabled.value) reasons.push('严格 E2EE 策略未完全启用')
+  for (const memberId of group.member_user_ids) {
+    const contact = contacts.value.find((c) => c.user_id === memberId)
+    if (!contact) { reasons.push(`缺少群成员联系人：${memberId}`); continue }
+    if (contact.state !== 'Friend') reasons.push(`群成员不是好友：${contact.display_name || contact.user_id}`)
+    if (!contact.fingerprint_verified_at) reasons.push(`群成员指纹未核验：${contact.display_name || contact.user_id}`)
+    if (activeContactSealedSlotRiskFor(contact) === 'high') reasons.push(`群成员 sealed slot 风险：${contact.display_name || contact.user_id}`)
+    if (contactCardDhtDiscoveryIsStale(contact)) reasons.push(`群成员 ContactCard DHT 未刷新：${contact.display_name || contact.user_id}`)
+    const ack = contactCardUpdateAckStatusFor(contact)
+    if (ack.pending) reasons.push(`群成员设备更新待确认：${contact.display_name || contact.user_id} ${ack.pending} 条`)
+  }
+  return Array.from(new Set(reasons))
+}
+
+const activeGroupStrictE2eeRiskText = computed(() => {
+  const reasons = groupStrictE2eeRiskReasons(activeGroup.value)
+  return reasons.length ? `群聊严格 E2EE 风险：${reasons.join('；')}` : ''
+})
 const fanoutItems = computed(() => {
   try {
     const parsed = JSON.parse(groupFanoutJson.value || '[]') as Array<{ to_user_id: string; envelope: string }>
@@ -5447,6 +5469,15 @@ async function sendMessage() {
       return
     }
   }
+  if (pendingText.trim() && activeGroup.value) {
+    const riskText = activeGroupStrictE2eeRiskText.value
+    if (riskText && !(await showConfirm('群聊严格 E2EE 风险提示', `${riskText}
+
+建议先修复群成员指纹、ContactCard DHT 和 sealed slot 覆盖，再发送群消息。仍要继续发送吗？`, true))) {
+      appendLog('已取消群消息发送：严格 E2EE 风险未确认')
+      return
+    }
+  }
   run('发送消息', () => {
     if (!composerText.value.trim()) return
     ensureUiTextSize('消息', composerText.value, MAX_TEXT_MESSAGE_BYTES)
@@ -8867,7 +8898,7 @@ const appContext = {
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
   newGroupName, friendContacts, selectedGroupMembers, createGroup, groups, activeGroupId,
-  selectGroup, activeContact, activeGroup, activeRatchetSession, activeRatchetStatusText, activeContactSealedSlotStatusText, activeContactSealedSlotRiskLevel, activeStrictE2eeSendRiskText, activeSecureSessionOutboxCount, activeGroupMembers, activeGroupWarningText, blockReason, blockActiveContact, readReceiptsEnabledFor, setActiveContactReadReceipts,
+  selectGroup, activeContact, activeGroup, activeRatchetSession, activeRatchetStatusText, activeContactSealedSlotStatusText, activeContactSealedSlotRiskLevel, activeStrictE2eeSendRiskText, activeSecureSessionOutboxCount, activeGroupMembers, activeGroupWarningText, activeGroupStrictE2eeRiskText, blockReason, blockActiveContact, readReceiptsEnabledFor, setActiveContactReadReceipts,
   unblockActiveContact, removeActiveContact, clearActiveConversation, createFriendRequestForActive, clearActiveFriendRequestError, createInviteForActiveGroup, groupInviteText, groupFanoutJson,
   removeActiveGroup, leaveActiveGroupWithNotice, messages, activeMessages, formatTime, formatDateTime, statusLabel, copyMessageEnvelope, perDeviceEnvelopeTargetCount, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
