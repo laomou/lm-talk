@@ -714,7 +714,11 @@ impl StateDbEncryptionMode {
     }
 
     fn is_database_encrypted(self) -> bool {
-        false
+        match self {
+            Self::Plain | Self::External => false,
+            #[cfg(feature = "sqlcipher")]
+            Self::SqlCipher => true,
+        }
     }
 
     fn parse(value: Option<String>) -> Result<Self, Box<dyn std::error::Error>> {
@@ -784,10 +788,30 @@ impl StateDbEncryptionProvider {
             StateDbEncryptionMode::Plain | StateDbEncryptionMode::External => Ok(()),
             #[cfg(feature = "sqlcipher")]
             StateDbEncryptionMode::SqlCipher => {
-                if !self.has_passphrase() {
+                let Some(passphrase) = self.passphrase.as_deref().filter(|value| !value.is_empty())
+                else {
                     return Err("state_db_encryption_mode=sqlcipher requires state_db_passphrase_file or LM_NODE_STATE_DB_PASSPHRASE_FILE".into());
+                };
+                let escaped = passphrase.replace('\'', "''");
+                _conn.execute_batch(&format!("PRAGMA key = '{}';", escaped))?;
+                let cipher_version = _conn
+                    .query_row("PRAGMA cipher_version", [], |row| row.get::<_, String>(0))
+                    .optional()?;
+                if cipher_version
+                    .as_deref()
+                    .unwrap_or_default()
+                    .trim()
+                    .is_empty()
+                {
+                    return Err("SQLCipher provider requested but the linked SQLite library does not expose PRAGMA cipher_version; rebuild with a SQLCipher-capable rusqlite/libsqlite3".into());
                 }
-                Err("state_db_encryption_mode=sqlcipher provider is feature-gated but SQLCipher connection initialization is not implemented in this build".into())
+                _conn.execute_batch(
+                    r#"
+                    PRAGMA cipher_memory_security = ON;
+                    PRAGMA cipher_plaintext_header_size = 0;
+                    "#,
+                )?;
+                Ok(())
             }
         }
     }
@@ -8970,6 +8994,8 @@ connection: close
         let external = StateDbEncryptionProvider::new(StateDbEncryptionMode::External);
         assert_eq!(external.mode().as_str(), "external");
         assert!(!external.is_database_encrypted());
+        #[cfg(feature = "sqlcipher")]
+        assert!(StateDbEncryptionMode::SqlCipher.is_database_encrypted());
         let reserved = StateDbEncryptionProvider::with_passphrase(
             StateDbEncryptionMode::External,
             Some("secret".into()),
@@ -8985,7 +9011,7 @@ connection: close
         let provider = StateDbEncryptionProvider::with_passphrase(mode, Some("secret".into()));
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         let err = provider.apply_to_connection(&conn).unwrap_err();
-        assert!(err.to_string().contains("not implemented"));
+        assert!(err.to_string().contains("SQLCipher provider requested"));
     }
 
     #[test]
