@@ -62,11 +62,11 @@ SNAPSHOT="$(request a /sync/snapshot)"
 python3 -m json.tool <<<"$SNAPSHOT" >/dev/null
 post_json c /sync/import "{\"snapshot\":$SNAPSHOT}" >/dev/null
 STATUS="$(request c "/mailbox/status?user_id=$RECIPIENT_USER_ID")"
-python3 -c 'import json,sys; body=json.loads(sys.argv[1]); assert int(body.get("pending", 0)) >= int(sys.argv[2]), body' "$STATUS" "$MESSAGE_COUNT"
+python3 -c 'import json,sys; body=json.loads(sys.argv[1]); summary=body.get("summary") or {}; pending=body.get("pending", summary.get("undelivered", 0)); assert int(pending) >= int(sys.argv[2]), body' "$STATUS" "$MESSAGE_COUNT"
 TAKE="$(request c "/mailbox/take?user_id=$RECIPIENT_USER_ID&limit=$MESSAGE_COUNT")"
 python3 -c 'import json,sys; body=json.loads(sys.argv[1]); deliveries=body.get("deliveries") or body.get("messages") or []; assert len(deliveries) >= int(sys.argv[2]), body' "$TAKE" "$MESSAGE_COUNT"
 
 METRICS="$(request c /control/metrics)"
-grep -q 'lm_node_mailbox_pending' <<<"$METRICS"
+grep -q 'lm_node_mailbox_push_rejections_total' <<<"$METRICS"
 
 echo "== federation load smoke ok: $MESSAGE_COUNT messages =="
