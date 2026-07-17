@@ -334,7 +334,10 @@ function openGroupDetail(groupId: string) {
         </div>
         <div class="detail-body">
           <section class="home-card">
-            <h3>群成员</h3>
+            <div class="section-title-row">
+              <h3>群成员</h3>
+              <span :class="{ 'danger-text': ctx.activeGroupStrictE2eeRiskText.value }">{{ ctx.activeGroupStrictE2eeRiskText.value || '群聊严格 E2EE 就绪' }}</span>
+            </div>
             <div class="group-state-grid">
               <span>事件序列 {{ ctx.activeGroup.value.sequence ?? 0 }}</span>
               <span>管理员 {{ ctx.activeGroup.value.admin_user_ids?.length ?? 0 }}</span>
