@@ -4455,9 +4455,28 @@ function clearRevokedDeviceIncomingDropStats() {
   persist()
 }
 
+function strictE2eeSendBlockingReasons(contact: ContactItem): string[] {
+  const reasons: string[] = []
+  if (contactAllKnownDevicesRevoked(contact)) reasons.push('联系人所有已知设备均已撤销')
+  if (safetyPolicy.value.requireVerifiedContactsForSend && !contact.fingerprint_verified_at) reasons.push('联系人指纹未核验')
+  if (safetyPolicy.value.requireSealedPerDeviceSlotsForSend && activeContactSealedSlotRiskFor(contact) === 'high') reasons.push(contactSealedSlotStatusText(contact))
+  return reasons
+}
+
 async function confirmStrictE2eeSendRiskIfNeeded(contact: ContactItem): Promise<boolean> {
   const riskText = contactStrictE2eeSendRiskText(contact)
   if (!riskText) return true
+  if (strictE2eePolicyEnabled.value) {
+    const blockers = strictE2eeSendBlockingReasons(contact)
+    if (blockers.length) {
+      const text = `发送前阻塞：${blockers.join('；')}`
+      showAlert('发送被严格 E2EE 策略阻止', text, 'warning')
+      appendLog(`已阻止发送：${text}`)
+      return false
+    }
+    appendLog(`严格 E2EE 发送存在非阻塞提醒：${riskText}`)
+    return true
+  }
   return showConfirm(
     '发送前严格 E2EE 风险提示',
     `${riskText}
