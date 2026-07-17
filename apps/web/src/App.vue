@@ -4857,6 +4857,7 @@ function createGroup() {
   run('创建群组', () => {
     const riskText = createGroupStrictE2eeRiskText.value
     if (riskText) {
+      if (strictE2eePolicyEnabled.value) throw new Error(`严格 E2EE 策略阻止创建风险群聊：${riskText}`)
       const ok = confirm(`
 ${riskText}
 
@@ -5524,6 +5525,11 @@ async function sendMessage() {
   }
   if (pendingText.trim() && activeGroup.value) {
     const riskText = activeGroupStrictE2eeRiskText.value
+    if (riskText && strictE2eePolicyEnabled.value) {
+      showAlert('群消息被严格 E2EE 策略阻止', riskText, 'warning')
+      appendLog(`已阻止群消息发送：${riskText}`)
+      return
+    }
     if (riskText && !(await showConfirm('群聊严格 E2EE 风险提示', `${riskText}
 
 建议先修复群成员指纹、ContactCard DHT 和 sealed slot 覆盖，再发送群消息。仍要继续发送吗？`, true))) {
