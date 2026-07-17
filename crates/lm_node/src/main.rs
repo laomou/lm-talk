@@ -9005,13 +9005,47 @@ connection: close
 
     #[cfg(feature = "sqlcipher")]
     #[test]
-    fn sqlcipher_provider_is_feature_gated_but_not_silent() {
+    fn sqlcipher_provider_initializes_cipher() {
         let mode = StateDbEncryptionMode::parse(Some("sqlcipher".into())).unwrap();
         assert_eq!(mode.as_str(), "sqlcipher");
+        assert!(mode.is_database_encrypted());
         let provider = StateDbEncryptionProvider::with_passphrase(mode, Some("secret".into()));
         let conn = rusqlite::Connection::open_in_memory().unwrap();
-        let err = provider.apply_to_connection(&conn).unwrap_err();
-        assert!(err.to_string().contains("SQLCipher provider requested"));
+        provider.apply_to_connection(&conn).unwrap();
+        let cipher_version: String = conn
+            .query_row("PRAGMA cipher_version", [], |row| row.get(0))
+            .unwrap();
+        assert!(!cipher_version.trim().is_empty());
+    }
+
+    #[cfg(feature = "sqlcipher")]
+    #[test]
+    fn sqlcipher_state_db_rejects_wrong_passphrase() {
+        let unique = format!("{}-{}", std::process::id(), current_unix_timestamp());
+        let path = std::env::temp_dir().join(format!("lm-node-sqlcipher-{unique}.sqlite3"));
+        let good = StateDbEncryptionProvider::with_passphrase(
+            StateDbEncryptionMode::SqlCipher,
+            Some("correct horse battery staple".into()),
+        );
+        let bad = StateDbEncryptionProvider::with_passphrase(
+            StateDbEncryptionMode::SqlCipher,
+            Some("wrong passphrase".into()),
+        );
+        let conn = open_state_db_with_provider(path.to_str().unwrap(), good).unwrap();
+        conn.execute(
+            "INSERT INTO meta(key, value) VALUES (?1, ?2)",
+            rusqlite::params!["probe", "\"ok\""],
+        )
+        .unwrap();
+        drop(conn);
+        let wrong = open_state_db_with_provider(path.to_str().unwrap(), bad);
+        assert!(
+            wrong.is_err(),
+            "wrong SQLCipher passphrase should not open state_db"
+        );
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("sqlite3-wal"));
+        let _ = std::fs::remove_file(path.with_extension("sqlite3-shm"));
     }
 
     #[test]

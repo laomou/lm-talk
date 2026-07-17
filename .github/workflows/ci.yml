@@ -98,7 +98,7 @@ jobs:
           workspaces: .
 
       - name: Check SQLCipher provider feature
-        run: cargo test -p lm_node --bin lm_node --features sqlcipher sqlcipher_provider_is_feature_gated_but_not_silent
+        run: cargo test -p lm_node --bin lm_node --features sqlcipher sqlcipher_provider_initializes_cipher
 
   dependency-review:
     if: github.event_name == 'pull_request'

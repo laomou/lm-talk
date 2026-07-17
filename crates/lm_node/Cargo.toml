@@ -22,4 +22,4 @@ uuid.workspace = true
 
 [features]
 default = []
-sqlcipher = []
+sqlcipher = ["rusqlite/bundled-sqlcipher-vendored-openssl"]
