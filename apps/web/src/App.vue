@@ -3168,6 +3168,7 @@ function warnIfFullDataBackupStale() {
 
 async function afterLoginAutomation() {
   warnIfFullDataBackupStale()
+  ensureOwnDeviceCertForStrict('登录后的严格 E2EE 默认策略')
   if (!nodeEnabled.value) return
   if (autoPublishPreKey.value) await ensurePreKeyInventory()
   await ensureOwnMailboxHintDhtRecord()
@@ -3177,6 +3178,7 @@ async function afterLoginAutomation() {
 }
 
 async function syncNow() {
+  ensureOwnDeviceCertForStrict('消息同步前的严格 E2EE 默认策略')
   if (!nodeEnabled.value) {
     appendLog('⚠️ 消息同步未开启')
     showAlert('未开启消息同步', '请先在“我 → 消息同步”开启同步。', 'warning')
@@ -4066,18 +4068,32 @@ function mergeContactCard(existing: ContactItem | undefined, info: ContactInfo, 
 
 
 
+function installOwnDeviceCert(out: DeviceOutput) {
+  myDeviceId.value = out.device_id
+  myDeviceCertJson.value = out.device_cert_json
+  myDeviceBackupText.value = out.device_backup_text ?? ''
+  myContactCardText.value = export_contact_card(
+    backupText.value,
+    passphrase.value,
+    displayName.value || undefined,
+    `[${myDeviceCertJson.value}]`,
+  )
+}
+
+function ensureOwnDeviceCertForStrict(reason = 'strict E2EE') {
+  if (!backupText.value || !passphrase.value) return false
+  if (myDeviceCertJson.value && myDeviceBackupText.value && contactCardDeviceCerts(myContactCardText.value || '').some((cert) => cert.device_id === myDeviceId.value && cert.device_box_public_key)) return false
+  const out = safeJson<DeviceOutput>(create_device_cert(backupText.value, passphrase.value, 'Web Browser'))
+  installOwnDeviceCert(out)
+  appendLog(`✅ 已为 ${reason} 自动生成本设备 sealed slot 证书`)
+  persist()
+  return true
+}
+
 function createMyDeviceCert() {
   run('创建设备证书', () => {
     const out = safeJson<DeviceOutput>(create_device_cert(backupText.value, passphrase.value, 'Web Browser'))
-    myDeviceId.value = out.device_id
-    myDeviceCertJson.value = out.device_cert_json
-    myDeviceBackupText.value = out.device_backup_text ?? ''
-    myContactCardText.value = export_contact_card(
-      backupText.value,
-      passphrase.value,
-      displayName.value || undefined,
-      `[${myDeviceCertJson.value}]`,
-    )
+    installOwnDeviceCert(out)
     persist()
     if (friendContacts.value.length) {
       appendLog(`正在自动向 ${friendContacts.value.length} 个好友分发新的设备证书更新`)
