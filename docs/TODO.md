@@ -1054,7 +1054,7 @@ MVP 群聊采用逐个加密。
    - [x] `/control/metrics` 暴露每个 sync peer 的 attempts、successes、failures、consecutive_failures 和 next_attempt_at，便于部署观察自动同步退避状态。
    - [x] `/control/stats` / `/control/metrics` 暴露后台任务调度延迟：`lm_node_background_schedule_delay_micros_*`。
    - [x] `/control/stats` / `/control/metrics` 暴露持久化 SQLite 数据库页/空间指标：`lm_node_state_db_*`。
-   - [x] SQLite `state_db` 连接启用 WAL、`synchronous=FULL`、`busy_timeout=5000` 和 `foreign_keys=ON`，并有单元测试覆盖；Unix 下 `state_db` 主文件和 WAL/SHM sidecar 以及兼容 `state_file` 保存结果会收紧为 `0600`，降低未加密本地状态泄漏风险；`/health`、`/control/stats` 和 `/control/metrics` 明示 `state_db_encrypted=false` / `lm_node_state_db_encrypted 0` 和权限硬化状态，避免部署方误判 SQLCipher 已完成；新增 `state_db_encryption_mode`（plain/external）、`state_db_require_encryption` / `--state-db-require-encryption` / `LM_NODE_STATE_DB_REQUIRE_ENCRYPTION` fail-closed 开关，要求非明文状态库时 plain SQLite 会拒绝启动；`serve-control` 与 `serve-dht-libp2p` 真实进程路径均有覆盖；JSON `state_file` 也支持 `lm-node-state-file-v1:` XChaCha20-Poly1305 加密、passphrase file、require-encryption fail-closed、stats/metrics 暴露。
+   - [x] SQLite `state_db` 连接启用 WAL、`synchronous=FULL`、`busy_timeout=5000` 和 `foreign_keys=ON`，并有单元测试覆盖；Unix 下 `state_db` 主文件和 WAL/SHM sidecar 以及兼容 `state_file` 保存结果会收紧为 `0600`，降低未加密本地状态泄漏风险；`/health`、`/control/stats` 和 `/control/metrics` 明示 `state_db_encrypted`、`state_db.encryption_mode`、权限硬化状态；新增 `state_db_encryption_mode`（plain/external/sqlcipher feature）、`state_db_passphrase_file`、`state_db_require_encryption` / `--state-db-require-encryption` / `LM_NODE_STATE_DB_REQUIRE_ENCRYPTION` fail-closed 开关，要求非明文状态库时 plain SQLite 会拒绝启动；`lm_node/sqlcipher` feature 已接入 bundled SQLCipher + vendored OpenSSL，执行 `PRAGMA key` / `PRAGMA cipher_version`，并有错误口令拒绝测试与 `./scripts/sqlcipher-smoke.sh`；`serve-control` 与 `serve-dht-libp2p` 真实进程路径均有覆盖；JSON `state_file` 也支持 `lm-node-state-file-v1:` XChaCha20-Poly1305 加密、passphrase file、require-encryption fail-closed、stats/metrics 暴露。
 
 ### P2：生产网络能力
 
@@ -1116,7 +1116,7 @@ MVP 群聊采用逐个加密。
 3. 好友通过后自动 X3DH + Double Ratchet 建链：失败时回退复制粘贴流程。
 4. Mailbox 产品化：正式收件箱、失败重试、长期去重和送达回执。
 5. 本地数据应用层加密增强：完整迁移回滚、更多字段审计。
-6. Native node 持久化增强：SQLCipher 或等价数据库加密、更多备份演练和运维指标。
+6. Native node 持久化增强：为目标 release artifact/部署模板保留 SQLCipher `state_db_encrypted=1` 证据、更多备份演练和运维指标。
 7. 节点自动同步增强：libp2p DHT transport 产品化、更多 control-peer 故障/压力测试。
 8. Outbox 调度器：指数退避、取消发送、过期、delivery status。
 9. 协议稳定化：错误码、对象大小限制、Contact Card 更新策略、PreKey 轮换策略。

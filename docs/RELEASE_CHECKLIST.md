@@ -79,19 +79,20 @@ Do not mark the project production-ready until these are explicitly completed an
 - Long-running fuzz campaigns with saved corpus and crash triage, beyond harness compile checks.
 - Real network chaos/load testing: latency, packet loss, reconnects, malformed/hostile peers, sustained Mailbox/DHT load.
 - External security audit of core cryptography, Web/WASM bindings, node control plane, and deployment guidance.
-- Native node SQLite `state_db` database encryption, e.g. SQLCipher or an equivalent encrypted state store. The JSON `state_file` now supports XChaCha20-Poly1305 passphrase encryption and fail-closed enforcement, but that is a compatibility/snapshot path and does not replace database-level `state_db` encryption for production.
+- Native node SQLCipher database encryption is implemented behind the `lm_node/sqlcipher` feature and covered by `./scripts/sqlcipher-smoke.sh`; before production-ready release, archive a deployment run proving the selected release artifact was built with `sqlcipher`, started with `state_db_encryption_mode=sqlcipher`, and reports encrypted state DB metrics. The JSON `state_file` remains only a compatibility/snapshot path.
 - Multi-device sync and receipt-state reconciliation beyond backup merge heuristics.
 
 ## Evidence to keep for a release candidate
 
 Before calling a node build production-ready, also archive evidence for any configured state persistence mode:
 
-- `state_db`: `/control/stats` and `/control/metrics` showing `state_db_encrypted=1` once database-level encryption is implemented.
+- `state_db`: `./scripts/sqlcipher-smoke.sh` output plus `/control/stats` and `/control/metrics` showing `state_db.encryption_mode=sqlcipher`, `state_db_encrypted=true`, and `lm_node_state_db_encrypted 1` for the exact release artifact/config.
 - `state_file`: `/control/stats` and `/control/metrics` showing `state_file.encrypted=true` / `lm_node_state_file_encrypted 1` and `state_file.permissions_hardened=true`; keep secret-file permission checks for the passphrase file.
 
 For every release candidate, archive:
 
 - Output of `./scripts/release-check.sh full`.
+- Output/artifact from `./scripts/sqlcipher-smoke.sh` or the manual SQLCipher Smoke workflow when SQLCipher state DB encryption is part of the release.
 - Fuzz campaign commands, durations, corpus/crash artifacts, and triage notes.
 - Network/load test reports and topology.
 - Security-audit report and remediation notes.
