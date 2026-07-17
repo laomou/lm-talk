@@ -17,16 +17,16 @@
 2. 把自己的**名片**发给朋友，或扫描对方名片互加好友。
 3. 开始聊天。
 
-想在**不同设备之间**或**对方离线**时也能收发消息，需要连接一个「同步服务」：在「我 → 消息同步」里填写地址即可。自建与跨设备部署方式见 [docs/NETWORK_SPEC.md](docs/NETWORK_SPEC.md)。
+想在**不同设备之间**或**对方离线**时也能收发消息，需要连接一个「同步服务」：在「我 → 消息同步」里填写地址即可。自建与跨设备部署方式见 [docs/protocol/NETWORK_SPEC.md](docs/protocol/NETWORK_SPEC.md)。
 
 ## 文档
 
 更详细的设计、规格和部署说明见 [文档索引](docs/README.md)。
 
-- [设计总览](docs/DESIGN.md)
-- [安全模型](docs/SECURITY_MODEL.md)
-- [网络与部署](docs/NETWORK_SPEC.md)
-- [协议规格](docs/README.md#协议规格)
+- [设计总览](docs/overview/DESIGN.md)
+- [安全模型](docs/security/SECURITY_MODEL.md)
+- [网络与部署](docs/protocol/NETWORK_SPEC.md)
+- [协议规格](docs/README.md#核心协议规格)
 
 ## 许可证
 

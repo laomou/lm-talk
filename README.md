@@ -17,16 +17,16 @@ A decentralized, end-to-end encrypted instant messaging app. No phone number or 
 2. Share your **contact card** with friends, or scan theirs to add each other.
 3. Start chatting.
 
-To send and receive messages **across devices** or when the **other party is offline**, you need to connect a "sync service": go to "Me → Message Sync" and enter the server address. For self-hosting and cross-device deployment, see [docs/NETWORK_SPEC.md](docs/NETWORK_SPEC.md).
+To send and receive messages **across devices** or when the **other party is offline**, you need to connect a "sync service": go to "Me → Message Sync" and enter the server address. For self-hosting and cross-device deployment, see [docs/protocol/NETWORK_SPEC.md](docs/protocol/NETWORK_SPEC.md).
 
 ## Documentation
 
 For detailed design, specifications, and deployment instructions, see the [documentation index](docs/README.md).
 
-- [Design Overview](docs/DESIGN.md)
-- [Security Model](docs/SECURITY_MODEL.md)
-- [Network & Deployment](docs/NETWORK_SPEC.md)
-- [Protocol Specifications](docs/README.md#protocol-specifications)
+- [Design Overview](docs/overview/DESIGN.md)
+- [Security Model](docs/security/SECURITY_MODEL.md)
+- [Network & Deployment](docs/protocol/NETWORK_SPEC.md)
+- [Protocol Specifications](docs/README.md#核心协议规格)
 
 ## License
 
