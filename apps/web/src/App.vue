@@ -1210,10 +1210,12 @@ function groupStrictE2eeRiskReasons(group: GroupItem | null): string[] {
   return Array.from(new Set(reasons))
 }
 
-const activeGroupStrictE2eeRiskText = computed(() => {
-  const reasons = groupStrictE2eeRiskReasons(activeGroup.value)
+function groupStrictE2eeRiskTextFor(group: GroupItem | null): string {
+  const reasons = groupStrictE2eeRiskReasons(group)
   return reasons.length ? `群聊严格 E2EE 风险：${reasons.join('；')}` : ''
-})
+}
+
+const activeGroupStrictE2eeRiskText = computed(() => groupStrictE2eeRiskTextFor(activeGroup.value))
 
 function buildCreateGroupStrictE2eeRiskText(): string {
   const members = [...new Set(selectedGroupMembers.value)].filter(Boolean)
@@ -8926,7 +8928,7 @@ const appContext = {
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
   newGroupName, friendContacts, selectedGroupMembers, createGroup, groups, activeGroupId,
-  selectGroup, activeContact, activeGroup, activeRatchetSession, activeRatchetStatusText, activeContactSealedSlotStatusText, activeContactSealedSlotRiskLevel, activeStrictE2eeSendRiskText, activeSecureSessionOutboxCount, activeGroupMembers, activeGroupWarningText, activeGroupStrictE2eeRiskText, createGroupStrictE2eeRiskText, blockReason, blockActiveContact, readReceiptsEnabledFor, setActiveContactReadReceipts,
+  selectGroup, activeContact, activeGroup, activeRatchetSession, activeRatchetStatusText, activeContactSealedSlotStatusText, activeContactSealedSlotRiskLevel, activeStrictE2eeSendRiskText, activeSecureSessionOutboxCount, activeGroupMembers, activeGroupWarningText, activeGroupStrictE2eeRiskText, groupStrictE2eeRiskTextFor, createGroupStrictE2eeRiskText, blockReason, blockActiveContact, readReceiptsEnabledFor, setActiveContactReadReceipts,
   unblockActiveContact, removeActiveContact, clearActiveConversation, createFriendRequestForActive, clearActiveFriendRequestError, createInviteForActiveGroup, groupInviteText, groupFanoutJson,
   removeActiveGroup, leaveActiveGroupWithNotice, messages, activeMessages, formatTime, formatDateTime, statusLabel, copyMessageEnvelope, perDeviceEnvelopeTargetCount, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,

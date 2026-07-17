@@ -43,12 +43,18 @@ function convName(it: any) {
   return it.type === 'contact' ? it.data.display_name || '未命名' : it.data.name
 }
 function strictBadgeText(it: any) {
-  if (it.type !== 'contact' || it.data.state !== 'Friend') return ''
-  return props.ctx.contactStrictE2eeRiskLevel(it.data) === 'high' ? '严格风险' : '严格就绪'
+  if (it.type === 'contact' && it.data.state === 'Friend') {
+    return props.ctx.contactStrictE2eeRiskLevel(it.data) === 'high' ? '严格风险' : '严格就绪'
+  }
+  if (it.type === 'group' && it.data.member_user_ids?.length) {
+    return props.ctx.groupStrictE2eeRiskTextFor(it.data) ? '严格风险' : '严格就绪'
+  }
+  return ''
 }
 function strictBadgeTitle(it: any) {
-  if (it.type !== 'contact' || it.data.state !== 'Friend') return ''
-  return props.ctx.contactStrictE2eeStatusText(it.data)
+  if (it.type === 'contact' && it.data.state === 'Friend') return props.ctx.contactStrictE2eeStatusText(it.data)
+  if (it.type === 'group') return props.ctx.groupStrictE2eeRiskTextFor(it.data) || '群聊严格 E2EE 就绪'
+  return ''
 }
 function convPreview(it: any) {
   if (it.last) {
