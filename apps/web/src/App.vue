@@ -4086,6 +4086,10 @@ function ensureOwnDeviceCertForStrict(reason = 'strict E2EE') {
   const out = safeJson<DeviceOutput>(create_device_cert(backupText.value, passphrase.value, 'Web Browser'))
   installOwnDeviceCert(out)
   appendLog(`✅ 已为 ${reason} 自动生成本设备 sealed slot 证书`)
+  if (friendContacts.value.length) {
+    appendLog(`正在向 ${friendContacts.value.length} 个好友分发自动修复后的设备证书`)
+    void fanoutMyContactCardUpdateToFriends({ force: true })
+  }
   persist()
   return true
 }
