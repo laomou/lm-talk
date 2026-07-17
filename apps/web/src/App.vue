@@ -620,10 +620,10 @@ const safetyPolicy = ref<SafetyPolicy>({
   warnExternalLinks: true,
   warnExecutableFiles: true,
   dropFilteredIncoming: false,
-  requireVerifiedContactsForSend: false,
-  requireVerifiedContactsForReceive: false,
-  requireSealedPerDeviceSlotsForSend: false,
-  requireSealedPerDeviceSlotsForReceive: false,
+  requireVerifiedContactsForSend: true,
+  requireVerifiedContactsForReceive: true,
+  requireSealedPerDeviceSlotsForSend: true,
+  requireSealedPerDeviceSlotsForReceive: true,
 })
 
 const contacts = ref<ContactItem[]>([])
@@ -2317,10 +2317,10 @@ function resetAccountScopedState() {
     warnExternalLinks: true,
     warnExecutableFiles: true,
     dropFilteredIncoming: false,
-    requireVerifiedContactsForSend: false,
-    requireVerifiedContactsForReceive: false,
-    requireSealedPerDeviceSlotsForSend: false,
-    requireSealedPerDeviceSlotsForReceive: false,
+    requireVerifiedContactsForSend: true,
+    requireVerifiedContactsForReceive: true,
+    requireSealedPerDeviceSlotsForSend: true,
+    requireSealedPerDeviceSlotsForReceive: true,
   }
   nodeEnabled.value = false
   autoMailboxTake.value = true
@@ -2426,10 +2426,10 @@ async function clearPersisted() {
     warnExternalLinks: true,
     warnExecutableFiles: true,
     dropFilteredIncoming: false,
-    requireVerifiedContactsForSend: false,
-    requireVerifiedContactsForReceive: false,
-    requireSealedPerDeviceSlotsForSend: false,
-    requireSealedPerDeviceSlotsForReceive: false,
+    requireVerifiedContactsForSend: true,
+    requireVerifiedContactsForReceive: true,
+    requireSealedPerDeviceSlotsForSend: true,
+    requireSealedPerDeviceSlotsForReceive: true,
   }
   nodeEnabled.value = false
   autoMailboxTake.value = true
@@ -3954,7 +3954,16 @@ function createIdentityAndEnter() {
     const out = safeJson<IdentityOutput>(create_identity(passphrase.value))
     identity.value = out
     backupText.value = out.backup_text
-    exportMyCard()
+    const device = safeJson<DeviceOutput>(create_device_cert(backupText.value, passphrase.value, 'Web Browser'))
+    myDeviceId.value = device.device_id
+    myDeviceCertJson.value = device.device_cert_json
+    myDeviceBackupText.value = device.device_backup_text ?? ''
+    myContactCardText.value = export_contact_card(
+      backupText.value,
+      passphrase.value,
+      displayName.value || undefined,
+      `[${myDeviceCertJson.value}]`,
+    )
     lastRegisteredIdentity.value = rememberLocalIdentity(out.user_id, registerName, out.backup_text)
     persist()
     loggedIn.value = false
