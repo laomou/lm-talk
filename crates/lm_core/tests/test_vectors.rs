@@ -1,7 +1,7 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use lm_core::{
     device::DeviceSeed, ContactCard, DeviceCert, DeviceIdentity, DeviceRevoke, DirectEnvelope, FriendRequest, Identity, IdentityBackupPackage,
-    IdentitySeed, MailboxMessage, MessageReceipt, MessageReceiptKind, normalize_passphrase,
+    IdentitySeed, MailboxMessage, MessageReceipt, MessageReceiptKind, PreKeyBundle, SignedOneTimePreKeyRecord, normalize_passphrase,
 };
 use serde_json::Value;
 
@@ -121,6 +121,34 @@ fn contact_and_friend_vectors_verify() {
 }
 
 
+
+#[test]
+fn prekey_vectors_verify() {
+    let v = fixture("prekey_v1.json");
+    let id = identity(7);
+    assert_eq!(v["identity_seed_hex"], hex(&[7u8; 32]));
+    assert_eq!(v["user_id"], id.user_id().to_string());
+    assert_eq!(
+        v["identity_public_key_base64"],
+        BASE64.encode(id.identity_public_key())
+    );
+
+    let bundle = PreKeyBundle::from_export_text(v["prekey_bundle_text"].as_str().unwrap()).unwrap();
+    bundle.verify().unwrap();
+    assert_eq!(bundle.user_id.to_string(), v["user_id"]);
+    assert_eq!(bundle.signed_prekey_id, v["signed_prekey_id"].as_u64().unwrap() as u32);
+    assert_eq!(bundle.one_time_prekeys.len(), 0);
+
+    let records = v["signed_one_time_prekey_record_texts"].as_array().unwrap();
+    assert_eq!(records.len(), v["signed_one_time_prekey_count"].as_u64().unwrap() as usize);
+    for record_text in records {
+        let record = SignedOneTimePreKeyRecord::from_export_text(record_text.as_str().unwrap()).unwrap();
+        record.verify_for_bundle(&bundle).unwrap();
+    }
+    let first = SignedOneTimePreKeyRecord::from_export_text(v["first_signed_one_time_prekey_record_text"].as_str().unwrap()).unwrap();
+    assert_eq!(first.key_id, v["first_one_time_prekey_id"].as_u64().unwrap() as u32);
+}
+
 #[test]
 fn receipt_and_mailbox_vectors_verify() {
     let v = fixture("receipt_mailbox_v1.json");
@@ -196,6 +224,13 @@ fn vector_text_tamper_is_rejected_for_signed_objects() {
     );
 
 
+
+
+    let prekey = fixture("prekey_v1.json");
+    let tampered_bundle = mutate_export_text(prekey["prekey_bundle_text"].as_str().unwrap());
+    assert!(PreKeyBundle::from_export_text(&tampered_bundle).is_err());
+    let tampered_otpk = mutate_export_text(prekey["first_signed_one_time_prekey_record_text"].as_str().unwrap());
+    assert!(SignedOneTimePreKeyRecord::from_export_text(&tampered_otpk).is_err());
 
     let receipt_mailbox = fixture("receipt_mailbox_v1.json");
     let tampered_receipt = mutate_export_text(receipt_mailbox["delivered_receipt_text"].as_str().unwrap());

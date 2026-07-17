@@ -12,6 +12,7 @@ This file tracks which protocol objects have stable cross-platform test vectors 
 | `test-vectors/friend_request_v1.json` | Friend request export text, signature verification, from/to user ids, note, tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
 | `test-vectors/device_v1.json` | deterministic device seed, device cert JSON, device box public key, device revoke text, signature verification, tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
 | `test-vectors/receipt_mailbox_v1.json` | delivered/read message receipts and signed mailbox message, signature verification, parsed fields, tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
+| `test-vectors/prekey_v1.json` | PreKey bundle, signed one-time-prekey records, key IDs, signature verification, tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
 | `test-vectors/message_crypto_v1.json` | legacy DirectEnvelope encryption/decryption, conversation id, plaintext, tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
 
 ## Missing stable vectors before protocol freeze
@@ -20,8 +21,6 @@ These objects have unit/e2e coverage but do not yet have committed cross-platfor
 
 | Object | Needed vector evidence | Priority |
 | --- | --- | --- |
-| PreKey bundle | `lm-prekey-bundle-v1:` text, signed prekey, optional signed one-time-prekey records, DHT key namespace | High |
-| Signed one-time-prekey record | export text, key id, signature verification, tamper rejection | High |
 | PublicPeer announce | `lm-public-peer-v1:` text, peer id, addresses, capabilities, DHT key namespace | Medium |
 | File package | encrypted file package, manifest, chunk decrypt, tamper rejection | Medium |
 | Group invite/event | invite text, group event text, policy transition, signature verification | Medium |
