@@ -24,11 +24,12 @@ fuzz_campaign_present=$(copy_if_exists "$ROOT/fuzz-campaign-artifacts/fuzz-campa
 federation_present=$(copy_if_exists "$ROOT/deploy/lm-node-federation/federation-report.json" "federation-report.json")
 sqlcipher_present=$(copy_if_exists "$ROOT/sqlcipher-smoke-report.json" "sqlcipher-smoke-report.json")
 release_asset_verify_present=$(copy_if_exists "$ROOT/release-asset-verify-report.json" "release-asset-verify-report.json")
+risk_register_gate_present=$(copy_if_exists "$ROOT/risk-register-gate.log" "risk-register-gate.log")
 
 python3 - <<'PY' "$OUT_DIR/release-evidence-index.json" "$VERSION" "$COMMIT" "$STARTED_AT" \
-  "$release_check_present" "$fuzz_smoke_present" "$fuzz_campaign_present" "$federation_present" "$sqlcipher_present" "$release_asset_verify_present"
+  "$release_check_present" "$fuzz_smoke_present" "$fuzz_campaign_present" "$federation_present" "$sqlcipher_present" "$release_asset_verify_present" "$risk_register_gate_present"
 import json, sys
-(out, version, commit, started_at, release_check, fuzz_smoke, fuzz_campaign, federation, sqlcipher, release_asset_verify) = sys.argv[1:]
+(out, version, commit, started_at, release_check, fuzz_smoke, fuzz_campaign, federation, sqlcipher, release_asset_verify, risk_register_gate) = sys.argv[1:]
 checks = {
     "release_check_log_present": release_check == "true",
     "fuzz_smoke_report_present": fuzz_smoke == "true",
@@ -36,6 +37,7 @@ checks = {
     "federation_report_present": federation == "true",
     "sqlcipher_smoke_report_present": sqlcipher == "true",
     "release_asset_verify_report_present": release_asset_verify == "true",
+    "risk_register_gate_log_present": risk_register_gate == "true",
 }
 missing = [name for name, ok in checks.items() if not ok]
 report = {

@@ -12,6 +12,7 @@ RUN_FUZZ_CAMPAIGN="${RUN_FUZZ_CAMPAIGN:-0}"
 RUN_SQLCIPHER="${RUN_SQLCIPHER:-1}"
 RUN_FEDERATION="${RUN_FEDERATION:-0}"
 RUN_RELEASE_ASSET_VERIFY="${RUN_RELEASE_ASSET_VERIFY:-0}"
+RUN_RISK_REGISTER_GATE="${RUN_RISK_REGISTER_GATE:-1}"
 RELEASE_TAG_VERIFY="${RELEASE_TAG_VERIFY:-$RELEASE_VERSION}"
 
 mkdir -p "$EVIDENCE_DIR"
@@ -65,6 +66,13 @@ if [[ "$RUN_RELEASE_ASSET_VERIFY" == "1" ]]; then
     ./scripts/verify-node-release.sh "$RELEASE_TAG_VERIFY" "$EVIDENCE_DIR/release-assets-$RELEASE_TAG_VERIFY"
 else
   echo "== release asset verification skipped =="
+fi
+
+if [[ "$RUN_RISK_REGISTER_GATE" == "1" ]]; then
+  echo "== risk register gate report =="
+  RISK_REGISTER_GATE_MODE=report ./scripts/risk-register-gate.sh 2>&1 | tee "$ROOT/risk-register-gate.log"
+else
+  echo "== risk register gate skipped =="
 fi
 
 echo "== collect release evidence =="
