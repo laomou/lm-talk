@@ -374,6 +374,21 @@ button.secondary.danger:hover { background: var(--c-danger-soft); border-color: 
 .conv-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conv-time { flex: 0 0 auto; font-size: 11px; font-weight: 400; color: var(--c-ink-3); }
 .conv-preview { color: var(--c-ink-3); }
+.strict-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--c-success-bg);
+  color: var(--c-success-ink);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 600;
+}
+.strict-badge.danger {
+  background: var(--c-warn-bg);
+  color: var(--c-warn-ink);
+}
 
 .avatar {
   width: 40px; height: 40px; border-radius: var(--r-md);

@@ -450,6 +450,7 @@ test('消息同步可完成好友请求和消息收发', async ({ browser }) => 
   await expect(alice.getByText('3. 分设备 sealed slot 覆盖')).toBeVisible()
   await expect(alice.getByText('4. 设备证书更新 ACK')).toBeVisible()
   await alice.goto('/#/chat')
+  await expect(alice.locator('.contact').filter({ hasText: 'Bob' })).toContainText('严格风险')
   await alice.locator('.contact').filter({ hasText: 'Bob' }).click()
   await expect(alice.locator('.clean-chat-header')).toContainText('好友')
   await expect(alice.getByText('发送前严格 E2EE 风险')).toBeVisible()

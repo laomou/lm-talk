@@ -42,6 +42,14 @@ const filtered = computed(() => {
 function convName(it: any) {
   return it.type === 'contact' ? it.data.display_name || '未命名' : it.data.name
 }
+function strictBadgeText(it: any) {
+  if (it.type !== 'contact' || it.data.state !== 'Friend') return ''
+  return props.ctx.contactStrictE2eeRiskLevel(it.data) === 'high' ? '严格风险' : '严格就绪'
+}
+function strictBadgeTitle(it: any) {
+  if (it.type !== 'contact' || it.data.state !== 'Friend') return ''
+  return props.ctx.contactStrictE2eeStatusText(it.data)
+}
 function convPreview(it: any) {
   if (it.last) {
     if (it.type === 'group' && it.last.direction !== 'out') return `${contactName(it.last.peer_user_id)}：${it.last.text}`
@@ -98,7 +106,17 @@ function select(it: any) {
         <span v-else class="avatar" :style="{ background: avatarColor(it.id) }">{{ (convName(it) || '?').slice(0, 1).toUpperCase() }}</span>
         <span class="contact-main">
           <b>
-            <span class="conv-name">{{ convName(it) }}<em v-if="it.type === 'contact' && it.data.state === 'RequestSent'">等待通过</em><em v-else-if="it.type === 'contact' && it.data.state === 'Blocked'">已拉黑</em></span>
+            <span class="conv-name">
+              {{ convName(it) }}
+              <em v-if="it.type === 'contact' && it.data.state === 'RequestSent'">等待通过</em>
+              <em v-else-if="it.type === 'contact' && it.data.state === 'Blocked'">已拉黑</em>
+              <em
+                v-else-if="strictBadgeText(it)"
+                class="strict-badge"
+                :class="{ danger: props.ctx.contactStrictE2eeRiskLevel(it.data) === 'high' }"
+                :title="strictBadgeTitle(it)"
+              >{{ strictBadgeText(it) }}</em>
+            </span>
             <span v-if="it.ts" class="conv-time">{{ convTime(it.ts) }}</span>
           </b>
           <small class="conv-preview">{{ convPreview(it) }}</small>
