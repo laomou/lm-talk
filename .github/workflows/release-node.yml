@@ -32,15 +32,23 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             package_name: lm_node-linux-x86_64
+            cargo_features: ''
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            package_name: lm_node-linux-x86_64-sqlcipher
+            cargo_features: sqlcipher
           - os: macos-13
             target: x86_64-apple-darwin
             package_name: lm_node-macos-x86_64
+            cargo_features: ''
           - os: macos-latest
             target: aarch64-apple-darwin
             package_name: lm_node-macos-arm64
+            cargo_features: ''
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             package_name: lm_node-windows-x86_64
+            cargo_features: ''
 
     steps:
       - name: Checkout
@@ -55,7 +63,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: .
-          key: release-node-${{ matrix.target }}
+          key: release-node-${{ matrix.target }}-${{ matrix.package_name }}
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -63,7 +71,14 @@ jobs:
           python-version: '3.12'
 
       - name: Build native node
-        run: cargo build --locked --release -p lm_node --target ${{ matrix.target }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ matrix.cargo_features }}" ]]; then
+            cargo build --locked --release -p lm_node --target ${{ matrix.target }} --features "${{ matrix.cargo_features }}"
+          else
+            cargo build --locked --release -p lm_node --target ${{ matrix.target }}
+          fi
 
       - name: Smoke test binary help
         if: ${{ matrix.target != 'aarch64-apple-darwin' || runner.arch == 'ARM64' }}
@@ -119,11 +134,14 @@ jobs:
           This release publishes native `lm_node` binaries for:
 
           - Linux x86_64: `lm_node-linux-x86_64.tar.gz`
+          - Linux x86_64 with bundled SQLCipher: `lm_node-linux-x86_64-sqlcipher.tar.gz`
           - macOS Intel: `lm_node-macos-x86_64.tar.gz`
           - macOS Apple Silicon: `lm_node-macos-arm64.tar.gz`
           - Windows x86_64: `lm_node-windows-x86_64.zip`
 
           Verify downloads with `SHA256SUMS.txt` or the per-artifact `.sha256` files. Each archive also includes `RELEASE_INFO.txt` with the source commit, build timestamp, Rust toolchain details, and binary SHA256.
+
+          SQLCipher note: the `lm_node-linux-x86_64-sqlcipher` artifact is built with the `lm_node/sqlcipher` feature for database-level `state_db` encryption. Verify deployment with `./scripts/sqlcipher-deploy-smoke.sh` or archived `/control/stats` + `/control/metrics` evidence showing `state_db_encrypted=true`.
 
           Security note: these artifacts are automated CI builds. macOS notarization and Windows code signing are not yet implemented; keep that as a release blocker for a production-trust distribution channel.
           EOF
