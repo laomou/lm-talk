@@ -235,12 +235,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 state_db.as_deref(),
             )?;
             let mut node = if let Some(path) = &state_db {
-                load_node_state_db(path).unwrap_or_else(|_| {
-                    NativeNode::new(NodeConfig {
+                load_node_state_db_or_new(
+                    path,
+                    NodeConfig {
                         peer_id: peer_id.clone(),
                         ..Default::default()
-                    })
-                })
+                    },
+                    state_db_encryption_mode,
+                )?
             } else if let Some(path) = &state_file {
                 load_node_state(path).unwrap_or_else(|_| {
                     NativeNode::new(NodeConfig {
@@ -497,8 +499,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 cors_allow_origins,
             };
             let mut node = if let Some(path) = &state_db {
-                load_node_state_db(path).unwrap_or_else(|_| {
-                    NativeNode::new(NodeConfig {
+                load_node_state_db_or_new(
+                    path,
+                    NodeConfig {
                         peer_id: peer_id.clone(),
                         mailbox_sender_rate_limit_window_seconds,
                         mailbox_sender_rate_limit_max_messages,
@@ -509,8 +512,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         max_mailbox_messages_per_user,
                         dht_peer_quarantine_consecutive_failures,
                         ..Default::default()
-                    })
-                })
+                    },
+                    state_db_encryption_mode,
+                )?
             } else if let Some(path) = &state_file {
                 load_node_state(path).unwrap_or_else(|_| {
                     NativeNode::new(NodeConfig {
@@ -714,6 +718,14 @@ impl StateDbEncryptionMode {
     }
 
     fn is_database_encrypted(self) -> bool {
+        match self {
+            Self::Plain | Self::External => false,
+            #[cfg(feature = "sqlcipher")]
+            Self::SqlCipher => true,
+        }
+    }
+
+    fn requires_strict_open(self) -> bool {
         match self {
             Self::Plain | Self::External => false,
             #[cfg(feature = "sqlcipher")]
@@ -3285,6 +3297,24 @@ fn decrypt_state_file_text(
     Ok(String::from_utf8(plaintext)?)
 }
 
+fn load_node_state_db_or_new(
+    path: &str,
+    fallback_config: NodeConfig,
+    mode: StateDbEncryptionMode,
+) -> Result<NativeNode, Box<dyn std::error::Error>> {
+    match load_node_state_db(path) {
+        Ok(node) => Ok(node),
+        Err(err)
+            if mode.requires_strict_open()
+                && Path::new(path).exists()
+                && !err.to_string().contains("no saved config") =>
+        {
+            Err(format!("failed to open encrypted state_db with configured provider: {err}").into())
+        }
+        Err(_) => Ok(NativeNode::new(fallback_config)),
+    }
+}
+
 fn load_node_state(path: &str) -> Result<NativeNode, Box<dyn std::error::Error>> {
     let text = fs::read_to_string(path)?;
     let text = if text.starts_with(ENCRYPTED_STATE_FILE_PREFIX) {
@@ -3576,14 +3606,24 @@ fn save_node_state_db(path: &str, node: &NativeNode) -> Result<(), Box<dyn std::
     Ok(())
 }
 
+fn query_pragma_u64(conn: &Connection, pragma: &str) -> Result<u64, Box<dyn std::error::Error>> {
+    let value = conn.query_row(pragma, [], |row| {
+        if let Ok(value) = row.get::<_, i64>(0) {
+            return Ok(value as u64);
+        }
+        let text = row.get::<_, String>(0)?;
+        text.trim().parse::<u64>().map_err(|err| {
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(err))
+        })
+    })?;
+    Ok(value)
+}
+
 fn state_db_stats(path: &str) -> Result<StateDbStats, Box<dyn std::error::Error>> {
     let conn = open_state_db(path)?;
-    let page_count: u64 =
-        conn.query_row("PRAGMA page_count", [], |row| row.get::<_, i64>(0))? as u64;
-    let page_size_bytes: u64 =
-        conn.query_row("PRAGMA page_size", [], |row| row.get::<_, i64>(0))? as u64;
-    let freelist_count: u64 =
-        conn.query_row("PRAGMA freelist_count", [], |row| row.get::<_, i64>(0))? as u64;
+    let page_count = query_pragma_u64(&conn, "PRAGMA page_count")?;
+    let page_size_bytes = query_pragma_u64(&conn, "PRAGMA page_size")?;
+    let freelist_count = query_pragma_u64(&conn, "PRAGMA freelist_count")?;
     let file_bytes = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
     Ok(StateDbStats {
         page_count,

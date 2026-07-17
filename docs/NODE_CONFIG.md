@@ -440,3 +440,8 @@ systemctl start lm-node
 ### SQLCipher Smoke workflow
 
 `.github/workflows/sqlcipher-smoke.yml` provides a manual GitHub Actions workflow that runs `./scripts/sqlcipher-smoke.sh` and uploads both `sqlcipher-smoke.log` and `sqlcipher-smoke-report.json` as artifacts. Use it to verify bundled SQLCipher builds outside the normal quick CI path.
+
+
+### SQLCipher deployment smoke
+
+`./scripts/sqlcipher-deploy-smoke.sh` builds `lm_node` with `--features sqlcipher`, starts a real `serve-control` process with `state_db_encryption_mode=sqlcipher`, verifies `/control/stats` and `/control/metrics` report encrypted state DB, and checks that a wrong passphrase cannot reopen the encrypted database. Use this as release evidence for SQLCipher-enabled node artifacts.
