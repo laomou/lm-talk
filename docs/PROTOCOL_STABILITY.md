@@ -33,7 +33,7 @@ These are intended to be stable for release-candidate interop:
 | Device revoke | `lm-device-revoke-v1:` | Stable | Signed by identity key; clients should stop trusting revoked device IDs. |
 | Message receipt | `lm-message-receipt-v1:` | Stable | Delivered/read receipts for message IDs and delivery IDs. |
 | Mailbox message | `lm-mailbox-message-v1:` | Stable | Node validates sender signature and TTL before storing. |
-| Public peer announce | `lm-public-peer-v1:` | Stable | DHT `PublicPeer` records use this payload. |
+| Public peer announce | `lm-public-peer-announce-v1:` | Stable | DHT `PublicPeer` records use this payload. |
 | PreKey bundle | `lm-prekey-bundle-v1:` | Stable | DHT `PreKey` records use this payload. |
 | Signed one-time-prekey record | `lm-signed-one-time-prekey-v1:` | Stable | Used for replenishable one-time keys. |
 | MailboxHint DHT value | URL/string value | Transitional | Current record value is an address string; future signed hint object may replace it. |
@@ -57,7 +57,7 @@ These are intended to be stable for release-candidate interop:
 
 Current node DHT record kinds:
 
-- `PublicPeer`: value is `lm-public-peer-v1:` export text.
+- `PublicPeer`: value is `lm-public-peer-announce-v1:` export text.
 - `PreKey`: value is `lm-prekey-bundle-v1:` export text.
 - `MailboxHint`: value is an address string matching accepted URL/multiaddr/mailbox patterns.
 - `ContactCard`: value is `lm-contact-card-v1:` export text.

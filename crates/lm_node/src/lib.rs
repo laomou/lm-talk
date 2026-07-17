@@ -3726,6 +3726,26 @@ mod tests {
     }
 
 
+
+    #[test]
+    fn public_peer_dht_vector_validates() {
+        let v = fixture("public_peer_v1.json");
+        let key = DhtRecordKey::for_public_peer(v["peer_id"].as_str().unwrap());
+        assert_eq!(key.to_hex(), v["dht_key_hex"]);
+        let record: DhtRecord = serde_json::from_str(v["dht_record_json"].as_str().unwrap()).unwrap();
+        assert_eq!(record.kind, DhtRecordKind::PublicPeer);
+        assert_eq!(record.key, key);
+        assert_eq!(record.value, v["public_peer_text"]);
+        record.validate_for_store_at(1_700_000_001).unwrap();
+        let announce = PublicPeerAnnounce::from_export_text(v["public_peer_text"].as_str().unwrap()).unwrap();
+        let pk = decode_identity_public_key_base64(v["identity_public_key_base64"].as_str().unwrap()).unwrap();
+        announce.verify(&pk).unwrap();
+        assert_eq!(announce.peer_id, v["peer_id"]);
+        let mut tampered = record.clone();
+        tampered.key = DhtRecordKey::for_public_peer("wrong-peer");
+        assert!(tampered.validate_for_store_at(1_700_000_001).is_err());
+    }
+
     #[test]
     fn contact_card_dht_vector_validates() {
         let v = fixture("contact_card_dht_v1.json");
