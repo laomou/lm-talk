@@ -97,6 +97,7 @@ jobs:
           python scripts/package-node-release.py
           --target ${{ matrix.target }}
           --package-name ${{ matrix.package_name }}
+          --cargo-features "${{ matrix.cargo_features }}"
           --out-dir dist
 
       - name: Upload release package

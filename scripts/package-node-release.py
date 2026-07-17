@@ -59,6 +59,7 @@ def main() -> int:
     parser.add_argument("--target", required=True, help="Rust target triple used for cargo build")
     parser.add_argument("--package-name", required=True, help="Release artifact base name")
     parser.add_argument("--out-dir", default="dist", help="Directory for archives and checksum files")
+    parser.add_argument("--cargo-features", default="", help="Comma/space separated Cargo features used for this build")
     parser.add_argument("--repo-root", default=".", help="Repository root")
     parser.add_argument(
         "--archive-format",
@@ -91,6 +92,9 @@ def main() -> int:
     binary_sha = sha256_file(binary_path)
     rustc = run_text(["rustc", "-Vv"], repo)
     cargo = run_text(["cargo", "-V"], repo)
+    cargo_features = " ".join(args.cargo_features.replace(",", " ").split())
+    cargo_features_display = cargo_features or "default"
+    sqlcipher_enabled = "sqlcipher" in set(cargo_features.split())
 
     with tempfile.TemporaryDirectory(prefix="lm-node-release-") as tmp:
         staging = Path(tmp) / args.package_name
@@ -122,6 +126,8 @@ def main() -> int:
             f"target={args.target}\n"
             f"binary={binary_name}\n"
             f"binary_sha256={binary_sha}\n"
+            f"cargo_features={cargo_features_display}\n"
+            f"sqlcipher_enabled={str(sqlcipher_enabled).lower()}\n"
             f"source_commit={commit}\n"
             f"source_dirty={dirty}\n"
             f"build_time_utc={build_time}\n"
