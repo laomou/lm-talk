@@ -343,6 +343,8 @@ test('登录注册、主界面和诊断页是产品化 UI', async ({ page }) => 
   await expect(page.getByText('同步状态')).toBeVisible()
   await expect(page.getByRole('button', { name: '复制预检报告' })).toBeVisible()
   await expect(page.getByRole('button', { name: '下载预检报告' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '复制脱敏摘要' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '下载脱敏摘要' })).toBeVisible()
   await expect(page.getByText('严格 E2EE 策略')).toBeVisible()
   await expect(page.getByRole('button', { name: '诊断工具' })).toBeVisible()
   await expect(page.locator('.app-shell')).not.toContainText('调试页面')
