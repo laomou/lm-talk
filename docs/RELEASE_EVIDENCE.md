@@ -16,6 +16,7 @@ Use this file as the evidence template for every release candidate. Copy it to a
 | Quick release check | `./scripts/release-check.sh quick` or CI `release-check` log |  |  |
 | Full release check | `./scripts/release-check.sh full` output |  |  |
 | Dependency audit | `./scripts/audit.sh` / CI `dependency-audit` log |  |  |
+| Dependency risk review | `docs/DEPENDENCY_RISK_REVIEW.md` reviewed; active audit exceptions justified |  |  |
 | SQLCipher smoke | `./scripts/sqlcipher-smoke.sh` or SQLCipher Smoke workflow artifact |  |  |
 | SQLCipher release binary smoke | `lm_node-linux-x86_64-sqlcipher-smoke` artifact from release workflow |  |  |
 | Federation validation | `federation-report.json` from `deploy/lm-node-federation/run-all.sh` or workflow artifact |  |  |
