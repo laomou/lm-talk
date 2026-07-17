@@ -1214,6 +1214,26 @@ const activeGroupStrictE2eeRiskText = computed(() => {
   const reasons = groupStrictE2eeRiskReasons(activeGroup.value)
   return reasons.length ? `群聊严格 E2EE 风险：${reasons.join('；')}` : ''
 })
+
+function buildCreateGroupStrictE2eeRiskText(): string {
+  const members = [...new Set(selectedGroupMembers.value)].filter(Boolean)
+  if (members.length === 0) return ''
+  const reasons: string[] = []
+  for (const memberId of members) {
+    const contact = contacts.value.find((c) => c.user_id === memberId)
+    if (!contact) { reasons.push(`缺少联系人：${memberId}`); continue }
+    if (contact.state !== 'Friend') reasons.push(`非好友成员：${contact.display_name || contact.user_id}`)
+    if (!contact.fingerprint_verified_at) reasons.push(`指纹未核验：${contact.display_name || contact.user_id}`)
+    if (activeContactSealedSlotRiskFor(contact) === 'high') reasons.push(`sealed slot 风险：${contact.display_name || contact.user_id}`)
+    if (contactCardDhtDiscoveryIsStale(contact)) reasons.push(`ContactCard DHT 未刷新：${contact.display_name || contact.user_id}`)
+    const ack = contactCardUpdateAckStatusFor(contact)
+    if (ack.pending) reasons.push(`设备更新待确认：${contact.display_name || contact.user_id} ${ack.pending} 条`)
+  }
+  return reasons.length ? `新建群聊严格 E2EE 预检：${Array.from(new Set(reasons)).join('；')}` : ''
+}
+
+const createGroupStrictE2eeRiskText = computed(() => buildCreateGroupStrictE2eeRiskText())
+
 const fanoutItems = computed(() => {
   try {
     const parsed = JSON.parse(groupFanoutJson.value || '[]') as Array<{ to_user_id: string; envelope: string }>
@@ -4818,6 +4838,14 @@ function groupSenderDecryptDebug() {
 
 function createGroup() {
   run('创建群组', () => {
+    const riskText = createGroupStrictE2eeRiskText.value
+    if (riskText) {
+      const ok = confirm(`
+${riskText}
+
+仍要继续创建群聊吗？`)
+      if (!ok) throw new Error('已取消创建群聊')
+    }
     const members = [...new Set(selectedGroupMembers.value)].filter(Boolean)
     if (!newGroupName.value.trim()) throw new Error('请输入群名')
     if (members.length === 0) throw new Error('请选择至少一个 Friend 联系人')
@@ -8898,7 +8926,7 @@ const appContext = {
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
   newGroupName, friendContacts, selectedGroupMembers, createGroup, groups, activeGroupId,
-  selectGroup, activeContact, activeGroup, activeRatchetSession, activeRatchetStatusText, activeContactSealedSlotStatusText, activeContactSealedSlotRiskLevel, activeStrictE2eeSendRiskText, activeSecureSessionOutboxCount, activeGroupMembers, activeGroupWarningText, activeGroupStrictE2eeRiskText, blockReason, blockActiveContact, readReceiptsEnabledFor, setActiveContactReadReceipts,
+  selectGroup, activeContact, activeGroup, activeRatchetSession, activeRatchetStatusText, activeContactSealedSlotStatusText, activeContactSealedSlotRiskLevel, activeStrictE2eeSendRiskText, activeSecureSessionOutboxCount, activeGroupMembers, activeGroupWarningText, activeGroupStrictE2eeRiskText, createGroupStrictE2eeRiskText, blockReason, blockActiveContact, readReceiptsEnabledFor, setActiveContactReadReceipts,
   unblockActiveContact, removeActiveContact, clearActiveConversation, createFriendRequestForActive, clearActiveFriendRequestError, createInviteForActiveGroup, groupInviteText, groupFanoutJson,
   removeActiveGroup, leaveActiveGroupWithNotice, messages, activeMessages, formatTime, formatDateTime, statusLabel, copyMessageEnvelope, perDeviceEnvelopeTargetCount, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,

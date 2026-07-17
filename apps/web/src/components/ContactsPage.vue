@@ -393,6 +393,10 @@ function openGroupDetail(groupId: string) {
           <section class="home-card">
             <label for="new-group-name">群名</label>
             <input id="new-group-name" v-model="ctx.newGroupName.value" aria-label="群名" placeholder="例如：项目讨论组" />
+            <div v-if="ctx.createGroupStrictE2eeRiskText.value" class="callout warning">
+              <b>新建群聊严格 E2EE 预检</b>
+              <small>{{ ctx.createGroupStrictE2eeRiskText.value }}</small>
+            </div>
             <label>选择好友</label>
             <div v-if="ctx.friendContacts.value.length" class="member-picker">
               <label v-for="c in ctx.friendContacts.value" :key="c.user_id" class="check-row">
