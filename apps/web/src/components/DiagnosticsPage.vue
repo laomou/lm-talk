@@ -40,12 +40,6 @@ async function runDiagnostics() {
       service_worker_registrations: registrations.length,
       caches: cacheKeys,
     },
-    pwa: {
-      status: sanitizeDiagnosticText(props.ctx.pwaStatusText.value),
-      background_capability: sanitizeDiagnosticText(props.ctx.pwaBackgroundCapabilityText.value),
-      background_event_count: props.ctx.pwaBackgroundEventHistory.value.length,
-      last_background_event: sanitizeDiagnosticText(props.ctx.pwaLastBackgroundEventText.value),
-    },
     sync: {
       enabled: props.ctx.nodeEnabled.value,
       services: redactDiagnosticReport.value ? props.ctx.nodeUrlList().map(() => '[已脱敏]') : props.ctx.nodeUrlList(),

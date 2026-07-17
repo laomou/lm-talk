@@ -374,7 +374,6 @@ type PersistedState = {
   contactCardUpdateFanoutRecords?: ContactCardUpdateFanoutRecord[]
   syncRecoveryHistory?: string[]
   dhtOperationHistory?: string[]
-  pwaBackgroundEventHistory?: string[]
   friendRequestRateRecords?: FriendRequestRateRecord[]
   lastFullDataBackupAt?: number
   lastSelfMailboxBackupPushedAt?: number
@@ -442,7 +441,6 @@ type PersistedMeta = {
   contactCardUpdateFanoutRecords?: ContactCardUpdateFanoutRecord[]
   syncRecoveryHistory?: string[]
   dhtOperationHistory?: string[]
-  pwaBackgroundEventHistory?: string[]
   friendRequestRateRecords?: FriendRequestRateRecord[]
   lastFullDataBackupAt?: number
   lastSelfMailboxBackupPushedAt?: number
@@ -862,10 +860,6 @@ const syncFailureSummaryText = computed(() => {
 })
 const storageEstimateText = ref('尚未估算')
 const webVersionText = `v${__APP_VERSION__} (${__BUILD_REF__})`
-const pwaStatusText = ref('尚未检查')
-const pwaBackgroundCapabilityText = ref('尚未检查')
-const pwaLastBackgroundEventText = ref('尚未收到后台事件')
-const pwaBackgroundEventHistory = ref<string[]>([])
 const selectedFile = ref<File | null>(null)
 const filePackageText = ref('')
 const incomingFilePackageText = ref('')
@@ -1234,17 +1228,7 @@ onMounted(async () => {
     })
     window.addEventListener('online', refreshRuntimeStatus)
     window.addEventListener('offline', refreshRuntimeStatus)
-    navigator.serviceWorker?.addEventListener?.('message', (event: MessageEvent) => {
-      handlePwaBackgroundSyncMessage(event.data)
-    })
     void refreshRuntimeStatus()
-    if ('serviceWorker' in navigator) {
-      const swUrl = new URL('sw.js', import.meta.env.BASE_URL ? new URL(import.meta.env.BASE_URL, window.location.origin) : window.location.origin)
-      swUrl.searchParams.set('v', __BUILD_REF__)
-      void navigator.serviceWorker.register(`${swUrl.pathname}${swUrl.search}`)
-        .then(() => refreshPwaStatus())
-        .catch((e) => appendLog(`PWA Service Worker 注册失败：${String(e)}`))
-    }
     ready.value = true
   } catch (e) {
     appendLog(`WASM 初始化失败：${String(e)}`)
@@ -1747,7 +1731,6 @@ function currentPersistedState(): PersistedState {
     contactCardUpdateFanoutRecords: contactCardUpdateFanoutRecords.value,
     syncRecoveryHistory: syncRecoveryHistory.value,
     dhtOperationHistory: nodeDhtOperationHistory.value,
-    pwaBackgroundEventHistory: pwaBackgroundEventHistory.value,
     friendRequestRateRecords: friendRequestRateRecords.value,
     lastFullDataBackupAt: lastFullDataBackupAt.value ?? undefined,
     lastSelfMailboxBackupPushedAt: lastSelfMailboxBackupPushedAt.value ?? undefined,
@@ -1817,7 +1800,6 @@ function persistedMeta(): PersistedMeta {
     contactCardUpdateFanoutRecords: contactCardUpdateFanoutRecords.value,
     syncRecoveryHistory: syncRecoveryHistory.value,
     dhtOperationHistory: nodeDhtOperationHistory.value,
-    pwaBackgroundEventHistory: pwaBackgroundEventHistory.value,
     friendRequestRateRecords: friendRequestRateRecords.value,
     lastFullDataBackupAt: lastFullDataBackupAt.value ?? undefined,
     lastSelfMailboxBackupPushedAt: lastSelfMailboxBackupPushedAt.value ?? undefined,
@@ -1956,7 +1938,6 @@ if (typeof window !== 'undefined') {
   ;(window as any).mergeMessagesForTests = mergeMessagesForState
   ;(window as any).mergeContactDeviceAndTrustStateForTests = mergeContactDeviceAndTrustState
   ;(window as any).contactAllKnownDevicesRevokedForTests = contactAllKnownDevicesRevoked
-  ;(window as any).handlePwaBackgroundSyncForTests = handlePwaBackgroundSyncMessage
 }
 
 async function writeStateToTables(state: PersistedState) {
@@ -1991,8 +1972,6 @@ async function writeStateToTables(state: PersistedState) {
   contactCardUpdateFanoutRecords.value = normalizeContactCardUpdateFanoutRecords(state.contactCardUpdateFanoutRecords ?? [])
   syncRecoveryHistory.value = state.syncRecoveryHistory ?? []
   nodeDhtOperationHistory.value = state.dhtOperationHistory ?? []
-  pwaBackgroundEventHistory.value = state.pwaBackgroundEventHistory ?? []
-  pwaLastBackgroundEventText.value = pwaBackgroundEventHistory.value[0] ?? '尚未收到后台事件'
   friendRequestRateRecords.value = state.friendRequestRateRecords ?? []
   lastFullDataBackupAt.value = typeof state.lastFullDataBackupAt === 'number' ? state.lastFullDataBackupAt : null
   lastSelfMailboxBackupPushedAt.value = typeof state.lastSelfMailboxBackupPushedAt === 'number' ? state.lastSelfMailboxBackupPushedAt : null
@@ -2065,8 +2044,6 @@ async function loadStateFromTables(): Promise<boolean> {
   contactCardUpdateFanoutRecords.value = normalizeContactCardUpdateFanoutRecords(meta.contactCardUpdateFanoutRecords ?? [])
   syncRecoveryHistory.value = meta.syncRecoveryHistory ?? []
   nodeDhtOperationHistory.value = meta.dhtOperationHistory ?? []
-  pwaBackgroundEventHistory.value = meta.pwaBackgroundEventHistory ?? []
-  pwaLastBackgroundEventText.value = pwaBackgroundEventHistory.value[0] ?? '尚未收到后台事件'
   friendRequestRateRecords.value = meta.friendRequestRateRecords ?? []
   lastFullDataBackupAt.value = typeof meta.lastFullDataBackupAt === 'number' ? meta.lastFullDataBackupAt : null
   lastSelfMailboxBackupPushedAt.value = typeof meta.lastSelfMailboxBackupPushedAt === 'number' ? meta.lastSelfMailboxBackupPushedAt : null
@@ -2190,8 +2167,6 @@ function resetAccountScopedState() {
   contactCardUpdateFanoutRecords.value = []
   syncRecoveryHistory.value = []
   nodeDhtOperationHistory.value = []
-  pwaBackgroundEventHistory.value = []
-  pwaLastBackgroundEventText.value = '尚未收到后台事件'
   friendRequestRateRecords.value = []
   activePeerId.value = ''
   activeGroupId.value = ''
@@ -2262,8 +2237,6 @@ async function clearPersisted() {
   contactCardUpdateFanoutRecords.value = []
   syncRecoveryHistory.value = []
   nodeDhtOperationHistory.value = []
-  pwaBackgroundEventHistory.value = []
-  pwaLastBackgroundEventText.value = '尚未收到后台事件'
   friendRequestRateRecords.value = []
   lastFullDataBackupAt.value = null
   lastSelfMailboxBackupPushedAt.value = null
@@ -2337,18 +2310,8 @@ async function clearPersisted() {
 }
 
 
-function handlePwaBackgroundSyncMessage(data: any) {
-  if (data?.type !== 'lm-talk-background-sync') return false
-  const tag = String(data.tag || 'unknown')
-  pwaLastBackgroundEventText.value = `${formatDateTime(Date.now())} · ${tag} · 已提示打开应用同步`
-  pwaBackgroundEventHistory.value = [pwaLastBackgroundEventText.value, ...pwaBackgroundEventHistory.value].slice(0, 5)
-  appendLog('PWA 后台同步事件：请打开应用完成 Mailbox 同步')
-  notifyIfAllowed('LM Talk 后台同步提示', '请打开应用完成端到端加密 Mailbox 同步。')
-  return true
-}
-
 async function clearBrowserCaches() {
-  const ok = await showConfirm('清理浏览器缓存', '清理 PWA 缓存和 Service Worker？这不会删除身份、联系人或聊天数据。', true)
+  const ok = await showConfirm('清理浏览器缓存', '清理浏览器缓存并注销旧版 Service Worker？这不会删除身份、联系人或聊天数据。', true)
   if (!ok) return
   const cacheKeys = typeof caches !== 'undefined' ? await caches.keys().catch(() => []) : []
   await Promise.all(cacheKeys.map((key) => caches.delete(key)))
@@ -2357,59 +2320,6 @@ async function clearBrowserCaches() {
   await Promise.all(registrations.map((registration) => registration.unregister()))
   appendLog(`已清理浏览器缓存：cache=${cacheKeys.length}, service_worker=${registrations.length}`)
   toast('已清理浏览器缓存', 'success')
-  await refreshPwaStatus()
-}
-
-async function refreshPwaStatus() {
-  const swSupported = 'serviceWorker' in navigator
-  const nav = navigator as Navigator & { serviceWorker?: ServiceWorkerContainer }
-  const registrations = swSupported && nav.serviceWorker?.getRegistrations ? await nav.serviceWorker.getRegistrations().catch(() => []) : []
-  const cacheKeys = typeof caches !== 'undefined' ? await caches.keys().catch(() => []) : []
-  const controller = swSupported && nav.serviceWorker?.controller ? '已接管' : registrations.length ? '已注册' : swSupported ? '未注册' : '不支持'
-  const pushSupported = swSupported && 'PushManager' in window
-  const backgroundSyncSupported = swSupported && 'SyncManager' in window
-  const periodicSyncSupported = swSupported && 'PeriodicSyncManager' in window
-  const registration = registrations[0] as any
-  let backgroundState = backgroundSyncSupported ? '可探测' : '不可用'
-  if (backgroundSyncSupported && registration?.sync?.getTags) {
-    const tags = await registration.sync.getTags().catch(() => [])
-    backgroundState = tags.includes('lm-talk-mailbox-sync') ? '已注册' : '可探测'
-  }
-  let periodicState = periodicSyncSupported ? '可探测' : '不可用'
-  if (periodicSyncSupported && registration?.periodicSync?.getTags) {
-    const tags = await registration.periodicSync.getTags().catch(() => [])
-    periodicState = tags.includes('lm-talk-periodic-mailbox-sync') ? '已注册' : '可探测'
-  }
-  const appCaches = cacheKeys.filter((key) => key.startsWith('lm-talk-pwa-'))
-  pwaStatusText.value = `${controller} · 缓存 ${cacheKeys.length}${appCaches[0] ? ` · 固定缓存 ${appCaches[0]}` : ''} · ${webVersionText}`
-  pwaBackgroundCapabilityText.value = `Push ${pushSupported ? '可探测' : '不可用'} · Background Sync ${backgroundState} · Periodic Sync ${periodicState} · 后台事件只提示打开应用，不读取密钥或消息`
-}
-
-async function registerPeriodicMailboxSync() {
-  const nav = navigator as Navigator & { serviceWorker?: ServiceWorkerContainer }
-  if (!nav.serviceWorker?.ready) return
-  const registration = await nav.serviceWorker.ready.catch(() => null) as any
-  let registered = 0
-  if ('SyncManager' in window && registration?.sync?.register) {
-    try {
-      await registration.sync.register('lm-talk-mailbox-sync')
-      registered += 1
-      appendLog('PWA Background Sync 已注册：后台仅提示打开应用完成同步')
-    } catch (e) {
-      appendLog(`PWA Background Sync 注册失败：${userFacingError(e)}`)
-    }
-  }
-  if ('PeriodicSyncManager' in window && registration?.periodicSync?.register) {
-    try {
-      await registration.periodicSync.register('lm-talk-periodic-mailbox-sync', { minInterval: 60 * 60 * 1000 })
-      registered += 1
-      appendLog('PWA Periodic Sync 已注册：后台仅提示打开应用完成同步')
-    } catch (e) {
-      appendLog(`PWA Periodic Sync 注册失败：${userFacingError(e)}`)
-    }
-  }
-  if (registered === 0) appendLog('当前浏览器不支持可注册的 PWA Background/Periodic Sync')
-  await refreshPwaStatus()
 }
 
 function formatBytes(bytes: number): string {
@@ -3036,8 +2946,6 @@ async function importFullDataBackupMerge() {
     mailboxFailedItems.value = mergeUniqueBy(mailboxFailedItems.value, state.mailboxFailedItems ?? [], (x) => x.id).items
     syncRecoveryHistory.value = [...new Set([...syncRecoveryHistory.value, ...(state.syncRecoveryHistory ?? [])])].slice(0, 5)
     nodeDhtOperationHistory.value = [...new Set([...nodeDhtOperationHistory.value, ...(state.dhtOperationHistory ?? [])])].slice(0, DHT_OPERATION_HISTORY_MAX_RECORDS)
-    pwaBackgroundEventHistory.value = [...new Set([...pwaBackgroundEventHistory.value, ...(state.pwaBackgroundEventHistory ?? [])])].slice(0, 5)
-    pwaLastBackgroundEventText.value = pwaBackgroundEventHistory.value[0] ?? '尚未收到后台事件'
     friendRequestRateRecords.value = mergeUniqueBy(friendRequestRateRecords.value, state.friendRequestRateRecords ?? [], (x) => x.from_user_id).items
     if (typeof state.lastFullDataBackupAt === 'number') lastFullDataBackupAt.value = Math.max(lastFullDataBackupAt.value ?? 0, state.lastFullDataBackupAt)
     if (typeof state.lastSelfMailboxBackupPushedAt === 'number') lastSelfMailboxBackupPushedAt.value = Math.max(lastSelfMailboxBackupPushedAt.value ?? 0, state.lastSelfMailboxBackupPushedAt)
@@ -8933,7 +8841,7 @@ function logout() {
 }
 const appContext = {
   goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
-  clearBrowserCaches, refreshStorageEstimate, storageEstimateText, refreshPwaStatus, registerPeriodicMailboxSync, pwaStatusText, pwaBackgroundCapabilityText, pwaLastBackgroundEventText, pwaBackgroundEventHistory, webVersionText,
+  clearBrowserCaches, refreshStorageEstimate, storageEstimateText, webVersionText,
   nodeControlUrl, nodeUrlList, nodeEntrySummaries, nodeSettingsSummaryText, nodeTokenStorageText, nodeTokenCount, nodeMissingRemoteTokenCount, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake, autoReadReceipts,
   enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,
   autoPublishPreKey, autoNodeSync, autoSelfMailboxSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodeStateFileSecurityText, nodeStateFileSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,

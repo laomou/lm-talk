@@ -354,26 +354,6 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
 
       <section class="home-card">
         <div class="section-title-row">
-          <h3>PWA 状态</h3>
-          <button class="secondary" @click="ctx.refreshPwaStatus">刷新</button>
-          <button class="secondary" @click="ctx.registerPeriodicMailboxSync">注册后台同步</button>
-        </div>
-        <div class="sync-status">
-          <b>版本</b>
-          <small>{{ ctx.webVersionText }}</small>
-        </div>
-        <div class="sync-status">
-          <b>离线缓存</b>
-          <small>{{ ctx.pwaStatusText.value }}</small>
-          <small>{{ ctx.pwaBackgroundCapabilityText.value }}</small>
-          <small>最近后台事件：{{ ctx.pwaLastBackgroundEventText.value }}</small>
-          <small v-if="ctx.pwaBackgroundEventHistory.value.length > 1">后台事件历史：{{ ctx.pwaBackgroundEventHistory.value.slice(0, 5).join('；') }}</small>
-        </div>
-      </section>
-
-
-      <section class="home-card">
-        <div class="section-title-row">
           <h3>完整数据备份</h3>
           <button class="secondary" @click="showDataBackupEditor = !showDataBackupEditor">{{ showDataBackupEditor ? '隐藏备份文本' : '显示备份文本' }}</button>
         </div>
