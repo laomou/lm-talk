@@ -439,7 +439,7 @@ systemctl start lm-node
 
 ### SQLCipher Smoke workflow
 
-`.github/workflows/sqlcipher-smoke.yml` provides a manual GitHub Actions workflow that runs `./scripts/sqlcipher-smoke.sh` and uploads both `sqlcipher-smoke.log` and `sqlcipher-smoke-report.json` as artifacts. Use it to verify bundled SQLCipher builds outside the normal quick CI path.
+`.github/workflows/sqlcipher-smoke.yml` provides a manual GitHub Actions workflow that runs `./scripts/sqlcipher-smoke.sh` plus `./scripts/sqlcipher-deploy-smoke.sh` and uploads `sqlcipher-smoke.log`, `sqlcipher-deploy-smoke.log`, and `sqlcipher-smoke-report.json` as artifacts. Use it to verify bundled SQLCipher builds outside the normal quick CI path.
 
 
 ### SQLCipher deployment smoke
