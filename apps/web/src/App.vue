@@ -384,6 +384,9 @@ type PersistedState = {
   selfSyncGapCount?: number
   lastSelfSyncGapAt?: number
   lastSelfSyncMissingPreviousId?: string
+  lastSelfSyncReceiptStatesSent?: number
+  lastSelfSyncReceiptStatesMerged?: number
+  totalSelfSyncReceiptStatesMerged?: number
   unverifiedIncomingDropCount?: number
   lastUnverifiedIncomingDropAt?: number
   lastUnverifiedIncomingDropFrom?: string
@@ -448,6 +451,9 @@ type PersistedMeta = {
   selfSyncGapCount?: number
   lastSelfSyncGapAt?: number
   lastSelfSyncMissingPreviousId?: string
+  lastSelfSyncReceiptStatesSent?: number
+  lastSelfSyncReceiptStatesMerged?: number
+  totalSelfSyncReceiptStatesMerged?: number
   unverifiedIncomingDropCount?: number
   lastUnverifiedIncomingDropAt?: number
   lastUnverifiedIncomingDropFrom?: string
@@ -689,6 +695,9 @@ const lastSelfSyncSequenceMerged = ref(0)
 const selfSyncGapCount = ref(0)
 const lastSelfSyncGapAt = ref<number | null>(null)
 const lastSelfSyncMissingPreviousId = ref('')
+const lastSelfSyncReceiptStatesSent = ref(0)
+const lastSelfSyncReceiptStatesMerged = ref(0)
+const totalSelfSyncReceiptStatesMerged = ref(0)
 const selfMailboxBackupMergePending = computed(() => {
   const receivedAt = lastSelfMailboxBackupReceivedAt.value ?? 0
   const mergedAt = lastSelfMailboxBackupMergedAt.value ?? 0
@@ -1744,6 +1753,9 @@ function currentPersistedState(): PersistedState {
     selfSyncGapCount: selfSyncGapCount.value || undefined,
     lastSelfSyncGapAt: lastSelfSyncGapAt.value ?? undefined,
     lastSelfSyncMissingPreviousId: lastSelfSyncMissingPreviousId.value || undefined,
+    lastSelfSyncReceiptStatesSent: lastSelfSyncReceiptStatesSent.value || undefined,
+    lastSelfSyncReceiptStatesMerged: lastSelfSyncReceiptStatesMerged.value || undefined,
+    totalSelfSyncReceiptStatesMerged: totalSelfSyncReceiptStatesMerged.value || undefined,
     unverifiedIncomingDropCount: unverifiedIncomingDropCount.value,
     lastUnverifiedIncomingDropAt: lastUnverifiedIncomingDropAt.value ?? undefined,
     lastUnverifiedIncomingDropFrom: lastUnverifiedIncomingDropFrom.value,
@@ -1810,6 +1822,9 @@ function persistedMeta(): PersistedMeta {
     selfSyncGapCount: selfSyncGapCount.value || undefined,
     lastSelfSyncGapAt: lastSelfSyncGapAt.value ?? undefined,
     lastSelfSyncMissingPreviousId: lastSelfSyncMissingPreviousId.value || undefined,
+    lastSelfSyncReceiptStatesSent: lastSelfSyncReceiptStatesSent.value || undefined,
+    lastSelfSyncReceiptStatesMerged: lastSelfSyncReceiptStatesMerged.value || undefined,
+    totalSelfSyncReceiptStatesMerged: totalSelfSyncReceiptStatesMerged.value || undefined,
     unverifiedIncomingDropCount: unverifiedIncomingDropCount.value,
     lastUnverifiedIncomingDropAt: lastUnverifiedIncomingDropAt.value ?? undefined,
     lastUnverifiedIncomingDropFrom: lastUnverifiedIncomingDropFrom.value,
@@ -1979,6 +1994,9 @@ async function writeStateToTables(state: PersistedState) {
   selfSyncGapCount.value = Number(state.selfSyncGapCount ?? 0)
   lastSelfSyncGapAt.value = typeof state.lastSelfSyncGapAt === 'number' ? state.lastSelfSyncGapAt : null
   lastSelfSyncMissingPreviousId.value = state.lastSelfSyncMissingPreviousId ?? ''
+  lastSelfSyncReceiptStatesSent.value = Number(state.lastSelfSyncReceiptStatesSent ?? 0)
+  lastSelfSyncReceiptStatesMerged.value = Number(state.lastSelfSyncReceiptStatesMerged ?? 0)
+  totalSelfSyncReceiptStatesMerged.value = Number(state.totalSelfSyncReceiptStatesMerged ?? 0)
   unverifiedIncomingDropCount.value = Number(state.unverifiedIncomingDropCount ?? 0)
   lastUnverifiedIncomingDropAt.value = typeof state.lastUnverifiedIncomingDropAt === 'number' ? state.lastUnverifiedIncomingDropAt : null
   lastUnverifiedIncomingDropFrom.value = state.lastUnverifiedIncomingDropFrom ?? ''
@@ -2049,6 +2067,9 @@ async function loadStateFromTables(): Promise<boolean> {
   selfSyncGapCount.value = Number(meta.selfSyncGapCount ?? 0)
   lastSelfSyncGapAt.value = typeof meta.lastSelfSyncGapAt === 'number' ? meta.lastSelfSyncGapAt : null
   lastSelfSyncMissingPreviousId.value = meta.lastSelfSyncMissingPreviousId ?? ''
+  lastSelfSyncReceiptStatesSent.value = Number(meta.lastSelfSyncReceiptStatesSent ?? 0)
+  lastSelfSyncReceiptStatesMerged.value = Number(meta.lastSelfSyncReceiptStatesMerged ?? 0)
+  totalSelfSyncReceiptStatesMerged.value = Number(meta.totalSelfSyncReceiptStatesMerged ?? 0)
   unverifiedIncomingDropCount.value = Number(meta.unverifiedIncomingDropCount ?? 0)
   lastUnverifiedIncomingDropAt.value = typeof meta.lastUnverifiedIncomingDropAt === 'number' ? meta.lastUnverifiedIncomingDropAt : null
   lastUnverifiedIncomingDropFrom.value = meta.lastUnverifiedIncomingDropFrom ?? ''
@@ -2242,6 +2263,9 @@ async function clearPersisted() {
   selfSyncGapCount.value = 0
   lastSelfSyncGapAt.value = null
   lastSelfSyncMissingPreviousId.value = ''
+  lastSelfSyncReceiptStatesSent.value = 0
+  lastSelfSyncReceiptStatesMerged.value = 0
+  totalSelfSyncReceiptStatesMerged.value = 0
   unverifiedIncomingDropCount.value = 0
   lastUnverifiedIncomingDropAt.value = null
   lastUnverifiedIncomingDropFrom.value = ''
@@ -2538,6 +2562,8 @@ function applyMessageReceiptSyncItems(items: MessageReceiptSyncItem[] | undefine
 
 function currentSelfSyncPackage(): SelfSyncPackage {
   const sequence = lastSelfSyncSequenceSent.value + 1
+  const messageReceiptStates = currentMessageReceiptSyncItems()
+  lastSelfSyncReceiptStatesSent.value = messageReceiptStates.length
   const pkg: SelfSyncPackage = {
     type: 'lm-self-sync-v1',
     version: 1,
@@ -2549,7 +2575,7 @@ function currentSelfSyncPackage(): SelfSyncPackage {
     identity_public_key: identity.value?.identity_public_key || '',
     from_device_id: myDeviceId.value || undefined,
     contacts: contacts.value,
-    messageReceiptStates: currentMessageReceiptSyncItems(),
+    messageReceiptStates,
     myContactCardText: myContactCardText.value || undefined,
     myDeviceCertJson: myDeviceCertJson.value || undefined,
     myDeviceId: myDeviceId.value || undefined,
@@ -2668,6 +2694,8 @@ function applySelfSyncPackage(pkg: SelfSyncPackage) {
   processedSelfSyncIds.value = [...new Set(processedSelfSyncIds.value)].slice(0, 100)
   contacts.value = mergeContactDeviceAndTrustState(contacts.value, pkg.contacts ?? [])
   const receiptStatesMerged = applyMessageReceiptSyncItems(pkg.messageReceiptStates)
+  lastSelfSyncReceiptStatesMerged.value = receiptStatesMerged
+  totalSelfSyncReceiptStatesMerged.value += receiptStatesMerged
   const ownDeviceCertsChanged = mergeOwnDeviceCertsFromSelfSync(pkg)
   nodeDhtOperationHistory.value = [...new Set([...(pkg.dhtOperationHistory ?? []), ...nodeDhtOperationHistory.value])].slice(0, DHT_OPERATION_HISTORY_MAX_RECORDS)
   unverifiedIncomingDropCount.value = Math.max(unverifiedIncomingDropCount.value, Number(pkg.unverifiedIncomingDropCount ?? 0))
@@ -8862,7 +8890,7 @@ const appContext = {
   autoPublishPreKey, autoNodeSync, autoSelfMailboxSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodeStateFileSecurityText, nodeStateFileSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutMyContactCardUpdateToFriends, fanoutDeviceRevokeToFriends, myDeviceCertJson, myDeviceBackupText,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
-  exportFullDataBackup, pushFullDataBackupToOwnMailbox, pushSelfSyncPackageToOwnMailbox, selfSyncStatusText, processedSelfSyncIds, processedSelfSyncRequestIds, selfSyncMissingRequestRecords, selfSyncRequestSentCount, selfSyncRequestHitCount, selfSyncRequestMissCount, selfSyncRecentPackages, resendLatestSelfSyncPackageToOwnMailbox, clearSelfSyncRecentPackages, lastSelfSyncPushedAt, lastSelfSyncMergedAt, lastSelfSyncSequenceSent, lastSelfSyncSequenceMerged, selfSyncGapCount, lastSelfSyncGapAt, lastSelfSyncMissingPreviousId, clearSelfSyncGapStats, repairSelfSyncGapNow, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, selfMailboxBackupStatusText, selfMailboxBackupMergePending, selfMailboxBackupMergeStatusText, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
+  exportFullDataBackup, pushFullDataBackupToOwnMailbox, pushSelfSyncPackageToOwnMailbox, selfSyncStatusText, processedSelfSyncIds, processedSelfSyncRequestIds, selfSyncMissingRequestRecords, selfSyncRequestSentCount, selfSyncRequestHitCount, selfSyncRequestMissCount, selfSyncRecentPackages, resendLatestSelfSyncPackageToOwnMailbox, clearSelfSyncRecentPackages, lastSelfSyncPushedAt, lastSelfSyncMergedAt, lastSelfSyncSequenceSent, lastSelfSyncSequenceMerged, selfSyncGapCount, lastSelfSyncGapAt, lastSelfSyncMissingPreviousId, lastSelfSyncReceiptStatesSent, lastSelfSyncReceiptStatesMerged, totalSelfSyncReceiptStatesMerged, clearSelfSyncGapStats, repairSelfSyncGapNow, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, selfMailboxBackupStatusText, selfMailboxBackupMergePending, selfMailboxBackupMergeStatusText, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
   addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, friendRequestRateRecords, friendRequestRateSummaryText, clearFriendRequestRateRecords, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
