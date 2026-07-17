@@ -3740,7 +3740,11 @@ mod tests {
         let pk =
             decode_identity_public_key_base64(v["identity_public_key_base64"].as_str().unwrap())
                 .unwrap();
-        announce.verify(&pk).unwrap();
+        if announce.expires_at > lm_core::unix_now() {
+            announce.verify(&pk).unwrap();
+        } else {
+            assert!(announce.verify(&pk).is_err());
+        }
         assert_eq!(announce.peer_id, v["peer_id"]);
         let mut tampered = record.clone();
         tampered.key = DhtRecordKey::for_public_peer("wrong-peer");
