@@ -55,7 +55,7 @@ fi
 
 if [[ "$RUN_FEDERATION" == "1" ]]; then
   echo "== federation validation =="
-  (cd deploy/lm-node-federation && ./run-all.sh)
+  tests/deploy/lm-node-federation/run-all.sh
 else
   echo "== federation validation skipped =="
 fi

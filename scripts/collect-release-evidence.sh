@@ -34,7 +34,10 @@ copy_signing_reports() {
 release_check_present=$(copy_if_exists "$ROOT/release-check.log" "release-check.log")
 fuzz_smoke_present=$(copy_if_exists "$ROOT/fuzz-smoke-report.json" "fuzz-smoke-report.json")
 fuzz_campaign_present=$(copy_if_exists "$ROOT/fuzz-campaign-artifacts/fuzz-campaign-report.json" "fuzz-campaign-report.json")
-federation_present=$(copy_if_exists "$ROOT/deploy/lm-node-federation/federation-report.json" "federation-report.json")
+federation_present=$(copy_if_exists "$ROOT/tests/deploy/lm-node-federation/federation-report.json" "federation-report.json")
+if [[ "$federation_present" != "true" ]]; then
+  federation_present=$(copy_if_exists "$ROOT/deploy/lm-node-federation/federation-report.json" "federation-report.json")
+fi
 sqlcipher_present=$(copy_if_exists "$ROOT/sqlcipher-smoke-report.json" "sqlcipher-smoke-report.json")
 release_asset_verify_present=$(copy_if_exists "$ROOT/release-asset-verify-report.json" "release-asset-verify-report.json")
 risk_register_gate_present=$(copy_if_exists "$ROOT/risk-register-gate.log" "risk-register-gate.log")

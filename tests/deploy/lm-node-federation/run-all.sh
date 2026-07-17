@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPORT_FILE="${LM_NODE_FEDERATION_REPORT:-$ROOT/federation-report.json}"
+TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_ROOT="${LM_NODE_FEDERATION_DEPLOY_DIR:-$(cd "$TEST_ROOT/../../../deploy/lm-node-federation" && pwd)}"
+REPORT_FILE="${LM_NODE_FEDERATION_REPORT:-$TEST_ROOT/federation-report.json}"
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 RESULTS=()
 
@@ -57,12 +58,12 @@ run_step() {
 }
 
 if [[ "${LM_NODE_FEDERATION_SKIP_UP:-0}" != "1" ]]; then
-  run_step "start federation stack" docker compose -f "$ROOT/docker-compose.yml" up -d --build
+  run_step "start federation stack" docker compose -f "$DEPLOY_ROOT/docker-compose.yml" up -d --build
 fi
 
-run_step "basic federation smoke" "$ROOT/smoke-test.sh"
-run_step "chaos federation smoke" "$ROOT/chaos-smoke.sh"
-run_step "load federation smoke" "$ROOT/load-smoke.sh"
+run_step "basic federation smoke" "$TEST_ROOT/smoke-test.sh"
+run_step "chaos federation smoke" "$TEST_ROOT/chaos-smoke.sh"
+run_step "load federation smoke" "$TEST_ROOT/load-smoke.sh"
 
 write_report ok
 

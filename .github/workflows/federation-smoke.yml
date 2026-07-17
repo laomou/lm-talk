@@ -31,9 +31,11 @@ jobs:
           for n in a b c; do
             openssl rand -base64 32 > "secrets/node-$n-token"
             openssl rand -base64 32 > "secrets/state-file-passphrase-$n"
+            openssl rand -base64 32 > "secrets/state-db-passphrase-$n"
           done
           chmod 600 secrets/*
-          ./run-all.sh
+          cd ../..
+          tests/deploy/lm-node-federation/run-all.sh
 
       - name: Upload federation report
         if: always()

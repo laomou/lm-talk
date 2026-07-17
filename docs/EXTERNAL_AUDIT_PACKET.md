@@ -61,10 +61,9 @@ RUN_RELEASE_ASSET_VERIFY=1 RELEASE_TAG_VERIFY=<tag> RELEASE_VERSION=<tag> ./scri
 For federation evidence:
 
 ```bash
-cd deploy/lm-node-federation
-./run-all.sh
-./chaos-smoke.sh
-MESSAGE_COUNT=100 ./load-smoke.sh
+tests/deploy/lm-node-federation/run-all.sh
+tests/deploy/lm-node-federation/chaos-smoke.sh
+MESSAGE_COUNT=100 tests/deploy/lm-node-federation/load-smoke.sh
 ```
 
 Long-running production-readiness campaigns should increase fuzz, chaos, and load durations beyond smoke defaults and archive corpus/crash directories plus JSON reports.

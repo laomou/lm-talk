@@ -11,3 +11,8 @@ lm-node-state.prd.sqlite3-*
 lm-node-state.prd.json
 
 /apps/web/test-results/
+/deploy/lm-node-federation/.docker-data/
+/deploy/lm-node-federation/.docker-run/
+/deploy/lm-node-federation/secrets/
+/deploy/lm-node-federation/federation-report.json
+/tests/deploy/lm-node-federation/federation-report.json

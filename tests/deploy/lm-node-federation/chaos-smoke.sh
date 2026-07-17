@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-COMPOSE=(docker compose -f "$ROOT/docker-compose.yml")
+TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_ROOT="${LM_NODE_FEDERATION_DEPLOY_DIR:-$(cd "$TEST_ROOT/../../../deploy/lm-node-federation" && pwd)}"
+COMPOSE=(docker compose -f "$DEPLOY_ROOT/docker-compose.yml")
 
 node_url() {
   case "$1" in
@@ -13,7 +14,7 @@ node_url() {
   esac
 }
 
-token_for() { tr -d '\n' < "$ROOT/secrets/node-$1-token"; }
+token_for() { tr -d '\n' < "$DEPLOY_ROOT/secrets/node-$1-token"; }
 
 request() {
   local node="$1" path="$2"

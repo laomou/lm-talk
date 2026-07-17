@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_ROOT="${LM_NODE_FEDERATION_DEPLOY_DIR:-$(cd "$TEST_ROOT/../../../deploy/lm-node-federation" && pwd)}"
 
 node_url() {
   case "$1" in
@@ -13,7 +14,7 @@ node_url() {
 }
 
 token_for() {
-  tr -d '\n' < "$ROOT/secrets/node-$1-token"
+  tr -d '\n' < "$DEPLOY_ROOT/secrets/node-$1-token"
 }
 
 request() {
@@ -43,26 +44,26 @@ for node in a b c; do
 done
 
 echo "== publish signed ContactCard DHT record on node-a =="
-IDENTITY_JSON="$(docker compose -f "$ROOT/docker-compose.yml" exec -T node-a /usr/local/bin/lm_node identity --passphrase smoke-pass)"
+IDENTITY_JSON="$(docker compose -f "$DEPLOY_ROOT/docker-compose.yml" exec -T node-a /usr/local/bin/lm_node identity --passphrase smoke-pass)"
 USER_ID="$(json_field user_id "$IDENTITY_JSON")"
 BACKUP_TEXT="$(json_field backup_text "$IDENTITY_JSON")"
 TMP_BACKUP="$(mktemp)"
 printf '%s' "$BACKUP_TEXT" > "$TMP_BACKUP"
-CONTACT_CARD="$(docker compose -f "$ROOT/docker-compose.yml" exec -T node-a /usr/local/bin/lm_node contact-card --backup-file "$TMP_BACKUP" --passphrase smoke-pass --display-name Smoke)"
+CONTACT_CARD="$(docker compose -f "$DEPLOY_ROOT/docker-compose.yml" exec -T node-a /usr/local/bin/lm_node contact-card --backup-file "$TMP_BACKUP" --passphrase smoke-pass --display-name Smoke)"
 KEY_JSON="$(request a "/dht/key?kind=contact-card&value=$USER_ID")"
 echo "$KEY_JSON" | python3 -m json.tool >/dev/null
 KEY="$(json_field key "$KEY_JSON")"
 NOW="$(date +%s)"
-RECORD_JSON="$(python3 -c 'import json,sys; key,value,now=sys.argv[1],sys.argv[2],int(sys.argv[3]); print(json.dumps({"record":{"key":key,"kind":"ContactCard","value":value,"created_at":now,"expires_at":now+3600,"republish_at":now}}))' "$KEY" "$CONTACT_CARD" "$NOW")"
+RECORD_JSON="$(python3 -c 'import json,sys; key,value,now=sys.argv[1],sys.argv[2],int(sys.argv[3]); key_bytes=list(bytes.fromhex(key)); print(json.dumps({"record":{"key":key_bytes,"kind":"ContactCard","value":value,"created_at":now,"expires_at":now+3600,"republish_at":now}}))' "$KEY" "$CONTACT_CARD" "$NOW")"
 post_json a /dht/record "$RECORD_JSON" >/dev/null
 FOUND="$(request a "/dht/find-value?key=$KEY&limit=8&max_peers=8&alpha=3")"
 python3 -c 'import json,sys; body=json.loads(sys.argv[1]); assert body.get("found"), body; assert body.get("record",{}).get("kind") == "ContactCard", body' "$FOUND"
 
 
 echo "== mailbox push on node-a and take from node-b after snapshot =="
-RECIPIENT_JSON="$(docker compose -f "$ROOT/docker-compose.yml" exec -T node-a /usr/local/bin/lm_node identity --passphrase recipient-pass)"
+RECIPIENT_JSON="$(docker compose -f "$DEPLOY_ROOT/docker-compose.yml" exec -T node-a /usr/local/bin/lm_node identity --passphrase recipient-pass)"
 RECIPIENT_USER_ID="$(json_field user_id "$RECIPIENT_JSON")"
-MESSAGE_TEXT="$(docker compose -f "$ROOT/docker-compose.yml" exec -T node-a /usr/local/bin/lm_node mailbox-message --backup-file "$TMP_BACKUP" --passphrase smoke-pass --to-user-id "$RECIPIENT_USER_ID" --kind other --ciphertext federation-smoke)"
+MESSAGE_TEXT="$(docker compose -f "$DEPLOY_ROOT/docker-compose.yml" exec -T node-a /usr/local/bin/lm_node mailbox-message --backup-file "$TMP_BACKUP" --passphrase smoke-pass --to-user-id "$RECIPIENT_USER_ID" --kind other --ciphertext federation-smoke)"
 rm -f "$TMP_BACKUP"
 FROM_PUBLIC_KEY="$(json_field identity_public_key "$IDENTITY_JSON")"
 PUSH_JSON="$(python3 -c 'import json,sys; print(json.dumps({"message_text":sys.argv[1],"from_identity_public_key":sys.argv[2]}))' "$MESSAGE_TEXT" "$FROM_PUBLIC_KEY")"
