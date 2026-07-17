@@ -62,6 +62,14 @@ Use this file as the evidence template for every release candidate. Copy it to a
 | Dependency review | Dependabot / dependency-review status |  |  |
 | Signing / notarization | macOS notarization and Windows signing evidence, if production distribution |  |  |
 | SECURITY.md review | contact/process verified for release branch |  |  |
+| Risk register | `docs/RELEASE_RISK_REGISTER.md` reviewed; Critical/High risks fixed or explicitly accepted |  |  |
+
+## Risk register summary
+
+- Risk register copy/link:
+- Open Critical risks:
+- Open High risks:
+- Accepted Medium/High risks and approvers:
 
 ## Known limitations accepted for this release
 

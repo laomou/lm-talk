@@ -31,6 +31,7 @@ Use this document for the final go/no-go decision of a production release candid
 | macOS notarization evidence |  |  |  |
 | Windows code signing evidence |  |  |  |
 | SECURITY.md review |  |  |  |
+| Completed `docs/RELEASE_RISK_REGISTER.md` review |  |  |  |
 
 ## Protocol freeze sign-off
 
@@ -51,6 +52,7 @@ Use this document for the final go/no-go decision of a production release candid
 | Critical findings remediated |  |  |
 | High findings remediated or explicitly accepted |  |  |
 | Medium/low findings triaged |  |  |
+| Risk register reviewed: no unowned Critical/High risks |  |  |
 | Known metadata leakage accepted |  |  |
 | Strict E2EE downgrade/fallback policy accepted |  |  |
 | SQLCipher deployment evidence accepted |  |  |
@@ -88,3 +90,4 @@ A production release is **NO-GO** if any of the following are missing:
 4. SQLCipher release artifact smoke evidence when state_db is used.
 5. macOS notarization / Windows signing evidence for production desktop/native distribution.
 6. Completed release evidence index.
+7. Completed risk register with no unowned open Critical/High risks.
