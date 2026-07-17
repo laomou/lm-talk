@@ -711,6 +711,37 @@ impl StateDbEncryptionMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct StateDbEncryptionProvider {
+    mode: StateDbEncryptionMode,
+}
+
+impl StateDbEncryptionProvider {
+    fn current() -> Self {
+        Self {
+            mode: state_db_encryption_mode(),
+        }
+    }
+
+    fn new(mode: StateDbEncryptionMode) -> Self {
+        Self { mode }
+    }
+
+    fn mode(self) -> StateDbEncryptionMode {
+        self.mode
+    }
+
+    fn is_database_encrypted(self) -> bool {
+        self.mode.is_database_encrypted()
+    }
+
+    fn apply_to_connection(self, _conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
+        match self.mode {
+            StateDbEncryptionMode::Plain | StateDbEncryptionMode::External => Ok(()),
+        }
+    }
+}
+
 fn normalize_state_db_encryption_mode(
     value: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error>> {
@@ -3202,6 +3233,13 @@ fn save_node_state(path: &str, node: &NativeNode) -> Result<(), Box<dyn std::err
 }
 
 fn open_state_db(path: &str) -> Result<Connection, Box<dyn std::error::Error>> {
+    open_state_db_with_provider(path, StateDbEncryptionProvider::current())
+}
+
+fn open_state_db_with_provider(
+    path: &str,
+    provider: StateDbEncryptionProvider,
+) -> Result<Connection, Box<dyn std::error::Error>> {
     if let Some(parent) = Path::new(path)
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -3209,6 +3247,7 @@ fn open_state_db(path: &str) -> Result<Connection, Box<dyn std::error::Error>> {
         fs::create_dir_all(parent)?;
     }
     let conn = Connection::open(path)?;
+    provider.apply_to_connection(&conn)?;
     init_state_db(&conn)?;
     set_state_db_private_permissions(Path::new(path))?;
     Ok(conn)
@@ -3475,8 +3514,11 @@ fn state_db_stats(path: &str) -> Result<StateDbStats, Box<dyn std::error::Error>
         page_size_bytes,
         freelist_count,
         file_bytes,
-        encryption_mode: state_db_encryption_mode().as_str().to_string(),
-        encrypted: state_db_encryption_mode().is_database_encrypted(),
+        encryption_mode: StateDbEncryptionProvider::current()
+            .mode()
+            .as_str()
+            .to_string(),
+        encrypted: StateDbEncryptionProvider::current().is_database_encrypted(),
         permissions_hardened: true,
     })
 }
@@ -5662,23 +5704,24 @@ mod tests {
         DhtTransportKind, ENCRYPTED_STATE_FILE_PREFIX, LIBP2P_DHT_RPC_PROTOCOL, LogFormat,
         MAX_CONTROL_PEER_RESPONSE_BYTES, MAX_CONTROL_REQUEST_HEADER_LINE_BYTES,
         NodeMaintenanceStats, RateLimitConfig, RateLimiter, ServeControlConfigFile,
-        StateDbEncryptionMode, StateDbStats, StateFileStats, SyncPeerConfig, atomic_write_text,
-        configure_control_client_stream, configure_control_peer_stream, connect_control_peer,
-        control_error_http_response, current_unix_timestamp, decrypt_state_file_text,
-        dht_find_value_with_transport, dht_runner_peer_configs,
-        dht_runner_peer_configs_with_quarantine_count, dial_libp2p_bootstrap_peers,
-        encrypt_state_file_text, handle_control_dht_find_value_run,
+        StateDbEncryptionMode, StateDbEncryptionProvider, StateDbStats, StateFileStats,
+        SyncPeerConfig, atomic_write_text, configure_control_client_stream,
+        configure_control_peer_stream, connect_control_peer, control_error_http_response,
+        current_unix_timestamp, decrypt_state_file_text, dht_find_value_with_transport,
+        dht_runner_peer_configs, dht_runner_peer_configs_with_quarantine_count,
+        dial_libp2p_bootstrap_peers, encrypt_state_file_text, handle_control_dht_find_value_run,
         handle_control_dht_maintenance_run, handle_control_dht_replication_run,
         handle_control_dht_routing_refresh_run, handle_libp2p_dht_rpc_request,
         handle_libp2p_dht_server_event, http_control_request, libp2p_dht_rpc_behaviour,
         libp2p_dht_swarm, load_node_state, load_node_state_db, normalize_state_db_encryption_mode,
-        open_state_db, parse_content_length_and_validate_headers, parse_dht_transport_kind,
-        parse_libp2p_bootstrap_peers, parse_libp2p_dht_peer, parse_log_format, read_secret_file,
-        request_is_authorized, run_dht_replication, run_dht_replication_with_transport,
-        run_dht_routing_refresh, run_dht_routing_refresh_with_transport, save_node_state,
-        save_node_state_db, send_dht_rpc, send_libp2p_dht_rpc_async, state_db_stats,
-        status_for_request_error, status_reason, sync_backoff_delay_seconds,
-        validate_state_db_encryption_requirement, validate_state_file_encryption_requirement,
+        open_state_db, open_state_db_with_provider, parse_content_length_and_validate_headers,
+        parse_dht_transport_kind, parse_libp2p_bootstrap_peers, parse_libp2p_dht_peer,
+        parse_log_format, read_secret_file, request_is_authorized, run_dht_replication,
+        run_dht_replication_with_transport, run_dht_routing_refresh,
+        run_dht_routing_refresh_with_transport, save_node_state, save_node_state_db, send_dht_rpc,
+        send_libp2p_dht_rpc_async, state_db_stats, status_for_request_error, status_reason,
+        sync_backoff_delay_seconds, validate_state_db_encryption_requirement,
+        validate_state_file_encryption_requirement,
     };
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use futures::StreamExt;
@@ -8862,6 +8905,38 @@ connection: close
         assert!(err.to_string().contains("no state_db"));
         let err = normalize_state_db_encryption_mode(Some("sqlcipher".into())).unwrap_err();
         assert!(err.to_string().contains("not supported"));
+    }
+
+    #[test]
+    fn state_db_encryption_provider_models_current_modes() {
+        let plain = StateDbEncryptionProvider::new(StateDbEncryptionMode::Plain);
+        assert_eq!(plain.mode().as_str(), "plain");
+        assert!(!plain.is_database_encrypted());
+        let external = StateDbEncryptionProvider::new(StateDbEncryptionMode::External);
+        assert_eq!(external.mode().as_str(), "external");
+        assert!(!external.is_database_encrypted());
+    }
+
+    #[test]
+    fn open_state_db_uses_encryption_provider_boundary() {
+        let unique = format!("{}-{}", std::process::id(), current_unix_timestamp());
+        let path = std::env::temp_dir().join(format!("lm-node-provider-{unique}.sqlite3"));
+        let conn = open_state_db_with_provider(
+            path.to_str().unwrap(),
+            StateDbEncryptionProvider::new(StateDbEncryptionMode::External),
+        )
+        .unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='meta'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("sqlite3-wal"));
+        let _ = std::fs::remove_file(path.with_extension("sqlite3-shm"));
     }
 
     #[test]
