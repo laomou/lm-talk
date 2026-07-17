@@ -217,6 +217,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let state_db_encryption_mode = install_state_db_encryption_mode_override(
                 optional_arg(&args, "--state-db-encryption-mode")?,
             )?;
+            let state_db_passphrase_from_file = optional_secret_file_arg(
+                &args,
+                "--state-db-passphrase-file",
+                "LM_NODE_STATE_DB_PASSPHRASE_FILE",
+                None,
+            )?;
+            install_state_db_passphrase_override(state_db_passphrase_from_file);
             let state_db_require_encryption = optional_arg(&args, "--state-db-require-encryption")?
                 .or_else(|| env::var("LM_NODE_STATE_DB_REQUIRE_ENCRYPTION").ok())
                 .map(|value| value.parse::<bool>())
@@ -303,6 +310,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 optional_arg(&args, "--state-db-encryption-mode")?
                     .or(file_config.state_db_encryption_mode),
             )?;
+            let state_db_passphrase_from_file = optional_secret_file_arg(
+                &args,
+                "--state-db-passphrase-file",
+                "LM_NODE_STATE_DB_PASSPHRASE_FILE",
+                file_config.state_db_passphrase_file,
+            )?;
+            install_state_db_passphrase_override(state_db_passphrase_from_file);
             let state_db_require_encryption = optional_arg(&args, "--state-db-require-encryption")?
                 .or_else(|| env::var("LM_NODE_STATE_DB_REQUIRE_ENCRYPTION").ok())
                 .map(|value| value.parse::<bool>())
@@ -650,6 +664,14 @@ fn install_state_file_passphrase_override(value: Option<String>) {
     }
 }
 
+fn install_state_db_passphrase_override(value: Option<String>) {
+    if let Some(value) = value {
+        // Safe here because this is called during single-threaded startup before
+        // the control/libp2p worker loops are spawned.
+        unsafe { std::env::set_var("LM_NODE_STATE_DB_PASSPHRASE", value) }
+    }
+}
+
 fn validate_state_file_encryption_requirement(
     required: bool,
     state_file: Option<&str>,
@@ -711,31 +733,46 @@ impl StateDbEncryptionMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct StateDbEncryptionProvider {
     mode: StateDbEncryptionMode,
+    passphrase: Option<String>,
 }
 
 impl StateDbEncryptionProvider {
     fn current() -> Self {
         Self {
             mode: state_db_encryption_mode(),
+            passphrase: env::var("LM_NODE_STATE_DB_PASSPHRASE").ok(),
         }
     }
 
     fn new(mode: StateDbEncryptionMode) -> Self {
-        Self { mode }
+        Self {
+            mode,
+            passphrase: None,
+        }
     }
 
-    fn mode(self) -> StateDbEncryptionMode {
+    fn with_passphrase(mode: StateDbEncryptionMode, passphrase: Option<String>) -> Self {
+        Self { mode, passphrase }
+    }
+
+    fn mode(&self) -> StateDbEncryptionMode {
         self.mode
     }
 
-    fn is_database_encrypted(self) -> bool {
+    fn is_database_encrypted(&self) -> bool {
         self.mode.is_database_encrypted()
     }
 
-    fn apply_to_connection(self, _conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
+    fn has_passphrase(&self) -> bool {
+        self.passphrase
+            .as_deref()
+            .is_some_and(|value| !value.is_empty())
+    }
+
+    fn apply_to_connection(&self, _conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
         match self.mode {
             StateDbEncryptionMode::Plain | StateDbEncryptionMode::External => Ok(()),
         }
@@ -3065,6 +3102,7 @@ struct ServeControlConfigFile {
     state_file_require_encryption: Option<bool>,
     state_db: Option<String>,
     state_db_encryption_mode: Option<String>,
+    state_db_passphrase_file: Option<String>,
     state_db_require_encryption: Option<bool>,
     control_token: Option<String>,
     control_token_file: Option<String>,
@@ -5689,8 +5727,8 @@ Commands:\n  \
 announce --backup-file <file> --passphrase <text> [--peer-id <id>] [--addr <multiaddr,csv>] [--cap <bootstrap,dht,relay,mailbox>]\n  \
 inspect-public --text-file <file> --identity-public-key <base64>\n  \
 run [--peer-id <id>] [--addr <multiaddr>]\n  \
-serve-dht-libp2p [--listen <multiaddr>] [--bootstrap-peer <libp2p://multiaddr|peer_id,csv>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>] [--state-db-encryption-mode <plain|external>] [--state-db-require-encryption <true|false>]\n  \
-serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>] [--state-db-encryption-mode <plain|external>] [--state-db-require-encryption <true|false>] [--control-token <token>] [--control-previous-token <old-token,csv>] [--sync-peer <url,csv>] [--sync-interval-seconds <n>] [--dht-transport <http-control|libp2p>] [--dht-peer-quarantine-consecutive-failures <n>] [--rate-limit-window-seconds <n>] [--rate-limit-max-requests <n>] [--log-format <text|json>] [--mailbox-global-rate-limit-window-seconds <n>] [--mailbox-global-rate-limit-max-messages <n>] [--mailbox-sender-rate-limit-window-seconds <n>] [--mailbox-sender-rate-limit-max-messages <n>]\n"
+serve-dht-libp2p [--listen <multiaddr>] [--bootstrap-peer <libp2p://multiaddr|peer_id,csv>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>] [--state-db-encryption-mode <plain|external>] [--state-db-passphrase-file <file>] [--state-db-require-encryption <true|false>]\n  \
+serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>] [--state-db-encryption-mode <plain|external>] [--state-db-passphrase-file <file>] [--state-db-require-encryption <true|false>] [--control-token <token>] [--control-previous-token <old-token,csv>] [--sync-peer <url,csv>] [--sync-interval-seconds <n>] [--dht-transport <http-control|libp2p>] [--dht-peer-quarantine-consecutive-failures <n>] [--rate-limit-window-seconds <n>] [--rate-limit-max-requests <n>] [--log-format <text|json>] [--mailbox-global-rate-limit-window-seconds <n>] [--mailbox-global-rate-limit-max-messages <n>] [--mailbox-sender-rate-limit-window-seconds <n>] [--mailbox-sender-rate-limit-max-messages <n>]\n"
     );
 }
 
@@ -8915,6 +8953,11 @@ connection: close
         let external = StateDbEncryptionProvider::new(StateDbEncryptionMode::External);
         assert_eq!(external.mode().as_str(), "external");
         assert!(!external.is_database_encrypted());
+        let reserved = StateDbEncryptionProvider::with_passphrase(
+            StateDbEncryptionMode::External,
+            Some("secret".into()),
+        );
+        assert!(reserved.has_passphrase());
     }
 
     #[test]
@@ -8992,6 +9035,7 @@ connection: close
                 "state_file_require_encryption": true,
                 "state_db": "state.sqlite3",
                 "state_db_encryption_mode": "external",
+                "state_db_passphrase_file": "db.secret",
                 "state_db_require_encryption": true,
                 "control_token": "control",
                 "control_token_file": "control.secret",
@@ -9031,6 +9075,10 @@ connection: close
         assert_eq!(config.state_file_require_encryption, Some(true));
         assert_eq!(config.state_db.as_deref(), Some("state.sqlite3"));
         assert_eq!(config.state_db_encryption_mode.as_deref(), Some("external"));
+        assert_eq!(
+            config.state_db_passphrase_file.as_deref(),
+            Some("db.secret")
+        );
         assert_eq!(config.state_db_require_encryption, Some(true));
         assert_eq!(config.control_token.as_deref(), Some("control"));
         assert_eq!(config.control_token_file.as_deref(), Some("control.secret"));
