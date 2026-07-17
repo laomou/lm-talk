@@ -97,7 +97,7 @@ For every release candidate, archive:
 
 - Output of `./scripts/release-check.sh full`.
 - Output/artifact from `./scripts/sqlcipher-smoke.sh`, the manual SQLCipher Smoke workflow, and the release workflow `lm_node-linux-x86_64-sqlcipher-smoke` artifact when SQLCipher state DB encryption is part of the release.
-- Fuzz campaign commands, durations, corpus/crash artifacts, and triage notes.
+- Fuzz campaign commands, durations, corpus/crash artifacts, and triage notes. Use `./scripts/fuzz-campaign.sh` to generate a JSON campaign report plus per-target logs/corpus/artifact directories.
 - Network/load test reports and topology.
 - Security-audit report and remediation notes.
 - Confirmation that `SECURITY.md` contact/process guidance is current for the release branch.
