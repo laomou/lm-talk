@@ -5327,6 +5327,7 @@ function acceptGroupInvite(invite: GroupInviteItem) {
   run('接受群邀请', () => {
     const riskText = groupInviteStrictE2eeRiskText(invite)
     if (riskText) {
+      if (strictE2eePolicyEnabled.value) throw new Error(`严格 E2EE 策略阻止接受风险群邀请：${riskText}`)
       const ok = confirm(`
 ${riskText}
 
