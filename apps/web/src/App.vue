@@ -8851,6 +8851,9 @@ function inspectIncomingFilePackage() {
 async function decryptIncomingFilePackage() {
   await runAsync('解密文件包', async () => {
     if (!activeContact.value) throw new Error('请选择发送者联系人')
+    if (!allowIncomingFromContact(activeContact.value)) {
+      throw new Error(`安全策略阻止解密未核验或已撤销设备联系人文件：${activeContact.value.display_name || activeContact.value.user_id}`)
+    }
     const text = pendingFilePackageText.value.trim() || incomingFilePackageText.value.trim() || filePackageText.value.trim()
     if (!text) throw new Error('请粘贴文件包 JSON')
     ensureUiTextSize('文件包', text, MAX_RTC_TEXT_BYTES)
