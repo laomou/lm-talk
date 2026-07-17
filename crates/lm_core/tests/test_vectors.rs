@@ -1,7 +1,8 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use lm_core::{
     device::DeviceSeed, ContactCard, DeviceCert, file_hash_base64, verify_file_hash, DeviceIdentity, DeviceRevoke, DirectEnvelope, FileChunkEnvelope,
-    FileManifest, FriendRequest, GroupEvent, GroupEventAction, GroupInvite, Identity, IdentityBackupPackage, IdentitySeed, MailboxMessage,
+    FileManifest, FriendRequest, GroupEvent, GroupEventAction, GroupInvite, GroupSenderEnvelope,
+    GroupSenderKeyDistribution, GroupSenderKeyState, Identity, IdentityBackupPackage, IdentitySeed, MailboxMessage,
     MessageReceipt, MessageReceiptKind, PreKeyBundle, RatchetHeader, RatchetRole,
     RatchetSessionState, SignedOneTimePreKeyRecord, normalize_passphrase,
 };
@@ -242,6 +243,40 @@ fn receipt_and_mailbox_vectors_verify() {
 
 
 
+
+#[test]
+fn group_sender_key_vectors_verify() {
+    let v = fixture("group_sender_key_v1.json");
+    let alice_card = ContactCard::from_export_text(v["alice_contact_card_text"].as_str().unwrap()).unwrap();
+    alice_card.verify().unwrap();
+    assert_eq!(alice_card.user_id.to_string(), v["alice_user_id"]);
+
+    let distribution = GroupSenderKeyDistribution::from_export_text(v["distribution_text"].as_str().unwrap()).unwrap();
+    distribution.verify(&alice_card).unwrap();
+    assert_eq!(distribution.group_id.to_string(), v["group_id"]);
+    assert_eq!(distribution.sender_user_id.to_string(), v["alice_user_id"]);
+    assert_eq!(distribution.chain_key, v["initial_chain_key_base64"]);
+    assert_eq!(distribution.counter, v["counter"].as_u64().unwrap() as u32);
+
+    let envelope: GroupSenderEnvelope = serde_json::from_str(v["envelope_json"].as_str().unwrap()).unwrap();
+    assert_eq!(envelope.group_id.to_string(), v["group_id"]);
+    assert_eq!(envelope.sender_user_id.to_string(), v["alice_user_id"]);
+    assert_eq!(envelope.counter, v["counter"].as_u64().unwrap() as u32);
+
+    let mut receiver = GroupSenderKeyState::from_distribution(&distribution, &alice_card).unwrap();
+    let plain = receiver.decrypt(&envelope).unwrap();
+    assert_eq!(plain.text, v["plaintext"]);
+    assert_eq!(receiver.counter, v["receiver_counter_after_decrypt"].as_u64().unwrap() as u32);
+
+    let mut replay_receiver = receiver.clone();
+    assert!(replay_receiver.decrypt(&envelope).is_err());
+
+    let mut tampered = envelope.clone();
+    tampered.ciphertext.push('A');
+    let mut receiver = GroupSenderKeyState::from_distribution(&distribution, &alice_card).unwrap();
+    assert!(receiver.decrypt(&tampered).is_err());
+}
+
 #[test]
 fn group_vectors_verify() {
     let v = fixture("group_v1.json");
@@ -345,6 +380,12 @@ fn vector_text_tamper_is_rejected_for_signed_objects() {
 
 
 
+
+
+    let group_sender = fixture("group_sender_key_v1.json");
+    let alice_card = ContactCard::from_export_text(group_sender["alice_contact_card_text"].as_str().unwrap()).unwrap();
+    let tampered_distribution = mutate_export_text(group_sender["distribution_text"].as_str().unwrap());
+    assert!(GroupSenderKeyDistribution::from_export_text(&tampered_distribution).and_then(|d| d.verify(&alice_card)).is_err());
 
     let group = fixture("group_v1.json");
     let alice_card = ContactCard::from_export_text(group["alice_contact_card_text"].as_str().unwrap()).unwrap();

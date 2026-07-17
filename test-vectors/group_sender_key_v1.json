@@ -1,0 +1,12 @@
+{
+  "alice_contact_card_text": "lm-contact-card-v1:eyJ0eXBlIjoibG0tY29udGFjdC1jYXJkLXYxIiwidmVyc2lvbiI6MSwidXNlcl9pZCI6ImxtMV9zNHlxa2ZjZHhoNHpodXpmM2Z3enlremdhbHoyeHJ2Y3QzZW9pbXh6IiwiZGlzcGxheV9uYW1lIjoiQWxpY2UiLCJpZGVudGl0eV9wdWJsaWNfa2V5IjoiNDJTeUNwYmloUFRqeFZtUlhuaXNZQ2VRRnk0bTRkYmxwOGgzQlVkYnp3az0iLCJ4MjU1MTlfcHVibGljX2tleSI6IjVLaXFHOHpwU1hNanBhYWIrM2FKS0RtbmwzR1lyTER0aUVTRjNkbnFCam89IiwiZGV2aWNlX2NlcnRzIjpbXSwiY3JlYXRlZF9hdCI6MTc4NDI1Njg0NSwiZXhwaXJlc19hdCI6bnVsbCwic2lnbmF0dXJlIjoiTmhLS0xUTTVaZVZBbEM4OEdnQ1RnSVNDQVFoM2x5ZnFHTlRWVldKKzc1WU00SXVMbzFKdVRpYUZVWEw4WHBvUGtIY25uMXg2YjZjOWVhNkNSdUFGQkE9PSJ9",
+  "alice_seed_hex": "0707070707070707070707070707070707070707070707070707070707070707",
+  "alice_user_id": "lm1_s4yqkfcdxh4zhuzf3fwzykzgalz2xrvct3eoimxz",
+  "counter": 0,
+  "distribution_text": "lm-group-sender-key-v1:eyJ0eXBlIjoibG0tZ3JvdXAtc2VuZGVyLWtleS12MSIsInZlcnNpb24iOjEsImdyb3VwX2lkIjoiYWFhYWFhYWEtYmJiYi00Y2NjLThkZGQtZWVlZWVlZWVlZWVlIiwic2VuZGVyX3VzZXJfaWQiOiJsbTFfczR5cWtmY2R4aDR6aHV6ZjNmd3p5a3pnYWx6MnhydmN0M2VvaW14eiIsImNoYWluX2tleSI6IkJRVUZCUVVGQlFVRkJRVUZCUVVGQlFVRkJRVUZCUVVGQlFVRkJRVUZCUVU9IiwiY291bnRlciI6MCwiY3JlYXRlZF9hdCI6MTc4NDI1Njg0NSwic2lnbmF0dXJlIjoidlgveThUNWM1dU5zM0Rpb0xpU2NJOS9ETStGb0RVRGdhd2lYRCs2cjdua1ZkL3pCb01xTzNGS1lvY3pJUks4cjRwaHZrZTBta096MStVVG8xK0VWRFE9PSJ9",
+  "envelope_json": "{\"type\":\"lm-group-sender-envelope-v1\",\"version\":1,\"crypto\":\"sender-key-hkdf-xchacha20poly1305-v1\",\"message_id\":\"c8e774c2-b997-4053-af36-234ea51f34cd\",\"group_id\":\"aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee\",\"sender_user_id\":\"lm1_s4yqkfcdxh4zhuzf3fwzykzgalz2xrvct3eoimxz\",\"counter\":0,\"created_at\":1784256845,\"nonce\":\"zFAf5E+ifwjwzdnfaPV8EtSLpzD9EqGb\",\"ciphertext\":\"/zPL1ber0J/w8SJnZ6ro3CXxK+kUDaY9KHeH3JYOgiGHlAl/0oN1leUe/kL2dj7IqLASO7JhRUfQPGW6Q3KYQ4lEGzClnzZr9itKK41wcRD5K/3aATZC9DynDka9B+SolU99v4oGnHjUQ5tis5Gb/lbJlEQL6Ek/46Q7C6/T9RUHFVex2NgL3SPnfg==\"}",
+  "group_id": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+  "initial_chain_key_base64": "BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+  "plaintext": "hello group",
+  "receiver_counter_after_decrypt": 1
+}

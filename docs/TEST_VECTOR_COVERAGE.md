@@ -18,6 +18,7 @@ This file tracks which protocol objects have stable cross-platform test vectors 
 | `test-vectors/per_device_envelope_v1.json` | per-device envelope v1 outer shape, sealed slot metadata, AAD target binding, legacy fallback slot marker | `apps/web/tests/ui-smoke.spec.ts` | Covered |
 | `test-vectors/file_package_v1.json` | file manifest, encrypted file chunk, decrypt verification, hash verification, ciphertext tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
 | `test-vectors/group_v1.json` | group invite, rename event, add-member event, signature verification, tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
+| `test-vectors/group_sender_key_v1.json` | group sender key distribution, sender envelope, decrypt verification, replay/tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
 | `test-vectors/message_crypto_v1.json` | legacy DirectEnvelope encryption/decryption, conversation id, plaintext, tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
 
 ## Missing stable vectors before protocol freeze
