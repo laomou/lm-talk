@@ -187,6 +187,7 @@ function openGroupDetail(groupId: string) {
                 <b>{{ inv.group_name }}</b>
                 <small>{{ inv.member_user_ids.length }} 人</small>
                 <small>接受后只显示本机收到的新消息，历史消息不会自动同步。</small>
+                <small v-if="ctx.groupInviteStrictE2eeRiskText(inv)" class="danger-text">{{ ctx.groupInviteStrictE2eeRiskText(inv) }}</small>
                 <div class="row compact">
                   <button @click="ctx.acceptGroupInvite(inv)">接受入群</button>
                   <button class="secondary danger" @click="ctx.ignoreGroupInvite(inv)">忽略</button>

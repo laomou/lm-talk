@@ -1236,6 +1236,21 @@ function buildCreateGroupStrictE2eeRiskText(): string {
 
 const createGroupStrictE2eeRiskText = computed(() => buildCreateGroupStrictE2eeRiskText())
 
+function groupInviteStrictE2eeRiskText(invite: GroupInviteItem): string {
+  const reasons: string[] = []
+  if (!strictE2eePolicyEnabled.value) reasons.push('严格 E2EE 策略未完全启用')
+  for (const memberId of invite.member_user_ids) {
+    if (memberId === identity.value?.user_id) continue
+    const contact = contacts.value.find((c) => c.user_id === memberId)
+    if (!contact) { reasons.push(`邀请成员不在联系人中：${memberId}`); continue }
+    if (contact.state !== 'Friend') reasons.push(`邀请成员不是好友：${contact.display_name || contact.user_id}`)
+    if (!contact.fingerprint_verified_at) reasons.push(`邀请成员指纹未核验：${contact.display_name || contact.user_id}`)
+    if (activeContactSealedSlotRiskFor(contact) === 'high') reasons.push(`邀请成员 sealed slot 风险：${contact.display_name || contact.user_id}`)
+    if (contactCardDhtDiscoveryIsStale(contact)) reasons.push(`邀请成员 ContactCard DHT 未刷新：${contact.display_name || contact.user_id}`)
+  }
+  return reasons.length ? `群邀请严格 E2EE 风险：${Array.from(new Set(reasons)).join('；')}` : ''
+}
+
 const fanoutItems = computed(() => {
   try {
     const parsed = JSON.parse(groupFanoutJson.value || '[]') as Array<{ to_user_id: string; envelope: string }>
@@ -5231,6 +5246,14 @@ function addIncomingGroupInvite() {
 
 function acceptGroupInvite(invite: GroupInviteItem) {
   run('接受群邀请', () => {
+    const riskText = groupInviteStrictE2eeRiskText(invite)
+    if (riskText) {
+      const ok = confirm(`
+${riskText}
+
+建议先添加/核验邀请成员并刷新 ContactCard DHT。仍要接受群邀请吗？`)
+      if (!ok) throw new Error('已取消接受群邀请')
+    }
     const group: GroupItem = {
       group_id: invite.group_id,
       name: invite.group_name,
@@ -8928,7 +8951,7 @@ const appContext = {
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
   newGroupName, friendContacts, selectedGroupMembers, createGroup, groups, activeGroupId,
-  selectGroup, activeContact, activeGroup, activeRatchetSession, activeRatchetStatusText, activeContactSealedSlotStatusText, activeContactSealedSlotRiskLevel, activeStrictE2eeSendRiskText, activeSecureSessionOutboxCount, activeGroupMembers, activeGroupWarningText, activeGroupStrictE2eeRiskText, groupStrictE2eeRiskTextFor, createGroupStrictE2eeRiskText, blockReason, blockActiveContact, readReceiptsEnabledFor, setActiveContactReadReceipts,
+  selectGroup, activeContact, activeGroup, activeRatchetSession, activeRatchetStatusText, activeContactSealedSlotStatusText, activeContactSealedSlotRiskLevel, activeStrictE2eeSendRiskText, activeSecureSessionOutboxCount, activeGroupMembers, activeGroupWarningText, activeGroupStrictE2eeRiskText, groupStrictE2eeRiskTextFor, createGroupStrictE2eeRiskText, groupInviteStrictE2eeRiskText, blockReason, blockActiveContact, readReceiptsEnabledFor, setActiveContactReadReceipts,
   unblockActiveContact, removeActiveContact, clearActiveConversation, createFriendRequestForActive, clearActiveFriendRequestError, createInviteForActiveGroup, groupInviteText, groupFanoutJson,
   removeActiveGroup, leaveActiveGroupWithNotice, messages, activeMessages, formatTime, formatDateTime, statusLabel, copyMessageEnvelope, perDeviceEnvelopeTargetCount, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
