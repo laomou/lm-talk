@@ -8791,6 +8791,7 @@ async function createFilePackageForActive(): Promise<boolean> {
   await runAsync('生成文件包', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
     if (activeContact.value.state !== 'Friend') throw new Error('联系人还不是 Friend')
+    requireVerifiedContactForSend(activeContact.value)
     if (!selectedFile.value) throw new Error('请选择文件')
     if (selectedFile.value.size > MAX_FILE_BYTES) throw new Error(`文件过大：当前 Web 端最大 ${formatBytes(MAX_FILE_BYTES)}，暂不支持断点续传`)
     fileTransferPhase.value = '检查空间'
@@ -8916,6 +8917,7 @@ function markReceivedFileDownloaded() {
 function sendFilePackageOverRtc() {
   run('发送文件包', () => {
     if (!activeContact.value) throw new Error('请选择联系人')
+    requireVerifiedContactForSend(activeContact.value)
     if (!filePackageText.value.trim()) throw new Error('请先生成文件包')
     const info = JSON.parse(inspect_file_package(filePackageText.value)) as { manifest: { name: string; size: number } }
     const msg: ChatMessage = {
