@@ -8345,11 +8345,23 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
   }
 
   if (normalizedKind === 'signaloffer') {
+    if (!allowIncomingFromContact(sender)) {
+      const reason = `安全策略阻止接收未核验或已撤销设备联系人 Signal Offer：${sender.display_name || sender.user_id}`
+      appendLog(`⚠️ ${reason}`)
+      persist()
+      return { handled: true, deliveryId, event: 'other', reason }
+    }
     remoteSignalText.value = ciphertext
     appendLog('✅ 已从 mailbox 填入远端 Signal Offer')
     return { handled: true, deliveryId, event: 'secure-session' }
   }
   if (normalizedKind === 'signalanswer') {
+    if (!allowIncomingFromContact(sender)) {
+      const reason = `安全策略阻止接收未核验或已撤销设备联系人 Signal Answer：${sender.display_name || sender.user_id}`
+      appendLog(`⚠️ ${reason}`)
+      persist()
+      return { handled: true, deliveryId, event: 'other', reason }
+    }
     remoteSignalText.value = ciphertext
     appendLog('✅ 已从 mailbox 填入远端 Signal Answer')
     return { handled: true, deliveryId, event: 'secure-session' }
@@ -8405,11 +8417,23 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
       return { handled: true, deliveryId, event: 'file' }
     }
     if (parsed?.type === 'lm-secure-session-response-v1') {
+      if (!allowIncomingFromContact(sender)) {
+        const reason = `安全策略阻止接收未核验或已撤销设备联系人安全会话响应：${sender.display_name || sender.user_id}`
+        appendLog(`⚠️ ${reason}`)
+        persist()
+        return { handled: true, deliveryId, event: 'other', reason }
+      }
       incomingSecureSessionText.value = ciphertext
       applySecureSessionResponseText()
       return { handled: true, deliveryId, event: 'secure-session' }
     }
     if (parsed?.type === 'lm-secure-session-offer-v1') {
+      if (!allowIncomingFromContact(sender)) {
+        const reason = `安全策略阻止接收未核验或已撤销设备联系人安全会话邀请：${sender.display_name || sender.user_id}`
+        appendLog(`⚠️ ${reason}`)
+        persist()
+        return { handled: true, deliveryId, event: 'other', reason }
+      }
       incomingSecureSessionText.value = ciphertext
       applySecureSessionOfferText()
       return { handled: true, deliveryId, event: 'secure-session' }
