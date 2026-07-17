@@ -194,6 +194,19 @@ function onComposerKeydown(e: KeyboardEvent) {
 
     </section>
 
+    <section v-if="ctx.activeContact.value?.state === 'Friend' && ctx.activeStrictE2eeSendRiskText.value" class="chat-notice-panel">
+      <div class="notice-text">
+        <b>发送前严格 E2EE 风险</b>
+        <span>{{ ctx.activeStrictE2eeSendRiskText.value }}</span>
+        <span>建议先在设置中启用“一键严格 E2EE”、核验指纹并刷新 ContactCard DHT。</span>
+      </div>
+      <div class="row compact">
+        <button class="secondary" @click="ctx.enableStrictE2eePolicy">一键严格 E2EE</button>
+        <button class="secondary" @click="ctx.findActiveContactContactCard">刷新 ContactCard</button>
+        <button v-if="!ctx.activeContact.value.fingerprint_verified_at" class="secondary" @click="ctx.showActiveContactFingerprintQr">指纹核验码</button>
+      </div>
+    </section>
+
     <section v-if="ctx.activeContact.value?.state === 'Friend' && ctx.activeContactSealedSlotRiskLevel.value === 'high'" class="chat-notice-panel">
       <div class="notice-text">
         <b>分设备加密降级风险</b>

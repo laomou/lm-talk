@@ -932,6 +932,25 @@ function activeContactSealedSlotRiskFor(contact: ContactItem): 'ok' | 'high' {
 const activeContactSealedSlotStatusText = computed(() => activeContact.value ? contactSealedSlotStatusText(activeContact.value) : '')
 const activeContactSealedSlotRiskLevel = computed(() => activeContact.value ? activeContactSealedSlotRiskFor(activeContact.value) : 'none')
 
+function strictE2eeSendRiskReasons(contact: ContactItem): string[] {
+  const reasons: string[] = []
+  if (!strictE2eePolicyEnabled.value) reasons.push('严格 E2EE 策略未完全启用')
+  if (!safetyPolicy.value.requireVerifiedContactsForSend && !contact.fingerprint_verified_at) reasons.push('未强制发送前核验联系人指纹')
+  if (!safetyPolicy.value.requireSealedPerDeviceSlotsForSend && activeContactSealedSlotRiskFor(contact) === 'high') reasons.push(contactSealedSlotStatusText(contact))
+  if (contactCardDhtDiscoveryIsStale(contact)) reasons.push('ContactCard DHT 发现未刷新，可能缺少最新设备/撤销状态')
+  const ack = contactCardUpdateAckStatusFor(contact)
+  if (ack.pending) reasons.push(`设备证书更新仍有 ${ack.pending} 条待确认`)
+  return Array.from(new Set(reasons))
+}
+
+function contactStrictE2eeSendRiskText(contact: ContactItem | null): string {
+  if (!contact || contact.state !== 'Friend') return ''
+  const reasons = strictE2eeSendRiskReasons(contact)
+  return reasons.length ? `发送前风险提示：${reasons.join('；')}` : ''
+}
+
+const activeStrictE2eeSendRiskText = computed(() => contactStrictE2eeSendRiskText(activeContact.value))
+
 const activeSecureSessionOutboxCount = computed(() => {
   const peerId = activeContact.value?.user_id
   if (!peerId) return 0
@@ -4257,6 +4276,18 @@ function clearRevokedDeviceIncomingDropStats() {
   persist()
 }
 
+async function confirmStrictE2eeSendRiskIfNeeded(contact: ContactItem): Promise<boolean> {
+  const riskText = contactStrictE2eeSendRiskText(contact)
+  if (!riskText) return true
+  return showConfirm(
+    '发送前严格 E2EE 风险提示',
+    `${riskText}
+
+建议先启用“一键严格 E2EE”、核验指纹、刷新 ContactCard DHT，并确认所有活跃设备支持 sealed slot。仍要继续发送吗？`,
+    true,
+  )
+}
+
 async function confirmHighRiskDhtContactIfNeeded(contact: ContactItem): Promise<boolean> {
   if (contact.dht_discovery_risk_level !== 'high') return true
   if (contact.last_dht_discovery_error_kind !== 'signature') return true
@@ -5404,6 +5435,10 @@ async function sendMessage() {
     return
   }
   if (pendingText.trim() && activeContact.value && !activeGroup.value) {
+    if (!(await confirmStrictE2eeSendRiskIfNeeded(activeContact.value))) {
+      appendLog('已取消发送：严格 E2EE 风险未确认')
+      return
+    }
     try {
       requireVerifiedContactForSend(activeContact.value)
     } catch (error) {
@@ -8763,6 +8798,10 @@ function sendFilePackageOverRtc() {
 }
 
 async function sendSelectedFile() {
+  if (activeContact.value && !(await confirmStrictE2eeSendRiskIfNeeded(activeContact.value))) {
+    appendLog('已取消发送文件：严格 E2EE 风险未确认')
+    return
+  }
   if (await createFilePackageForActive()) sendFilePackageOverRtc()
 }
 
@@ -8828,7 +8867,7 @@ const appContext = {
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
   newGroupName, friendContacts, selectedGroupMembers, createGroup, groups, activeGroupId,
-  selectGroup, activeContact, activeGroup, activeRatchetSession, activeRatchetStatusText, activeContactSealedSlotStatusText, activeContactSealedSlotRiskLevel, activeSecureSessionOutboxCount, activeGroupMembers, activeGroupWarningText, blockReason, blockActiveContact, readReceiptsEnabledFor, setActiveContactReadReceipts,
+  selectGroup, activeContact, activeGroup, activeRatchetSession, activeRatchetStatusText, activeContactSealedSlotStatusText, activeContactSealedSlotRiskLevel, activeStrictE2eeSendRiskText, activeSecureSessionOutboxCount, activeGroupMembers, activeGroupWarningText, blockReason, blockActiveContact, readReceiptsEnabledFor, setActiveContactReadReceipts,
   unblockActiveContact, removeActiveContact, clearActiveConversation, createFriendRequestForActive, clearActiveFriendRequestError, createInviteForActiveGroup, groupInviteText, groupFanoutJson,
   removeActiveGroup, leaveActiveGroupWithNotice, messages, activeMessages, formatTime, formatDateTime, statusLabel, copyMessageEnvelope, perDeviceEnvelopeTargetCount, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
