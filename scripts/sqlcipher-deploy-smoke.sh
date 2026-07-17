@@ -9,8 +9,29 @@ PORT="${LM_NODE_SQLCIPHER_SMOKE_PORT:-18787}"
 TOKEN="$(openssl rand -base64 24)"
 PASS_FILE="$TMP_DIR/state-db-passphrase"
 DB_FILE="$TMP_DIR/state.sqlite3"
-LOG_FILE="$TMP_DIR/lm-node.log"
+LOG_FILE="${LM_NODE_SQLCIPHER_SMOKE_LOG:-$TMP_DIR/lm-node.log}"
+REPORT_FILE="${LM_NODE_SQLCIPHER_SMOKE_REPORT:-}"
 PID=""
+
+write_report() {
+  local status="$1"
+  [[ -z "$REPORT_FILE" ]] && return 0
+  python3 - <<'PY' "$REPORT_FILE" "$status" "$DB_FILE" "$LOG_FILE"
+import json, pathlib, sys, time
+report_file, status, db_file, log_file = sys.argv[1:5]
+report = {
+    "status": status,
+    "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    "state_db": db_file,
+    "log_file": log_file,
+    "checks": [
+        "serve_control_sqlcipher_state_db_metrics",
+        "serve_control_sqlcipher_wrong_passphrase_rejected",
+    ],
+}
+pathlib.Path(report_file).write_text(json.dumps(report, indent=2), encoding="utf-8")
+PY
+}
 
 cleanup() {
   if [[ -n "${PID:-}" ]] && kill -0 "$PID" >/dev/null 2>&1; then
@@ -19,6 +40,7 @@ cleanup() {
   fi
   rm -rf "$TMP_DIR"
 }
+trap 'write_report failed || true' ERR
 trap cleanup EXIT
 
 printf '%s\n' "$(openssl rand -base64 32)" > "$PASS_FILE"
@@ -94,4 +116,5 @@ if [[ "$wrong_status" == "0" || "$wrong_status" == "124" ]]; then
   exit 1
 fi
 
+write_report ok
 echo "== sqlcipher deploy smoke ok =="

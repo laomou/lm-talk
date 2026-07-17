@@ -97,7 +97,19 @@ jobs:
         shell: bash
         env:
           LM_NODE_SQLCIPHER_BIN: target/${{ matrix.target }}/release/lm_node
+          LM_NODE_SQLCIPHER_SMOKE_LOG: sqlcipher-release-smoke.log
+          LM_NODE_SQLCIPHER_SMOKE_REPORT: sqlcipher-release-smoke-report.json
         run: ./scripts/sqlcipher-deploy-smoke.sh
+
+      - name: Upload SQLCipher release smoke report
+        if: ${{ matrix.package_name == 'lm_node-linux-x86_64-sqlcipher' && always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.package_name }}-smoke
+          path: |
+            sqlcipher-release-smoke.log
+            sqlcipher-release-smoke-report.json
+          if-no-files-found: warn
 
       - name: Package native node
         run: >-
