@@ -283,7 +283,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
         <div class="sync-status">
           <b>运行环境</b>
           <small>{{ ctx.runtimeStatusText.value }}</small>
-          <small>{{ ctx.notificationRuntimePolicyText.value }}</small>
+          <small>{{ ctx.inAppRuntimePolicyText.value }}</small>
         </div>
         <div class="sync-status">
           <b>PreKey</b>
@@ -303,9 +303,8 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
         </div>
         <small>清除公开原文只移除节点返回和 selected record 等临时文本；清除会话原文只移除 Offer/Response 输入输出文本，不删除已建立会话。</small>
         <div class="row compact">
-          <button class="secondary" @click="ctx.enableNotifications">开启通知</button>
           <button class="secondary" @click="ctx.refreshRuntimeStatus">刷新状态</button>
-          <small class="sync-note">通知：{{ ctx.notificationPermission.value || '未知' }}</small>
+          <small class="sync-note">提示：仅页面内提示、红点和日志</small>
         </div>
       </section>
 

@@ -661,16 +661,11 @@ const CONTACT_CARD_DHT_FRESH_MS = 7 * 24 * 60 * 60 * 1000
 const contactCardUpdateFanoutRecords = ref<ContactCardUpdateFanoutRecord[]>([])
 let outboxRetryTimer: number | undefined
 let lastDeliveryError = ''
-const notificationPermission = ref(typeof Notification !== 'undefined' ? Notification.permission : 'unsupported')
 const runtimeStatusText = ref('尚未检查')
-const notificationRuntimePolicyText = computed(() => {
-  const permission = notificationPermission.value || 'unknown'
-  if (permission === 'unsupported') return '当前浏览器不支持 Web Notification；后台只能在页面恢复前台后同步。'
-  if (permission === 'denied') return '通知权限已被拒绝；请在浏览器站点设置中重新允许。后台页面可能被暂停，切回前台会触发收取。'
-  if (permission === 'default') return '通知权限尚未开启；只会在页面前台或切回前台后显示同步结果。'
-  const visibility = document.visibilityState === 'visible' ? '前台不弹系统通知' : '后台收到新内容会尝试系统通知'
+const inAppRuntimePolicyText = computed(() => {
+  const visibility = document.visibilityState === 'visible' ? '前台可见' : '后台可能被浏览器暂停'
   const mailbox = autoMailboxTake.value ? '自动收取已开启，切回前台最多 30 秒触发一次' : '自动收取已关闭，需要手动同步'
-  return `${visibility}；${mailbox}；浏览器可在省电/后台时暂停定时器。`
+  return `${visibility}；${mailbox}；只使用页面内提示、红点和日志，不请求系统通知权限。`
 })
 const activePeerId = ref('')
 const activeGroupId = ref('')
@@ -1298,25 +1293,6 @@ function toast(text: string, kind: ToastKind = 'info') {
   window.setTimeout(() => {
     toasts.value = toasts.value.filter((item) => item.id !== id)
   }, 2800)
-}
-
-async function enableNotifications() {
-  if (typeof Notification === 'undefined') throw new Error('当前浏览器不支持通知')
-  if (Notification.permission === 'granted') {
-    notificationPermission.value = 'granted'
-    return
-  }
-  const permission = await Notification.requestPermission()
-  notificationPermission.value = permission
-  if (permission !== 'granted') throw new Error('通知权限未开启')
-}
-
-function notifyIfAllowed(title: string, body: string) {
-  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
-  if (document.visibilityState === 'visible') return
-  try {
-    new Notification(title, { body })
-  } catch {}
 }
 
 async function refreshRuntimeStatus() {
@@ -3066,7 +3042,7 @@ async function syncNow() {
   } catch (e) {
     const message = userFacingError(e)
     appendLog(`❌ 消息同步失败：${message}`)
-    notifyIfAllowed('LM Talk 同步失败', message)
+    toast(`消息同步失败：${message}`, 'error')
     throw e
   }
 }
@@ -8223,7 +8199,7 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
   return { handled: false, deliveryId, reason }
 }
 
-function mailboxNotificationText(events: MailboxEventKind[]): string {
+function mailboxEventSummaryText(events: MailboxEventKind[]): string {
   const count = (kind: MailboxEventKind) => events.filter((event) => event === kind).length
   const parts = [
     ['消息', count('message')],
@@ -8367,7 +8343,7 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
   mailboxInboxErrorText.value = failureReasons.slice(0, 3).join('\n')
   mailboxFailureSummaryText.value = summarizeMailboxFailures(failureReasons)
   appendLog(`mailbox 自动处理完成：${mailboxInboxStatus.value}`)
-  if (events.length > 0) notifyIfAllowed('LM Talk 收到新内容', mailboxNotificationText(events))
+  if (events.length > 0) toast(`收到新内容：${mailboxEventSummaryText(events)}`, 'success')
   persist()
   return ackIds
 }
@@ -8499,7 +8475,7 @@ async function takeMailboxFromNode() {
       const moreText = hasMoreAfterMaxPages ? '，仍有更多，请再次同步' : ''
       mailboxInboxStatus.value = `${mailboxInboxStatus.value}，分页 ${pages.length}，已 ack ${totalAcked}${moreText}`
       appendLog(`mailbox 分页收取完成：${totalMessages} 条，分页 ${pages.length}，ack ${totalAcked}${moreText}`)
-      if (hasMoreAfterMaxPages) notifyIfAllowed('LM Talk Mailbox 仍有待收取内容', '本次同步已达到分页上限，请再次同步继续收取。')
+      if (hasMoreAfterMaxPages) toast('Mailbox 仍有待收取内容：本次同步已达到分页上限，请再次同步继续收取。', 'warning')
       persist()
     }
   })
@@ -8843,7 +8819,7 @@ const appContext = {
   goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, webVersionText,
   nodeControlUrl, nodeUrlList, nodeEntrySummaries, nodeSettingsSummaryText, nodeTokenStorageText, nodeTokenCount, nodeMissingRemoteTokenCount, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake, autoReadReceipts,
-  enableNotifications, notificationPermission, runtimeStatusText, notificationRuntimePolicyText, refreshRuntimeStatus,
+  runtimeStatusText, inAppRuntimePolicyText, refreshRuntimeStatus,
   autoPublishPreKey, autoNodeSync, autoSelfMailboxSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodeStateFileSecurityText, nodeStateFileSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutMyContactCardUpdateToFriends, fanoutDeviceRevokeToFriends, myDeviceCertJson, myDeviceBackupText,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
