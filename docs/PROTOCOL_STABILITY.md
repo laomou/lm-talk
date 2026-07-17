@@ -107,6 +107,20 @@ Current user-visible errors are not yet a stable numeric error-code API. Until e
 - Node HTTP endpoints should continue using stable status classes: `400` invalid input, `401` unauthorized, `413` payload too large, `429` rate limited, `5xx` server failures.
 - Release candidates must document any changed error text that Web UI depends on.
 
+## Error text dependencies
+
+The protocol does not yet expose stable numeric application error codes. The following text dependencies are known and must be reviewed before changing them:
+
+| Area | Dependency | Current guard |
+| --- | --- | --- |
+| `state_db` encryption | Tests and release evidence look for `encryption_mode is plain`, `SQLCipher provider requested`, and `state_db_encrypted` metrics. | `lm_node` tests and SQLCipher smoke scripts. |
+| `state_file` encryption | Tests expect fail-closed messages for missing passphrase and plaintext existing state file. | `lm_node` tests. |
+| DHT discovery classification | Web classifies errors containing `过期`, `验签`, `签名`, `signature`, `未找到`, `not found`, `record`, `格式`, `invalid`, `超时`, `timeout`, `failed to fetch`. | Web diagnostics/backoff logic. |
+| Strict E2EE / sealed slots | Web user-facing errors mention missing verified fingerprint, missing active devices, missing `device_box_public_key`, non-sealed inbound slots, and per-device envelope signature failures. | Web E2E and manual policy flows. |
+| Mailbox receipts | ContactCard update ACK and message receipt flows depend on `lm-message-receipt-v1:` parsing and delivery/read kind strings. | Core/Web tests. |
+
+Changing these strings is allowed only with corresponding test updates and release notes. A future stable release should replace user-visible text matching with structured error codes.
+
 ## Deprecation policy
 
 - Legacy DirectEnvelope and placeholder per-device slots are compatibility paths.
@@ -122,6 +136,6 @@ Before declaring protocol stability for a production release:
 - [x] DHT record kind list and key derivation namespaces are frozen for the release.
 - [x] Mailbox kind mapping and fallback-to-Other behavior are documented.
 - [x] ContactCard/DeviceCert merge and revocation policy has interop tests.
-- [ ] PreKey rotation/consumption policy has interop tests.
+- [x] PreKey rotation/consumption policy has interop tests.
 - [ ] Error-code/text dependencies in Web and node tests are documented.
 - [ ] Release evidence index links fuzz, federation, SQLCipher, and audit artifacts.
