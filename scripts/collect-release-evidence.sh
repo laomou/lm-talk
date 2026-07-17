@@ -28,7 +28,7 @@ risk_register_gate_present=$(copy_if_exists "$ROOT/risk-register-gate.log" "risk
 
 python3 - <<'PY' "$OUT_DIR/release-evidence-index.json" "$VERSION" "$COMMIT" "$STARTED_AT" \
   "$release_check_present" "$fuzz_smoke_present" "$fuzz_campaign_present" "$federation_present" "$sqlcipher_present" "$release_asset_verify_present" "$risk_register_gate_present"
-import json, sys
+import json, pathlib, sys
 (out, version, commit, started_at, release_check, fuzz_smoke, fuzz_campaign, federation, sqlcipher, release_asset_verify, risk_register_gate) = sys.argv[1:]
 checks = {
     "release_check_log_present": release_check == "true",
@@ -40,6 +40,23 @@ checks = {
     "risk_register_gate_log_present": risk_register_gate == "true",
 }
 missing = [name for name, ok in checks.items() if not ok]
+risk_gate_status = "missing"
+risk_gate_issue_count = None
+risk_gate_log = pathlib.Path(out).with_name("risk-register-gate.log")
+if risk_gate_log.exists():
+    text = risk_gate_log.read_text(encoding="utf-8", errors="replace")
+    for line in text.splitlines():
+        if line.startswith("status="):
+            risk_gate_status = line.split("=", 1)[1].strip() or "unknown"
+            break
+    if risk_gate_status == "missing":
+        risk_gate_status = "unknown"
+    risk_gate_issue_count = sum(1 for line in text.splitlines() if line.startswith("- RISK-"))
+production_gate = {
+    "risk_register_gate_status": risk_gate_status,
+    "risk_register_gate_issue_count": risk_gate_issue_count,
+    "risk_register_production_ready": risk_gate_status == "ok",
+}
 report = {
     "version": version,
     "commit": commit,
@@ -47,6 +64,7 @@ report = {
     "status": "complete" if not missing else "incomplete",
     "checks": checks,
     "missing": missing,
+    "production_gate": production_gate,
     "notes": "This index only records local artifacts found at collection time. Fill docs/RELEASE_EVIDENCE.md with links to CI artifacts, release assets, audits, and manual approvals before claiming production readiness.",
 }
 with open(out, "w", encoding="utf-8") as f:
