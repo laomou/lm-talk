@@ -24,11 +24,17 @@ trap cleanup EXIT
 printf '%s\n' "$(openssl rand -base64 32)" > "$PASS_FILE"
 chmod 600 "$PASS_FILE"
 
-echo "== build SQLCipher-enabled lm_node =="
-cargo build -p lm_node --features sqlcipher
+BIN="${LM_NODE_SQLCIPHER_BIN:-}"
+if [[ -z "$BIN" ]]; then
+  echo "== build SQLCipher-enabled lm_node =="
+  cargo build -p lm_node --features sqlcipher
+  BIN="./target/debug/lm_node"
+else
+  echo "== use SQLCipher-enabled lm_node: $BIN =="
+fi
 
 echo "== start serve-control with sqlcipher state_db =="
-./target/debug/lm_node serve-control \
+"$BIN" serve-control \
   --bind "127.0.0.1:$PORT" \
   --peer-id sqlcipher-smoke-node \
   --state-db "$DB_FILE" \
@@ -71,7 +77,7 @@ WRONG_PASS_FILE="$TMP_DIR/wrong-passphrase"
 printf '%s\n' wrong-passphrase > "$WRONG_PASS_FILE"
 chmod 600 "$WRONG_PASS_FILE"
 set +e
-timeout 5s ./target/debug/lm_node serve-control \
+timeout 5s "$BIN" serve-control \
   --bind "127.0.0.1:$((PORT + 1))" \
   --peer-id sqlcipher-smoke-wrong \
   --state-db "$DB_FILE" \

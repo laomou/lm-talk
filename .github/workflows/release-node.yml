@@ -92,6 +92,13 @@ jobs:
           "$BIN" > lm_node_help.txt 2>&1
           grep -q "LM Talk" lm_node_help.txt
 
+      - name: Smoke test SQLCipher release binary
+        if: ${{ matrix.package_name == 'lm_node-linux-x86_64-sqlcipher' }}
+        shell: bash
+        env:
+          LM_NODE_SQLCIPHER_BIN: target/${{ matrix.target }}/release/lm_node
+        run: ./scripts/sqlcipher-deploy-smoke.sh
+
       - name: Package native node
         run: >-
           python scripts/package-node-release.py
