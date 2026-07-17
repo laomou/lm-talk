@@ -70,7 +70,9 @@ fi
 
 if [[ "$RUN_RISK_REGISTER_GATE" == "1" ]]; then
   echo "== risk register gate report =="
-  RISK_REGISTER_GATE_MODE=report ./scripts/risk-register-gate.sh 2>&1 | tee "$ROOT/risk-register-gate.log"
+  RISK_REGISTER_GATE_MODE=report \
+    RISK_REGISTER_GATE_REPORT="$ROOT/risk-register-gate-report.json" \
+    ./scripts/risk-register-gate.sh 2>&1 | tee "$ROOT/risk-register-gate.log"
 else
   echo "== risk register gate skipped =="
 fi

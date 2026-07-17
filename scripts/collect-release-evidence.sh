@@ -25,11 +25,12 @@ federation_present=$(copy_if_exists "$ROOT/deploy/lm-node-federation/federation-
 sqlcipher_present=$(copy_if_exists "$ROOT/sqlcipher-smoke-report.json" "sqlcipher-smoke-report.json")
 release_asset_verify_present=$(copy_if_exists "$ROOT/release-asset-verify-report.json" "release-asset-verify-report.json")
 risk_register_gate_present=$(copy_if_exists "$ROOT/risk-register-gate.log" "risk-register-gate.log")
+risk_register_gate_report_present=$(copy_if_exists "$ROOT/risk-register-gate-report.json" "risk-register-gate-report.json")
 
 python3 - <<'PY' "$OUT_DIR/release-evidence-index.json" "$VERSION" "$COMMIT" "$STARTED_AT" \
-  "$release_check_present" "$fuzz_smoke_present" "$fuzz_campaign_present" "$federation_present" "$sqlcipher_present" "$release_asset_verify_present" "$risk_register_gate_present"
+  "$release_check_present" "$fuzz_smoke_present" "$fuzz_campaign_present" "$federation_present" "$sqlcipher_present" "$release_asset_verify_present" "$risk_register_gate_present" "$risk_register_gate_report_present"
 import json, pathlib, sys
-(out, version, commit, started_at, release_check, fuzz_smoke, fuzz_campaign, federation, sqlcipher, release_asset_verify, risk_register_gate) = sys.argv[1:]
+(out, version, commit, started_at, release_check, fuzz_smoke, fuzz_campaign, federation, sqlcipher, release_asset_verify, risk_register_gate, risk_register_gate_report) = sys.argv[1:]
 checks = {
     "release_check_log_present": release_check == "true",
     "fuzz_smoke_report_present": fuzz_smoke == "true",
@@ -38,12 +39,20 @@ checks = {
     "sqlcipher_smoke_report_present": sqlcipher == "true",
     "release_asset_verify_report_present": release_asset_verify == "true",
     "risk_register_gate_log_present": risk_register_gate == "true",
+    "risk_register_gate_report_present": risk_register_gate_report == "true",
 }
 missing = [name for name, ok in checks.items() if not ok]
 risk_gate_status = "missing"
 risk_gate_issue_count = None
+risk_gate_counts = None
+risk_gate_report = pathlib.Path(out).with_name("risk-register-gate-report.json")
 risk_gate_log = pathlib.Path(out).with_name("risk-register-gate.log")
-if risk_gate_log.exists():
+if risk_gate_report.exists():
+    parsed = json.loads(risk_gate_report.read_text(encoding="utf-8"))
+    risk_gate_status = parsed.get("status") or "unknown"
+    risk_gate_issue_count = len(parsed.get("issues") or [])
+    risk_gate_counts = parsed.get("counts")
+elif risk_gate_log.exists():
     text = risk_gate_log.read_text(encoding="utf-8", errors="replace")
     for line in text.splitlines():
         if line.startswith("status="):
@@ -55,6 +64,8 @@ if risk_gate_log.exists():
 production_gate = {
     "risk_register_gate_status": risk_gate_status,
     "risk_register_gate_issue_count": risk_gate_issue_count,
+    "risk_register_gate_counts": risk_gate_counts,
+    "risk_register_gate_report_present": risk_register_gate_report == "true",
     "risk_register_production_ready": risk_gate_status == "ok",
 }
 report = {
