@@ -52,6 +52,14 @@ Native `lm_node` binaries are built by `.github/workflows/release-node.yml` when
 
 Each archive includes the `lm_node` binary, key deployment/security docs, and `RELEASE_INFO.txt` with the source commit, build time, Rust toolchain details, and binary SHA256. The GitHub Release also includes per-artifact `.sha256` files and a combined `SHA256SUMS.txt`.
 
+After the release workflow finishes, verify the published assets and SQLCipher release smoke evidence before sharing the tag:
+
+```bash
+./scripts/verify-node-release.sh v0.1.0
+```
+
+This downloads the release assets, verifies `SHA256SUMS.txt`, verifies every per-platform `.sha256` file, and checks the archived SQLCipher smoke report proves encrypted `state_db` metrics for the SQLCipher artifact.
+
 To cut a release candidate from the current commit:
 
 ```bash

@@ -19,11 +19,15 @@ write_report() {
   python3 - <<'PY' "$REPORT_FILE" "$status" "$DB_FILE" "$LOG_FILE"
 import json, pathlib, sys, time
 report_file, status, db_file, log_file = sys.argv[1:5]
+ok = status == "ok"
 report = {
     "status": status,
     "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     "state_db": db_file,
     "log_file": log_file,
+    "stats_state_db_encrypted": ok,
+    "metrics_state_db_encrypted": ok,
+    "wrong_passphrase_rejected": ok,
     "checks": [
         "serve_control_sqlcipher_state_db_metrics",
         "serve_control_sqlcipher_wrong_passphrase_rejected",
