@@ -13,6 +13,7 @@ This file tracks which protocol objects have stable cross-platform test vectors 
 | `test-vectors/device_v1.json` | deterministic device seed, device cert JSON, device box public key, device revoke text, signature verification, tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
 | `test-vectors/receipt_mailbox_v1.json` | delivered/read message receipts and signed mailbox message, signature verification, parsed fields, tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
 | `test-vectors/prekey_v1.json` | PreKey bundle, signed one-time-prekey records, key IDs, signature verification, tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
+| `test-vectors/ratchet_v1.json` | deterministic shared secret, ratchet initial keys, first sending/receiving message key, exported states, replay rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
 | `test-vectors/message_crypto_v1.json` | legacy DirectEnvelope encryption/decryption, conversation id, plaintext, tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
 
 ## Missing stable vectors before protocol freeze
@@ -25,7 +26,6 @@ These objects have unit/e2e coverage but do not yet have committed cross-platfor
 | File package | encrypted file package, manifest, chunk decrypt, tamper rejection | Medium |
 | Group invite/event | invite text, group event text, policy transition, signature verification | Medium |
 | Group sender key distribution | distribution text, sender key state import/export, sender envelope decrypt | Medium |
-| Ratchet session/envelope | deterministic shared secret/session state, encrypt/decrypt, skipped key behavior | High |
 | Per-device envelope v1 | signed outer envelope, sealed slot metadata, slot open with device backup, fallback rejection in strict mode | High |
 | Self-sync package/request | signed `lm-self-sync-v1`, request package, sequence/gap fields, signature verification | Medium |
 | ContactCard DHT record | DHT `ContactCard` record key/value fixture and verification | Medium |

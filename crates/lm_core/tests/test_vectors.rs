@@ -1,7 +1,8 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use lm_core::{
     device::DeviceSeed, ContactCard, DeviceCert, DeviceIdentity, DeviceRevoke, DirectEnvelope, FriendRequest, Identity, IdentityBackupPackage,
-    IdentitySeed, MailboxMessage, MessageReceipt, MessageReceiptKind, PreKeyBundle, SignedOneTimePreKeyRecord, normalize_passphrase,
+    IdentitySeed, MailboxMessage, MessageReceipt, MessageReceiptKind, PreKeyBundle, RatchetHeader, RatchetRole, RatchetSessionState, SignedOneTimePreKeyRecord,
+    normalize_passphrase,
 };
 use serde_json::Value;
 
@@ -147,6 +148,52 @@ fn prekey_vectors_verify() {
     }
     let first = SignedOneTimePreKeyRecord::from_export_text(v["first_signed_one_time_prekey_record_text"].as_str().unwrap()).unwrap();
     assert_eq!(first.key_id, v["first_one_time_prekey_id"].as_u64().unwrap() as u32);
+}
+
+
+#[test]
+fn ratchet_vectors_verify() {
+    let v = fixture("ratchet_v1.json");
+    let alice = identity(7);
+    let bob = identity(8);
+    assert_eq!(v["alice_user_id"], alice.user_id().to_string());
+    assert_eq!(v["bob_user_id"], bob.user_id().to_string());
+    let shared: [u8; 32] = BASE64
+        .decode(v["shared_secret_base64"].as_str().unwrap())
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let alice_private: [u8; 32] = BASE64
+        .decode(v["alice_ratchet_private_key_base64"].as_str().unwrap())
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let bob_public: [u8; 32] = BASE64
+        .decode(v["bob_ratchet_public_key_base64"].as_str().unwrap())
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let mut alice_state = RatchetSessionState::from_shared_secret_with_keys(
+        alice.user_id().clone(),
+        bob.user_id().clone(),
+        RatchetRole::Initiator,
+        &shared,
+        &alice_private,
+        &bob_public,
+    )
+    .unwrap();
+    let sent = alice_state.next_sending_key().unwrap();
+    assert_eq!(sent.message_key, v["message_key_base64"]);
+    assert_eq!(sent.message_key, v["received_message_key_base64"]);
+    assert_eq!(sent.header.message_number, 0);
+    assert_eq!(sent.header.session_id, v["header"]["session_id"]);
+    assert_eq!(alice_state.to_export_text().unwrap(), v["alice_state_text_after_send"]);
+
+    let bob_state = RatchetSessionState::from_export_text(v["bob_state_text_after_receive"].as_str().unwrap()).unwrap();
+    assert_eq!(bob_state.recv_count, 1);
+    let header: RatchetHeader = serde_json::from_value(v["header"].clone()).unwrap();
+    let replay = bob_state.clone().next_receiving_key(&header);
+    assert!(replay.is_err(), "restored state should reject already-received header");
 }
 
 #[test]
