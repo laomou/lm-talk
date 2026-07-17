@@ -359,6 +359,23 @@ function openGroupDetail(groupId: string) {
               <span v-for="m in ctx.activeGroupMembers.value" :key="m.user_id">{{ m.display_name || m.user_id }}</span>
             </div>
           </section>
+          <section v-if="ctx.activeGroupStrictE2eeRiskText.value" class="home-card">
+            <div class="section-title-row">
+              <h3>群聊严格 E2EE 修复向导</h3>
+              <button class="secondary" @click="ctx.repairStrictE2eeBlockers">批量处理阻塞</button>
+            </div>
+            <div class="outbox-list">
+              <div v-for="m in ctx.activeGroupMembers.value" :key="`strict-${m.user_id}`" class="outbox-row">
+                <b>{{ m.display_name || m.user_id }}</b>
+                <small :class="{ 'danger-text': ctx.contactStrictE2eeRiskLevel(m) === 'high' }">{{ ctx.contactStrictE2eeStatusText(m) }}</small>
+                <div class="row compact">
+                  <button class="secondary" @click="ctx.openStrictE2eeReadinessIssue({ user_id: m.user_id, issue_kind: 'fingerprint' })">核验指纹</button>
+                  <button class="secondary" @click="ctx.openStrictE2eeReadinessIssue({ user_id: m.user_id, issue_kind: 'contact-card-dht' })">刷新 ContactCard</button>
+                  <button class="secondary" @click="ctx.openStrictE2eeReadinessIssue({ user_id: m.user_id, issue_kind: 'sealed-slot' })">修复 sealed slot</button>
+                </div>
+              </div>
+            </div>
+          </section>
           <section class="home-card">
             <h3>最近群事件</h3>
             <div v-if="ctx.activeGroup.value.last_event_error" class="group-event-summary">
