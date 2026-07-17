@@ -129,6 +129,7 @@ async function runDiagnostics() {
       outbound_messages_with_mailbox_delivery_id: props.ctx.messages.value.filter((m: any) => m.direction === 'out' && m.mailbox_delivery_id).length,
       last_self_sync_receipt_states_merged: props.ctx.lastSelfSyncReceiptStatesMerged.value,
       total_self_sync_receipt_states_merged: props.ctx.totalSelfSyncReceiptStatesMerged.value,
+      last_self_sync_outbox_summary: props.ctx.lastSelfSyncOutboxSummary.value,
       full_data_backup_freshness: props.ctx.fullDataBackupFreshnessText.value,
       full_data_backup_freshness_level: props.ctx.fullDataBackupFreshnessLevel.value,
     },
