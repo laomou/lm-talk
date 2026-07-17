@@ -341,6 +341,8 @@ test('登录注册、主界面和诊断页是产品化 UI', async ({ page }) => 
   await page.goto('/#/me')
   await expect(page.getByRole('button', { name: '立即同步' })).toBeVisible()
   await expect(page.getByText('同步状态')).toBeVisible()
+  await expect(page.getByRole('button', { name: '复制预检报告' })).toBeVisible()
+  await expect(page.getByText('严格 E2EE 策略')).toBeVisible()
   await expect(page.getByRole('button', { name: '诊断工具' })).toBeVisible()
   await expect(page.locator('.app-shell')).not.toContainText('调试页面')
   await expect(page.locator('.app-shell')).not.toContainText('开发协议工具')

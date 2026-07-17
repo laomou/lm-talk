@@ -402,6 +402,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
           <h3>本地安全策略</h3>
           <div class="row compact">
             <button class="secondary" @click="ctx.enableStrictE2eePolicy">一键严格 E2EE</button>
+            <button class="secondary" @click="ctx.copyStrictE2eeReadinessReport">复制预检报告</button>
             <button class="secondary" @click="ctx.saveSafetyPolicy">保存</button>
           </div>
         </div>
