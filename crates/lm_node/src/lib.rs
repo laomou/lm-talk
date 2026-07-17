@@ -3700,6 +3700,14 @@ mod tests {
     use super::*;
     use lm_core::MailboxMessageKind;
 
+
+    fn fixture(name: &str) -> serde_json::Value {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../test-vectors")
+            .join(name);
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+    }
+
     #[test]
     fn node_config_creates_verified_announce() {
         let (identity, _) = Identity::create_with_passphrase("node pass").unwrap();
@@ -3715,6 +3723,25 @@ mod tests {
         let announce = config.create_announce(&identity).unwrap();
         announce.verify(&identity.identity_public_key()).unwrap();
         assert_eq!(announce.peer_id, "peer-a");
+    }
+
+
+    #[test]
+    fn contact_card_dht_vector_validates() {
+        let v = fixture("contact_card_dht_v1.json");
+        let user_id = UserId::from_raw(v["user_id"].as_str().unwrap().to_string()).unwrap();
+        assert_eq!(
+            DhtRecordKey::for_contact_card(&user_id).to_hex(),
+            v["dht_key_hex"]
+        );
+        let record: DhtRecord = serde_json::from_str(v["dht_record_json"].as_str().unwrap()).unwrap();
+        assert_eq!(record.kind, DhtRecordKind::ContactCard);
+        assert_eq!(record.key, DhtRecordKey::for_contact_card(&user_id));
+        assert_eq!(record.value, v["contact_card_text"]);
+        record.validate_for_store_at(1_700_000_001).unwrap();
+        let mut tampered = record.clone();
+        tampered.key = DhtRecordKey::for_public_peer("wrong-key");
+        assert!(tampered.validate_for_store_at(1_700_000_001).is_err());
     }
 
     #[test]

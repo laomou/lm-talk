@@ -14,6 +14,7 @@ This file tracks which protocol objects have stable cross-platform test vectors 
 | `test-vectors/receipt_mailbox_v1.json` | delivered/read message receipts and signed mailbox message, signature verification, parsed fields, tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
 | `test-vectors/prekey_v1.json` | PreKey bundle, signed one-time-prekey records, key IDs, signature verification, tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
 | `test-vectors/ratchet_v1.json` | deterministic shared secret, ratchet initial keys, first sending/receiving message key, exported states, replay rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
+| `test-vectors/contact_card_dht_v1.json` | DHT ContactCard key derivation, record JSON, signed ContactCard value, store validation, wrong-key rejection | `crates/lm_node/src/lib.rs` | Covered |
 | `test-vectors/message_crypto_v1.json` | legacy DirectEnvelope encryption/decryption, conversation id, plaintext, tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
 
 ## Missing stable vectors before protocol freeze
@@ -28,7 +29,6 @@ These objects have unit/e2e coverage but do not yet have committed cross-platfor
 | Group sender key distribution | distribution text, sender key state import/export, sender envelope decrypt | Medium |
 | Per-device envelope v1 | signed outer envelope, sealed slot metadata, slot open with device backup, fallback rejection in strict mode | High |
 | Self-sync package/request | signed `lm-self-sync-v1`, request package, sequence/gap fields, signature verification | Medium |
-| ContactCard DHT record | DHT `ContactCard` record key/value fixture and verification | Medium |
 
 ## Acceptance criteria for new vectors
 
