@@ -224,7 +224,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or(false);
             validate_state_db_encryption_requirement(
                 state_db_require_encryption,
-                &state_db_encryption_mode,
+                state_db_encryption_mode,
                 state_db.as_deref(),
             )?;
             let mut node = if let Some(path) = &state_db {
@@ -311,7 +311,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or(false);
             validate_state_db_encryption_requirement(
                 state_db_require_encryption,
-                &state_db_encryption_mode,
+                state_db_encryption_mode,
                 state_db.as_deref(),
             )?;
             let sync_peer_token_direct = optional_arg(&args, "--sync-peer-token")?
@@ -673,45 +673,70 @@ fn validate_state_file_encryption_requirement(
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StateDbEncryptionMode {
+    Plain,
+    External,
+}
+
+impl StateDbEncryptionMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Plain => "plain",
+            Self::External => "external",
+        }
+    }
+
+    fn is_database_encrypted(self) -> bool {
+        false
+    }
+
+    fn parse(value: Option<String>) -> Result<Self, Box<dyn std::error::Error>> {
+        let mode = value
+            .unwrap_or_else(|| "plain".to_string())
+            .trim()
+            .to_ascii_lowercase();
+        match mode.as_str() {
+            "plain" => Ok(Self::Plain),
+            "external" => Ok(Self::External),
+            "sqlcipher" => Err(
+                "state_db_encryption_mode=sqlcipher is reserved but not supported by this build"
+                    .into(),
+            ),
+            _ => Err(format!(
+                "unsupported state_db_encryption_mode: {mode}; expected plain or external"
+            )
+            .into()),
+        }
+    }
+}
+
 fn normalize_state_db_encryption_mode(
     value: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let mode = value
-        .unwrap_or_else(|| "plain".to_string())
-        .trim()
-        .to_ascii_lowercase();
-    match mode.as_str() {
-        "plain" | "external" => Ok(mode),
-        "sqlcipher" => Err(
-            "state_db_encryption_mode=sqlcipher is reserved but not supported by this build".into(),
-        ),
-        _ => Err(format!(
-            "unsupported state_db_encryption_mode: {mode}; expected plain or external"
-        )
-        .into()),
-    }
+    Ok(StateDbEncryptionMode::parse(value)?.as_str().to_string())
 }
 
 fn install_state_db_encryption_mode_override(
     value: Option<String>,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let mode = normalize_state_db_encryption_mode(
+) -> Result<StateDbEncryptionMode, Box<dyn std::error::Error>> {
+    let mode = StateDbEncryptionMode::parse(
         value.or_else(|| env::var("LM_NODE_STATE_DB_ENCRYPTION_MODE").ok()),
     )?;
     // Safe here because this is called during single-threaded startup before
     // the control/libp2p worker loops are spawned.
-    unsafe { std::env::set_var("LM_NODE_STATE_DB_ENCRYPTION_MODE", &mode) };
+    unsafe { std::env::set_var("LM_NODE_STATE_DB_ENCRYPTION_MODE", mode.as_str()) };
     Ok(mode)
 }
 
-fn state_db_encryption_mode() -> String {
-    normalize_state_db_encryption_mode(env::var("LM_NODE_STATE_DB_ENCRYPTION_MODE").ok())
-        .unwrap_or_else(|_| "plain".to_string())
+fn state_db_encryption_mode() -> StateDbEncryptionMode {
+    StateDbEncryptionMode::parse(env::var("LM_NODE_STATE_DB_ENCRYPTION_MODE").ok())
+        .unwrap_or(StateDbEncryptionMode::Plain)
 }
 
 fn validate_state_db_encryption_requirement(
     required: bool,
-    mode: &str,
+    mode: StateDbEncryptionMode,
     state_db: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if !required {
@@ -720,7 +745,7 @@ fn validate_state_db_encryption_requirement(
     if state_db.is_none() {
         return Err("state_db encryption is required but no state_db is configured".into());
     }
-    if mode == "plain" {
+    if mode == StateDbEncryptionMode::Plain {
         Err("state_db encryption is required but encryption_mode is plain; use SQLCipher/equivalent or explicitly configure external encrypted storage".into())
     } else {
         Ok(())
@@ -3450,8 +3475,8 @@ fn state_db_stats(path: &str) -> Result<StateDbStats, Box<dyn std::error::Error>
         page_size_bytes,
         freelist_count,
         file_bytes,
-        encryption_mode: state_db_encryption_mode(),
-        encrypted: state_db_encryption_mode() == "sqlcipher",
+        encryption_mode: state_db_encryption_mode().as_str().to_string(),
+        encrypted: state_db_encryption_mode().is_database_encrypted(),
         permissions_hardened: true,
     })
 }
@@ -5636,12 +5661,13 @@ mod tests {
         DhtReplicationRunStats, DhtRoutingRefreshRunStats, DhtRunnerConfig, DhtTransport,
         DhtTransportKind, ENCRYPTED_STATE_FILE_PREFIX, LIBP2P_DHT_RPC_PROTOCOL, LogFormat,
         MAX_CONTROL_PEER_RESPONSE_BYTES, MAX_CONTROL_REQUEST_HEADER_LINE_BYTES,
-        NodeMaintenanceStats, RateLimitConfig, RateLimiter, ServeControlConfigFile, StateDbStats,
-        StateFileStats, SyncPeerConfig, atomic_write_text, configure_control_client_stream,
-        configure_control_peer_stream, connect_control_peer, control_error_http_response,
-        current_unix_timestamp, decrypt_state_file_text, dht_find_value_with_transport,
-        dht_runner_peer_configs, dht_runner_peer_configs_with_quarantine_count,
-        dial_libp2p_bootstrap_peers, encrypt_state_file_text, handle_control_dht_find_value_run,
+        NodeMaintenanceStats, RateLimitConfig, RateLimiter, ServeControlConfigFile,
+        StateDbEncryptionMode, StateDbStats, StateFileStats, SyncPeerConfig, atomic_write_text,
+        configure_control_client_stream, configure_control_peer_stream, connect_control_peer,
+        control_error_http_response, current_unix_timestamp, decrypt_state_file_text,
+        dht_find_value_with_transport, dht_runner_peer_configs,
+        dht_runner_peer_configs_with_quarantine_count, dial_libp2p_bootstrap_peers,
+        encrypt_state_file_text, handle_control_dht_find_value_run,
         handle_control_dht_maintenance_run, handle_control_dht_replication_run,
         handle_control_dht_routing_refresh_run, handle_libp2p_dht_rpc_request,
         handle_libp2p_dht_server_event, http_control_request, libp2p_dht_rpc_behaviour,
@@ -8811,15 +8837,28 @@ connection: close
 
     #[test]
     fn state_db_encryption_requirement_fails_closed_until_supported() {
-        assert!(validate_state_db_encryption_requirement(false, "plain", None).is_ok());
-        let err = validate_state_db_encryption_requirement(true, "plain", Some("state.sqlite3"))
-            .unwrap_err();
-        assert!(err.to_string().contains("encryption_mode is plain"));
         assert!(
-            validate_state_db_encryption_requirement(true, "external", Some("state.sqlite3"))
+            validate_state_db_encryption_requirement(false, StateDbEncryptionMode::Plain, None)
                 .is_ok()
         );
-        let err = validate_state_db_encryption_requirement(true, "external", None).unwrap_err();
+        let err = validate_state_db_encryption_requirement(
+            true,
+            StateDbEncryptionMode::Plain,
+            Some("state.sqlite3"),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("encryption_mode is plain"));
+        assert!(
+            validate_state_db_encryption_requirement(
+                true,
+                StateDbEncryptionMode::External,
+                Some("state.sqlite3")
+            )
+            .is_ok()
+        );
+        let err =
+            validate_state_db_encryption_requirement(true, StateDbEncryptionMode::External, None)
+                .unwrap_err();
         assert!(err.to_string().contains("no state_db"));
         let err = normalize_state_db_encryption_mode(Some("sqlcipher".into())).unwrap_err();
         assert!(err.to_string().contains("not supported"));
