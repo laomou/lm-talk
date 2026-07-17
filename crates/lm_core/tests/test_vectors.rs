@@ -1,7 +1,7 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use lm_core::{
-    device::DeviceSeed, ContactCard, DeviceCert, DeviceIdentity, DeviceRevoke, DirectEnvelope,
-    FriendRequest, Identity, IdentityBackupPackage, IdentitySeed, normalize_passphrase,
+    device::DeviceSeed, ContactCard, DeviceCert, DeviceIdentity, DeviceRevoke, DirectEnvelope, FriendRequest, Identity, IdentityBackupPackage,
+    IdentitySeed, MailboxMessage, MessageReceipt, MessageReceiptKind, normalize_passphrase,
 };
 use serde_json::Value;
 
@@ -120,6 +120,45 @@ fn contact_and_friend_vectors_verify() {
     assert_eq!(req.note.as_deref(), friend["note"].as_str());
 }
 
+
+#[test]
+fn receipt_and_mailbox_vectors_verify() {
+    let v = fixture("receipt_mailbox_v1.json");
+    let alice = identity(7);
+    let bob = identity(8);
+    assert_eq!(v["alice_user_id"], alice.user_id().to_string());
+    assert_eq!(v["bob_user_id"], bob.user_id().to_string());
+    assert_eq!(
+        v["alice_identity_public_key_base64"],
+        BASE64.encode(alice.identity_public_key())
+    );
+    assert_eq!(
+        v["bob_identity_public_key_base64"],
+        BASE64.encode(bob.identity_public_key())
+    );
+
+    let delivered = MessageReceipt::from_export_text(v["delivered_receipt_text"].as_str().unwrap()).unwrap();
+    delivered.verify(&bob.identity_public_key()).unwrap();
+    assert_eq!(delivered.kind, MessageReceiptKind::Delivered);
+    assert_eq!(delivered.from_user_id.to_string(), v["bob_user_id"]);
+    assert_eq!(delivered.to_user_id.to_string(), v["alice_user_id"]);
+    assert_eq!(delivered.target_message_id.to_string(), v["target_message_id"]);
+    assert_eq!(delivered.conversation_id, v["conversation_id"]);
+    assert_eq!(delivered.mailbox_delivery_id.as_deref(), v["mailbox_delivery_id"].as_str());
+
+    let read = MessageReceipt::from_export_text(v["read_receipt_text"].as_str().unwrap()).unwrap();
+    read.verify(&bob.identity_public_key()).unwrap();
+    assert_eq!(read.kind, MessageReceiptKind::Read);
+    assert_eq!(read.target_message_id.to_string(), v["target_message_id"]);
+
+    let mailbox = MailboxMessage::from_export_text(v["mailbox_message_text"].as_str().unwrap()).unwrap();
+    mailbox.verify(&alice.identity_public_key()).unwrap();
+    assert_eq!(mailbox.from_user_id.to_string(), v["alice_user_id"]);
+    assert_eq!(mailbox.to_user_id.to_string(), v["bob_user_id"]);
+    assert_eq!(format!("{:?}", mailbox.kind), v["mailbox_kind"]);
+    assert_eq!(mailbox.ciphertext, v["mailbox_ciphertext"]);
+}
+
 #[test]
 fn message_vector_decrypts_and_tamper_fails() {
     let v = fixture("message_crypto_v1.json");
@@ -156,6 +195,21 @@ fn vector_text_tamper_is_rejected_for_signed_objects() {
             .is_err()
     );
 
+
+
+    let receipt_mailbox = fixture("receipt_mailbox_v1.json");
+    let tampered_receipt = mutate_export_text(receipt_mailbox["delivered_receipt_text"].as_str().unwrap());
+    assert!(
+        MessageReceipt::from_export_text(&tampered_receipt)
+            .and_then(|r| r.verify(&identity(8).identity_public_key()))
+            .is_err()
+    );
+    let tampered_mailbox = mutate_export_text(receipt_mailbox["mailbox_message_text"].as_str().unwrap());
+    assert!(
+        MailboxMessage::from_export_text(&tampered_mailbox)
+            .and_then(|m| m.verify(&identity(7).identity_public_key()))
+            .is_err()
+    );
 
     let device = fixture("device_v1.json");
     let mut cert: DeviceCert = serde_json::from_str(device["device_cert_json"].as_str().unwrap()).unwrap();
