@@ -21,7 +21,9 @@ const filteredContacts = computed(() => {
 })
 const filteredGroups = computed(() => {
   const q = query.value
-  const list = props.ctx.groups.value
+  let list = props.ctx.groups.value
+  if (trustFilter.value === 'strict-blocked') list = list.filter((g: any) => props.ctx.groupStrictE2eeRiskTextFor(g))
+  else if (trustFilter.value !== 'all') list = []
   if (!q) return list
   return list.filter((g: any) => `${g.name || ''} ${g.group_id || ''}`.toLowerCase().includes(q))
 })
@@ -84,6 +86,8 @@ function openGroupDetail(groupId: string) {
           <span class="contact-main">
             <b>{{ g.name }}</b>
             <small>{{ g.member_user_ids.length }} 人</small>
+            <small v-if="ctx.groupStrictE2eeRiskTextFor(g)" class="danger-text">{{ ctx.groupStrictE2eeRiskTextFor(g) }}</small>
+            <small v-else>群聊严格 E2EE 就绪</small>
           </span>
         </button>
 
