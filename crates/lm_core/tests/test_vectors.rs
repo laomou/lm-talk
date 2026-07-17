@@ -1,7 +1,7 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use lm_core::{
     device::DeviceSeed, ContactCard, DeviceCert, file_hash_base64, verify_file_hash, DeviceIdentity, DeviceRevoke, DirectEnvelope, FileChunkEnvelope,
-    FileManifest, FriendRequest, Identity, IdentityBackupPackage, IdentitySeed, MailboxMessage,
+    FileManifest, FriendRequest, GroupEvent, GroupEventAction, GroupInvite, Identity, IdentityBackupPackage, IdentitySeed, MailboxMessage,
     MessageReceipt, MessageReceiptKind, PreKeyBundle, RatchetHeader, RatchetRole,
     RatchetSessionState, SignedOneTimePreKeyRecord, normalize_passphrase,
 };
@@ -241,6 +241,38 @@ fn receipt_and_mailbox_vectors_verify() {
 }
 
 
+
+#[test]
+fn group_vectors_verify() {
+    let v = fixture("group_v1.json");
+    let alice_card = ContactCard::from_export_text(v["alice_contact_card_text"].as_str().unwrap()).unwrap();
+    alice_card.verify().unwrap();
+    assert_eq!(alice_card.user_id.to_string(), v["alice_user_id"]);
+
+    let invite = GroupInvite::from_export_text(v["invite_text"].as_str().unwrap()).unwrap();
+    invite.verify(&alice_card).unwrap();
+    assert_eq!(invite.group_id.to_string(), v["group_id"]);
+    assert_eq!(invite.group_name, v["group_name"]);
+    assert_eq!(invite.inviter_user_id.to_string(), v["alice_user_id"]);
+    assert!(invite.member_user_ids.iter().any(|id| id.to_string() == v["bob_user_id"]));
+
+    let rename = GroupEvent::from_export_text(v["rename_event_text"].as_str().unwrap()).unwrap();
+    rename.verify(&alice_card).unwrap();
+    assert_eq!(rename.sequence, v["rename_sequence"].as_u64().unwrap());
+    match rename.action {
+        GroupEventAction::Rename { ref name } => assert_eq!(name, "Study Group v2"),
+        _ => panic!("unexpected rename action"),
+    }
+
+    let add = GroupEvent::from_export_text(v["add_member_event_text"].as_str().unwrap()).unwrap();
+    add.verify(&alice_card).unwrap();
+    assert_eq!(add.sequence, v["add_member_sequence"].as_u64().unwrap());
+    match add.action {
+        GroupEventAction::AddMember { ref user_id } => assert_eq!(user_id.to_string(), v["bob_user_id"]),
+        _ => panic!("unexpected add-member action"),
+    }
+}
+
 #[test]
 fn file_package_vectors_verify() {
     let v = fixture("file_package_v1.json");
@@ -312,6 +344,14 @@ fn vector_text_tamper_is_rejected_for_signed_objects() {
 
 
 
+
+
+    let group = fixture("group_v1.json");
+    let alice_card = ContactCard::from_export_text(group["alice_contact_card_text"].as_str().unwrap()).unwrap();
+    let tampered_invite = mutate_export_text(group["invite_text"].as_str().unwrap());
+    assert!(GroupInvite::from_export_text(&tampered_invite).and_then(|i| i.verify(&alice_card)).is_err());
+    let tampered_event = mutate_export_text(group["rename_event_text"].as_str().unwrap());
+    assert!(GroupEvent::from_export_text(&tampered_event).and_then(|e| e.verify(&alice_card)).is_err());
 
     let prekey = fixture("prekey_v1.json");
     let tampered_bundle = mutate_export_text(prekey["prekey_bundle_text"].as_str().unwrap());
