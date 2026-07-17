@@ -124,6 +124,7 @@ For every release candidate, archive:
 - Security-audit packet (`docs/EXTERNAL_AUDIT_PACKET.md`), report, and remediation notes.
 - Confirmation that `SECURITY.md` contact/process guidance is current for the release branch.
 - Build artifact hashes and deployment configuration used for verification.
+- Signing/notarization evidence for each native artifact (`*-signing-evidence.json`) and `docs/RELEASE_SIGNING.md` review; macOS/Windows production releases remain no-go while reports are incomplete.
 - Output of `./scripts/audit.sh` / CI `dependency-audit`.
 - Output of `./scripts/risk-register-gate.sh` proving every non-low residual risk has an owner, evidence requirement, evidence link, and release decision; `./scripts/preprod-evidence.sh` archives report-mode output as `risk-register-gate.log` plus `risk-register-gate-report.json`, and records machine-readable `production_gate.risk_register_gate_status` / counts in `release-evidence-index.json`.
 - For pull requests, CI `dependency-review` status for newly introduced vulnerable dependencies.

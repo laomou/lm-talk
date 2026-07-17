@@ -119,6 +119,14 @@ jobs:
           --cargo-features "${{ matrix.cargo_features }}"
           --out-dir dist
 
+      - name: Create signing evidence report
+        shell: bash
+        run: >-
+          ./scripts/signing-evidence.sh
+          --target ${{ matrix.target }}
+          --package-name ${{ matrix.package_name }}
+          --out dist/${{ matrix.package_name }}-signing-evidence.json
+
       - name: Upload release package
         uses: actions/upload-artifact@v7
         with:
@@ -163,7 +171,7 @@ jobs:
 
           SQLCipher note: the `lm_node-linux-x86_64-sqlcipher` artifact is built with the `lm_node/sqlcipher` feature for database-level `state_db` encryption. Verify deployment with `./scripts/sqlcipher-deploy-smoke.sh` or archived `/control/stats` + `/control/metrics` evidence showing `state_db_encrypted=true`.
 
-          Security note: these artifacts are automated CI builds. macOS notarization and Windows code signing are not yet implemented; keep that as a release blocker for a production-trust distribution channel.
+          Security note: these artifacts are automated CI builds. macOS notarization and Windows code signing are scaffolded as evidence reports but not yet implemented; keep unsigned / non-notarized artifacts as a release blocker for a production-trust distribution channel. Review `*-signing-evidence.json` for each artifact.
           EOF
 
       - name: Publish release
