@@ -1,0 +1,53 @@
+{
+  "self_sync_package": {
+    "type": "lm-self-sync-v1",
+    "version": 1,
+    "sync_id": "sync-vector-001",
+    "sequence": 7,
+    "previous_sync_id": "sync-vector-000",
+    "created_at": 1700000000000,
+    "from_user_id": "lm1_sender",
+    "identity_public_key": "identity-public-key-base64-placeholder",
+    "from_device_id": "dev1_sender",
+    "contacts": [],
+    "messageReceiptStates": [
+      {
+        "peer_user_id": "lm1_peer",
+        "protocol_message_id": "11111111-2222-4333-8444-555555555555",
+        "status": "read",
+        "mailbox_delivery_id": "delivery-vector-1",
+        "delivered_at": 1700000001000,
+        "read_at": 1700000002000,
+        "created_at": 1700000000000
+      }
+    ],
+    "outboxSummary": {
+      "queued": 1,
+      "failed": 1,
+      "sent": 2,
+      "oldest_pending_at": 1700000000000,
+      "failed_kinds": {
+        "direct-envelope": 1
+      }
+    },
+    "myContactCardText": "lm-contact-card-v1:placeholder",
+    "myDeviceCertJson": "{\"device_id\":\"dev1_sender\",\"device_box_public_key\":\"box-key\"}",
+    "myDeviceId": "dev1_sender",
+    "dhtOperationHistory": ["ContactCard 已发布到 DHT"],
+    "processedSelfSyncIds": ["sync-vector-000"],
+    "unverifiedIncomingDropCount": 0,
+    "revokedDeviceIncomingDropCount": 0,
+    "signature": "identity-signature-placeholder"
+  },
+  "self_sync_request": {
+    "type": "lm-self-sync-request-v1",
+    "version": 1,
+    "request_id": "request-vector-001",
+    "missing_sync_id": "sync-vector-000",
+    "created_at": 1700000003000,
+    "from_user_id": "lm1_sender",
+    "identity_public_key": "identity-public-key-base64-placeholder",
+    "from_device_id": "dev1_sender",
+    "signature": "identity-signature-placeholder"
+  }
+}

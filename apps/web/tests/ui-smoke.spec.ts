@@ -37,6 +37,33 @@ function decodePrefixedJson(text: string): any {
 
 
 
+
+
+test('self-sync v1 test vector keeps lightweight sync wire shape', async () => {
+  const vectorPath = resolve(process.cwd(), '../../test-vectors/self_sync_v1.json')
+  const vector = JSON.parse(readFileSync(vectorPath, 'utf8'))
+  const pkg = vector.self_sync_package
+  expect(pkg.type).toBe('lm-self-sync-v1')
+  expect(pkg.version).toBe(1)
+  expect(pkg.sync_id).toBeTruthy()
+  expect(pkg.sequence).toBeGreaterThan(0)
+  expect(pkg.previous_sync_id).toBeTruthy()
+  expect(pkg.signature).toBeTruthy()
+  expect(Array.isArray(pkg.contacts)).toBeTruthy()
+  expect(pkg.myDeviceId).toBe(pkg.from_device_id)
+  expect(pkg.messageReceiptStates).toHaveLength(1)
+  expect(pkg.messageReceiptStates[0].status).toBe('read')
+  expect(pkg.messageReceiptStates[0].mailbox_delivery_id).toBeTruthy()
+  expect(pkg.outboxSummary.queued).toBeGreaterThanOrEqual(0)
+  expect(pkg.outboxSummary.failed_kinds['direct-envelope']).toBe(1)
+
+  const req = vector.self_sync_request
+  expect(req.type).toBe('lm-self-sync-request-v1')
+  expect(req.version).toBe(1)
+  expect(req.missing_sync_id).toBe(pkg.previous_sync_id)
+  expect(req.signature).toBeTruthy()
+})
+
 test('per-device envelope v1 test vector keeps sealed slot wire shape', async () => {
   const vectorPath = resolve(process.cwd(), '../../test-vectors/per_device_envelope_v1.json')
   const vector = JSON.parse(readFileSync(vectorPath, 'utf8'))
