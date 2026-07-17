@@ -2,6 +2,8 @@
 
 This document defines the security-review scope required before LM Talk can be called production-ready. It is a preparation checklist for an external auditor and for internal release review.
 
+For an auditor-facing index of all review inputs, commands, and open blockers, start with `docs/EXTERNAL_AUDIT_PACKET.md`.
+
 ## Security goals
 
 LM Talk aims to provide:
@@ -42,7 +44,7 @@ Review:
 - Self-sync package/request signing, sequence/gap repair, cached package replay/dedupe, own-device certificate sync, receipt-state sync, and outbox-summary sync.
 - Contact Card update fanout/ACK/stale retry and DHT auto-refresh behavior.
 - UI flows for fingerprint verification, QR scanning, device revocation, strict E2EE preflight, and downgrade warnings.
-- Service Worker / background-sync limitations: no background key access, notification-only behavior.
+- Web app background behavior after PWA removal: no Service Worker/background-sync key access; notifications are explicit foreground/user-driven flows unless a future reviewed implementation reintroduces background support.
 
 ### Native node (`crates/lm_node`)
 
