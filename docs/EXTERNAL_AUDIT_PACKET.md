@@ -50,6 +50,7 @@ Auditors should run or review archived output for the exact audited commit/tag:
 ```bash
 ./scripts/release-check.sh full
 ./scripts/audit.sh
+./scripts/risk-register-gate.sh
 FUZZ_SMOKE_REPORT=fuzz-smoke-report.json ./scripts/fuzz-smoke.sh
 FUZZ_CAMPAIGN_DURATION=3600 ./scripts/fuzz-campaign.sh
 ./scripts/sqlcipher-smoke.sh

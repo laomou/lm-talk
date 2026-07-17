@@ -32,6 +32,22 @@ Use this register to track residual risks that remain after implementation, test
 - Medium risks require documented mitigation or explicit release-note disclosure.
 - Accepted risks must be copied into `docs/RELEASE_SIGNOFF.md` for the release candidate.
 
+## Machine gate
+
+Run the production risk gate before release sign-off:
+
+```bash
+./scripts/risk-register-gate.sh
+```
+
+Strict mode exits non-zero while any Medium/High/Critical risk is `Open` or `Rejected`, lacks an owner, or lacks a release decision. To print the same findings without failing a larger evidence collection job:
+
+```bash
+RISK_REGISTER_GATE_MODE=report ./scripts/risk-register-gate.sh
+```
+
+A production release must not override this gate; resolve, mitigate, or explicitly accept every non-low residual risk according to the acceptance rules above.
+
 ## Review checklist
 
 Before release sign-off:
