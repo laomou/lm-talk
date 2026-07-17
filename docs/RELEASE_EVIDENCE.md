@@ -71,3 +71,14 @@ Use this file as the evidence template for every release candidate. Copy it to a
 - Release approved by:
 - Date/time UTC:
 - Notes:
+
+
+## Local evidence collection helper
+
+After running release gates, gather local reports into one directory with:
+
+```bash
+RELEASE_VERSION=vX.Y.Z RELEASE_EVIDENCE_DIR=release-evidence ./scripts/collect-release-evidence.sh
+```
+
+The helper copies known report files when present and writes `release-evidence-index.json` with a `complete` / `incomplete` status. This does not replace manual review; fill the tables above with links to CI artifacts, release assets, audits, and approvals.
