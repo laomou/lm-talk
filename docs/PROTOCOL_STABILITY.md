@@ -55,28 +55,32 @@ These are intended to be stable for release-candidate interop:
 
 ## DHT record kinds
 
-Current node DHT record kinds:
+Current node DHT record kinds and key namespaces are frozen for this release:
 
-- `PublicPeer`: value is `lm-public-peer-announce-v1:` export text.
-- `PreKey`: value is `lm-prekey-bundle-v1:` export text.
-- `MailboxHint`: value is an address string matching accepted URL/multiaddr/mailbox patterns.
-- `ContactCard`: value is `lm-contact-card-v1:` export text.
+| Kind | Key namespace | Value format | Validation |
+| --- | --- | --- | --- |
+| `PublicPeer` | `public-peer` over `peer_id` | `lm-public-peer-announce-v1:` export text | PublicPeer signature, expiry, and key/peer match. |
+| `PreKey` | `prekey` over `user_id` | `lm-prekey-bundle-v1:` export text | PreKey bundle signature, expiry, and key/user match. |
+| `MailboxHint` | `mailbox-hint` over `user_id` | Address string | Non-empty, size-limited, accepted URL/multiaddr/mailbox pattern in clients. |
+| `ContactCard` | `contact-card` over `user_id` | `lm-contact-card-v1:` export text | ContactCard signature, optional expiry, and key/user match. |
 
-DHT key derivation namespaces are stable for these kinds. Adding a record kind requires a new namespace, validation rules, max-size review, and discovery UI/diagnostics updates.
+Adding a DHT record kind requires a new namespace, validation rules, max-size review, test vector coverage, release notes, and discovery UI/diagnostics updates.
 
 ## Mailbox message kinds
 
-Current mailbox kinds:
+Current mailbox kinds are frozen for this release:
 
-- `SignalOffer`
-- `SignalAnswer`
-- `DirectEnvelope`
-- `GroupFanout`
-- `DeliveryReceipt`
-- `ReadReceipt`
-- `Other`
+| Kind | Typical payload | Notes |
+| --- | --- | --- |
+| `SignalOffer` | WebRTC/session offer text | Secure-session helper transport. |
+| `SignalAnswer` | WebRTC/session answer text | Secure-session helper transport. |
+| `DirectEnvelope` | Direct/Ratchet/per-device envelope payload | Main direct-message delivery path. |
+| `GroupFanout` | Per-recipient group envelope/fanout payload | Group delivery path. |
+| `DeliveryReceipt` | `lm-message-receipt-v1:` Delivered | Delivery-state reconciliation. |
+| `ReadReceipt` | `lm-message-receipt-v1:` Read | Read-state reconciliation. |
+| `Other` | Typed payload inspected by prefix/JSON `type` | Compatibility bucket for contact updates, device revokes, secure-session JSON, data backup, self-sync, and future transitional payloads. |
 
-Web also maps higher-level local outbox kinds such as `contact-update` onto Mailbox `Other`; receivers must inspect payload type/prefix for those higher-level objects. Adding a Mailbox kind requires node validation, Web mapping, and backwards-compatible handling for older nodes that only understand `Other`.
+Web maps higher-level local outbox kinds such as `contact-update`, `device-revoke`, `self-sync`, and data backup onto Mailbox `Other`; receivers must inspect payload type/prefix for those higher-level objects. Adding a Mailbox kind requires node validation, Web mapping, backwards-compatible `Other` fallback guidance, and release notes for older nodes.
 
 ## Device and ContactCard update policy
 
@@ -115,8 +119,8 @@ Before declaring protocol stability for a production release:
 
 - [ ] External audit reviewed all stable and transitional objects above.
 - [x] Test vectors exist for stable signed/encrypted objects (see `docs/TEST_VECTOR_COVERAGE.md`).
-- [ ] DHT record kind list and key derivation namespaces are frozen for the release.
-- [ ] Mailbox kind mapping and fallback-to-Other behavior are documented.
+- [x] DHT record kind list and key derivation namespaces are frozen for the release.
+- [x] Mailbox kind mapping and fallback-to-Other behavior are documented.
 - [ ] ContactCard/DeviceCert merge and revocation policy has interop tests.
 - [ ] PreKey rotation/consumption policy has interop tests.
 - [ ] Error-code/text dependencies in Web and node tests are documented.
