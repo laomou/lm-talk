@@ -1,35 +1,35 @@
 # LM Talk
 
-一个去中心化、端到端加密的即时通讯应用。无需手机号或邮箱，身份由你自己掌握。
+A decentralized, end-to-end encrypted instant messaging app. No phone number or email required — your identity is entirely in your hands.
 
-## 特性
+## Features
 
-- 🔒 **端到端加密**的私聊与群聊，消息只有你和对方能看到
-- 🆔 **自持身份**：用一段提示词创建身份，可导出/导入，不绑定手机号或邮箱
-- 📇 **名片加好友**：通过名片文本或二维码互相添加
-- 👥 **群聊**：创建群、邀请好友、群内加密收发
-- 📡 **离线可达**：配置同步服务后，对方不在线也能收发消息，支持局域网与异地
-- 📱 **随处可用**：网页应用，浏览器打开即用
+- **End-to-end encrypted** private and group chats — only you and the recipient can read messages
+- **Self-sovereign identity**: create an identity with a passphrase, export/import it freely, no phone or email binding
+- **Contact card discovery**: add friends via contact card text or QR code
+- **Group chat**: create groups, invite friends, encrypted messaging within groups
+- **Offline delivery**: with a sync service configured, messages can be sent and received while the other party is offline — works across LAN and WAN
+- **Use anywhere**: web app, just open a browser
 
-## 开始使用
+## Getting Started
 
-1. 打开网页版，用一段提示词**注册身份**（记得导出备份）。
-2. 把自己的**名片**发给朋友，或扫描对方名片互加好友。
-3. 开始聊天。
+1. Open the web app and **create an identity** with a passphrase (remember to export a backup).
+2. Share your **contact card** with friends, or scan theirs to add each other.
+3. Start chatting.
 
-想在**不同设备之间**或**对方离线**时也能收发消息，需要连接一个「同步服务」：在「我 → 消息同步」里填写地址即可。自建与跨设备部署方式见 [docs/NETWORK_SPEC.md](docs/NETWORK_SPEC.md)。
+To send and receive messages **across devices** or when the **other party is offline**, you need to connect a "sync service": go to "Me → Message Sync" and enter the server address. For self-hosting and cross-device deployment, see [docs/NETWORK_SPEC.md](docs/NETWORK_SPEC.md).
 
-## 文档
+## Documentation
 
-更详细的设计、规格和部署说明见 [文档索引](docs/README.md)。
+For detailed design, specifications, and deployment instructions, see the [documentation index](docs/README.md).
 
-- [设计总览](docs/DESIGN.md)
-- [安全模型](docs/SECURITY_MODEL.md)
-- [网络与部署](docs/NETWORK_SPEC.md)
-- [协议规格](docs/README.md#协议规格)
+- [Design Overview](docs/DESIGN.md)
+- [Security Model](docs/SECURITY_MODEL.md)
+- [Network & Deployment](docs/NETWORK_SPEC.md)
+- [Protocol Specifications](docs/README.md#protocol-specifications)
 
-## 许可证
+## License
 
-[非商业使用许可](LICENSE) © 2026 LM Talk contributors
+[Non-Commercial License](LICENSE) © 2026 LM Talk contributors
 
-本项目仅允许非商业用途使用、复制、修改和分发；未经作者书面许可，禁止商业使用。
+This project is licensed for non-commercial use only — copying, modification, and distribution are permitted; commercial use requires prior written permission from the authors.
