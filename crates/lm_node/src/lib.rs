@@ -3700,7 +3700,6 @@ mod tests {
     use super::*;
     use lm_core::MailboxMessageKind;
 
-
     fn fixture(name: &str) -> serde_json::Value {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../test-vectors")
@@ -3725,20 +3724,22 @@ mod tests {
         assert_eq!(announce.peer_id, "peer-a");
     }
 
-
-
     #[test]
     fn public_peer_dht_vector_validates() {
         let v = fixture("public_peer_v1.json");
         let key = DhtRecordKey::for_public_peer(v["peer_id"].as_str().unwrap());
         assert_eq!(key.to_hex(), v["dht_key_hex"]);
-        let record: DhtRecord = serde_json::from_str(v["dht_record_json"].as_str().unwrap()).unwrap();
+        let record: DhtRecord =
+            serde_json::from_str(v["dht_record_json"].as_str().unwrap()).unwrap();
         assert_eq!(record.kind, DhtRecordKind::PublicPeer);
         assert_eq!(record.key, key);
         assert_eq!(record.value, v["public_peer_text"]);
         record.validate_for_store_at(1_700_000_001).unwrap();
-        let announce = PublicPeerAnnounce::from_export_text(v["public_peer_text"].as_str().unwrap()).unwrap();
-        let pk = decode_identity_public_key_base64(v["identity_public_key_base64"].as_str().unwrap()).unwrap();
+        let announce =
+            PublicPeerAnnounce::from_export_text(v["public_peer_text"].as_str().unwrap()).unwrap();
+        let pk =
+            decode_identity_public_key_base64(v["identity_public_key_base64"].as_str().unwrap())
+                .unwrap();
         announce.verify(&pk).unwrap();
         assert_eq!(announce.peer_id, v["peer_id"]);
         let mut tampered = record.clone();
@@ -3754,7 +3755,8 @@ mod tests {
             DhtRecordKey::for_contact_card(&user_id).to_hex(),
             v["dht_key_hex"]
         );
-        let record: DhtRecord = serde_json::from_str(v["dht_record_json"].as_str().unwrap()).unwrap();
+        let record: DhtRecord =
+            serde_json::from_str(v["dht_record_json"].as_str().unwrap()).unwrap();
         assert_eq!(record.kind, DhtRecordKind::ContactCard);
         assert_eq!(record.key, DhtRecordKey::for_contact_card(&user_id));
         assert_eq!(record.value, v["contact_card_text"]);
@@ -5829,6 +5831,62 @@ mod tests {
         assert_eq!(
             store.remaining_one_time_prekeys_for(alice.user_id()),
             Some(0)
+        );
+    }
+
+    #[test]
+    fn prekey_rotation_and_consumption_interop_across_snapshots() {
+        let (alice, _) = Identity::create_with_passphrase("alice prekey interop").unwrap();
+        let mut node_a = NativeNode::new(NodeConfig::default());
+        let mut node_b = NativeNode::new(NodeConfig::default());
+
+        let (bundle, _private, records) =
+            PreKeyBundle::new_with_signed_one_time_prekey_records(&alice, 1, 2, 3600).unwrap();
+        node_a
+            .prekeys
+            .publish_verified_with_signed_one_time_prekey_records(bundle, records)
+            .unwrap();
+
+        let (_first_bundle, first_record) = node_a
+            .prekeys
+            .take_for_with_selected_one_time_prekey_record(alice.user_id(), true)
+            .unwrap();
+        assert_eq!(first_record.as_ref().map(|record| record.key_id), Some(0));
+        assert_eq!(node_a.prekeys.consumed_for(alice.user_id()), vec![0]);
+
+        node_b.merge_snapshot(node_a.to_state_snapshot());
+        assert_eq!(node_b.prekeys.consumed_for(alice.user_id()), vec![0]);
+        let (_second_bundle, second_record) = node_b
+            .prekeys
+            .take_for_with_selected_one_time_prekey_record(alice.user_id(), true)
+            .unwrap();
+        assert_eq!(second_record.as_ref().map(|record| record.key_id), Some(1));
+        assert_eq!(node_b.prekeys.consumed_for(alice.user_id()), vec![0, 1]);
+
+        node_a.merge_snapshot(node_b.to_state_snapshot());
+        assert_eq!(node_a.prekeys.consumed_for(alice.user_id()), vec![0, 1]);
+
+        let (rotated, _rotated_private, rotated_records) =
+            PreKeyBundle::new_with_signed_one_time_prekey_records(&alice, 2, 2, 3600).unwrap();
+        node_a
+            .prekeys
+            .publish_verified_with_signed_one_time_prekey_records(rotated, rotated_records)
+            .unwrap();
+        assert_eq!(
+            node_a.prekeys.consumed_for(alice.user_id()),
+            Vec::<u32>::new()
+        );
+
+        node_b.merge_snapshot(node_a.to_state_snapshot());
+        assert_eq!(
+            node_b.prekeys.consumed_for(alice.user_id()),
+            Vec::<u32>::new()
+        );
+        assert_eq!(
+            node_b
+                .prekeys
+                .remaining_one_time_prekeys_for(alice.user_id()),
+            Some(2)
         );
     }
 
