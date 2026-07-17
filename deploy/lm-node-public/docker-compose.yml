@@ -16,6 +16,9 @@ services:
     build:
       context: ../..
       dockerfile: deploy/lm-node-public/Dockerfile
+      args:
+        # Set to "sqlcipher" to build lm_node with bundled SQLCipher + vendored OpenSSL.
+        CARGO_FEATURES: "${LM_NODE_CARGO_FEATURES:-}"
     image: lm-talk/lm-node-public:local
     restart: unless-stopped
     command: ["serve-control", "--config-file", "/app/config.json"]

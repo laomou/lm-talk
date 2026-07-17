@@ -28,7 +28,7 @@ CLI 参数 > 环境变量 > config file > 默认值
 | `peer_id` | string | `lm-node-dev` | 本节点 public peer id。 |
 | `state_db` | string | 无 | SQLite 正式状态数据库；按表保存 mailbox、prekey bundle、signed one-time-prekey records、consumed prekey、public peer/routing peer、DHT record 等节点状态。 |
 | `state_db_encryption_mode` | string | `plain` | `plain` 表示未加密 SQLite；`external` 表示由外部磁盘/文件系统加密承担保护；`sqlcipher` 为数据库级加密 provider 预留；默认构建会拒绝；`lm_node --features sqlcipher` 会启用 rusqlite/libsqlite3-sys 的 bundled SQLCipher + vendored OpenSSL 构建，执行 `PRAGMA key` 并校验 `PRAGMA cipher_version`。 |
-| `state_db_passphrase_file` | string | - | 预留给 DB 级加密 provider 的口令文件入口；当前 plain/external 模式不会使用该口令，但启动时会按 secret file 权限规则读取并注入 provider 边界；`sqlcipher` feature 会要求该口令并通过 provider 传给 `PRAGMA key`；在 `sqlcipher` feature 下会通过 provider 传给 `PRAGMA key`。 |
+| `state_db_passphrase_file` | string | - | 预留给 DB 级加密 provider 的口令文件入口；当前 plain/external 模式不会使用该口令，但启动时会按 secret file 权限规则读取并注入 provider 边界；`sqlcipher` feature 会要求该口令并通过 provider 传给 `PRAGMA key`。 |
 | `state_db_require_encryption` | bool | `false` | 要求非 `plain` 模式时 fail-closed；当前内置 SQLite 仍是 plain，若使用外部全盘/目录加密可显式设置 `external`。 |
 | `state_file` | string | 无 | 兼容 JSON snapshot 状态文件；保存时采用同目录临时文件 + fsync + rename；Unix 下保存后权限收紧为 `0600`。设置 `LM_NODE_STATE_FILE_PASSPHRASE`、`LM_NODE_STATE_FILE_PASSPHRASE_FILE` 或配置文件 `state_file_passphrase_file` 后会以应用层加密格式保存/读取。可与 `state_db` 同时配置作为调试导出。 |
 | `control_token` | string | 无 | 控制面 Bearer token。配置后除 `/health` 外都要求 `Authorization: Bearer ...`。 |

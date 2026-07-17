@@ -24,7 +24,8 @@ cp Caddyfile.example Caddyfile
 mkdir -p secrets
 openssl rand -base64 32 > secrets/control-token
 openssl rand -base64 32 > secrets/state-file-passphrase
-chmod 600 secrets/control-token secrets/state-file-passphrase
+openssl rand -base64 32 > secrets/state-db-passphrase
+chmod 600 secrets/control-token secrets/state-file-passphrase secrets/state-db-passphrase
 # Edit config.json: peer_id and cors_allow_origins.
 # Edit Caddyfile: replace lm-node.example.com with your node domain.
 docker compose up -d --build
@@ -35,7 +36,7 @@ Point the Web app sync service at `https://YOUR_DOMAIN` and use the value in `se
 ## Production notes
 
 - The compose template includes Caddy for TLS. Keep port `8787` internal unless you are deploying behind another HTTPS reverse proxy. Do not expose plaintext HTTP to browsers on the public internet.
-- Use an encrypted disk/volume for `/data`. LM Talk currently treats `state_db_encryption_mode = external` as operator-provided encryption; true SQLCipher-style DB-level encryption remains a production blocker.
+- Use an encrypted disk/volume for `/data` when `state_db_encryption_mode = external`. For database-level encryption, set `LM_NODE_CARGO_FEATURES=sqlcipher`, change `state_db_encryption_mode` to `sqlcipher`, and keep `state_db_passphrase_file` mounted from `secrets/state-db-passphrase`.
 - Keep `control_token_file` secret and rotate it using `control_previous_tokens` if needed.
 - Add other public nodes to `sync_peers` for state snapshot replication.
 - Set `cors_allow_origins` to the exact Web origin(s), not `*`.
@@ -55,3 +56,18 @@ For multiple public nodes, add peers to each node's `sync_peers` list:
 ```
 
 Use distinct control tokens per peer where possible. Snapshot sync copies public peers, DHT records, mailbox deliveries, PreKey bundles, and consumed one-time-prekey state according to the current node sync implementation.
+
+
+## Optional SQLCipher build
+
+The Dockerfile accepts `CARGO_FEATURES`. To build with bundled SQLCipher + vendored OpenSSL:
+
+```bash
+LM_NODE_CARGO_FEATURES=sqlcipher docker compose build --no-cache lm-node
+# Then edit config.json:
+#   "state_db_encryption_mode": "sqlcipher"
+# Keep state_db_passphrase_file pointing at /run/secrets/state-db-passphrase.
+docker compose up -d
+```
+
+With `sqlcipher` enabled, startup fails closed if the passphrase file is missing or the linked SQLite library does not expose `PRAGMA cipher_version`.

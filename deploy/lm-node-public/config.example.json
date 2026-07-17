@@ -3,6 +3,7 @@
   "peer_id": "lm-node-public-1",
   "state_db": "/data/lm-node.sqlite3",
   "state_db_encryption_mode": "external",
+  "state_db_passphrase_file": "/run/secrets/state-db-passphrase",
   "state_db_require_encryption": true,
   "state_file": "/data/lm-node-state.json",
   "state_file_passphrase_file": "/run/secrets/state-file-passphrase",
