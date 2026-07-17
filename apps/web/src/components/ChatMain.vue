@@ -171,6 +171,18 @@ function onComposerKeydown(e: KeyboardEvent) {
       </div>
     </header>
 
+    <section v-if="!ctx.activeContact.value && !ctx.activeGroup.value && !ctx.strictE2eePolicyEnabled.value" class="chat-notice-panel">
+      <div class="notice-text">
+        <b>建议开启严格 E2EE</b>
+        <span>新身份建议先启用指纹核验 + 分设备 sealed slot 收发策略，再开始添加联系人和发送消息。</span>
+        <span>{{ ctx.strictE2eeReadiness.value.text }}</span>
+      </div>
+      <div class="row compact">
+        <button class="secondary" @click="ctx.enableStrictE2eePolicy">一键严格 E2EE</button>
+        <button class="secondary" @click="ctx.goSettingsPage">查看安全策略</button>
+      </div>
+    </section>
+
     <section v-if="ctx.activeContact.value && ctx.activeContact.value.state !== 'Friend'" class="chat-notice-panel">
       <div v-if="ctx.activeContact.value.state === 'RequestSent'" class="notice-text">
         <b>好友请求已发送</b>
