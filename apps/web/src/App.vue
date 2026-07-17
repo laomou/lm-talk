@@ -271,6 +271,14 @@ type PerDeviceEnvelopeV1 = {
   signature?: string
 }
 
+type MessageReceiptSyncItem = {
+  peer_user_id: string
+  protocol_message_id: string
+  status: MessageStatus
+  delivered_at?: number
+  read_at?: number
+}
+
 type RatchetSessionItem = {
   peer_user_id: string
   state_text: string
@@ -473,6 +481,7 @@ type SelfSyncPackage = {
   identity_public_key: string
   from_device_id?: string
   contacts: ContactItem[]
+  messageReceiptStates?: MessageReceiptSyncItem[]
   myContactCardText?: string
   myDeviceCertJson?: string
   myDeviceId?: string
@@ -2451,6 +2460,7 @@ function selfSyncSigningPayload(pkg: SelfSyncPackage): string {
     identity_public_key: pkg.identity_public_key,
     from_device_id: pkg.from_device_id,
     contacts: pkg.contacts,
+    messageReceiptStates: pkg.messageReceiptStates,
     myContactCardText: pkg.myContactCardText,
     myDeviceCertJson: pkg.myDeviceCertJson,
     myDeviceId: pkg.myDeviceId,
@@ -2489,6 +2499,43 @@ function currentSelfSyncRequestPackage(missingSyncId: string): SelfSyncRequestPa
   return pkg
 }
 
+
+function currentMessageReceiptSyncItems(): MessageReceiptSyncItem[] {
+  return messages.value
+    .filter((message) => message.direction === 'out' && message.peer_user_id && message.protocol_message_id)
+    .filter((message) => message.delivered_at || message.read_at || message.status === 'delivered' || message.status === 'read')
+    .map((message) => ({
+      peer_user_id: message.peer_user_id,
+      protocol_message_id: message.protocol_message_id!,
+      status: message.status,
+      delivered_at: message.delivered_at,
+      read_at: message.read_at,
+    }))
+    .slice(-200)
+}
+
+function applyMessageReceiptSyncItems(items: MessageReceiptSyncItem[] | undefined): number {
+  let merged = 0
+  for (const item of items ?? []) {
+    if (!item.peer_user_id || !item.protocol_message_id) continue
+    const message = messages.value.find((m) =>
+      m.direction === 'out'
+      && m.peer_user_id === item.peer_user_id
+      && m.protocol_message_id === item.protocol_message_id)
+    if (!message) continue
+    const before = `${message.status}:${message.delivered_at || ''}:${message.read_at || ''}`
+    mergeMessageStateInto(message, {
+      ...message,
+      status: item.status,
+      delivered_at: item.delivered_at,
+      read_at: item.read_at,
+    })
+    const after = `${message.status}:${message.delivered_at || ''}:${message.read_at || ''}`
+    if (after !== before) merged += 1
+  }
+  return merged
+}
+
 function currentSelfSyncPackage(): SelfSyncPackage {
   const sequence = lastSelfSyncSequenceSent.value + 1
   const pkg: SelfSyncPackage = {
@@ -2502,6 +2549,7 @@ function currentSelfSyncPackage(): SelfSyncPackage {
     identity_public_key: identity.value?.identity_public_key || '',
     from_device_id: myDeviceId.value || undefined,
     contacts: contacts.value,
+    messageReceiptStates: currentMessageReceiptSyncItems(),
     myContactCardText: myContactCardText.value || undefined,
     myDeviceCertJson: myDeviceCertJson.value || undefined,
     myDeviceId: myDeviceId.value || undefined,
@@ -2619,13 +2667,14 @@ function applySelfSyncPackage(pkg: SelfSyncPackage) {
   processedSelfSyncIds.value = [pkg.sync_id, ...processedSelfSyncIds.value.filter((id) => id !== pkg.sync_id), ...(pkg.processedSelfSyncIds ?? [])].filter(Boolean).slice(0, 100)
   processedSelfSyncIds.value = [...new Set(processedSelfSyncIds.value)].slice(0, 100)
   contacts.value = mergeContactDeviceAndTrustState(contacts.value, pkg.contacts ?? [])
+  const receiptStatesMerged = applyMessageReceiptSyncItems(pkg.messageReceiptStates)
   const ownDeviceCertsChanged = mergeOwnDeviceCertsFromSelfSync(pkg)
   nodeDhtOperationHistory.value = [...new Set([...(pkg.dhtOperationHistory ?? []), ...nodeDhtOperationHistory.value])].slice(0, DHT_OPERATION_HISTORY_MAX_RECORDS)
   unverifiedIncomingDropCount.value = Math.max(unverifiedIncomingDropCount.value, Number(pkg.unverifiedIncomingDropCount ?? 0))
   revokedDeviceIncomingDropCount.value = Math.max(revokedDeviceIncomingDropCount.value, Number(pkg.revokedDeviceIncomingDropCount ?? 0))
   lastSelfSyncMergedAt.value = Date.now()
   lastSelfSyncSequenceMerged.value = Math.max(lastSelfSyncSequenceMerged.value, sequence)
-  selfSyncStatusText.value = `自同步：已合并 ${pkg.contacts?.length ?? 0} 个联系人状态（#${sequence} ${pkg.sync_id.slice(0, 8)}）`
+  selfSyncStatusText.value = `自同步：已合并 ${pkg.contacts?.length ?? 0} 个联系人状态、${receiptStatesMerged} 条回执状态（#${sequence} ${pkg.sync_id.slice(0, 8)}）`
   appendLog(`✅ ${selfSyncStatusText.value}`)
   persist()
   if (ownDeviceCertsChanged && friendContacts.value.length) {
