@@ -15,7 +15,35 @@ This directory is a minimal self-hosted `lm_node` deployment for a public Mailbo
   - mailbox quotas and rate limits;
   - JSON logs.
 
-## Quick start
+## One-command quick start
+
+For a single public node with Caddy TLS, generate config/secrets and start Docker Compose with:
+
+```bash
+cd deploy/lm-node-public
+./install.sh \
+  --domain lm-node.example.com \
+  --web-origin https://YOUR_GITHUB_USER.github.io
+```
+
+For SQLCipher-enabled database encryption:
+
+```bash
+./install.sh \
+  --domain lm-node.example.com \
+  --web-origin https://YOUR_GITHUB_USER.github.io \
+  --sqlcipher
+```
+
+Verify the deployed node:
+
+```bash
+./verify.sh --url https://lm-node.example.com --token-file ./secrets/control-token --out lm-node-public-verify-report.json
+```
+
+Point the Web app sync service at `https://YOUR_DOMAIN` and use the value in `secrets/control-token` as the node token.
+
+## Manual quick start
 
 ```bash
 cd deploy/lm-node-public
@@ -30,8 +58,6 @@ chmod 600 secrets/control-token secrets/state-file-passphrase secrets/state-db-p
 # Edit Caddyfile: replace lm-node.example.com with your node domain.
 docker compose up -d --build
 ```
-
-Point the Web app sync service at `https://YOUR_DOMAIN` and use the value in `secrets/control-token` as the node token.
 
 ## Production notes
 
