@@ -626,6 +626,60 @@ test('设置页可导出并导入完整数据备份恢复本地同步设置', as
   await expect(page.getByText(/已脱敏/)).not.toBeVisible()
 })
 
+
+
+test('联系人设备合并保留本地信任且撤销优先', async ({ page }) => {
+  await clearBrowserState(page)
+  await createIdentity(page, 'MergeContact', 'merge contact 2026')
+  const result = await page.evaluate(() => {
+    const current = [{
+      user_id: 'peer-1',
+      display_name: 'Old',
+      fingerprint: 'fp',
+      identity_public_key: 'idpk',
+      x25519_public_key: 'xpk',
+      device_count: 1,
+      device_certs: [{ device_id: 'dev-a', device_public_key: 'pk-a' }],
+      contact_card_text: 'card-old',
+      kind: 'contact',
+      state: 'Friend',
+      fingerprint_verified_at: 123,
+      revoked_device_ids: ['dev-b'],
+      device_revocations: [{ device_id: 'dev-b', created_at: 10, reason: 'lost' }],
+      read_receipts: 'disabled',
+      block_reason: 'local-only',
+    }]
+    const incoming = [{
+      user_id: 'peer-1',
+      display_name: 'New',
+      fingerprint: 'fp',
+      identity_public_key: 'idpk',
+      x25519_public_key: 'xpk',
+      device_count: 2,
+      device_certs: [
+        { device_id: 'dev-a', device_public_key: 'pk-a-new' },
+        { device_id: 'dev-b', device_public_key: 'pk-b' },
+      ],
+      contact_card_text: 'card-new',
+      kind: 'contact',
+      state: 'Friend',
+      read_receipts: 'enabled',
+    }]
+    const merged = (window as any).mergeContactDeviceAndTrustStateForTests(current, incoming)
+    return {
+      merged: merged[0],
+      allRevoked: (window as any).contactAllKnownDevicesRevokedForTests(merged[0]),
+    }
+  })
+  expect(result.merged.display_name).toBe('Old')
+  expect(result.merged.fingerprint_verified_at).toBe(123)
+  expect(result.merged.read_receipts).toBe('disabled')
+  expect(result.merged.block_reason).toBe('local-only')
+  expect(result.merged.device_certs.map((d: any) => d.device_id).sort()).toEqual(['dev-a', 'dev-b'])
+  expect(result.merged.revoked_device_ids).toContain('dev-b')
+  expect(result.allRevoked).toBe(false)
+})
+
 test('消息合并会保留更高回执状态和时间戳', async ({ page }) => {
   await clearBrowserState(page)
   await createIdentity(page, 'MergeReceipt', 'merge receipt 2026')

@@ -121,7 +121,7 @@ Before declaring protocol stability for a production release:
 - [x] Test vectors exist for stable signed/encrypted objects (see `docs/TEST_VECTOR_COVERAGE.md`).
 - [x] DHT record kind list and key derivation namespaces are frozen for the release.
 - [x] Mailbox kind mapping and fallback-to-Other behavior are documented.
-- [ ] ContactCard/DeviceCert merge and revocation policy has interop tests.
+- [x] ContactCard/DeviceCert merge and revocation policy has interop tests.
 - [ ] PreKey rotation/consumption policy has interop tests.
 - [ ] Error-code/text dependencies in Web and node tests are documented.
 - [ ] Release evidence index links fuzz, federation, SQLCipher, and audit artifacts.

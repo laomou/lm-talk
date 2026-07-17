@@ -1954,6 +1954,8 @@ if (typeof window !== 'undefined') {
     persist()
   }
   ;(window as any).mergeMessagesForTests = mergeMessagesForState
+  ;(window as any).mergeContactDeviceAndTrustStateForTests = mergeContactDeviceAndTrustState
+  ;(window as any).contactAllKnownDevicesRevokedForTests = contactAllKnownDevicesRevoked
   ;(window as any).handlePwaBackgroundSyncForTests = handlePwaBackgroundSyncMessage
 }
 
