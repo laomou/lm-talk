@@ -83,6 +83,8 @@ async function runDiagnostics() {
       unverified_incoming_drops: props.ctx.unverifiedIncomingDropCount.value,
       revoked_device_incoming_drops: props.ctx.revokedDeviceIncomingDropCount.value,
       sealed_slot_coverage: props.ctx.sealedSlotCoverageSummary.value,
+      strict_e2ee_group_risk_count: props.ctx.groups.value.filter((g: any) => props.ctx.groupStrictE2eeRiskTextFor(g)).length,
+      strict_e2ee_group_ready_count: props.ctx.groups.value.filter((g: any) => !props.ctx.groupStrictE2eeRiskTextFor(g)).length,
       per_device_envelope_sent_count: props.ctx.perDeviceEnvelopeSentCount.value,
       per_device_envelope_received_count: props.ctx.perDeviceEnvelopeReceivedCount.value,
       per_device_envelope_drop_count: props.ctx.perDeviceEnvelopeDropCount.value,
@@ -134,6 +136,15 @@ async function runDiagnostics() {
       require_sealed_per_device_slots_for_receive: Boolean(props.ctx.safetyPolicy.value.requireSealedPerDeviceSlotsForReceive),
       strict_e2ee_policy_enabled: Boolean(props.ctx.strictE2eePolicyEnabled.value),
       strict_e2ee_readiness: props.ctx.strictE2eeReadiness.value,
+      strict_e2ee_group_risks: props.ctx.groups.value
+        .filter((g: any) => props.ctx.groupStrictE2eeRiskTextFor(g))
+        .slice(0, 8)
+        .map((g: any) => ({
+          group_id: redactDiagnosticReport.value ? redacted(g.group_id || '') : g.group_id,
+          name: redactDiagnosticReport.value ? redacted(g.name || '') : sanitizeDiagnosticText(g.name || ''),
+          member_count: (g.member_user_ids || []).length,
+          risk: sanitizeDiagnosticText(props.ctx.groupStrictE2eeRiskTextFor(g)),
+        })),
       last_unverified_incoming_drop_at: props.ctx.lastUnverifiedIncomingDropAt.value,
       last_unverified_incoming_drop_from: redactDiagnosticReport.value ? redacted(props.ctx.lastUnverifiedIncomingDropFrom.value) : sanitizeDiagnosticText(props.ctx.lastUnverifiedIncomingDropFrom.value),
       last_revoked_device_incoming_drop_at: props.ctx.lastRevokedDeviceIncomingDropAt.value,
@@ -201,6 +212,11 @@ async function runDiagnostics() {
           <span>DHT 状态</span>
           <b>{{ ctx.nodePeerHealthRiskLevel.value === 'ok' ? '正常' : ctx.nodePeerHealthRiskLevel.value === 'warning' ? '警告' : '异常' }}</b>
           <small>{{ ctx.nodePeerHealthStatusText.value }}</small>
+        </div>
+        <div class="diagnostic-card">
+          <span>群聊严格 E2EE</span>
+          <b>{{ ctx.groups.value.filter((g: any) => ctx.groupStrictE2eeRiskTextFor(g)).length }}</b>
+          <small>风险群聊 / 总群聊 {{ ctx.groups.value.length }}</small>
         </div>
       </section>
 

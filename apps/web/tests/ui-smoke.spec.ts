@@ -361,6 +361,8 @@ test('登录注册、主界面和诊断页是产品化 UI', async ({ page }) => 
   expect(diagnosticJson).not.toContain('lm-identity-backup-v1:abcdef')
   expect(diagnosticJson).not.toContain('lm-message-receipt-v1:receipt-secret')
   expect(diagnosticJson).not.toContain('lm-prekey-bundle-v1:prekey-secret')
+  expect(diagnosticJson).toContain('strict_e2ee_group_risk_count')
+  expect(diagnosticJson).toContain('strict_e2ee_group_risks')
   expect(diagnosticJson).toContain('lm-message-receipt-v1:[已脱敏]')
   expect(diagnosticJson).toContain('Bearer [已脱敏]')
   expect(diagnosticJson).toContain('dht_peer_health_summary')
