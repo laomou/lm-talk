@@ -19,6 +19,7 @@ Use this file as the evidence template for every release candidate. Copy it to a
 | SQLCipher smoke | `./scripts/sqlcipher-smoke.sh` or SQLCipher Smoke workflow artifact |  |  |
 | SQLCipher release binary smoke | `lm_node-linux-x86_64-sqlcipher-smoke` artifact from release workflow |  |  |
 | Federation validation | `federation-report.json` from `deploy/lm-node-federation/run-all.sh` or workflow artifact |  |  |
+| Test vector coverage | `cargo test -p lm_core --test test_vectors` and review `docs/TEST_VECTOR_COVERAGE.md` missing High-priority items |  |  |
 | Fuzz smoke | `FUZZ_SMOKE_REPORT=fuzz-smoke-report.json ./scripts/fuzz-smoke.sh` output/report or `./scripts/release-check.sh fuzz-smoke` log |  |  |
 | Long fuzz campaign | `FUZZ_CAMPAIGN_DURATION=<seconds> FUZZ_CAMPAIGN_REPORT=fuzz-campaign-report.json ./scripts/fuzz-campaign.sh` report, logs, corpus, artifacts, and triage notes |  |  |
 
