@@ -23,6 +23,21 @@ function outboxRetryText(item: any) {
   if (!nextRetryAt || Date.now() >= nextRetryAt) return '下次重试：可立即重试'
   return `下次重试：${props.ctx.formatDateTime(nextRetryAt)}`
 }
+
+function outboxSummaryText(summary: any) {
+  if (!summary) return ''
+  const parts = [
+    `queued ${Number(summary.queued || 0)}`,
+    `failed ${Number(summary.failed || 0)}`,
+    `sent ${Number(summary.sent || 0)}`,
+  ]
+  if (summary.oldest_pending_at) parts.push(`最早待处理 ${new Date(summary.oldest_pending_at).toLocaleString('zh-CN')}`)
+  if (summary.failed_kinds && Object.keys(summary.failed_kinds).length) {
+    parts.push(`失败类型 ${Object.entries(summary.failed_kinds).map(([k, v]) => `${k}:${v}`).join('，')}`)
+  }
+  return parts.join('；')
+}
+
 function selfSyncCacheExpiryText(item: any) {
   if (!item?.expires_at) return '最近轻量包缓存未设置过期时间'
   if (Date.now() > item.expires_at) return '最近轻量包缓存已过期，下一次使用前会自动清理'
@@ -375,6 +390,8 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
         <small v-if="ctx.selfSyncRecentPackages.value.length">最近轻量包缓存：{{ ctx.selfSyncRecentPackages.value.length }}/10；{{ selfSyncCacheExpiryText(ctx.selfSyncRecentPackages.value[0]) }}</small>
         <small v-if="ctx.lastSelfSyncPushedAt.value">最近投递轻量自同步：#{{ ctx.lastSelfSyncSequenceSent.value }} · {{ ctx.formatDateTime(ctx.lastSelfSyncPushedAt.value) }}</small>
         <small v-if="ctx.lastSelfSyncMergedAt.value">最近合并轻量自同步：#{{ ctx.lastSelfSyncSequenceMerged.value }} · {{ ctx.formatDateTime(ctx.lastSelfSyncMergedAt.value) }}</small>
+        <small v-if="ctx.lastSelfSyncReceiptStatesSent.value || ctx.lastSelfSyncReceiptStatesMerged.value">回执自同步：最近发送 {{ ctx.lastSelfSyncReceiptStatesSent.value }}，最近合并 {{ ctx.lastSelfSyncReceiptStatesMerged.value }}，累计合并 {{ ctx.totalSelfSyncReceiptStatesMerged.value }}</small>
+        <small v-if="ctx.lastSelfSyncOutboxSummary.value" :class="{ 'danger-text': Number(ctx.lastSelfSyncOutboxSummary.value.failed || 0) > 0 }">远端设备 outbox：{{ outboxSummaryText(ctx.lastSelfSyncOutboxSummary.value) }}</small>
         <div v-if="ctx.selfSyncGapCount.value" class="row compact">
           <small class="danger-text">轻量自同步可能缺口 {{ ctx.selfSyncGapCount.value }} 次<span v-if="ctx.lastSelfSyncGapAt.value">，最近：{{ ctx.formatDateTime(ctx.lastSelfSyncGapAt.value) }}</span><span v-if="ctx.lastSelfSyncMissingPreviousId.value">，缺失：{{ ctx.lastSelfSyncMissingPreviousId.value.slice(0, 8) }}</span></small>
           <button class="secondary" :disabled="!ctx.nodeEnabled.value" @click="ctx.repairSelfSyncGapNow">补发自同步包</button>
