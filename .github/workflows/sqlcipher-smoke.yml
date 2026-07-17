@@ -1,0 +1,57 @@
+name: SQLCipher Smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sqlcipher-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+
+      - name: Run SQLCipher smoke
+        run: |
+          set -euo pipefail
+          ./scripts/sqlcipher-smoke.sh | tee sqlcipher-smoke.log
+
+      - name: Write SQLCipher report
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, time
+          log_path = pathlib.Path('sqlcipher-smoke.log')
+          log = log_path.read_text(encoding='utf-8', errors='replace') if log_path.exists() else ''
+          report = {
+              'status': 'ok' if '== sqlcipher smoke ok ==' in log else 'failed',
+              'generated_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+              'checks': [
+                  'sqlcipher_provider_initializes_cipher',
+                  'sqlcipher_state_db_rejects_wrong_passphrase',
+                  'state_db_encryption_provider_models_current_modes',
+              ],
+          }
+          pathlib.Path('sqlcipher-smoke-report.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
+          PY
+
+      - name: Upload SQLCipher smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sqlcipher-smoke-report
+          path: |
+            sqlcipher-smoke.log
+            sqlcipher-smoke-report.json
+          if-no-files-found: warn

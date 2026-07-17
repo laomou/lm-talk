@@ -435,3 +435,8 @@ systemctl start lm-node
 ```
 
 该脚本会验证 SQLCipher provider 能初始化 cipher、错误口令无法打开已加密 state_db，并确认 provider 边界测试在 `--features sqlcipher` 下持续通过。
+
+
+### SQLCipher Smoke workflow
+
+`.github/workflows/sqlcipher-smoke.yml` provides a manual GitHub Actions workflow that runs `./scripts/sqlcipher-smoke.sh` and uploads both `sqlcipher-smoke.log` and `sqlcipher-smoke-report.json` as artifacts. Use it to verify bundled SQLCipher builds outside the normal quick CI path.
