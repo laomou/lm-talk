@@ -699,6 +699,8 @@ fn validate_state_file_encryption_requirement(
 enum StateDbEncryptionMode {
     Plain,
     External,
+    #[cfg(feature = "sqlcipher")]
+    SqlCipher,
 }
 
 impl StateDbEncryptionMode {
@@ -706,6 +708,8 @@ impl StateDbEncryptionMode {
         match self {
             Self::Plain => "plain",
             Self::External => "external",
+            #[cfg(feature = "sqlcipher")]
+            Self::SqlCipher => "sqlcipher",
         }
     }
 
@@ -721,8 +725,11 @@ impl StateDbEncryptionMode {
         match mode.as_str() {
             "plain" => Ok(Self::Plain),
             "external" => Ok(Self::External),
+            #[cfg(feature = "sqlcipher")]
+            "sqlcipher" => Ok(Self::SqlCipher),
+            #[cfg(not(feature = "sqlcipher"))]
             "sqlcipher" => Err(
-                "state_db_encryption_mode=sqlcipher is reserved but not supported by this build"
+                "state_db_encryption_mode=sqlcipher requires building lm_node with the sqlcipher feature"
                     .into(),
             ),
             _ => Err(format!(
@@ -775,6 +782,13 @@ impl StateDbEncryptionProvider {
     fn apply_to_connection(&self, _conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
         match self.mode {
             StateDbEncryptionMode::Plain | StateDbEncryptionMode::External => Ok(()),
+            #[cfg(feature = "sqlcipher")]
+            StateDbEncryptionMode::SqlCipher => {
+                if !self.has_passphrase() {
+                    return Err("state_db_encryption_mode=sqlcipher requires state_db_passphrase_file or LM_NODE_STATE_DB_PASSPHRASE_FILE".into());
+                }
+                Err("state_db_encryption_mode=sqlcipher provider is feature-gated but SQLCipher connection initialization is not implemented in this build".into())
+            }
         }
     }
 }
@@ -8942,7 +8956,10 @@ connection: close
                 .unwrap_err();
         assert!(err.to_string().contains("no state_db"));
         let err = normalize_state_db_encryption_mode(Some("sqlcipher".into())).unwrap_err();
-        assert!(err.to_string().contains("not supported"));
+        assert!(
+            err.to_string().contains("requires building")
+                || err.to_string().contains("not supported")
+        );
     }
 
     #[test]
@@ -8958,6 +8975,17 @@ connection: close
             Some("secret".into()),
         );
         assert!(reserved.has_passphrase());
+    }
+
+    #[cfg(feature = "sqlcipher")]
+    #[test]
+    fn sqlcipher_provider_is_feature_gated_but_not_silent() {
+        let mode = StateDbEncryptionMode::parse(Some("sqlcipher".into())).unwrap();
+        assert_eq!(mode.as_str(), "sqlcipher");
+        let provider = StateDbEncryptionProvider::with_passphrase(mode, Some("secret".into()));
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        let err = provider.apply_to_connection(&conn).unwrap_err();
+        assert!(err.to_string().contains("not implemented"));
     }
 
     #[test]
