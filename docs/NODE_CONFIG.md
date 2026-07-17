@@ -424,3 +424,14 @@ systemctl start lm-node
 - `NodeStateSnapshot.version` 用于标识 snapshot 格式。
 - 新字段应使用 serde 默认值保持旧 snapshot 可读；当前 `signed_one_time_prekey_records` 字段缺失时会按旧 bundle 内 OTK 兼容处理。
 - 删除或重命名字段前必须提供迁移路径。
+
+
+### SQLCipher smoke test
+
+启用 bundled SQLCipher + vendored OpenSSL 后，可运行：
+
+```bash
+./scripts/sqlcipher-smoke.sh
+```
+
+该脚本会验证 SQLCipher provider 能初始化 cipher、错误口令无法打开已加密 state_db，并确认 provider 边界测试在 `--features sqlcipher` 下持续通过。
