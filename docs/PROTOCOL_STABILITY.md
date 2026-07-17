@@ -114,7 +114,7 @@ Current user-visible errors are not yet a stable numeric error-code API. Until e
 Before declaring protocol stability for a production release:
 
 - [ ] External audit reviewed all stable and transitional objects above.
-- [ ] Test vectors exist for stable signed/encrypted objects.
+- [x] Test vectors exist for stable signed/encrypted objects (see `docs/TEST_VECTOR_COVERAGE.md`).
 - [ ] DHT record kind list and key derivation namespaces are frozen for the release.
 - [ ] Mailbox kind mapping and fallback-to-Other behavior are documented.
 - [ ] ContactCard/DeviceCert merge and revocation policy has interop tests.

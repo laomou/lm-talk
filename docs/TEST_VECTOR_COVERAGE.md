@@ -25,10 +25,7 @@ This file tracks which protocol objects have stable cross-platform test vectors 
 
 ## Missing stable vectors before protocol freeze
 
-These objects have unit/e2e coverage but do not yet have committed cross-platform fixtures in `test-vectors/`:
-
-| Object | Needed vector evidence | Priority |
-| --- | --- | --- |
+No High-priority or Medium-priority protocol vector gaps are currently listed. New stable wire objects must be added to the Existing vectors table or explicitly documented here before protocol freeze.
 
 ## Acceptance criteria for new vectors
 
@@ -46,5 +43,5 @@ A new vector should include:
 Before marking protocol stability complete:
 
 - Every object listed as **Stable** in `docs/PROTOCOL_STABILITY.md` should either have a vector above or a documented reason why it cannot be deterministic.
-- Missing High-priority vectors should be treated as release blockers for production protocol freeze.
+- Missing High-priority vectors should be treated as release blockers for production protocol freeze; currently none are listed.
 - `docs/RELEASE_EVIDENCE.md` should link the test run proving these vectors pass for the release commit.
