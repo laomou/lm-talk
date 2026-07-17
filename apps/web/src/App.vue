@@ -8391,6 +8391,12 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
       return { handled: true, deliveryId, event: 'device-revoke' }
     }
     if (parsed?.type === 'lm-file-package-v1') {
+      if (!allowIncomingFromContact(sender)) {
+        const reason = `安全策略阻止接收未核验或已撤销设备联系人文件：${sender.display_name || sender.user_id}`
+        appendLog(`⚠️ ${reason}`)
+        persist()
+        return { handled: true, deliveryId, event: 'other', reason }
+      }
       pendingFilePackageText.value = ciphertext
       incomingFilePackageText.value = ciphertext
       inspectIncomingFilePackage()
