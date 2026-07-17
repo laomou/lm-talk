@@ -3783,14 +3783,27 @@ function markOutboxSent(item: OutboxItem) {
   if (msg) msg.status = item.kind === 'direct-envelope' ? 'sent' : 'mailbox'
 }
 
+function outboundPayloadBypassesStrictSendPolicy(kind: OutboxItem['kind'], payload: string): boolean {
+  if (kind === 'contact-update') return true
+  if (payload.startsWith('lm-contact-card-v1:')) return true
+  try {
+    const parsed = JSON.parse(payload) as { type?: string }
+    return parsed?.type === 'lm-device-revoke-v1'
+  } catch {
+    return false
+  }
+}
+
 async function deliverPayloadToContact(contact: ContactItem, payload: string, label: string, kind: OutboxItem['kind'] = 'direct-envelope'): Promise<'sent' | 'mailbox' | 'queued' | 'failed'> {
   lastDeliveryError = ''
-  try {
-    requireVerifiedContactForSend(contact)
-  } catch (e) {
-    lastDeliveryError = classifyDeliveryError(e)
-    appendLog(`❌ ${label} 投递被安全策略阻止：${lastDeliveryError}`)
-    return 'failed'
+  if (!outboundPayloadBypassesStrictSendPolicy(kind, payload)) {
+    try {
+      requireVerifiedContactForSend(contact)
+    } catch (e) {
+      lastDeliveryError = classifyDeliveryError(e)
+      appendLog(`❌ ${label} 投递被安全策略阻止：${lastDeliveryError}`)
+      return 'failed'
+    }
   }
   try {
     if (dc && dc.readyState === 'open' && activePeerId.value === contact.user_id && kind !== 'group-fanout') {
