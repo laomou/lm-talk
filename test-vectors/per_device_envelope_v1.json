@@ -1,0 +1,28 @@
+{
+  "type": "lm-per-device-envelope-v1",
+  "version": 1,
+  "conversation_id": "conv-lm1_peer",
+  "sender_user_id": "lm1_sender",
+  "target_devices": [
+    {
+      "device_id": "dev1_alpha",
+      "slot_id": "slot-alpha",
+      "nonce": "nonce-alpha-24-byte-placeholder",
+      "aad": "{\"type\":\"lm-per-device-envelope-slot-aad-v1\",\"conversation_id\":\"conv-lm1_peer\",\"sender_user_id\":\"lm1_sender\",\"target_device_id\":\"dev1_alpha\",\"created_at\":1700000000000}",
+      "crypto": "x25519-ephemeral-hkdf-xchacha20poly1305-device-slot-v1",
+      "x25519_ephemeral_public_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "ciphertext": "sealed-ciphertext-alpha"
+    },
+    {
+      "device_id": "dev1_legacy",
+      "slot_id": "slot-legacy",
+      "nonce": "nonce-legacy-24-byte-placeholder",
+      "aad": "{\"type\":\"lm-per-device-envelope-slot-aad-v1\",\"conversation_id\":\"conv-lm1_peer\",\"sender_user_id\":\"lm1_sender\",\"target_device_id\":\"dev1_legacy\",\"created_at\":1700000000000}",
+      "crypto": "placeholder-shared-envelope-v1",
+      "ciphertext": "legacy-inner-envelope"
+    }
+  ],
+  "fallback_ciphertext": "legacy-inner-envelope",
+  "created_at": 1700000000000,
+  "signature": "identity-signature-placeholder"
+}

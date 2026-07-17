@@ -1,4 +1,6 @@
 import { expect, test, type BrowserContext, type Locator, type Page } from '@playwright/test'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 async function clearBrowserState(page: Page) {
   await page.goto('/')
@@ -32,6 +34,26 @@ function decodePrefixedJson(text: string): any {
   const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4)
   return JSON.parse(Buffer.from(padded, 'base64').toString('utf8'))
 }
+
+
+
+test('per-device envelope v1 test vector keeps sealed slot wire shape', async () => {
+  const vectorPath = resolve(process.cwd(), '../../test-vectors/per_device_envelope_v1.json')
+  const vector = JSON.parse(readFileSync(vectorPath, 'utf8'))
+  expect(vector.type).toBe('lm-per-device-envelope-v1')
+  expect(vector.version).toBe(1)
+  expect(vector.signature).toBeTruthy()
+  expect(vector.target_devices).toHaveLength(2)
+  const sealed = vector.target_devices.find((item: any) => item.crypto === 'x25519-ephemeral-hkdf-xchacha20poly1305-device-slot-v1')
+  expect(sealed).toBeTruthy()
+  expect(sealed.x25519_ephemeral_public_key).toBeTruthy()
+  expect(sealed.slot_id).toBeTruthy()
+  expect(sealed.nonce).toBeTruthy()
+  expect(JSON.parse(sealed.aad).target_device_id).toBe(sealed.device_id)
+  const legacy = vector.target_devices.find((item: any) => item.crypto === 'placeholder-shared-envelope-v1')
+  expect(legacy).toBeTruthy()
+  expect(legacy.x25519_ephemeral_public_key).toBeUndefined()
+})
 
 async function installMockSyncNode(context: BrowserContext, mailboxes: Map<string, MockMailboxMessage[]>) {
   const deliveryStatus = (globalThis as any).__lmMockDeliveryStatus ?? new Map<string, string>()
