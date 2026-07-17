@@ -5290,9 +5290,13 @@ function createGroupEventFanout() {
   })
 }
 
-function createGroupEventFanoutRaw() {
+function createGroupEventFanoutRaw(enforceStrictPolicy = true) {
   if (!activeGroup.value) throw new Error('请选择群组')
   if (!groupEventText.value.trim()) throw new Error('请先生成群事件')
+  const riskText = activeGroupStrictE2eeRiskText.value
+  if (enforceStrictPolicy && riskText && strictE2eePolicyEnabled.value) {
+    throw new Error(`严格 E2EE 策略阻止生成风险群事件 fanout：${riskText}`)
+  }
   const fanout = activeGroup.value.member_user_ids.map((uid) => {
     const contact = contacts.value.find((c) => c.user_id === uid)
     if (!contact || contact.state !== 'Friend') throw new Error(`群成员还不是好友: ${uid}`)
@@ -5382,7 +5386,7 @@ async function leaveActiveGroupWithNotice() {
   if (!ok) return
   try {
     createRemoveMemberGroupEventText(identity.value.user_id)
-    createGroupEventFanoutRaw()
+    createGroupEventFanoutRaw(false)
   } catch (e) {
     const message = userFacingError(e)
     appendLog(`❌ 生成退群通知失败：${message}`)
