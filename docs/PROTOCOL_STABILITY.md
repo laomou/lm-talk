@@ -137,5 +137,5 @@ Before declaring protocol stability for a production release:
 - [x] Mailbox kind mapping and fallback-to-Other behavior are documented.
 - [x] ContactCard/DeviceCert merge and revocation policy has interop tests.
 - [x] PreKey rotation/consumption policy has interop tests.
-- [ ] Error-code/text dependencies in Web and node tests are documented.
+- [x] Error-code/text dependencies in Web and node tests are documented.
 - [ ] Release evidence index links fuzz, federation, SQLCipher, and audit artifacts.
