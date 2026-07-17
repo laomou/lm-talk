@@ -45,6 +45,7 @@ The script currently covers:
 Native `lm_node` binaries are built by `.github/workflows/release-node.yml` when a Git tag matching `v*` is pushed, or when the workflow is manually dispatched with a tag name. The workflow builds and publishes:
 
 - `lm_node-linux-x86_64.tar.gz`
+- `lm_node-linux-x86_64-sqlcipher.tar.gz`
 - `lm_node-macos-x86_64.tar.gz`
 - `lm_node-macos-arm64.tar.gz`
 - `lm_node-windows-x86_64.zip`
@@ -83,6 +84,9 @@ Do not mark the project production-ready until these are explicitly completed an
 - Multi-device sync and receipt-state reconciliation beyond backup merge heuristics.
 
 ## Evidence to keep for a release candidate
+
+Use `docs/RELEASE_EVIDENCE.md` as the structured evidence index for each release candidate.
+
 
 Before calling a node build production-ready, also archive evidence for any configured state persistence mode:
 
