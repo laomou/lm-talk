@@ -1,10 +1,14 @@
-use base64::{Engine as _, engine::general_purpose::{STANDARD as BASE64, URL_SAFE_NO_PAD}};
+use base64::{
+    Engine as _,
+    engine::general_purpose::{STANDARD as BASE64, URL_SAFE_NO_PAD},
+};
 use lm_core::{
-    device::DeviceSeed, ContactCard, DeviceCert, file_hash_base64, verify_file_hash, DeviceIdentity, DeviceRevoke, DirectEnvelope, FileChunkEnvelope,
+    ContactCard, DeviceCert, DeviceIdentity, DeviceRevoke, DirectEnvelope, FileChunkEnvelope,
     FileManifest, FriendRequest, GroupEvent, GroupEventAction, GroupInvite, GroupSenderEnvelope,
-    GroupSenderKeyDistribution, GroupSenderKeyState, Identity, IdentityBackupPackage, IdentitySeed, MailboxMessage,
-    MessageReceipt, MessageReceiptKind, PreKeyBundle, RatchetHeader, RatchetRole,
-    RatchetSessionState, SignedOneTimePreKeyRecord, normalize_passphrase,
+    GroupSenderKeyDistribution, GroupSenderKeyState, Identity, IdentityBackupPackage, IdentitySeed,
+    MailboxMessage, MessageReceipt, MessageReceiptKind, PreKeyBundle, RatchetHeader, RatchetRole,
+    RatchetSessionState, SignedOneTimePreKeyRecord, device::DeviceSeed, file_hash_base64,
+    normalize_passphrase, verify_file_hash,
 };
 use serde_json::Value;
 
@@ -14,7 +18,6 @@ fn fixture(name: &str) -> Value {
         .join(name);
     serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
 }
-
 
 fn prefixed_json<T: serde::de::DeserializeOwned>(text: &str, prefix: &str) -> T {
     let payload = text.strip_prefix(prefix).unwrap();
@@ -80,7 +83,6 @@ fn backup_export_text_tamper_is_rejected() {
     );
 }
 
-
 #[test]
 fn device_vectors_verify() {
     let v = fixture("device_v1.json");
@@ -130,8 +132,6 @@ fn contact_and_friend_vectors_verify() {
     assert_eq!(req.note.as_deref(), friend["note"].as_str());
 }
 
-
-
 #[test]
 fn prekey_vectors_verify() {
     let v = fixture("prekey_v1.json");
@@ -143,22 +143,49 @@ fn prekey_vectors_verify() {
         BASE64.encode(id.identity_public_key())
     );
 
-    let bundle: PreKeyBundle = prefixed_json(v["prekey_bundle_text"].as_str().unwrap(), "lm-prekey-bundle-v1:");
-    if bundle.expires_at > lm_core::unix_now() { bundle.verify().unwrap(); } else { assert!(bundle.verify().is_err()); }
+    let bundle: PreKeyBundle = prefixed_json(
+        v["prekey_bundle_text"].as_str().unwrap(),
+        "lm-prekey-bundle-v1:",
+    );
+    if bundle.expires_at > lm_core::unix_now() {
+        bundle.verify().unwrap();
+    } else {
+        assert!(bundle.verify().is_err());
+    }
     assert_eq!(bundle.user_id.to_string(), v["user_id"]);
-    assert_eq!(bundle.signed_prekey_id, v["signed_prekey_id"].as_u64().unwrap() as u32);
+    assert_eq!(
+        bundle.signed_prekey_id,
+        v["signed_prekey_id"].as_u64().unwrap() as u32
+    );
     assert_eq!(bundle.one_time_prekeys.len(), 0);
 
     let records = v["signed_one_time_prekey_record_texts"].as_array().unwrap();
-    assert_eq!(records.len(), v["signed_one_time_prekey_count"].as_u64().unwrap() as usize);
+    assert_eq!(
+        records.len(),
+        v["signed_one_time_prekey_count"].as_u64().unwrap() as usize
+    );
     for record_text in records {
-        let record: SignedOneTimePreKeyRecord = prefixed_json(record_text.as_str().unwrap(), "lm-signed-one-time-prekey-v1:");
-        if record.expires_at > lm_core::unix_now() && bundle.expires_at > lm_core::unix_now() { record.verify_for_bundle(&bundle).unwrap(); } else { assert!(record.verify_for_bundle(&bundle).is_err()); }
+        let record: SignedOneTimePreKeyRecord = prefixed_json(
+            record_text.as_str().unwrap(),
+            "lm-signed-one-time-prekey-v1:",
+        );
+        if record.expires_at > lm_core::unix_now() && bundle.expires_at > lm_core::unix_now() {
+            record.verify_for_bundle(&bundle).unwrap();
+        } else {
+            assert!(record.verify_for_bundle(&bundle).is_err());
+        }
     }
-    let first: SignedOneTimePreKeyRecord = prefixed_json(v["first_signed_one_time_prekey_record_text"].as_str().unwrap(), "lm-signed-one-time-prekey-v1:");
-    assert_eq!(first.key_id, v["first_one_time_prekey_id"].as_u64().unwrap() as u32);
+    let first: SignedOneTimePreKeyRecord = prefixed_json(
+        v["first_signed_one_time_prekey_record_text"]
+            .as_str()
+            .unwrap(),
+        "lm-signed-one-time-prekey-v1:",
+    );
+    assert_eq!(
+        first.key_id,
+        v["first_one_time_prekey_id"].as_u64().unwrap() as u32
+    );
 }
-
 
 #[test]
 fn ratchet_vectors_verify() {
@@ -196,18 +223,31 @@ fn ratchet_vectors_verify() {
     assert_eq!(sent.message_key, v["received_message_key_base64"]);
     assert_eq!(sent.header.message_number, 0);
     assert_eq!(sent.header.session_id, v["header"]["session_id"]);
-    let fixture_alice_state = RatchetSessionState::from_export_text(v["alice_state_text_after_send"].as_str().unwrap()).unwrap();
+    let fixture_alice_state =
+        RatchetSessionState::from_export_text(v["alice_state_text_after_send"].as_str().unwrap())
+            .unwrap();
     assert_eq!(alice_state.session_id, fixture_alice_state.session_id);
-    assert_eq!(alice_state.local_dh_public_key, fixture_alice_state.local_dh_public_key);
-    assert_eq!(alice_state.remote_dh_public_key, fixture_alice_state.remote_dh_public_key);
+    assert_eq!(
+        alice_state.local_dh_public_key,
+        fixture_alice_state.local_dh_public_key
+    );
+    assert_eq!(
+        alice_state.remote_dh_public_key,
+        fixture_alice_state.remote_dh_public_key
+    );
     assert_eq!(alice_state.send_count, fixture_alice_state.send_count);
     assert_eq!(alice_state.recv_count, fixture_alice_state.recv_count);
 
-    let bob_state = RatchetSessionState::from_export_text(v["bob_state_text_after_receive"].as_str().unwrap()).unwrap();
+    let bob_state =
+        RatchetSessionState::from_export_text(v["bob_state_text_after_receive"].as_str().unwrap())
+            .unwrap();
     assert_eq!(bob_state.recv_count, 1);
     let header: RatchetHeader = serde_json::from_value(v["header"].clone()).unwrap();
     let replay = bob_state.clone().next_receiving_key(&header);
-    assert!(replay.is_err(), "restored state should reject already-received header");
+    assert!(
+        replay.is_err(),
+        "restored state should reject already-received header"
+    );
 }
 
 #[test]
@@ -226,46 +266,67 @@ fn receipt_and_mailbox_vectors_verify() {
         BASE64.encode(bob.identity_public_key())
     );
 
-    let delivered = MessageReceipt::from_export_text(v["delivered_receipt_text"].as_str().unwrap()).unwrap();
-    if delivered.expires_at > lm_core::unix_now() { delivered.verify(&bob.identity_public_key()).unwrap(); } else { assert!(delivered.verify(&bob.identity_public_key()).is_err()); }
+    let delivered =
+        MessageReceipt::from_export_text(v["delivered_receipt_text"].as_str().unwrap()).unwrap();
+    if delivered.expires_at > lm_core::unix_now() {
+        delivered.verify(&bob.identity_public_key()).unwrap();
+    } else {
+        assert!(delivered.verify(&bob.identity_public_key()).is_err());
+    }
     assert_eq!(delivered.kind, MessageReceiptKind::Delivered);
     assert_eq!(delivered.from_user_id.to_string(), v["bob_user_id"]);
     assert_eq!(delivered.to_user_id.to_string(), v["alice_user_id"]);
-    assert_eq!(delivered.target_message_id.to_string(), v["target_message_id"]);
+    assert_eq!(
+        delivered.target_message_id.to_string(),
+        v["target_message_id"]
+    );
     assert_eq!(delivered.conversation_id, v["conversation_id"]);
-    assert_eq!(delivered.mailbox_delivery_id.as_deref(), v["mailbox_delivery_id"].as_str());
+    assert_eq!(
+        delivered.mailbox_delivery_id.as_deref(),
+        v["mailbox_delivery_id"].as_str()
+    );
 
     let read = MessageReceipt::from_export_text(v["read_receipt_text"].as_str().unwrap()).unwrap();
-    if read.expires_at > lm_core::unix_now() { read.verify(&bob.identity_public_key()).unwrap(); } else { assert!(read.verify(&bob.identity_public_key()).is_err()); }
+    if read.expires_at > lm_core::unix_now() {
+        read.verify(&bob.identity_public_key()).unwrap();
+    } else {
+        assert!(read.verify(&bob.identity_public_key()).is_err());
+    }
     assert_eq!(read.kind, MessageReceiptKind::Read);
     assert_eq!(read.target_message_id.to_string(), v["target_message_id"]);
 
-    let mailbox = MailboxMessage::from_export_text(v["mailbox_message_text"].as_str().unwrap()).unwrap();
-    if mailbox.expires_at > lm_core::unix_now() { mailbox.verify(&alice.identity_public_key()).unwrap(); } else { assert!(mailbox.verify(&alice.identity_public_key()).is_err()); }
+    let mailbox =
+        MailboxMessage::from_export_text(v["mailbox_message_text"].as_str().unwrap()).unwrap();
+    if mailbox.expires_at > lm_core::unix_now() {
+        mailbox.verify(&alice.identity_public_key()).unwrap();
+    } else {
+        assert!(mailbox.verify(&alice.identity_public_key()).is_err());
+    }
     assert_eq!(mailbox.from_user_id.to_string(), v["alice_user_id"]);
     assert_eq!(mailbox.to_user_id.to_string(), v["bob_user_id"]);
     assert_eq!(format!("{:?}", mailbox.kind), v["mailbox_kind"]);
     assert_eq!(mailbox.ciphertext, v["mailbox_ciphertext"]);
 }
 
-
-
-
 #[test]
 fn group_sender_key_vectors_verify() {
     let v = fixture("group_sender_key_v1.json");
-    let alice_card = ContactCard::from_export_text(v["alice_contact_card_text"].as_str().unwrap()).unwrap();
+    let alice_card =
+        ContactCard::from_export_text(v["alice_contact_card_text"].as_str().unwrap()).unwrap();
     alice_card.verify().unwrap();
     assert_eq!(alice_card.user_id.to_string(), v["alice_user_id"]);
 
-    let distribution = GroupSenderKeyDistribution::from_export_text(v["distribution_text"].as_str().unwrap()).unwrap();
+    let distribution =
+        GroupSenderKeyDistribution::from_export_text(v["distribution_text"].as_str().unwrap())
+            .unwrap();
     distribution.verify(&alice_card).unwrap();
     assert_eq!(distribution.group_id.to_string(), v["group_id"]);
     assert_eq!(distribution.sender_user_id.to_string(), v["alice_user_id"]);
     assert_eq!(distribution.chain_key, v["initial_chain_key_base64"]);
     assert_eq!(distribution.counter, v["counter"].as_u64().unwrap() as u32);
 
-    let envelope: GroupSenderEnvelope = serde_json::from_str(v["envelope_json"].as_str().unwrap()).unwrap();
+    let envelope: GroupSenderEnvelope =
+        serde_json::from_str(v["envelope_json"].as_str().unwrap()).unwrap();
     assert_eq!(envelope.group_id.to_string(), v["group_id"]);
     assert_eq!(envelope.sender_user_id.to_string(), v["alice_user_id"]);
     assert_eq!(envelope.counter, v["counter"].as_u64().unwrap() as u32);
@@ -273,7 +334,10 @@ fn group_sender_key_vectors_verify() {
     let mut receiver = GroupSenderKeyState::from_distribution(&distribution, &alice_card).unwrap();
     let plain = receiver.decrypt(&envelope).unwrap();
     assert_eq!(plain.text, v["plaintext"]);
-    assert_eq!(receiver.counter, v["receiver_counter_after_decrypt"].as_u64().unwrap() as u32);
+    assert_eq!(
+        receiver.counter,
+        v["receiver_counter_after_decrypt"].as_u64().unwrap() as u32
+    );
 
     let mut replay_receiver = receiver.clone();
     assert!(replay_receiver.decrypt(&envelope).is_err());
@@ -287,16 +351,26 @@ fn group_sender_key_vectors_verify() {
 #[test]
 fn group_vectors_verify() {
     let v = fixture("group_v1.json");
-    let alice_card = ContactCard::from_export_text(v["alice_contact_card_text"].as_str().unwrap()).unwrap();
+    let alice_card =
+        ContactCard::from_export_text(v["alice_contact_card_text"].as_str().unwrap()).unwrap();
     alice_card.verify().unwrap();
     assert_eq!(alice_card.user_id.to_string(), v["alice_user_id"]);
 
     let invite = GroupInvite::from_export_text(v["invite_text"].as_str().unwrap()).unwrap();
-    if invite.expires_at > lm_core::unix_now() { invite.verify(&alice_card).unwrap(); } else { assert!(invite.verify(&alice_card).is_err()); }
+    if invite.expires_at > lm_core::unix_now() {
+        invite.verify(&alice_card).unwrap();
+    } else {
+        assert!(invite.verify(&alice_card).is_err());
+    }
     assert_eq!(invite.group_id.to_string(), v["group_id"]);
     assert_eq!(invite.group_name, v["group_name"]);
     assert_eq!(invite.inviter_user_id.to_string(), v["alice_user_id"]);
-    assert!(invite.member_user_ids.iter().any(|id| id.to_string() == v["bob_user_id"]));
+    assert!(
+        invite
+            .member_user_ids
+            .iter()
+            .any(|id| id.to_string() == v["bob_user_id"])
+    );
 
     let rename = GroupEvent::from_export_text(v["rename_event_text"].as_str().unwrap()).unwrap();
     rename.verify(&alice_card).unwrap();
@@ -310,7 +384,9 @@ fn group_vectors_verify() {
     add.verify(&alice_card).unwrap();
     assert_eq!(add.sequence, v["add_member_sequence"].as_u64().unwrap());
     match add.action {
-        GroupEventAction::AddMember { ref user_id } => assert_eq!(user_id.to_string(), v["bob_user_id"]),
+        GroupEventAction::AddMember { ref user_id } => {
+            assert_eq!(user_id.to_string(), v["bob_user_id"])
+        }
         _ => panic!("unexpected add-member action"),
     }
 }
@@ -324,7 +400,10 @@ fn file_package_vectors_verify() {
     assert_eq!(v["alice_user_id"], alice.user_id().to_string());
     assert_eq!(v["bob_user_id"], bob.user_id().to_string());
     assert_eq!(v["file_hash_base64"], file_hash_base64(&plaintext));
-    assert!(verify_file_hash(&plaintext, v["file_hash_base64"].as_str().unwrap()));
+    assert!(verify_file_hash(
+        &plaintext,
+        v["file_hash_base64"].as_str().unwrap()
+    ));
 
     let manifest = FileManifest::from_export_text(v["manifest_text"].as_str().unwrap()).unwrap();
     assert_eq!(manifest.from_user_id, *alice.user_id());
@@ -340,12 +419,18 @@ fn file_package_vectors_verify() {
     assert_eq!(chunk.chunk_index, v["chunk_index"].as_u64().unwrap() as u32);
     assert_eq!(chunk.from_user_id, *alice.user_id());
     assert_eq!(chunk.to_user_id, *bob.user_id());
-    let decrypted = chunk.decrypt_chunk(&bob, &alice.x25519_public_key()).unwrap();
+    let decrypted = chunk
+        .decrypt_chunk(&bob, &alice.x25519_public_key())
+        .unwrap();
     assert_eq!(decrypted, plaintext);
 
     let mut tampered = chunk.clone();
     tampered.ciphertext.push('A');
-    assert!(tampered.decrypt_chunk(&bob, &alice.x25519_public_key()).is_err());
+    assert!(
+        tampered
+            .decrypt_chunk(&bob, &alice.x25519_public_key())
+            .is_err()
+    );
 }
 
 #[test]
@@ -384,37 +469,54 @@ fn vector_text_tamper_is_rejected_for_signed_objects() {
             .is_err()
     );
 
-
-
-
-
-
     let group_sender = fixture("group_sender_key_v1.json");
-    let alice_card = ContactCard::from_export_text(group_sender["alice_contact_card_text"].as_str().unwrap()).unwrap();
-    let tampered_distribution = mutate_export_text(group_sender["distribution_text"].as_str().unwrap());
-    assert!(GroupSenderKeyDistribution::from_export_text(&tampered_distribution).and_then(|d| d.verify(&alice_card)).is_err());
+    let alice_card =
+        ContactCard::from_export_text(group_sender["alice_contact_card_text"].as_str().unwrap())
+            .unwrap();
+    let tampered_distribution =
+        mutate_export_text(group_sender["distribution_text"].as_str().unwrap());
+    assert!(
+        GroupSenderKeyDistribution::from_export_text(&tampered_distribution)
+            .and_then(|d| d.verify(&alice_card))
+            .is_err()
+    );
 
     let group = fixture("group_v1.json");
-    let alice_card = ContactCard::from_export_text(group["alice_contact_card_text"].as_str().unwrap()).unwrap();
+    let alice_card =
+        ContactCard::from_export_text(group["alice_contact_card_text"].as_str().unwrap()).unwrap();
     let tampered_invite = mutate_export_text(group["invite_text"].as_str().unwrap());
-    assert!(GroupInvite::from_export_text(&tampered_invite).and_then(|i| i.verify(&alice_card)).is_err());
+    assert!(
+        GroupInvite::from_export_text(&tampered_invite)
+            .and_then(|i| i.verify(&alice_card))
+            .is_err()
+    );
     let tampered_event = mutate_export_text(group["rename_event_text"].as_str().unwrap());
-    assert!(GroupEvent::from_export_text(&tampered_event).and_then(|e| e.verify(&alice_card)).is_err());
+    assert!(
+        GroupEvent::from_export_text(&tampered_event)
+            .and_then(|e| e.verify(&alice_card))
+            .is_err()
+    );
 
     let prekey = fixture("prekey_v1.json");
     let tampered_bundle = mutate_export_text(prekey["prekey_bundle_text"].as_str().unwrap());
     assert!(PreKeyBundle::from_export_text(&tampered_bundle).is_err());
-    let tampered_otpk = mutate_export_text(prekey["first_signed_one_time_prekey_record_text"].as_str().unwrap());
+    let tampered_otpk = mutate_export_text(
+        prekey["first_signed_one_time_prekey_record_text"]
+            .as_str()
+            .unwrap(),
+    );
     assert!(SignedOneTimePreKeyRecord::from_export_text(&tampered_otpk).is_err());
 
     let receipt_mailbox = fixture("receipt_mailbox_v1.json");
-    let tampered_receipt = mutate_export_text(receipt_mailbox["delivered_receipt_text"].as_str().unwrap());
+    let tampered_receipt =
+        mutate_export_text(receipt_mailbox["delivered_receipt_text"].as_str().unwrap());
     assert!(
         MessageReceipt::from_export_text(&tampered_receipt)
             .and_then(|r| r.verify(&identity(8).identity_public_key()))
             .is_err()
     );
-    let tampered_mailbox = mutate_export_text(receipt_mailbox["mailbox_message_text"].as_str().unwrap());
+    let tampered_mailbox =
+        mutate_export_text(receipt_mailbox["mailbox_message_text"].as_str().unwrap());
     assert!(
         MailboxMessage::from_export_text(&tampered_mailbox)
             .and_then(|m| m.verify(&identity(7).identity_public_key()))
@@ -422,7 +524,8 @@ fn vector_text_tamper_is_rejected_for_signed_objects() {
     );
 
     let device = fixture("device_v1.json");
-    let mut cert: DeviceCert = serde_json::from_str(device["device_cert_json"].as_str().unwrap()).unwrap();
+    let mut cert: DeviceCert =
+        serde_json::from_str(device["device_cert_json"].as_str().unwrap()).unwrap();
     cert.device_name = Some("evil".into());
     assert!(cert.verify(&identity(7).identity_public_key()).is_err());
 
