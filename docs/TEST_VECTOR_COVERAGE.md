@@ -10,6 +10,7 @@ This file tracks which protocol objects have stable cross-platform test vectors 
 | `test-vectors/backup_v1.json` | identity backup export text, seed restore, wrong-passphrase rejection, tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
 | `test-vectors/contact_card_v1.json` | Contact Card export text, signature verification, display name, user id, tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
 | `test-vectors/friend_request_v1.json` | Friend request export text, signature verification, from/to user ids, note, tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
+| `test-vectors/device_v1.json` | deterministic device seed, device cert JSON, device box public key, device revoke text, signature verification, tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
 | `test-vectors/message_crypto_v1.json` | legacy DirectEnvelope encryption/decryption, conversation id, plaintext, tamper rejection | `crates/lm_core/tests/test_vectors.rs` | Covered |
 
 ## Missing stable vectors before protocol freeze
@@ -18,8 +19,6 @@ These objects have unit/e2e coverage but do not yet have committed cross-platfor
 
 | Object | Needed vector evidence | Priority |
 | --- | --- | --- |
-| Device cert | deterministic device seed, `lm-device-cert-v1` JSON, `device_id`, `device_public_key`, `device_box_public_key`, identity signature verification | High |
-| Device revoke | `lm-device-revoke-v1:` text, revoked device id, reason, signature verification, tamper rejection | High |
 | Message receipt | `lm-message-receipt-v1:` text for Delivered and Read, target message id, delivery id, signature verification | High |
 | Mailbox message | `lm-mailbox-message-v1:` text, kind mapping, TTL/expiry, sender signature verification | High |
 | PreKey bundle | `lm-prekey-bundle-v1:` text, signed prekey, optional signed one-time-prekey records, DHT key namespace | High |

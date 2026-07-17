@@ -1,7 +1,7 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use lm_core::{
-    ContactCard, DirectEnvelope, FriendRequest, Identity, IdentityBackupPackage, IdentitySeed,
-    normalize_passphrase,
+    device::DeviceSeed, ContactCard, DeviceCert, DeviceIdentity, DeviceRevoke, DirectEnvelope,
+    FriendRequest, Identity, IdentityBackupPackage, IdentitySeed, normalize_passphrase,
 };
 use serde_json::Value;
 
@@ -70,6 +70,36 @@ fn backup_export_text_tamper_is_rejected() {
     );
 }
 
+
+#[test]
+fn device_vectors_verify() {
+    let v = fixture("device_v1.json");
+    let identity = identity(7);
+    let device = DeviceIdentity::from_seed(DeviceSeed::from_bytes([9u8; 32])).unwrap();
+    assert_eq!(v["identity_seed_hex"], hex(&[7u8; 32]));
+    assert_eq!(v["device_seed_hex"], hex(&[9u8; 32]));
+    assert_eq!(v["user_id"], identity.user_id().to_string());
+    assert_eq!(v["device_id"], device.device_id().to_string());
+    assert_eq!(
+        v["device_public_key_base64"],
+        BASE64.encode(device.device_public_key())
+    );
+    assert_eq!(
+        v["device_box_public_key_base64"],
+        BASE64.encode(device.device_box_public_key())
+    );
+
+    let cert: DeviceCert = serde_json::from_str(v["device_cert_json"].as_str().unwrap()).unwrap();
+    cert.verify(&identity.identity_public_key()).unwrap();
+    assert_eq!(cert.device_id.to_string(), v["device_id"]);
+    assert_eq!(cert.device_name.as_deref(), Some("phone"));
+
+    let revoke = DeviceRevoke::from_export_text(v["device_revoke_text"].as_str().unwrap()).unwrap();
+    revoke.verify(&identity.identity_public_key()).unwrap();
+    assert_eq!(revoke.device_id.to_string(), v["device_id"]);
+    assert_eq!(revoke.reason.as_deref(), v["revoke_reason"].as_str());
+}
+
 #[test]
 fn contact_and_friend_vectors_verify() {
     let contact = fixture("contact_card_v1.json");
@@ -123,6 +153,20 @@ fn vector_text_tamper_is_rejected_for_signed_objects() {
     assert!(
         ContactCard::from_export_text(&tampered_contact)
             .and_then(|c| c.verify())
+            .is_err()
+    );
+
+
+    let device = fixture("device_v1.json");
+    let mut cert: DeviceCert = serde_json::from_str(device["device_cert_json"].as_str().unwrap()).unwrap();
+    cert.device_name = Some("evil".into());
+    assert!(cert.verify(&identity(7).identity_public_key()).is_err());
+
+    let revoke_text = device["device_revoke_text"].as_str().unwrap();
+    let tampered_revoke = mutate_export_text(revoke_text);
+    assert!(
+        DeviceRevoke::from_export_text(&tampered_revoke)
+            .and_then(|r| r.verify(&identity(7).identity_public_key()))
             .is_err()
     );
 

@@ -1,0 +1,12 @@
+{
+  "device_box_public_key_base64": "V9tLNZ8jrl4Ubk4lEgVnBHIlBjSMFQwUdT0Mkz0E1CE=",
+  "device_cert_json": "{\"type\":\"lm-device-cert-v1\",\"version\":1,\"user_id\":\"lm1_s4yqkfcdxh4zhuzf3fwzykzgalz2xrvct3eoimxz\",\"device_id\":\"dev1_r7kckdd6dgrcnoyxvyantcfvgzlnwhm46dwkl2ha\",\"device_public_key\":\"/RckOFqgx1tk+3jNYC+h2ZH96/drE8WO1wLqyDXp9hg=\",\"device_box_public_key\":\"V9tLNZ8jrl4Ubk4lEgVnBHIlBjSMFQwUdT0Mkz0E1CE=\",\"device_name\":\"phone\",\"created_at\":1784253870,\"expires_at\":null,\"signature_by_identity_key\":\"PjM22V1x/jFc7dnw/ZTE8vwbb/L6FGiQOQQE5z/tCI2wSu5TjAW2Y7hm6XP597Ag6h3ikbNJT14b7O2EntCcAQ==\"}",
+  "device_id": "dev1_r7kckdd6dgrcnoyxvyantcfvgzlnwhm46dwkl2ha",
+  "device_public_key_base64": "/RckOFqgx1tk+3jNYC+h2ZH96/drE8WO1wLqyDXp9hg=",
+  "device_revoke_text": "lm-device-revoke-v1:eyJ0eXBlIjoibG0tZGV2aWNlLXJldm9rZS12MSIsInZlcnNpb24iOjEsInVzZXJfaWQiOiJsbTFfczR5cWtmY2R4aDR6aHV6ZjNmd3p5a3pnYWx6MnhydmN0M2VvaW14eiIsImRldmljZV9pZCI6ImRldjFfcjdrY2tkZDZkZ3Jjbm95eHZ5YW50Y2Z2Z3psbndobTQ2ZHdrbDJoYSIsInJlYXNvbiI6Imxvc3QiLCJjcmVhdGVkX2F0IjoxNzg0MjUzODcwLCJzaWduYXR1cmVfYnlfaWRlbnRpdHlfa2V5IjoicWZuZzVYSGFuK0tsVC9pUWRGWWlkL2tuMHhTMkgxWWdiNFhSYlh3eGlyMkQzN0FrandlRTN1bmpUTkpEcWFRTVU2YWRXdHdNcnJ0V210ZGt5cnlRQ0E9PSJ9",
+  "device_seed_hex": "0909090909090909090909090909090909090909090909090909090909090909",
+  "identity_public_key_base64": "42SyCpbihPTjxVmRXnisYCeQFy4m4dblp8h3BUdbzwk=",
+  "identity_seed_hex": "0707070707070707070707070707070707070707070707070707070707070707",
+  "revoke_reason": "lost",
+  "user_id": "lm1_s4yqkfcdxh4zhuzf3fwzykzgalz2xrvct3eoimxz"
+}
