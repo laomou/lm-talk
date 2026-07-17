@@ -42,8 +42,8 @@ Review:
 - Local safety policy enforcement: verified-contact send/receive, sealed-slot send/receive, text/file filtering.
 - Per-device envelope v1 format, sender signature, sealed slot encryption/opening, fallback/placeholder downgrade controls, and diagnostics.
 - Self-sync package/request signing, sequence/gap repair, cached package replay/dedupe, own-device certificate sync, receipt-state sync, and outbox-summary sync.
-- Contact Card update fanout/ACK/stale retry and DHT auto-refresh behavior.
-- UI flows for fingerprint verification, QR scanning, device revocation, strict E2EE preflight, and downgrade warnings.
+- Contact Card update fanout/ACK/stale retry and DHT auto-refresh behavior, including the strict-E2EE repair-control exception for ContactCard/device-cert updates and device revocations.
+- UI flows for fingerprint verification, QR scanning, device revocation, strict E2EE preflight, fail-closed content paths, and downgrade warnings.
 - Web app background behavior after PWA removal: no Service Worker/background-sync key access; notifications are explicit foreground/user-driven flows unless a future reviewed implementation reintroduces background support.
 
 ### Native node (`crates/lm_node`)

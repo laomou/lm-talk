@@ -119,3 +119,14 @@ This system is content-confidential and integrity-protected, not anonymous or tr
 8. Do DHT validation failures quarantine/penalize malicious peers without blocking honest recovery?
 9. Are size limits and parsing errors sufficient for malformed payloads?
 10. Are release artifacts and deployment templates aligned with the intended security mode?
+
+## Strict E2EE control-message exception
+
+Strict E2EE send policy is fail-closed for user content: direct messages, files, group messages, group events, group invitations, secure-session payloads, and normal outbox retries must satisfy verified-contact and sealed-slot requirements before sending.
+
+Two outbound control-message families intentionally bypass the strict send-content gate because they are required to repair or revoke trust state:
+
+- `lm-contact-card-v1:` / `contact-update` fanout, used to distribute fresh ContactCards, device certificates, and `device_box_public_key` values needed to reach sealed-slot readiness.
+- `lm-device-revoke-v1`, used to stop peers from trusting a lost or retired device.
+
+These exceptions do not carry message/file plaintext. They remain signed protocol objects and should be reviewed as trust-state repair paths, not as content-delivery downgrade paths. Inbound content still enforces verified-contact and sealed-slot policy, and strict mode blocks risky group creation, group invites, group messages, group events, file send/decrypt, secure sessions, and mailbox receipts.
