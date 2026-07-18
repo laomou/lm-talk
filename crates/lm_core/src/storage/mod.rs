@@ -18,6 +18,22 @@ pub struct StoredMessage {
     pub received_at: Option<u64>,
 }
 
+/// Storage interface for contacts, blocklist, and messages.
+///
+/// [`MemoryStore`] is the in-memory reference implementation. Native
+/// SQLite/SQLCipher and Web IndexedDB adapters should implement this trait so
+/// higher layers can stay storage-agnostic.
+pub trait Store {
+    fn save_contact(&mut self, contact: Contact) -> Result<()>;
+    fn get_contact(&self, user_id: &UserId) -> Option<Contact>;
+    fn list_contacts(&self) -> Vec<Contact>;
+    fn block_user(&mut self, entry: BlockEntry);
+    fn is_blocked(&self, user_id: &UserId) -> bool;
+    fn save_message(&mut self, message: StoredMessage) -> Result<()>;
+    fn get_message(&self, message_id: &Uuid) -> Option<StoredMessage>;
+    fn list_messages_for_conversation(&self, conversation_id: &str) -> Vec<StoredMessage>;
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct MemoryStore {
     contacts: HashMap<UserId, Contact>,
@@ -76,6 +92,43 @@ impl MemoryStore {
         self.messages
             .values()
             .filter(|m| m.conversation_id == conversation_id)
+            .collect()
+    }
+}
+
+impl Store for MemoryStore {
+    fn save_contact(&mut self, contact: Contact) -> Result<()> {
+        MemoryStore::save_contact(self, contact)
+    }
+
+    fn get_contact(&self, user_id: &UserId) -> Option<Contact> {
+        MemoryStore::get_contact(self, user_id).cloned()
+    }
+
+    fn list_contacts(&self) -> Vec<Contact> {
+        self.contacts.values().cloned().collect()
+    }
+
+    fn block_user(&mut self, entry: BlockEntry) {
+        MemoryStore::block_user(self, entry)
+    }
+
+    fn is_blocked(&self, user_id: &UserId) -> bool {
+        MemoryStore::is_blocked(self, user_id)
+    }
+
+    fn save_message(&mut self, message: StoredMessage) -> Result<()> {
+        MemoryStore::save_message(self, message)
+    }
+
+    fn get_message(&self, message_id: &Uuid) -> Option<StoredMessage> {
+        MemoryStore::get_message(self, message_id).cloned()
+    }
+
+    fn list_messages_for_conversation(&self, conversation_id: &str) -> Vec<StoredMessage> {
+        MemoryStore::list_messages_for_conversation(self, conversation_id)
+            .into_iter()
+            .cloned()
             .collect()
     }
 }
@@ -154,5 +207,23 @@ mod tests {
             LmError::BlockedSender
         );
         assert!(store.get_message(&message_id).is_none());
+    }
+
+    #[test]
+    fn store_trait_dispatches_to_memory_store() {
+        fn use_store<S: Store>(store: &mut S, contact: Contact, user_id: &UserId) -> bool {
+            store.save_contact(contact).unwrap();
+            store.get_contact(user_id).is_some()
+        }
+
+        let (bob, _b) = Identity::create_with_passphrase("bob trait").unwrap();
+        let bob_card = bob
+            .export_contact_card(Some("Bob".into()), None, vec![])
+            .unwrap();
+        let bob_contact = bob_card.into_contact(TrustLevel::Imported).unwrap();
+
+        let mut store = MemoryStore::new();
+        assert!(use_store(&mut store, bob_contact, bob.user_id()));
+        assert_eq!(Store::list_contacts(&store).len(), 1);
     }
 }

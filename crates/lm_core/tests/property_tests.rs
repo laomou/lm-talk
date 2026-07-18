@@ -1,10 +1,10 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use lm_core::{
     ContactCard, DeviceRevoke, DirectEnvelope, FileChunkEnvelope, FileManifest, FriendRequest,
-    FriendResponse, GroupEvent, GroupInvite, GroupSenderKeyDistribution, Identity,
-    IdentityBackupPackage, LmError, MailboxMessage, MessageBody, MessageReceipt, PeerAnnounce,
-    PreKeyBundle, PublicPeerAnnounce, RatchetEnvelope, RatchetSessionState, SignalAnswer,
-    SignalOffer, SignedOneTimePreKeyRecord,
+    FriendResponse, GroupEvent, GroupInvite, GroupSenderKeyDistribution, GroupSenderKeyState,
+    Identity, IdentityBackupPackage, LmError, MailboxMessage, MessageBody, MessageReceipt,
+    PeerAnnounce, PreKeyBundle, PublicPeerAnnounce, RatchetEnvelope, RatchetSessionState,
+    SignalAnswer, SignalOffer, SignedOneTimePreKeyRecord,
 };
 use proptest::prelude::*;
 
@@ -271,5 +271,79 @@ proptest! {
             envelope.decrypt(&mut bob).unwrap();
         }
         prop_assert!(bob.skipped_message_keys.is_empty());
+    }
+
+    #[test]
+    fn group_sender_key_out_of_order_delivery_decrypts_all(
+        count in 2usize..24,
+        deliver_last_first in any::<bool>(),
+    ) {
+        let alice = Identity::from_seed(lm_core::IdentitySeed::from_bytes([21u8; 32])).unwrap();
+        let alice_card = alice.export_contact_card(None, None, vec![]).unwrap();
+        let group_id = uuid::Uuid::from_bytes([9u8; 16]);
+        let mut sender = GroupSenderKeyState::new(&alice, group_id).unwrap();
+        let distribution = sender.to_distribution(&alice).unwrap();
+        let mut receiver = GroupSenderKeyState::from_distribution(&distribution, &alice_card).unwrap();
+
+        let envelopes: Vec<_> = (0..count)
+            .map(|i| sender.encrypt_text(format!("g-{i}")).unwrap())
+            .collect();
+
+        if deliver_last_first {
+            // Deliver highest counter first, forcing all earlier keys to be skipped.
+            let plain = receiver.decrypt(envelopes.last().unwrap()).unwrap();
+            prop_assert_eq!(plain.text, format!("g-{}", count - 1));
+            for (i, env) in envelopes.iter().enumerate().take(count - 1) {
+                let plain = receiver.decrypt(env).unwrap();
+                prop_assert_eq!(plain.text, format!("g-{i}"));
+            }
+        } else {
+            for (i, env) in envelopes.iter().enumerate() {
+                let plain = receiver.decrypt(env).unwrap();
+                prop_assert_eq!(plain.text, format!("g-{i}"));
+            }
+        }
+
+        // Any redelivery of a consumed message must be rejected as replay.
+        prop_assert_eq!(
+            receiver.decrypt(&envelopes[0]).unwrap_err(),
+            LmError::ReplayDetected
+        );
+    }
+
+    #[test]
+    fn message_timestamp_within_window_decrypts(text in bounded_text()) {
+        let alice = Identity::from_seed(lm_core::IdentitySeed::from_bytes([7u8; 32])).unwrap();
+        let bob = Identity::from_seed(lm_core::IdentitySeed::from_bytes([8u8; 32])).unwrap();
+        // Freshly created envelopes carry a current timestamp and must validate.
+        let envelope = DirectEnvelope::encrypt_text(
+            &alice,
+            bob.user_id().clone(),
+            &bob.x25519_public_key(),
+            "prop-ts".into(),
+            text.clone(),
+        )
+        .unwrap();
+        let plain = envelope.decrypt(&bob, &alice.x25519_public_key()).unwrap();
+        prop_assert_eq!(plain.body, MessageBody::Text { text });
+    }
+
+    #[test]
+    fn message_stale_timestamp_is_rejected(age_days in 8i64..40) {
+        let alice = Identity::from_seed(lm_core::IdentitySeed::from_bytes([7u8; 32])).unwrap();
+        let bob = Identity::from_seed(lm_core::IdentitySeed::from_bytes([8u8; 32])).unwrap();
+        let mut envelope = DirectEnvelope::encrypt_text(
+            &alice,
+            bob.user_id().clone(),
+            &bob.x25519_public_key(),
+            "prop-ts-stale".into(),
+            "stale".into(),
+        )
+        .unwrap();
+        // Backdate created_at beyond the 7-day acceptance window. This changes the
+        // AAD, so decryption must fail (either timestamp check or AEAD).
+        let now = lm_core::unix_now();
+        envelope.created_at = now.saturating_sub((age_days as u64) * 24 * 60 * 60);
+        prop_assert!(envelope.decrypt(&bob, &alice.x25519_public_key()).is_err());
     }
 }

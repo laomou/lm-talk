@@ -56,7 +56,7 @@ pub use ratchet::{
     RatchetDhKeyPair, RatchetHeader, RatchetMessageKey, RatchetRole, RatchetSessionState,
     RatchetSkippedKey,
 };
-pub use storage::{MemoryStore, StoredMessage};
+pub use storage::{MemoryStore, Store, StoredMessage};
 
 #[cfg(target_arch = "wasm32")]
 pub fn unix_now() -> u64 {
