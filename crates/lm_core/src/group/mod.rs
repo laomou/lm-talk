@@ -5,6 +5,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use ed25519_dalek::{Signature, Signer, Verifier, VerifyingKey};
 use getrandom::getrandom;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use uuid::Uuid;
 
 pub const GROUP_INVITE_TYPE: &str = "lm-group-invite-v1";
@@ -365,6 +366,11 @@ const GROUP_SENDER_MESSAGE_INFO: &[u8] = b"lm-talk.group.sender-message.v1";
 const GROUP_SENDER_NEXT_INFO: &[u8] = b"lm-talk.group.sender-next.v1";
 const GROUP_SENDER_NONCE_LEN: usize = 24;
 
+/// Maximum number of skipped message keys to cache per sender chain.
+/// If a message arrives with a counter that would require skipping more than
+/// this many positions, decryption is rejected to prevent resource exhaustion.
+pub const MAX_SKIPPED_SENDER_KEYS: u32 = 256;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GroupSenderKeyState {
     pub r#type: String,
@@ -375,6 +381,9 @@ pub struct GroupSenderKeyState {
     pub counter: u32,
     pub created_at: u64,
     pub updated_at: u64,
+    /// Cached message keys for out-of-order messages (counter -> base64 message key).
+    #[serde(default)]
+    pub skipped_message_keys: BTreeMap<u32, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -453,6 +462,7 @@ impl GroupSenderKeyState {
             counter: 0,
             created_at: now,
             updated_at: now,
+            skipped_message_keys: BTreeMap::new(),
         })
     }
 
@@ -470,6 +480,7 @@ impl GroupSenderKeyState {
             counter: distribution.counter,
             created_at: distribution.created_at,
             updated_at: current_unix_timestamp(),
+            skipped_message_keys: BTreeMap::new(),
         })
     }
 
@@ -570,17 +581,54 @@ impl GroupSenderKeyState {
         if envelope.group_id != self.group_id || envelope.sender_user_id != self.sender_user_id {
             return Err(LmError::InvalidUserId);
         }
+
+        // Check if the message key was previously skipped and cached.
+        if let Some(cached_key_b64) = self.skipped_message_keys.remove(&envelope.counter) {
+            let key = decode_key_32_crypto(&cached_key_b64)?;
+            let nonce = decode_nonce_24(&envelope.nonce)?;
+            let ciphertext = BASE64
+                .decode(envelope.ciphertext.as_bytes())
+                .map_err(|_| LmError::CryptoError)?;
+            let aad = protocol::to_canonical_bytes(&envelope.aad_header())?;
+            let plaintext = crypto::xchacha20poly1305_decrypt(&key, &nonce, &ciphertext, &aad)
+                .map_err(|_| LmError::CryptoError)?;
+            let plain: GroupPlainMessage = protocol::from_canonical_bytes(&plaintext)?;
+            if plain.message_id != envelope.message_id
+                || plain.group_id != envelope.group_id
+                || plain.sender_user_id != envelope.sender_user_id
+            {
+                return Err(LmError::CryptoError);
+            }
+            self.updated_at = current_unix_timestamp();
+            return Ok(plain);
+        }
+
         if envelope.counter < self.counter {
             return Err(LmError::ReplayDetected);
         }
-        if envelope.counter.saturating_sub(self.counter) > 512 {
+
+        let skip_distance = envelope.counter.saturating_sub(self.counter);
+        if skip_distance > MAX_SKIPPED_SENDER_KEYS {
             return Err(LmError::PayloadTooLarge);
         }
+
+        // Fast-forward the chain, caching skipped message keys.
         let mut chain = decode_key_32_crypto(&self.chain_key)?;
         while self.counter < envelope.counter {
+            let msg_key = derive_indexed_key(&chain, GROUP_SENDER_MESSAGE_INFO, self.counter)?;
+            self.skipped_message_keys
+                .insert(self.counter, BASE64.encode(msg_key));
             chain = derive_indexed_key(&chain, GROUP_SENDER_NEXT_INFO, self.counter)?;
             self.counter = self.counter.saturating_add(1);
         }
+
+        // Evict oldest keys if the cache exceeds the maximum size.
+        while self.skipped_message_keys.len() > MAX_SKIPPED_SENDER_KEYS as usize {
+            if let Some(&oldest) = self.skipped_message_keys.keys().next() {
+                self.skipped_message_keys.remove(&oldest);
+            }
+        }
+
         let key = derive_indexed_key(&chain, GROUP_SENDER_MESSAGE_INFO, self.counter)?;
         let next = derive_indexed_key(&chain, GROUP_SENDER_NEXT_INFO, self.counter)?;
         let nonce = decode_nonce_24(&envelope.nonce)?;
@@ -944,6 +992,67 @@ mod tests {
         assert_eq!(
             receiver_state.decrypt(&envelope).unwrap_err(),
             LmError::CryptoError
+        );
+    }
+
+    #[test]
+    fn group_sender_key_out_of_order_decrypt() {
+        let (alice, _) = Identity::create_with_passphrase("alice").unwrap();
+        let alice_card = alice.export_contact_card(None, None, vec![]).unwrap();
+        let group_id = Uuid::new_v4();
+        let mut sender_state = GroupSenderKeyState::new(&alice, group_id).unwrap();
+        let distribution = sender_state.to_distribution(&alice).unwrap();
+        let mut receiver_state =
+            GroupSenderKeyState::from_distribution(&distribution, &alice_card).unwrap();
+
+        // Encrypt three messages in order.
+        let env0 = sender_state.encrypt_text("msg0".into()).unwrap();
+        let env1 = sender_state.encrypt_text("msg1".into()).unwrap();
+        let env2 = sender_state.encrypt_text("msg2".into()).unwrap();
+
+        // Deliver message 2 first (out of order) -- skips keys for counters 0 and 1.
+        let plain2 = receiver_state.decrypt(&env2).unwrap();
+        assert_eq!(plain2.text, "msg2");
+
+        // Now deliver message 0 (was skipped) -- should succeed from cache.
+        let plain0 = receiver_state.decrypt(&env0).unwrap();
+        assert_eq!(plain0.text, "msg0");
+
+        // Deliver message 1 (was also skipped) -- should succeed from cache.
+        let plain1 = receiver_state.decrypt(&env1).unwrap();
+        assert_eq!(plain1.text, "msg1");
+
+        // Replaying a consumed skipped key should fail.
+        assert_eq!(
+            receiver_state.decrypt(&env0).unwrap_err(),
+            LmError::ReplayDetected
+        );
+
+        // Replaying the already-consumed current message should also fail.
+        assert_eq!(
+            receiver_state.decrypt(&env2).unwrap_err(),
+            LmError::ReplayDetected
+        );
+    }
+
+    #[test]
+    fn group_sender_key_rejects_excessive_skip_distance() {
+        let (alice, _) = Identity::create_with_passphrase("alice").unwrap();
+        let alice_card = alice.export_contact_card(None, None, vec![]).unwrap();
+        let group_id = Uuid::new_v4();
+        let mut sender_state = GroupSenderKeyState::new(&alice, group_id).unwrap();
+        let distribution = sender_state.to_distribution(&alice).unwrap();
+        let mut receiver_state =
+            GroupSenderKeyState::from_distribution(&distribution, &alice_card).unwrap();
+
+        // Encrypt MAX_SKIPPED_SENDER_KEYS + 1 messages to create a gap that's too large.
+        for _ in 0..=MAX_SKIPPED_SENDER_KEYS {
+            sender_state.encrypt_text("skip".into()).unwrap();
+        }
+        let far_envelope = sender_state.encrypt_text("too far".into()).unwrap();
+        assert_eq!(
+            receiver_state.decrypt(&far_envelope).unwrap_err(),
+            LmError::PayloadTooLarge
         );
     }
 }
