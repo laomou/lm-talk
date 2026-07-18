@@ -618,3 +618,66 @@ fn public_peer_vector_verifies() {
     let tampered = mutate_export_text(peer_text);
     assert!(PublicPeerAnnounce::from_export_text(&tampered).is_err());
 }
+
+#[test]
+fn wrong_key_decryption_fails() {
+    let (alice, _) = Identity::create_with_passphrase("alice").unwrap();
+    let (bob, _) = Identity::create_with_passphrase("bob").unwrap();
+    let (eve, _) = Identity::create_with_passphrase("eve").unwrap();
+
+    let envelope = DirectEnvelope::encrypt_text(
+        &alice,
+        bob.user_id().clone(),
+        &bob.x25519_public_key(),
+        "conv1".into(),
+        "secret message".into(),
+    )
+    .unwrap();
+
+    // Eve tries to decrypt a message meant for Bob — must fail
+    let result = envelope.decrypt(&eve, &alice.x25519_public_key());
+    assert!(result.is_err());
+}
+
+#[test]
+fn cross_user_decryption_fails() {
+    let (alice, _) = Identity::create_with_passphrase("alice").unwrap();
+    let (bob, _) = Identity::create_with_passphrase("bob").unwrap();
+
+    let envelope = DirectEnvelope::encrypt_text(
+        &alice,
+        bob.user_id().clone(),
+        &bob.x25519_public_key(),
+        "conv1".into(),
+        "hello bob".into(),
+    )
+    .unwrap();
+
+    // Alice tries to decrypt her own outbound message — must fail
+    let result = envelope.decrypt(&alice, &bob.x25519_public_key());
+    assert!(result.is_err());
+}
+
+#[test]
+fn tampered_ciphertext_decryption_fails() {
+    let (alice, _) = Identity::create_with_passphrase("alice").unwrap();
+    let (bob, _) = Identity::create_with_passphrase("bob").unwrap();
+
+    let mut envelope = DirectEnvelope::encrypt_text(
+        &alice,
+        bob.user_id().clone(),
+        &bob.x25519_public_key(),
+        "conv1".into(),
+        "important".into(),
+    )
+    .unwrap();
+
+    // Flip a character in ciphertext
+    let mut chars: Vec<char> = envelope.ciphertext.chars().collect();
+    let idx = chars.len() / 2;
+    chars[idx] = if chars[idx] == 'A' { 'B' } else { 'A' };
+    envelope.ciphertext = chars.into_iter().collect();
+
+    let result = envelope.decrypt(&bob, &alice.x25519_public_key());
+    assert!(result.is_err());
+}

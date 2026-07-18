@@ -129,6 +129,25 @@ impl Outbox {
         item.status = OutboxStatus::Cancelled;
         Ok(())
     }
+
+    pub fn purge_completed(&mut self) -> usize {
+        let before = self.items.len();
+        self.items.retain(|_, item| {
+            !matches!(
+                item.status,
+                OutboxStatus::Sent | OutboxStatus::Expired | OutboxStatus::Cancelled
+            )
+        });
+        before.saturating_sub(self.items.len())
+    }
+
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
 }
 
 pub fn retry_delay_seconds(retry_count: u32) -> u64 {
@@ -167,5 +186,41 @@ mod tests {
         assert_eq!(outbox.due_items(130).len(), 1);
         outbox.expire_old(1200);
         assert_eq!(outbox.get(&id).unwrap().status, OutboxStatus::Expired);
+    }
+
+    #[test]
+    fn outbox_purge_removes_terminal_items() {
+        let (alice, _) = Identity::create_with_passphrase("alice").unwrap();
+        let mut outbox = Outbox::new();
+        let id1 = outbox.enqueue(OutboxItem::new(
+            alice.user_id().clone(),
+            None,
+            "a".into(),
+            100,
+            None,
+        ));
+        let id2 = outbox.enqueue(OutboxItem::new(
+            alice.user_id().clone(),
+            None,
+            "b".into(),
+            100,
+            None,
+        ));
+        let id3 = outbox.enqueue(OutboxItem::new(
+            alice.user_id().clone(),
+            None,
+            "c".into(),
+            100,
+            None,
+        ));
+        outbox.mark_sent(&id1).unwrap();
+        outbox.cancel(&id2).unwrap();
+        assert_eq!(outbox.len(), 3);
+        let purged = outbox.purge_completed();
+        assert_eq!(purged, 2);
+        assert_eq!(outbox.len(), 1);
+        assert!(outbox.get(&id3).is_some());
+        assert!(outbox.get(&id1).is_none());
+        assert!(outbox.get(&id2).is_none());
     }
 }
