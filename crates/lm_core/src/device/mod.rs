@@ -193,7 +193,7 @@ impl DeviceCert {
 
     pub fn verify(&self, identity_public_key: &[u8; 32]) -> Result<()> {
         if self.r#type != "lm-device-cert-v1" {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.version != protocol::PROTOCOL_VERSION_V1 {
             return Err(LmError::UnsupportedVersion(self.version));
@@ -279,7 +279,7 @@ impl DeviceRevoke {
 
     pub fn verify(&self, identity_public_key: &[u8; 32]) -> Result<()> {
         if self.r#type != "lm-device-revoke-v1" {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.version != protocol::PROTOCOL_VERSION_V1 {
             return Err(LmError::UnsupportedVersion(self.version));

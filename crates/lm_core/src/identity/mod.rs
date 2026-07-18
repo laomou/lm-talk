@@ -265,7 +265,8 @@ impl IdentityBackupPackage {
             .decode(self.cipher.ciphertext.as_bytes())
             .map_err(|_| LmError::InvalidBackupFormat)?;
         let plaintext =
-            crypto::xchacha20poly1305_decrypt(&key, &nonce, &ciphertext, crypto::BACKUP_AEAD_AAD)?;
+            crypto::xchacha20poly1305_decrypt(&key, &nonce, &ciphertext, crypto::BACKUP_AEAD_AAD)
+                .map_err(|_| LmError::WrongPassphrase)?;
         let secret: BackupSecret =
             protocol::from_canonical_bytes(&plaintext).map_err(|_| LmError::CorruptedBackup)?;
         Ok(IdentitySeed::from_bytes(secret.identity_seed))

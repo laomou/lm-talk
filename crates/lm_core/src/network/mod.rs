@@ -120,13 +120,13 @@ impl SignalOffer {
 
     pub fn verify(&self, from_identity_public_key: &[u8; 32]) -> Result<()> {
         if self.r#type != SIGNAL_OFFER_TYPE {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.version != protocol::PROTOCOL_VERSION_V1 {
             return Err(LmError::UnsupportedVersion(self.version));
         }
         if self.kind != SignalKind::WebRtcOffer {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.expires_at <= current_unix_timestamp() {
             return Err(LmError::ExpiredObject);
@@ -209,13 +209,13 @@ impl SignalAnswer {
 
     pub fn verify(&self, from_identity_public_key: &[u8; 32]) -> Result<()> {
         if self.r#type != SIGNAL_ANSWER_TYPE {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.version != protocol::PROTOCOL_VERSION_V1 {
             return Err(LmError::UnsupportedVersion(self.version));
         }
         if self.kind != SignalKind::WebRtcAnswer {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.expires_at <= current_unix_timestamp() {
             return Err(LmError::ExpiredObject);
@@ -497,7 +497,7 @@ impl PeerAnnounce {
 
     pub fn verify(&self, identity_public_key: &[u8; 32]) -> Result<()> {
         if self.r#type != PEER_ANNOUNCE_TYPE {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         verify_common_identity(
             &self.user_id,
@@ -583,7 +583,7 @@ impl PublicPeerAnnounce {
 
     pub fn verify(&self, identity_public_key: &[u8; 32]) -> Result<()> {
         if self.r#type != PUBLIC_PEER_ANNOUNCE_TYPE {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         verify_common_identity(
             &self.user_id,
@@ -635,7 +635,7 @@ impl MessageReceipt {
         limits::ensure_len(&conversation_id, limits::MAX_NETWORK_ADDRESS_BYTES)?;
         if let Some(delivery_id) = &mailbox_delivery_id {
             if delivery_id.trim().is_empty() {
-                return Err(LmError::InvalidBackupFormat);
+                return Err(LmError::InvalidFormat);
             }
             limits::ensure_len(delivery_id, limits::MAX_NETWORK_ADDRESS_BYTES)?;
         }
@@ -673,7 +673,7 @@ impl MessageReceipt {
 
     pub fn verify(&self, from_identity_public_key: &[u8; 32]) -> Result<()> {
         if self.r#type != MESSAGE_RECEIPT_TYPE {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         verify_common_identity(
             &self.from_user_id,
@@ -684,7 +684,7 @@ impl MessageReceipt {
         limits::ensure_len(&self.conversation_id, limits::MAX_NETWORK_ADDRESS_BYTES)?;
         if let Some(delivery_id) = &self.mailbox_delivery_id {
             if delivery_id.trim().is_empty() {
-                return Err(LmError::InvalidBackupFormat);
+                return Err(LmError::InvalidFormat);
             }
             limits::ensure_len(delivery_id, limits::MAX_NETWORK_ADDRESS_BYTES)?;
         }
@@ -720,7 +720,7 @@ impl MessageReceipt {
 
     fn verify_public_fields(&self) -> Result<()> {
         if self.r#type != MESSAGE_RECEIPT_TYPE {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.version != protocol::PROTOCOL_VERSION_V1 {
             return Err(LmError::UnsupportedVersion(self.version));
@@ -728,7 +728,7 @@ impl MessageReceipt {
         limits::ensure_len(&self.conversation_id, limits::MAX_NETWORK_ADDRESS_BYTES)?;
         if let Some(delivery_id) = &self.mailbox_delivery_id {
             if delivery_id.trim().is_empty() {
-                return Err(LmError::InvalidBackupFormat);
+                return Err(LmError::InvalidFormat);
             }
             limits::ensure_len(delivery_id, limits::MAX_NETWORK_ADDRESS_BYTES)?;
         }
@@ -775,7 +775,7 @@ impl MailboxMessage {
 
     pub fn verify(&self, from_identity_public_key: &[u8; 32]) -> Result<()> {
         if self.r#type != MAILBOX_MESSAGE_TYPE {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         verify_common_identity(
             &self.from_user_id,

@@ -110,7 +110,7 @@ impl FriendRequest {
 
     pub fn verify(&self) -> Result<()> {
         if self.r#type != protocol::LM_FRIEND_REQUEST_TYPE {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.version != protocol::PROTOCOL_VERSION_V1 {
             return Err(LmError::UnsupportedVersion(self.version));
@@ -189,7 +189,7 @@ impl FriendResponse {
 
     pub fn verify(&self, responder_contact_card: &ContactCard) -> Result<()> {
         if self.r#type != protocol::LM_FRIEND_RESPONSE_TYPE {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.version != protocol::PROTOCOL_VERSION_V1 {
             return Err(LmError::UnsupportedVersion(self.version));

@@ -130,7 +130,7 @@ impl ContactCard {
 
     pub fn verify(&self) -> Result<()> {
         if self.r#type != protocol::LM_CONTACT_CARD_TYPE {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.version != protocol::PROTOCOL_VERSION_V1 {
             return Err(LmError::UnsupportedVersion(self.version));

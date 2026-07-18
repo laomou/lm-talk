@@ -47,7 +47,7 @@ pub fn xchacha20poly1305_decrypt(
     aad: &[u8],
 ) -> Result<Vec<u8>> {
     let cipher = XChaCha20Poly1305::new(key.into());
-    let nonce = XNonce::try_from(nonce.as_slice()).map_err(|_| LmError::WrongPassphrase)?;
+    let nonce = XNonce::try_from(nonce.as_slice()).map_err(|_| LmError::DecryptionFailed)?;
     cipher
         .decrypt(
             &nonce,
@@ -56,5 +56,5 @@ pub fn xchacha20poly1305_decrypt(
                 aad,
             },
         )
-        .map_err(|_| LmError::WrongPassphrase)
+        .map_err(|_| LmError::DecryptionFailed)
 }

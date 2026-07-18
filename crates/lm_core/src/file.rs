@@ -77,7 +77,7 @@ impl FileManifest {
         file_hash: String,
     ) -> Result<Self> {
         if name.trim().is_empty() || chunk_size == 0 || chunk_count == 0 {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         limits::ensure_len(&name, limits::MAX_FILE_NAME_BYTES)?;
         limits::ensure_len(&mime_type, limits::MAX_FILE_MIME_BYTES)?;
@@ -200,13 +200,13 @@ impl FileChunkEnvelope {
 
     fn validate_header(&self) -> Result<()> {
         if self.r#type != FILE_CHUNK_TYPE {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.version != protocol::PROTOCOL_VERSION_V1 {
             return Err(LmError::UnsupportedVersion(self.version));
         }
         if self.crypto != FILE_CRYPTO_V1 {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         limits::ensure_len(&self.nonce, 64)?;
         limits::ensure_len(&self.ciphertext, limits::MAX_FILE_CHUNK_CIPHERTEXT_BYTES)?;

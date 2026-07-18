@@ -78,7 +78,7 @@ impl GroupInvite {
 
     pub fn verify(&self, inviter_contact_card: &ContactCard) -> Result<()> {
         if self.r#type != GROUP_INVITE_TYPE {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.version != protocol::PROTOCOL_VERSION_V1 {
             return Err(LmError::UnsupportedVersion(self.version));
@@ -201,7 +201,7 @@ impl GroupEvent {
 
     pub fn verify(&self, actor_contact_card: &ContactCard) -> Result<()> {
         if self.r#type != GROUP_EVENT_TYPE {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.version != protocol::PROTOCOL_VERSION_V1 {
             return Err(LmError::UnsupportedVersion(self.version));
@@ -290,7 +290,7 @@ impl GroupPolicyState {
 
     pub fn apply_event(&mut self, event: &GroupEvent) -> Result<()> {
         if event.group_id != self.group_id {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if event.sequence != self.sequence.saturating_add(1) {
             return Err(LmError::ReplayDetected);
@@ -314,11 +314,11 @@ impl GroupPolicyState {
             }
             GroupEventAction::RemoveMember { user_id } => {
                 if &event.actor_user_id != user_id {
-                    return Err(LmError::InvalidBackupFormat);
+                    return Err(LmError::InvalidFormat);
                 }
                 if self.admins.contains(user_id) && self.admins.len() == 1 && self.members.len() > 1
                 {
-                    return Err(LmError::InvalidBackupFormat);
+                    return Err(LmError::InvalidFormat);
                 }
                 self.members.retain(|id| id != user_id);
                 self.admins.retain(|id| id != user_id);
@@ -336,10 +336,10 @@ impl GroupPolicyState {
             GroupEventAction::DemoteAdmin { user_id } => {
                 self.require_admin(&event.actor_user_id)?;
                 if &event.actor_user_id == user_id {
-                    return Err(LmError::InvalidBackupFormat);
+                    return Err(LmError::InvalidFormat);
                 }
                 if self.admins.len() <= 1 && self.admins.contains(user_id) {
-                    return Err(LmError::InvalidBackupFormat);
+                    return Err(LmError::InvalidFormat);
                 }
                 self.admins.retain(|id| id != user_id);
             }
@@ -503,7 +503,7 @@ impl GroupSenderKeyState {
 
     pub fn validate(&self) -> Result<()> {
         if self.r#type != GROUP_SENDER_KEY_DISTRIBUTION_TYPE {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.version != protocol::PROTOCOL_VERSION_V1 {
             return Err(LmError::UnsupportedVersion(self.version));
@@ -607,7 +607,7 @@ impl GroupSenderKeyState {
 impl GroupSenderKeyDistribution {
     pub fn verify(&self, sender_card: &ContactCard) -> Result<()> {
         if self.r#type != GROUP_SENDER_KEY_DISTRIBUTION_TYPE {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.version != protocol::PROTOCOL_VERSION_V1 {
             return Err(LmError::UnsupportedVersion(self.version));
@@ -650,13 +650,13 @@ impl GroupSenderKeyDistribution {
 impl GroupSenderEnvelope {
     fn validate_header(&self) -> Result<()> {
         if self.r#type != GROUP_SENDER_KEY_ENVELOPE_TYPE {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.version != protocol::PROTOCOL_VERSION_V1 {
             return Err(LmError::UnsupportedVersion(self.version));
         }
         if self.crypto != GROUP_SENDER_KEY_CRYPTO_V1 {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         Ok(())
     }
@@ -876,7 +876,7 @@ mod tests {
 
         assert_eq!(
             state.apply_event(&remove_bob).unwrap_err(),
-            LmError::InvalidBackupFormat
+            LmError::InvalidFormat
         );
         assert!(state.is_member(bob.user_id()));
     }

@@ -265,13 +265,13 @@ impl RatchetEnvelope {
 
     fn validate_header(&self) -> Result<()> {
         if self.r#type != DIRECT_ENVELOPE_TYPE {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.version != protocol::PROTOCOL_VERSION_V1 {
             return Err(LmError::UnsupportedVersion(self.version));
         }
         if self.crypto != RATCHET_CRYPTO_V1 {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         Ok(())
     }
@@ -381,13 +381,13 @@ impl DirectEnvelope {
 
     fn validate_header(&self) -> Result<()> {
         if self.r#type != DIRECT_ENVELOPE_TYPE {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.version != protocol::PROTOCOL_VERSION_V1 {
             return Err(LmError::UnsupportedVersion(self.version));
         }
         if self.crypto != MVP_CRYPTO_V1 {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         Ok(())
     }

@@ -265,7 +265,7 @@ impl PreKeyBundle {
 
     pub fn verify(&self) -> Result<()> {
         if self.r#type != PREKEY_BUNDLE_TYPE {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.version != protocol::PROTOCOL_VERSION_V1 {
             return Err(LmError::UnsupportedVersion(self.version));
@@ -385,7 +385,7 @@ impl SignedOneTimePreKeyRecord {
 
     pub fn verify(&self) -> Result<()> {
         if self.r#type != SIGNED_ONE_TIME_PREKEY_RECORD_TYPE {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.version != protocol::PROTOCOL_VERSION_V1 {
             return Err(LmError::UnsupportedVersion(self.version));
@@ -426,7 +426,7 @@ impl SignedOneTimePreKeyRecord {
             || self.expires_at > bundle.signed_prekey_expires_at
             || self.expires_at > bundle.expires_at
         {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         Ok(())
     }
@@ -455,7 +455,7 @@ impl SignedOneTimePreKeyRecord {
 impl PreKeyPrivateBundle {
     pub fn validate_for_public(&self, public: &PreKeyBundle) -> Result<()> {
         if self.r#type != "lm-prekey-private-bundle-v1" {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.version != protocol::PROTOCOL_VERSION_V1 {
             return Err(LmError::UnsupportedVersion(self.version));
@@ -502,7 +502,7 @@ pub fn x3dh_initiator_secret_with_one_time_prekey_id(
         .map(|id| {
             responder_bundle
                 .select_one_time_prekey_by_id(id)
-                .ok_or(LmError::InvalidBackupFormat)
+                .ok_or(LmError::InvalidFormat)
         })
         .transpose()?;
     let one_time_public = selected_otk
@@ -580,7 +580,7 @@ pub fn x3dh_responder_secret(
     if initial_message.r#type != "lm-x3dh-initial-message-v1"
         || initial_message.version != protocol::PROTOCOL_VERSION_V1
     {
-        return Err(LmError::InvalidBackupFormat);
+        return Err(LmError::InvalidFormat);
     }
     if initial_message.to_user_id != *responder.user_id()
         || initial_message.signed_prekey_id != private_bundle.signed_prekey_id

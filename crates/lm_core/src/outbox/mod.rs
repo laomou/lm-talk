@@ -99,19 +99,19 @@ impl Outbox {
     }
 
     pub fn mark_sending(&mut self, id: &Uuid) -> Result<()> {
-        let item = self.items.get_mut(id).ok_or(LmError::UnknownContact)?;
+        let item = self.items.get_mut(id).ok_or(LmError::NotFound)?;
         item.status = OutboxStatus::Sending;
         Ok(())
     }
 
     pub fn mark_sent(&mut self, id: &Uuid) -> Result<()> {
-        let item = self.items.get_mut(id).ok_or(LmError::UnknownContact)?;
+        let item = self.items.get_mut(id).ok_or(LmError::NotFound)?;
         item.status = OutboxStatus::Sent;
         Ok(())
     }
 
     pub fn mark_failed(&mut self, id: &Uuid, now: u64) -> Result<()> {
-        let item = self.items.get_mut(id).ok_or(LmError::UnknownContact)?;
+        let item = self.items.get_mut(id).ok_or(LmError::NotFound)?;
         item.mark_failed_with_backoff(now);
         Ok(())
     }
@@ -125,7 +125,7 @@ impl Outbox {
     }
 
     pub fn cancel(&mut self, id: &Uuid) -> Result<()> {
-        let item = self.items.get_mut(id).ok_or(LmError::UnknownContact)?;
+        let item = self.items.get_mut(id).ok_or(LmError::NotFound)?;
         item.status = OutboxStatus::Cancelled;
         Ok(())
     }

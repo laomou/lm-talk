@@ -12,6 +12,7 @@ use getrandom::getrandom;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519Secret};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 pub const RATCHET_SESSION_TYPE: &str = "lm-ratchet-session-state-v1";
 pub const RATCHET_STATE_PREFIX: &str = "lm-ratchet-state-v1:";
@@ -27,31 +28,44 @@ const MAX_SKIPPED_KEYS: usize = 512;
 /// through JSON/WASM/IndexedDB. Treat exported state as sensitive application
 /// data and store it only inside the encrypted local database or encrypted data
 /// backup.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct RatchetSessionState {
+    #[zeroize(skip)]
     pub r#type: String,
+    #[zeroize(skip)]
     pub version: u16,
+    #[zeroize(skip)]
     pub session_id: String,
+    #[zeroize(skip)]
     pub local_user_id: UserId,
+    #[zeroize(skip)]
     pub remote_user_id: UserId,
+    #[zeroize(skip)]
     pub role: RatchetRole,
     /// Root key RK.
     pub root_key: String,
     /// Local DH ratchet private key. Present for a full local state export.
     pub local_dh_private_key: String,
+    #[zeroize(skip)]
     pub local_dh_public_key: String,
+    #[zeroize(skip)]
     pub remote_dh_public_key: String,
     /// Sending chain key CKs and sending message number Ns.
     pub send_chain_key: String,
+    #[zeroize(skip)]
     pub send_count: u32,
     /// Receiving chain key CKr and receiving message number Nr.
     pub recv_chain_key: String,
+    #[zeroize(skip)]
     pub recv_count: u32,
+    #[zeroize(skip)]
     /// Previous sending-chain length PN.
     pub previous_send_count: u32,
     /// Skipped keys keyed by "remote_dh_public_key_base64:message_number".
     pub skipped_message_keys: BTreeMap<String, String>,
+    #[zeroize(skip)]
     pub created_at: u64,
+    #[zeroize(skip)]
     pub updated_at: u64,
 }
 
@@ -69,21 +83,24 @@ pub struct RatchetHeader {
     pub message_number: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct RatchetMessageKey {
+    #[zeroize(skip)]
     pub header: RatchetHeader,
     pub message_key: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct RatchetSkippedKey {
+    #[zeroize(skip)]
     pub header: RatchetHeader,
     pub message_key: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct RatchetDhKeyPair {
     pub private_key: String,
+    #[zeroize(skip)]
     pub public_key: String,
 }
 
@@ -277,7 +294,7 @@ impl RatchetSessionState {
 
     pub fn validate(&self) -> Result<()> {
         if self.r#type != RATCHET_SESSION_TYPE {
-            return Err(LmError::InvalidBackupFormat);
+            return Err(LmError::InvalidFormat);
         }
         if self.version != protocol::PROTOCOL_VERSION_V1 {
             return Err(LmError::UnsupportedVersion(self.version));
@@ -310,7 +327,7 @@ impl RatchetSessionState {
             previous_send_count: self.previous_send_count,
             message_number: self.send_count,
         };
-        self.send_count = self.send_count.saturating_add(1);
+        self.send_count = self.send_count.checked_add(1).ok_or(LmError::CounterExhausted)?;
         self.send_chain_key = BASE64.encode(next_chain);
         self.updated_at = current_unix_timestamp();
         Ok(RatchetMessageKey {
@@ -351,11 +368,11 @@ impl RatchetSessionState {
                 BASE64.encode(skipped_message_key),
             );
             chain = derive_indexed_key(&chain, RATCHET_NEXT_CHAIN_INFO, self.recv_count)?;
-            self.recv_count = self.recv_count.saturating_add(1);
+            self.recv_count = self.recv_count.checked_add(1).ok_or(LmError::CounterExhausted)?;
         }
         let message_key = derive_indexed_key(&chain, RATCHET_MESSAGE_KEY_INFO, self.recv_count)?;
         let next_chain = derive_indexed_key(&chain, RATCHET_NEXT_CHAIN_INFO, self.recv_count)?;
-        self.recv_count = self.recv_count.saturating_add(1);
+        self.recv_count = self.recv_count.checked_add(1).ok_or(LmError::CounterExhausted)?;
         self.recv_chain_key = BASE64.encode(next_chain);
         self.updated_at = current_unix_timestamp();
         Ok(RatchetMessageKey {
@@ -411,7 +428,9 @@ impl RatchetSessionState {
 fn random_x25519_secret() -> Result<X25519Secret> {
     let mut secret = [0u8; 32];
     getrandom(&mut secret).map_err(|_| LmError::RandomFailed)?;
-    Ok(X25519Secret::from(secret))
+    let result = X25519Secret::from(secret);
+    secret.zeroize();
+    Ok(result)
 }
 
 fn derive_chain_key(root_key: &[u8; 32], dh_out: &[u8; 32], label: &[u8]) -> Result<[u8; 32]> {

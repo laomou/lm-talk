@@ -17,9 +17,9 @@ pub fn encode_json_prefixed<T: Serialize>(prefix: &str, value: &T) -> Result<Str
 pub fn decode_json_prefixed<T: DeserializeOwned>(prefix: &str, text: &str) -> Result<T> {
     let payload = text
         .strip_prefix(prefix)
-        .ok_or(LmError::InvalidBackupFormat)?;
+        .ok_or(LmError::InvalidFormat)?;
     let bytes = URL_SAFE_NO_PAD
         .decode(payload.as_bytes())
-        .map_err(|_| LmError::InvalidBackupFormat)?;
+        .map_err(|_| LmError::InvalidFormat)?;
     serde_json::from_slice(&bytes).map_err(|_| LmError::SerializationFailed)
 }

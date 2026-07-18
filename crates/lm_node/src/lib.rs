@@ -607,13 +607,13 @@ fn bytes_to_hex(bytes: &[u8]) -> String {
 
 fn decode_hex_32(value: &str) -> Result<[u8; KADEMLIA_ID_BYTES]> {
     if value.len() != KADEMLIA_ID_BYTES * 2 {
-        return Err(LmError::InvalidBackupFormat);
+        return Err(LmError::InvalidFormat);
     }
     let mut out = [0u8; KADEMLIA_ID_BYTES];
     let bytes = value.as_bytes();
     for idx in 0..KADEMLIA_ID_BYTES {
-        let hi = from_hex(bytes[idx * 2]).ok_or(LmError::InvalidBackupFormat)?;
-        let lo = from_hex(bytes[idx * 2 + 1]).ok_or(LmError::InvalidBackupFormat)?;
+        let hi = from_hex(bytes[idx * 2]).ok_or(LmError::InvalidFormat)?;
+        let lo = from_hex(bytes[idx * 2 + 1]).ok_or(LmError::InvalidFormat)?;
         out[idx] = (hi << 4) | lo;
     }
     Ok(out)
@@ -2628,7 +2628,7 @@ pub fn parse_capability(value: &str) -> Result<PublicPeerCapability> {
         "signaling" => Ok(PublicPeerCapability::Signaling),
         "relay" => Ok(PublicPeerCapability::Relay),
         "mailbox" => Ok(PublicPeerCapability::Mailbox),
-        _ => Err(LmError::InvalidBackupFormat),
+        _ => Err(LmError::InvalidFormat),
     }
 }
 
