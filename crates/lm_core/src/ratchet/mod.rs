@@ -62,6 +62,7 @@ pub struct RatchetSessionState {
     /// Previous sending-chain length PN.
     pub previous_send_count: u32,
     /// Skipped keys keyed by "remote_dh_public_key_base64:message_number".
+    #[zeroize(skip)]
     pub skipped_message_keys: BTreeMap<String, String>,
     #[zeroize(skip)]
     pub created_at: u64,

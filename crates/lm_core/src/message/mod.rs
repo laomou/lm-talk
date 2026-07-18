@@ -221,7 +221,7 @@ impl RatchetEnvelope {
             from_user_id: state.local_user_id.clone(),
             to_user_id: state.remote_user_id.clone(),
             created_at: current_unix_timestamp(),
-            ratchet_header: key.header,
+            ratchet_header: key.header.clone(),
             nonce: nonce_b64,
         };
         let aad = protocol::to_canonical_bytes(&header)?;

@@ -21,7 +21,8 @@ use lm_core::{
     x3dh_initiator_secret_with_one_time_prekey_record, x3dh_responder_secret,
 };
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
+use pbkdf2::pbkdf2_hmac;
 use wasm_bindgen::prelude::*;
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519Secret};
 
@@ -156,14 +157,13 @@ fn unix_now() -> u64 {
 
 const WASM_IDENTITY_BACKUP_PREFIX: &str = "lm-identity-backup-v1:wasm-local:";
 const WASM_IDENTITY_BACKUP_AAD: &[u8] = b"lm-talk.wasm-identity-backup.v1";
+const WASM_PBKDF2_ITERATIONS: u32 = 600_000;
 
 fn wasm_identity_backup_key(passphrase: &str, salt: &[u8]) -> [u8; 32] {
     let normalized = lm_core::normalize_passphrase(passphrase);
-    let mut hasher = Sha256::new();
-    hasher.update(b"lm-talk.wasm-identity-backup.key.v1");
-    hasher.update(salt);
-    hasher.update(normalized.as_bytes());
-    hasher.finalize().into()
+    let mut key = [0u8; 32];
+    pbkdf2_hmac::<Sha256>(normalized.as_bytes(), salt, WASM_PBKDF2_ITERATIONS, &mut key);
+    key
 }
 
 fn wasm_identity_backup_text(
@@ -1244,12 +1244,12 @@ pub fn inspect_ratchet_state(state_text: &str) -> Result<String, JsValue> {
     ensure_js_bytes(state_text.as_bytes().len(), 64 * 1024)?;
     let state = RatchetSessionState::from_export_text(state_text).map_err(to_js_error)?;
     let out = RatchetStateInfo {
-        session_id: state.session_id,
+        session_id: state.session_id.clone(),
         local_user_id: state.local_user_id.to_string(),
         remote_user_id: state.remote_user_id.to_string(),
         role: format!("{:?}", state.role),
-        local_dh_public_key: state.local_dh_public_key,
-        remote_dh_public_key: state.remote_dh_public_key,
+        local_dh_public_key: state.local_dh_public_key.clone(),
+        remote_dh_public_key: state.remote_dh_public_key.clone(),
         send_count: state.send_count,
         recv_count: state.recv_count,
         previous_send_count: state.previous_send_count,

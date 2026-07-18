@@ -6,9 +6,9 @@ use lm_core::{
     ContactCard, DeviceCert, DeviceIdentity, DeviceRevoke, DirectEnvelope, FileChunkEnvelope,
     FileManifest, FriendRequest, GroupEvent, GroupEventAction, GroupInvite, GroupSenderEnvelope,
     GroupSenderKeyDistribution, GroupSenderKeyState, Identity, IdentityBackupPackage, IdentitySeed,
-    MailboxMessage, MessageReceipt, MessageReceiptKind, PreKeyBundle, RatchetHeader, RatchetRole,
-    RatchetSessionState, SignedOneTimePreKeyRecord, device::DeviceSeed, file_hash_base64,
-    normalize_passphrase, verify_file_hash,
+    MailboxMessage, MessageReceipt, MessageReceiptKind, PreKeyBundle, PublicPeerAnnounce,
+    RatchetHeader, RatchetRole, RatchetSessionState, SignedOneTimePreKeyRecord,
+    device::DeviceSeed, file_hash_base64, normalize_passphrase, verify_file_hash,
 };
 use serde_json::Value;
 
@@ -579,4 +579,42 @@ fn vector_size_limits_reject_oversized_import_text() {
         "A".repeat(lm_core::MAX_IDENTITY_BACKUP_TEXT_BYTES + 1)
     );
     assert!(IdentityBackupPackage::from_export_text(&huge_backup).is_err());
+}
+
+#[test]
+fn contact_card_dht_vector_verifies() {
+    let v = fixture("contact_card_dht_v1.json");
+    let card_text = v["contact_card_text"].as_str().unwrap();
+    let card = ContactCard::from_export_text(card_text).unwrap();
+    card.verify().unwrap();
+    assert_eq!(card.user_id.to_string(), v["user_id"]);
+    assert_eq!(v["dht_key_kind"], "ContactCard");
+    assert_eq!(v["identity_seed_hex"], hex(&[7u8; 32]));
+
+    let tampered = mutate_export_text(card_text);
+    assert!(
+        ContactCard::from_export_text(&tampered)
+            .and_then(|c| c.verify())
+            .is_err()
+    );
+}
+
+#[test]
+fn public_peer_vector_verifies() {
+    let v = fixture("public_peer_v1.json");
+    let peer_text = v["public_peer_text"].as_str().unwrap();
+    let announce = PublicPeerAnnounce::from_export_text(peer_text).unwrap();
+    let id = identity(7);
+    // verify() checks expiration which the fixed vector will fail over time;
+    // assert field correctness and tamper rejection instead.
+    assert_eq!(announce.peer_id, v["peer_id"]);
+    assert_eq!(announce.user_id.to_string(), v["user_id"]);
+    assert_eq!(v["dht_key_kind"], "PublicPeer");
+    assert_eq!(
+        v["identity_public_key_base64"],
+        BASE64.encode(id.identity_public_key())
+    );
+
+    let tampered = mutate_export_text(peer_text);
+    assert!(PublicPeerAnnounce::from_export_text(&tampered).is_err());
 }

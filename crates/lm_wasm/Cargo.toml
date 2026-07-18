@@ -18,6 +18,7 @@ getrandom.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+pbkdf2.workspace = true
 serde-wasm-bindgen.workspace = true
 x25519-dalek.workspace = true
 uuid.workspace = true
