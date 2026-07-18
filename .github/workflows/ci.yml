@@ -51,6 +51,26 @@ jobs:
       - name: Release check quick
         run: ./scripts/release-check.sh quick
 
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
   dependency-audit:
     runs-on: ubuntu-latest
     steps:

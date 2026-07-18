@@ -578,7 +578,7 @@ impl NativeNode {
                 if delivery_id.trim().is_empty() {
                     return ControlResponse::text(400, "mailbox delivery id is empty");
                 }
-                if delivery_id.as_bytes().len() > DEFAULT_MAX_MAILBOX_ACK_ID_BYTES {
+                if delivery_id.len() > DEFAULT_MAX_MAILBOX_ACK_ID_BYTES {
                     return ControlResponse::text(413, "mailbox delivery id too large");
                 }
                 Some(self.mailbox.delivery_status(&user_id, delivery_id))
@@ -622,7 +622,7 @@ impl NativeNode {
         if req
             .delivery_ids
             .iter()
-            .any(|id| id.as_bytes().len() > DEFAULT_MAX_MAILBOX_ACK_ID_BYTES)
+            .any(|id| id.len() > DEFAULT_MAX_MAILBOX_ACK_ID_BYTES)
         {
             self.record_mailbox_ack_reject(MailboxAckRejectReason::IdTooLarge);
             return ControlResponse::text(413, "mailbox ack delivery id too large");

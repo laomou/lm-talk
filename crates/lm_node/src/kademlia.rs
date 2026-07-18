@@ -230,7 +230,7 @@ impl DhtRecord {
     }
 
     pub fn is_oversized(&self) -> bool {
-        self.value.as_bytes().len() > DEFAULT_MAX_DHT_RECORD_VALUE_BYTES
+        self.value.len() > DEFAULT_MAX_DHT_RECORD_VALUE_BYTES
     }
 
     pub fn ttl_too_long_at(&self, now: u64) -> bool {
@@ -267,10 +267,10 @@ impl DhtRecord {
                 if DhtRecordKey::for_contact_card(&card.user_id) != self.key {
                     return Err(LmError::InvalidSignature);
                 }
-                if let Some(expires_at) = card.expires_at {
-                    if expires_at <= now {
-                        return Err(LmError::ExpiredObject);
-                    }
+                if let Some(expires_at) = card.expires_at
+                    && expires_at <= now
+                {
+                    return Err(LmError::ExpiredObject);
                 }
             }
             DhtRecordKind::MailboxHint => {

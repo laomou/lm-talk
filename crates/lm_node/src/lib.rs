@@ -641,16 +641,14 @@ impl NativeNode {
         } else {
             for peer in snapshot.routing_peers {
                 node.routing_table.insert_routing_peer(&peer);
-                if let Some(identity_public_key) = &peer.identity_public_key {
-                    if let Ok(public_key) = decode_identity_public_key_base64(identity_public_key) {
-                        if node
-                            .kademlia
-                            .insert_verified(peer.announce.clone(), &public_key)
-                            .is_ok()
-                        {
-                            continue;
-                        }
-                    }
+                if let Some(identity_public_key) = &peer.identity_public_key
+                    && let Ok(public_key) = decode_identity_public_key_base64(identity_public_key)
+                    && node
+                        .kademlia
+                        .insert_verified(peer.announce.clone(), &public_key)
+                        .is_ok()
+                {
+                    continue;
                 }
                 node.kademlia.insert_local_snapshot(peer.announce);
             }
@@ -691,16 +689,14 @@ impl NativeNode {
                     peers += 1;
                 }
                 self.routing_table.insert_routing_peer(&peer);
-                if let Some(identity_public_key) = &peer.identity_public_key {
-                    if let Ok(public_key) = decode_identity_public_key_base64(identity_public_key) {
-                        if self
-                            .kademlia
-                            .insert_verified(peer.announce.clone(), &public_key)
-                            .is_ok()
-                        {
-                            continue;
-                        }
-                    }
+                if let Some(identity_public_key) = &peer.identity_public_key
+                    && let Ok(public_key) = decode_identity_public_key_base64(identity_public_key)
+                    && self
+                        .kademlia
+                        .insert_verified(peer.announce.clone(), &public_key)
+                        .is_ok()
+                {
+                    continue;
                 }
                 self.kademlia.insert_local_snapshot(peer.announce);
             }

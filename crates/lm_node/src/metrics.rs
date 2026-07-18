@@ -1217,7 +1217,7 @@ impl ControlRuntimeStats {
             "gauge",
         );
         let mut endpoints = self.endpoints.iter().collect::<Vec<_>>();
-        endpoints.sort_by(|(left, _), (right, _)| left.cmp(right));
+        endpoints.sort_by_key(|(left, _)| *left);
         for (endpoint, stats) in endpoints {
             push_endpoint_metric_value(
                 &mut out,

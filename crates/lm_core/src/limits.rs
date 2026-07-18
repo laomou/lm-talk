@@ -31,7 +31,7 @@ pub const MAX_FILE_CHUNK_JSON_BYTES: usize = 512 * 1024;
 pub const MAX_DEVICE_REVOKE_TEXT_BYTES: usize = 16 * 1024;
 
 pub fn ensure_len(value: &str, max: usize) -> Result<()> {
-    ensure_bytes(value.as_bytes().len(), max)
+    ensure_bytes(value.len(), max)
 }
 
 pub fn ensure_bytes(len: usize, max: usize) -> Result<()> {

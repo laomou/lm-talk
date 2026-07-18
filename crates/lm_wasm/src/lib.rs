@@ -75,7 +75,7 @@ pub fn export_data_backup(
         identity_backup_text,
         lm_core::limits::MAX_IDENTITY_BACKUP_TEXT_BYTES,
     )?;
-    ensure_js_bytes(data_json.as_bytes().len(), 4 * 1024 * 1024)?;
+    ensure_js_bytes(data_json.len(), 4 * 1024 * 1024)?;
     let identity = restore_identity_any(identity_backup_text, passphrase)?;
     let key = identity.storage_key().map_err(to_js_error)?;
     let mut nonce = [0u8; 24];
@@ -113,7 +113,7 @@ pub fn import_data_backup(
         identity_backup_text,
         lm_core::limits::MAX_IDENTITY_BACKUP_TEXT_BYTES,
     )?;
-    ensure_js_bytes(data_backup_text.as_bytes().len(), 6 * 1024 * 1024)?;
+    ensure_js_bytes(data_backup_text.len(), 6 * 1024 * 1024)?;
     let payload = data_backup_text
         .strip_prefix(DATA_BACKUP_PREFIX)
         .ok_or_else(|| JsValue::from_str("invalid data backup prefix"))?;
@@ -460,7 +460,7 @@ fn restore_device_backup(
         identity_backup_text,
         lm_core::limits::MAX_IDENTITY_BACKUP_TEXT_BYTES,
     )?;
-    ensure_js_bytes(device_backup_text.as_bytes().len(), 64 * 1024)?;
+    ensure_js_bytes(device_backup_text.len(), 64 * 1024)?;
     let payload = device_backup_text
         .strip_prefix(DEVICE_BACKUP_PREFIX)
         .ok_or_else(|| JsValue::from_str("invalid device backup prefix"))?;
@@ -567,7 +567,7 @@ pub fn seal_device_slot(
     plaintext: &str,
 ) -> Result<String, JsValue> {
     ensure_js_len(plaintext, lm_core::limits::MAX_MAILBOX_CIPHERTEXT_BYTES)?;
-    ensure_js_bytes(aad.as_bytes().len(), 16 * 1024)?;
+    ensure_js_bytes(aad.len(), 16 * 1024)?;
     let recipient_public_bytes = decode_key_32(recipient_device_box_public_key)?;
     let recipient_public = X25519PublicKey::from(recipient_public_bytes);
     let mut ephemeral_seed = [0u8; 32];
@@ -603,7 +603,7 @@ pub fn open_device_slot(
     aad: &str,
     sealed_slot_json: &str,
 ) -> Result<String, JsValue> {
-    ensure_js_bytes(aad.as_bytes().len(), 16 * 1024)?;
+    ensure_js_bytes(aad.len(), 16 * 1024)?;
     ensure_js_len(
         sealed_slot_json,
         lm_core::limits::MAX_MAILBOX_CIPHERTEXT_BYTES,
@@ -891,7 +891,7 @@ pub fn decrypt_text_message(
         lm_core::limits::MAX_CONTACT_CARD_TEXT_BYTES,
     )?;
     ensure_js_bytes(
-        envelope_json.as_bytes().len(),
+        envelope_json.len(),
         lm_core::limits::MAX_MAILBOX_CIPHERTEXT_BYTES,
     )?;
     let identity = restore_identity_any(backup_text, passphrase)?;
@@ -1068,8 +1068,8 @@ pub fn derive_x3dh_responder_secret(
     initial_message_json: &str,
 ) -> Result<String, JsValue> {
     ensure_js_len(backup_text, lm_core::limits::MAX_IDENTITY_BACKUP_TEXT_BYTES)?;
-    ensure_js_bytes(private_bundle_json.as_bytes().len(), 128 * 1024)?;
-    ensure_js_bytes(initial_message_json.as_bytes().len(), 32 * 1024)?;
+    ensure_js_bytes(private_bundle_json.len(), 128 * 1024)?;
+    ensure_js_bytes(initial_message_json.len(), 32 * 1024)?;
     let identity = restore_identity_any(backup_text, passphrase)?;
     let private: PreKeyPrivateBundle = from_json_string(private_bundle_json)?;
     let initial: X3dhInitialMessage = from_json_string(initial_message_json)?;
@@ -1157,7 +1157,7 @@ pub fn ratchet_encrypt_text_message(
     conversation_id: &str,
     text: &str,
 ) -> Result<String, JsValue> {
-    ensure_js_bytes(state_text.as_bytes().len(), 64 * 1024)?;
+    ensure_js_bytes(state_text.len(), 64 * 1024)?;
     ensure_js_len(text, lm_core::limits::MAX_DIRECT_MESSAGE_TEXT_BYTES)?;
     let mut state = RatchetSessionState::from_export_text(state_text).map_err(to_js_error)?;
     let envelope =
@@ -1175,9 +1175,9 @@ pub fn ratchet_decrypt_text_message(
     state_text: &str,
     envelope_json: &str,
 ) -> Result<String, JsValue> {
-    ensure_js_bytes(state_text.as_bytes().len(), 64 * 1024)?;
+    ensure_js_bytes(state_text.len(), 64 * 1024)?;
     ensure_js_bytes(
-        envelope_json.as_bytes().len(),
+        envelope_json.len(),
         lm_core::limits::MAX_MAILBOX_CIPHERTEXT_BYTES,
     )?;
     let mut state = RatchetSessionState::from_export_text(state_text).map_err(to_js_error)?;
@@ -1246,7 +1246,7 @@ pub fn create_ratchet_session_pair(
 
 #[wasm_bindgen]
 pub fn inspect_ratchet_state(state_text: &str) -> Result<String, JsValue> {
-    ensure_js_bytes(state_text.as_bytes().len(), 64 * 1024)?;
+    ensure_js_bytes(state_text.len(), 64 * 1024)?;
     let state = RatchetSessionState::from_export_text(state_text).map_err(to_js_error)?;
     let out = RatchetStateInfo {
         session_id: state.session_id.clone(),
@@ -1267,7 +1267,7 @@ pub fn inspect_ratchet_state(state_text: &str) -> Result<String, JsValue> {
 
 #[wasm_bindgen]
 pub fn ratchet_next_sending_key(state_text: &str) -> Result<String, JsValue> {
-    ensure_js_bytes(state_text.as_bytes().len(), 64 * 1024)?;
+    ensure_js_bytes(state_text.len(), 64 * 1024)?;
     let mut state = RatchetSessionState::from_export_text(state_text).map_err(to_js_error)?;
     let key = state.next_sending_key().map_err(to_js_error)?;
     let out = RatchetStepOutput {
@@ -1279,8 +1279,8 @@ pub fn ratchet_next_sending_key(state_text: &str) -> Result<String, JsValue> {
 
 #[wasm_bindgen]
 pub fn ratchet_next_receiving_key(state_text: &str, header_json: &str) -> Result<String, JsValue> {
-    ensure_js_bytes(state_text.as_bytes().len(), 64 * 1024)?;
-    ensure_js_bytes(header_json.as_bytes().len(), 16 * 1024)?;
+    ensure_js_bytes(state_text.len(), 64 * 1024)?;
+    ensure_js_bytes(header_json.len(), 16 * 1024)?;
     let mut state = RatchetSessionState::from_export_text(state_text).map_err(to_js_error)?;
     let header: RatchetHeader = from_json_string(header_json)?;
     let key = state.next_receiving_key(&header).map_err(to_js_error)?;
@@ -1293,7 +1293,7 @@ pub fn ratchet_next_receiving_key(state_text: &str, header_json: &str) -> Result
 
 #[wasm_bindgen]
 pub fn ratchet_dh_step(state_text: &str, remote_dh_public_key: &str) -> Result<String, JsValue> {
-    ensure_js_bytes(state_text.as_bytes().len(), 64 * 1024)?;
+    ensure_js_bytes(state_text.len(), 64 * 1024)?;
     let mut state = RatchetSessionState::from_export_text(state_text).map_err(to_js_error)?;
     state
         .dh_ratchet(remote_dh_public_key)
@@ -1328,7 +1328,7 @@ pub fn apply_group_policy_event(
     event_text: &str,
     actor_contact_card_text: &str,
 ) -> Result<String, JsValue> {
-    ensure_js_bytes(policy_state_json.as_bytes().len(), 128 * 1024)?;
+    ensure_js_bytes(policy_state_json.len(), 128 * 1024)?;
     ensure_js_len(event_text, lm_core::limits::MAX_GROUP_INVITE_TEXT_BYTES)?;
     ensure_js_len(
         actor_contact_card_text,
@@ -1402,7 +1402,7 @@ pub fn import_group_sender_key(
 
 #[wasm_bindgen]
 pub fn group_sender_encrypt_text(state_json: &str, text: &str) -> Result<String, JsValue> {
-    ensure_js_bytes(state_json.as_bytes().len(), 64 * 1024)?;
+    ensure_js_bytes(state_json.len(), 64 * 1024)?;
     ensure_js_len(text, lm_core::limits::MAX_GROUP_MESSAGE_TEXT_BYTES)?;
     let mut state: GroupSenderKeyState = from_json_string(state_json)?;
     let envelope = state.encrypt_text(text.to_string()).map_err(to_js_error)?;
@@ -1415,9 +1415,9 @@ pub fn group_sender_encrypt_text(state_json: &str, text: &str) -> Result<String,
 
 #[wasm_bindgen]
 pub fn group_sender_decrypt_text(state_json: &str, envelope_json: &str) -> Result<String, JsValue> {
-    ensure_js_bytes(state_json.as_bytes().len(), 64 * 1024)?;
+    ensure_js_bytes(state_json.len(), 64 * 1024)?;
     ensure_js_bytes(
-        envelope_json.as_bytes().len(),
+        envelope_json.len(),
         lm_core::limits::MAX_MAILBOX_CIPHERTEXT_BYTES,
     )?;
     let mut state: GroupSenderKeyState = from_json_string(state_json)?;
@@ -1665,6 +1665,7 @@ pub fn inspect_mailbox_message(
 }
 
 #[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
 pub fn create_message_receipt(
     backup_text: &str,
     passphrase: &str,
@@ -1730,10 +1731,7 @@ pub fn create_file_package(
     contact.verify().map_err(to_js_error)?;
     let to_x25519 = decode_key_32(&contact.x25519_public_key)?;
     let to_user_id = contact.user_id;
-    ensure_js_bytes(
-        file_bytes_base64.as_bytes().len(),
-        lm_core::limits::MAX_FILE_BYTES * 2,
-    )?;
+    ensure_js_bytes(file_bytes_base64.len(), lm_core::limits::MAX_FILE_BYTES * 2)?;
     let bytes = BASE64
         .decode(file_bytes_base64.as_bytes())
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
@@ -1742,7 +1740,7 @@ pub fn create_file_package(
     } else {
         chunk_size
     };
-    let chunk_count = ((bytes.len() as u64 + chunk_size as u64 - 1) / chunk_size as u64) as u32;
+    let chunk_count = (bytes.len() as u64).div_ceil(chunk_size as u64) as u32;
     if chunk_count == 0 {
         return Err(JsValue::from_str("file is empty"));
     }
@@ -1781,10 +1779,7 @@ pub fn create_file_package(
 
 #[wasm_bindgen]
 pub fn inspect_file_package(file_package_json: &str) -> Result<String, JsValue> {
-    ensure_js_bytes(
-        file_package_json.as_bytes().len(),
-        lm_core::limits::MAX_FILE_BYTES * 3,
-    )?;
+    ensure_js_bytes(file_package_json.len(), lm_core::limits::MAX_FILE_BYTES * 3)?;
     let value: serde_json::Value = from_json_string(file_package_json)?;
     let manifest: FileManifest = serde_json::from_value(value["manifest"].clone())
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
@@ -1809,10 +1804,7 @@ pub fn decrypt_file_package(
         from_contact_card_text,
         lm_core::limits::MAX_CONTACT_CARD_TEXT_BYTES,
     )?;
-    ensure_js_bytes(
-        file_package_json.as_bytes().len(),
-        lm_core::limits::MAX_FILE_BYTES * 3,
-    )?;
+    ensure_js_bytes(file_package_json.len(), lm_core::limits::MAX_FILE_BYTES * 3)?;
     let identity = restore_identity_any(backup_text, passphrase)?;
     let contact = ContactCard::from_export_text(from_contact_card_text).map_err(to_js_error)?;
     contact.verify().map_err(to_js_error)?;

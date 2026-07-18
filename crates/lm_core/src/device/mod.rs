@@ -201,10 +201,10 @@ impl DeviceCert {
         if !self.user_id.verify_public_key(identity_public_key) {
             return Err(LmError::InvalidUserId);
         }
-        if let Some(expires_at) = self.expires_at {
-            if expires_at <= current_unix_timestamp() {
-                return Err(LmError::ExpiredObject);
-            }
+        if let Some(expires_at) = self.expires_at
+            && expires_at <= current_unix_timestamp()
+        {
+            return Err(LmError::ExpiredObject);
         }
         let device_public_key = decode_key_32(&self.device_public_key)?;
         if !self.device_id.verify_public_key(&device_public_key) {

@@ -86,34 +86,33 @@ impl MailboxStore {
         if message.expires_at <= now {
             return Err(LmError::ExpiredObject);
         }
-        if let Some(max_ttl) = max_message_ttl_seconds {
-            if message.expires_at.saturating_sub(now) > max_ttl {
-                return Err(LmError::PayloadTooLarge);
-            }
+        if let Some(max_ttl) = max_message_ttl_seconds
+            && message.expires_at.saturating_sub(now) > max_ttl
+        {
+            return Err(LmError::PayloadTooLarge);
         }
         self.prune_expired(now);
         if self.has_message_id(&message.to_user_id, message.message_id) {
             return Err(LmError::DuplicateMessage);
         }
         let message_bytes = mailbox_delivery_size_bytes(&message);
-        if let Some(max_total_bytes) = max_total_bytes {
-            if self.total_bytes().saturating_add(message_bytes) > max_total_bytes as usize {
-                return Err(LmError::PayloadTooLarge);
-            }
+        if let Some(max_total_bytes) = max_total_bytes
+            && self.total_bytes().saturating_add(message_bytes) > max_total_bytes as usize
+        {
+            return Err(LmError::PayloadTooLarge);
         }
-        if let Some(max_bytes_per_user) = max_bytes_per_user {
-            if self
+        if let Some(max_bytes_per_user) = max_bytes_per_user
+            && self
                 .bytes_for(&message.to_user_id)
                 .saturating_add(message_bytes)
                 > max_bytes_per_user as usize
-            {
-                return Err(LmError::PayloadTooLarge);
-            }
+        {
+            return Err(LmError::PayloadTooLarge);
         }
-        if let Some(max_messages) = max_messages_per_user {
-            if self.pending_for(&message.to_user_id) >= max_messages {
-                return Err(LmError::PayloadTooLarge);
-            }
+        if let Some(max_messages) = max_messages_per_user
+            && self.pending_for(&message.to_user_id) >= max_messages
+        {
+            return Err(LmError::PayloadTooLarge);
         }
         let delivery_id = Uuid::new_v4().to_string();
         self.message_ids

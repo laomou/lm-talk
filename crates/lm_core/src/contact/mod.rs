@@ -135,10 +135,10 @@ impl ContactCard {
         if self.version != protocol::PROTOCOL_VERSION_V1 {
             return Err(LmError::UnsupportedVersion(self.version));
         }
-        if let Some(expires_at) = self.expires_at {
-            if expires_at <= current_unix_timestamp() {
-                return Err(LmError::ExpiredObject);
-            }
+        if let Some(expires_at) = self.expires_at
+            && expires_at <= current_unix_timestamp()
+        {
+            return Err(LmError::ExpiredObject);
         }
         let identity_public_key = decode_key_32(&self.identity_public_key)?;
         if !self.user_id.verify_public_key(&identity_public_key) {

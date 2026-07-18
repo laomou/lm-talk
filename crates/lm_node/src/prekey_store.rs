@@ -125,12 +125,10 @@ impl PreKeyStore {
                         .find(|id| !consumed.contains(id))
                 }
             });
-        if consume {
-            if let Some(id) = selected_id {
-                consumed.push(id);
-                consumed.sort_unstable();
-                consumed.dedup();
-            }
+        if consume && let Some(id) = selected_id {
+            consumed.push(id);
+            consumed.sort_unstable();
+            consumed.dedup();
         }
         Some((bundle, selected_id, selected_record))
     }

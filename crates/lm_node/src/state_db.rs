@@ -71,6 +71,7 @@ impl StateDbEncryptionProvider {
         }
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(super) fn new(mode: StateDbEncryptionMode) -> Self {
         Self {
             mode,
@@ -78,6 +79,7 @@ impl StateDbEncryptionProvider {
         }
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(super) fn with_passphrase(mode: StateDbEncryptionMode, passphrase: Option<String>) -> Self {
         Self { mode, passphrase }
     }
@@ -90,6 +92,7 @@ impl StateDbEncryptionProvider {
         self.mode.is_database_encrypted()
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(super) fn has_passphrase(&self) -> bool {
         self.passphrase
             .as_deref()
@@ -133,6 +136,7 @@ impl StateDbEncryptionProvider {
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn normalize_state_db_encryption_mode(
     value: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error>> {
@@ -323,7 +327,7 @@ pub(super) fn save_node_state_db(
     for peer in &snapshot.public_peers {
         let routing_peer_json = routing_peers_by_id
             .get(peer.peer_id.as_str())
-            .map(|routing_peer| serde_json::to_string(routing_peer))
+            .map(serde_json::to_string)
             .transpose()?;
         tx.execute(
             "INSERT INTO public_peers(peer_id, announce_json, routing_peer_json) VALUES (?1, ?2, ?3)",

@@ -93,10 +93,7 @@ fn real_http_control_plane_dht_find_value_runs_iterative_query() {
     assert_eq!(stats_body["dht_find_value_attempts"], 1);
     assert_eq!(stats_body["dht_find_value_successes"], 1);
     assert_eq!(stats_body["dht_find_value_found_records"], 1);
-    assert_eq!(
-        stats_body["last_dht_find_value_at"].as_u64().is_some(),
-        true
-    );
+    assert!(stats_body["last_dht_find_value_at"].as_u64().is_some());
 
     let metrics = http_request(&base_b, "GET", "/control/metrics", "");
     assert_eq!(metrics.status, 200, "{}", metrics.body);
@@ -1121,10 +1118,10 @@ fn free_port() -> u16 {
 fn wait_for_health(addr: &str) {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        if let Ok(response) = try_http_request(addr, "GET", "/health", "") {
-            if response.status == 200 {
-                return;
-            }
+        if let Ok(response) = try_http_request(addr, "GET", "/health", "")
+            && response.status == 200
+        {
+            return;
         }
         if Instant::now() >= deadline {
             panic!("timed out waiting for node health at {addr}");

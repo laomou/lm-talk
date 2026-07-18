@@ -132,6 +132,7 @@ pub(super) fn control_error_http_response(status: u16, body: &str) -> String {
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn serve_control(
     bind: &str,
     node: &mut NativeNode,
@@ -381,23 +382,23 @@ pub(super) fn serve_control(
                     }),
                 );
             }
-            if let Some(path) = state_file {
-                if let Err(err) = save_node_state(path, node) {
-                    logger.error(
-                        "state_file.save_error",
-                        format!("state save error: {err}"),
-                        serde_json::json!({"path": path, "error": err.to_string()}),
-                    );
-                }
+            if let Some(path) = state_file
+                && let Err(err) = save_node_state(path, node)
+            {
+                logger.error(
+                    "state_file.save_error",
+                    format!("state save error: {err}"),
+                    serde_json::json!({"path": path, "error": err.to_string()}),
+                );
             }
-            if let Some(path) = state_db {
-                if let Err(err) = save_node_state_db(path, node) {
-                    logger.error(
-                        "state_db.save_error",
-                        format!("state db save error: {err}"),
-                        serde_json::json!({"path": path, "error": err.to_string()}),
-                    );
-                }
+            if let Some(path) = state_db
+                && let Err(err) = save_node_state_db(path, node)
+            {
+                logger.error(
+                    "state_db.save_error",
+                    format!("state db save error: {err}"),
+                    serde_json::json!({"path": path, "error": err.to_string()}),
+                );
             }
         }
         if now.duration_since(last_rate_limit_prune) >= Duration::from_secs(60) {
@@ -429,23 +430,23 @@ pub(super) fn serve_control(
                     );
                     let response = control_error_http_response(status, &body);
                     let _ = stream.write_all(response.as_bytes());
-                } else if let Some(path) = state_file {
-                    if let Err(err) = save_node_state(path, node) {
-                        logger.error(
-                            "state_file.save_error",
-                            format!("state save error: {err}"),
-                            serde_json::json!({"path": path, "error": err.to_string()}),
-                        );
-                    }
+                } else if let Some(path) = state_file
+                    && let Err(err) = save_node_state(path, node)
+                {
+                    logger.error(
+                        "state_file.save_error",
+                        format!("state save error: {err}"),
+                        serde_json::json!({"path": path, "error": err.to_string()}),
+                    );
                 }
-                if let Some(path) = state_db {
-                    if let Err(err) = save_node_state_db(path, node) {
-                        logger.error(
-                            "state_db.save_error",
-                            format!("state db save error: {err}"),
-                            serde_json::json!({"path": path, "error": err.to_string()}),
-                        );
-                    }
+                if let Some(path) = state_db
+                    && let Err(err) = save_node_state_db(path, node)
+                {
+                    logger.error(
+                        "state_db.save_error",
+                        format!("state db save error: {err}"),
+                        serde_json::json!({"path": path, "error": err.to_string()}),
+                    );
                 }
             }
             Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
@@ -460,6 +461,7 @@ pub(super) fn serve_control(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn handle_stream(
     stream: &mut TcpStream,
     node: &mut NativeNode,
@@ -506,7 +508,7 @@ pub(super) fn handle_stream(
         node.prune_expired_records();
         ControlHttpResponse::openmetrics(
             200,
-            &runtime_stats.to_openmetrics(
+            runtime_stats.to_openmetrics(
                 node.maintenance_stats(),
                 state_db_stats_opt(state_db).as_ref(),
                 state_file_stats_opt(state_file).as_ref(),
@@ -624,7 +626,7 @@ pub(super) fn handle_control_dht_maintenance_run(
     let mut routing_refresh =
         run_dht_routing_refresh_with_logger(node, &peers, refresh_config, None);
     routing_refresh.peers_quarantined = peers_quarantined;
-    if let Some(runtime_stats) = runtime_stats.as_deref_mut() {
+    if let Some(runtime_stats) = runtime_stats {
         runtime_stats.record_dht_routing_refresh_run(routing_refresh, current_unix_timestamp());
     }
     ControlHttpResponse::json(

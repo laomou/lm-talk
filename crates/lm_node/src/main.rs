@@ -791,7 +791,6 @@ fn libp2p_dht_rpc_config() -> request_response::Config {
 }
 
 #[allow(dead_code)]
-
 fn libp2p_dht_connection_limits() -> connection_limits::ConnectionLimits {
     connection_limits::ConnectionLimits::default()
         .with_max_pending_incoming(Some(MAX_LIBP2P_DHT_PENDING_INCOMING))
@@ -876,13 +875,12 @@ fn handle_libp2p_dht_server_event(
                     },
                 ..
             } = &event
+                && pending_discovery.remove(request_id)
             {
-                if pending_discovery.remove(request_id) {
-                    let returned = nodes.len();
-                    let merged = node.merge_verified_routing_peers(nodes.clone());
-                    println!("libp2p_dht_discovery_nodes={returned} merged={merged}");
-                    return None;
-                }
+                let returned = nodes.len();
+                let merged = node.merge_verified_routing_peers(nodes.clone());
+                println!("libp2p_dht_discovery_nodes={returned} merged={merged}");
+                return None;
             }
             handle_libp2p_dht_rpc_event(node, &mut swarm.behaviour_mut().dht_rpc, event)
         }
@@ -1411,10 +1409,9 @@ fn sync_parent_dir(path: &Path) {
         if let Some(parent) = path
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
+            && let Ok(dir) = File::open(parent)
         {
-            if let Ok(dir) = File::open(parent) {
-                let _ = dir.sync_all();
-            }
+            let _ = dir.sync_all();
         }
     }
     #[cfg(not(unix))]
@@ -1699,10 +1696,10 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(body).unwrap();
         let request = value.get("request").unwrap();
         for kind in ["FindNode", "FindValue", "StoreRecord"] {
-            if let Some(value) = request.get(kind) {
-                if let Some(request_id) = value.get("request_id").and_then(|v| v.as_str()) {
-                    return request_id.to_string();
-                }
+            if let Some(value) = request.get(kind)
+                && let Some(request_id) = value.get("request_id").and_then(|v| v.as_str())
+            {
+                return request_id.to_string();
             }
         }
         panic!("missing DHT RPC request_id in {body}");
