@@ -20,9 +20,9 @@ use lm_core::{
     x3dh_initiator_secret_with_one_time_prekey_id,
     x3dh_initiator_secret_with_one_time_prekey_record, x3dh_responder_secret,
 };
+use pbkdf2::pbkdf2_hmac;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use pbkdf2::pbkdf2_hmac;
 use wasm_bindgen::prelude::*;
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519Secret};
 
@@ -162,7 +162,12 @@ const WASM_PBKDF2_ITERATIONS: u32 = 600_000;
 fn wasm_identity_backup_key(passphrase: &str, salt: &[u8]) -> [u8; 32] {
     let normalized = lm_core::normalize_passphrase(passphrase);
     let mut key = [0u8; 32];
-    pbkdf2_hmac::<Sha256>(normalized.as_bytes(), salt, WASM_PBKDF2_ITERATIONS, &mut key);
+    pbkdf2_hmac::<Sha256>(
+        normalized.as_bytes(),
+        salt,
+        WASM_PBKDF2_ITERATIONS,
+        &mut key,
+    );
     key
 }
 

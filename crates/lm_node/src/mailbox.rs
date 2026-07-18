@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
-use crate::kademlia::{current_unix_timestamp, DEFAULT_MAILBOX_ACK_RECEIPT_TTL_SECONDS};
+use crate::kademlia::{DEFAULT_MAILBOX_ACK_RECEIPT_TTL_SECONDS, current_unix_timestamp};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MailboxRateLimitConfig {

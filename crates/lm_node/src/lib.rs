@@ -25,8 +25,8 @@ pub const MAX_ROUTING_PEER_ADDRESSES: usize = 16;
 pub const MAX_ROUTING_PEER_ADDRESS_BYTES: usize = 512;
 
 use lm_core::{
-    Identity, IdentityBackupPackage, LmError, MailboxMessage, PreKeyBundle,
-    PublicPeerAnnounce, PublicPeerCapability, Result, SignedOneTimePreKeyRecord,
+    Identity, IdentityBackupPackage, LmError, MailboxMessage, PreKeyBundle, PublicPeerAnnounce,
+    PublicPeerCapability, Result, SignedOneTimePreKeyRecord,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};

@@ -2,8 +2,8 @@ use lm_core::{Identity, LmError, PublicPeerCapability, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    MailboxRateLimitConfig, DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES,
-    DEFAULT_MAX_MAILBOX_BYTES_PER_USER,
+    DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES, DEFAULT_MAX_MAILBOX_BYTES_PER_USER,
+    MailboxRateLimitConfig,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,10 +66,7 @@ impl Default for NodeConfig {
 }
 
 impl NodeConfig {
-    pub fn create_announce(
-        &self,
-        identity: &Identity,
-    ) -> Result<lm_core::PublicPeerAnnounce> {
+    pub fn create_announce(&self, identity: &Identity) -> Result<lm_core::PublicPeerAnnounce> {
         lm_core::PublicPeerAnnounce::new(
             identity,
             self.peer_id.clone(),

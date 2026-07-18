@@ -328,7 +328,10 @@ impl RatchetSessionState {
             previous_send_count: self.previous_send_count,
             message_number: self.send_count,
         };
-        self.send_count = self.send_count.checked_add(1).ok_or(LmError::CounterExhausted)?;
+        self.send_count = self
+            .send_count
+            .checked_add(1)
+            .ok_or(LmError::CounterExhausted)?;
         self.send_chain_key = BASE64.encode(next_chain);
         self.updated_at = current_unix_timestamp();
         Ok(RatchetMessageKey {
@@ -369,11 +372,17 @@ impl RatchetSessionState {
                 BASE64.encode(skipped_message_key),
             );
             chain = derive_indexed_key(&chain, RATCHET_NEXT_CHAIN_INFO, self.recv_count)?;
-            self.recv_count = self.recv_count.checked_add(1).ok_or(LmError::CounterExhausted)?;
+            self.recv_count = self
+                .recv_count
+                .checked_add(1)
+                .ok_or(LmError::CounterExhausted)?;
         }
         let message_key = derive_indexed_key(&chain, RATCHET_MESSAGE_KEY_INFO, self.recv_count)?;
         let next_chain = derive_indexed_key(&chain, RATCHET_NEXT_CHAIN_INFO, self.recv_count)?;
-        self.recv_count = self.recv_count.checked_add(1).ok_or(LmError::CounterExhausted)?;
+        self.recv_count = self
+            .recv_count
+            .checked_add(1)
+            .ok_or(LmError::CounterExhausted)?;
         self.recv_chain_key = BASE64.encode(next_chain);
         self.updated_at = current_unix_timestamp();
         Ok(RatchetMessageKey {

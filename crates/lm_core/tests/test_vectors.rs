@@ -7,8 +7,8 @@ use lm_core::{
     FileManifest, FriendRequest, GroupEvent, GroupEventAction, GroupInvite, GroupSenderEnvelope,
     GroupSenderKeyDistribution, GroupSenderKeyState, Identity, IdentityBackupPackage, IdentitySeed,
     MailboxMessage, MessageReceipt, MessageReceiptKind, PreKeyBundle, PublicPeerAnnounce,
-    RatchetHeader, RatchetRole, RatchetSessionState, SignedOneTimePreKeyRecord,
-    device::DeviceSeed, file_hash_base64, normalize_passphrase, verify_file_hash,
+    RatchetHeader, RatchetRole, RatchetSessionState, SignedOneTimePreKeyRecord, device::DeviceSeed,
+    file_hash_base64, normalize_passphrase, verify_file_hash,
 };
 use serde_json::Value;
 
