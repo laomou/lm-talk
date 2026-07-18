@@ -13,6 +13,10 @@ pub const IDENTITY_X25519_INFO: &[u8] = b"lm-talk.identity.x25519.v1";
 pub const STORAGE_KEY_INFO: &[u8] = b"lm-talk.storage-key.v1";
 pub const BACKUP_AEAD_AAD: &[u8] = b"lm-talk.identity-backup.v1";
 
+// Salt is intentionally None: all callers provide high-entropy IKM (random
+// seeds or DH outputs), and most derivations must be deterministic (both
+// parties reproduce the same key). Per RFC 5869 §3.1, omitting salt is safe
+// when IKM is already uniformly random.
 pub fn hkdf_32(input_key_material: &[u8], info: &[u8]) -> Result<[u8; 32]> {
     let hk = Hkdf::<Sha256>::new(None, input_key_material);
     let mut out = [0u8; 32];

@@ -19,6 +19,8 @@ pub const MVP_CRYPTO_V1: &str = "x25519-static-hkdf-xchacha20poly1305-v1";
 pub const RATCHET_CRYPTO_V1: &str = "x3dh-double-ratchet-v1";
 const DIRECT_MESSAGE_KEY_INFO: &[u8] = b"lm-talk.direct-message.v1";
 const DIRECT_NONCE_LEN: usize = 24;
+const MAX_MESSAGE_AGE_SECONDS: u64 = 7 * 24 * 60 * 60;
+const MAX_MESSAGE_FUTURE_SECONDS: u64 = 5 * 60;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DirectEnvelope {
@@ -273,6 +275,7 @@ impl RatchetEnvelope {
         if self.crypto != RATCHET_CRYPTO_V1 {
             return Err(LmError::InvalidFormat);
         }
+        validate_timestamp(self.created_at)?;
         Ok(())
     }
 
@@ -389,6 +392,7 @@ impl DirectEnvelope {
         if self.crypto != MVP_CRYPTO_V1 {
             return Err(LmError::InvalidFormat);
         }
+        validate_timestamp(self.created_at)?;
         Ok(())
     }
 
@@ -404,6 +408,17 @@ impl DirectEnvelope {
             nonce: self.nonce.clone(),
         }
     }
+}
+
+fn validate_timestamp(created_at: u64) -> Result<()> {
+    let now = current_unix_timestamp();
+    if created_at > now.saturating_add(MAX_MESSAGE_FUTURE_SECONDS) {
+        return Err(LmError::ExpiredObject);
+    }
+    if now.saturating_sub(created_at) > MAX_MESSAGE_AGE_SECONDS {
+        return Err(LmError::ExpiredObject);
+    }
+    Ok(())
 }
 
 fn derive_direct_key(
