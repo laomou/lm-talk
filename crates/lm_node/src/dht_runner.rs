@@ -1,4 +1,5 @@
 use super::*;
+use libp2p::{Multiaddr, PeerId};
 
 pub(super) trait DhtTransport: Sync {
     fn send_dht_rpc(
