@@ -1473,7 +1473,6 @@ fn compact_json(value: &serde_json::Value) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "{}".to_string())
 }
 
-
 #[derive(Debug, Default)]
 struct RateLimiter {
     entries: HashMap<IpAddr, RateLimitEntry>,

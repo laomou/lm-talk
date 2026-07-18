@@ -354,11 +354,7 @@ fn group_sender_key_fanout_via_mailbox() {
         .to_string(),
         headers: Vec::new(),
     });
-    assert_eq!(
-        push_carol.status, 201,
-        "push to carol: {}",
-        push_carol.body
-    );
+    assert_eq!(push_carol.status, 201, "push to carol: {}", push_carol.body);
 
     // 6. Bob takes from mailbox, decrypts the group message
     let take_bob = node.handle_control_request(ControlRequest {
@@ -382,11 +378,7 @@ fn group_sender_key_fanout_via_mailbox() {
         body: String::new(),
         headers: Vec::new(),
     });
-    assert_eq!(
-        take_carol.status, 200,
-        "take carol: {}",
-        take_carol.body
-    );
+    assert_eq!(take_carol.status, 200, "take carol: {}", take_carol.body);
     let carol_body: serde_json::Value = serde_json::from_str(&take_carol.body).unwrap();
     let carol_ciphertext = carol_body["messages"][0]["message"]["ciphertext"]
         .as_str()

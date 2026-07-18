@@ -1275,7 +1275,11 @@ impl ControlRuntimeStats {
         out
     }
 
-    pub(crate) fn record_dht_replication_run(&mut self, stats: DhtReplicationRunStats, finished_at: u64) {
+    pub(crate) fn record_dht_replication_run(
+        &mut self,
+        stats: DhtReplicationRunStats,
+        finished_at: u64,
+    ) {
         self.dht_replication_runs = self.dht_replication_runs.saturating_add(1);
         self.dht_replication_records = self
             .dht_replication_records
@@ -1331,7 +1335,11 @@ impl ControlRuntimeStats {
         self.last_dht_routing_refresh_at = Some(finished_at);
     }
 
-    pub(crate) fn record_dht_find_value_run(&mut self, stats: DhtFindValueRunStats, finished_at: u64) {
+    pub(crate) fn record_dht_find_value_run(
+        &mut self,
+        stats: DhtFindValueRunStats,
+        finished_at: u64,
+    ) {
         self.dht_find_value_runs = self.dht_find_value_runs.saturating_add(1);
         self.dht_find_value_attempts = self
             .dht_find_value_attempts
