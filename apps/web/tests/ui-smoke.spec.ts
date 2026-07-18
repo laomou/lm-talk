@@ -833,3 +833,82 @@ test('注册后可在独立导入页导入身份，再回登录页登录', async
   await page.getByRole('button', { name: '登录', exact: true }).click({ force: true })
   await expect(page.locator('.chat-shell')).toBeVisible()
 })
+
+// Focused, minimal end-to-end message path: add friend, confirm both ways,
+// send one encrypted message, decrypt it on the receiver. Deliberately avoids
+// the fragile DHT-stats / strict-E2EE-wizard / group / read-receipt assertions
+// so the core "encrypt out, decrypt in" flow keeps independent coverage even if
+// those richer UI strings change.
+test('最小端到端：加好友后发送并解密一条加密消息', async ({ browser }) => {
+  const mailboxes = new Map<string, MockMailboxMessage[]>()
+  const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  await installMockSyncNode(aliceContext, mailboxes)
+  await installMockSyncNode(bobContext, mailboxes)
+  const alice = await aliceContext.newPage()
+  const bob = await bobContext.newPage()
+  await clearBrowserState(alice)
+  await clearBrowserState(bob)
+
+  await createIdentity(alice, 'Alice', 'alice min e2e 2026')
+  await createIdentity(bob, 'Bob', 'bob min e2e 2026')
+  const bobCard = await copyMyContactCard(bob)
+
+  await enableSync(alice)
+  await enableSync(bob)
+
+  // Alice adds Bob and sends a friend request via mailbox.
+  await alice.goto('/#/contacts')
+  await alice.getByRole('button', { name: '添加' }).click()
+  await fieldAfterLabel(alice, '对方名片').fill(bobCard)
+  await alice.getByRole('button', { name: '添加好友' }).click()
+
+  // Bob syncs, sees the request, accepts, and marks Alice verified.
+  await bob.goto('/#/contacts')
+  await bob.getByRole('button', { name: '收件箱' }).click()
+  await bob.getByRole('button', { name: '同步' }).click()
+  await expect(bob.getByRole('button', { name: '接受' })).toBeVisible()
+  await bob.getByRole('button', { name: '接受' }).click()
+  await expect(bob.locator('.contact').filter({ hasText: 'Alice' })).toBeVisible()
+  await bob.locator('.contact').filter({ hasText: 'Alice' }).click()
+  await bob.getByRole('button', { name: '已人工核验，标记可信' }).click()
+  await bob.getByRole('button', { name: '确定' }).click()
+
+  // Alice syncs the acceptance and marks Bob verified so the session is ready.
+  await alice.goto('/#/contacts')
+  await alice.getByRole('button', { name: '收件箱' }).click()
+  await alice.getByRole('button', { name: '同步' }).click()
+  await alice.locator('.contact').filter({ hasText: 'Bob' }).click()
+  await alice.getByRole('button', { name: '已人工核验，标记可信' }).click()
+  await alice.getByRole('button', { name: '确定' }).click()
+  await expect(alice.locator('.detail-hero')).toContainText('指纹已核验')
+
+  // Alice sends an encrypted message.
+  await alice.goto('/#/chat')
+  await alice.locator('.contact').filter({ hasText: 'Bob' }).click()
+  await alice.getByRole('button', { name: '刷新 ContactCard' }).click()
+  await alice.getByPlaceholder('输入消息').fill('端到端加密消息')
+  await alice.getByRole('button', { name: '发送', exact: true }).click()
+  await expect(alice.locator('.bubble.out')).toContainText('端到端加密消息')
+
+  // Bob syncs the mailbox and decrypts the message.
+  await bob.goto('/#/contacts')
+  await bob.getByRole('button', { name: '收件箱' }).click()
+  await bob.getByRole('button', { name: '同步' }).click()
+  await bob.goto('/#/chat')
+  await bob.locator('.contact').filter({ hasText: 'Alice' }).click()
+  await expect
+    .poll(async () => bob.locator('.bubble.in').filter({ hasText: '端到端加密消息' }).count(), { timeout: 15_000 })
+    .toBeGreaterThan(0)
+
+  // The plaintext must never touch IndexedDB unencrypted on the receiver side.
+  await expect
+    .poll(async () => {
+      const messages = await idbStoreAll(bob, 'messages')
+      return messages.length > 0 && messages.every((m) => !JSON.stringify(m).includes('端到端加密消息'))
+    }, { timeout: 10_000 })
+    .toBe(true)
+
+  await aliceContext.close()
+  await bobContext.close()
+})
