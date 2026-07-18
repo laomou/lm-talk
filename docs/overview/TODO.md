@@ -153,24 +153,19 @@
    - Web 已为本地去重记录保留处理时间，按 30 天 / 1000 条裁剪并兼容旧字符串记录。
    - 仍需跨设备 dedupe 合并策略。
 
-3. **节点同步自动化**
-   - [x] `serve-control --sync-peer http://host:port --sync-interval-seconds N` 可定时拉取 peer snapshot 并 merge。
-   - [x] 支持多个 sync peer 的持久配置文件和失败退避：`sync_peers[]`、`sync_max_backoff_seconds`、`/sync/status`。
-   - [x] 后续替换为真正传输层 DHT 查询/复制；Native Node 已接入 libp2p request-response DHT 查询/复制 scaffold。
-
-4. **联系人更新**
+3. **联系人更新**
    - 支持 Contact Card 更新 display name、设备列表、PreKey 信息。
    - 禁止静默更换 identity_public_key。
 
-5. **消息 ACK / 送达状态**
+4. **消息 ACK / 送达状态**
    - Mailbox push 成功只代表节点收下，不代表对方已收。
    - 需要送达回执协议；已读回执默认关闭。
 
-6. **多设备基础流程**
+5. **多设备基础流程**
    - 新设备导入身份备份后如何同步联系人/消息。
    - 设备证书列表更新和撤销事件自动分发。
 
-7. **PWA / 离线包**
+6. **PWA / 离线包**
    - Web 版供应链风险提示已存在，设置页已展示 PWA Service Worker / 缓存状态和 Web 包版本。
    - Web 静态入口已加入 CSP meta 和 no-referrer 策略，限制脚本/对象/frame/form 等默认能力，同时保留 WASM、PWA、blob/data 预览和用户配置同步节点连接能力；CSP `connect-src` 已收紧为只允许 `https:`/`wss:` 加本地开发 localhost，不再允许裸 `http:`/`ws:`；Web E2E 覆盖 CSP/referrer meta 存在。
    - Service Worker 注册 URL 和缓存名已带构建版本，避免不同构建共用同一个离线缓存。
@@ -945,123 +940,6 @@ MVP 群聊采用逐个加密。
 
 ## Native Node / 非 Web 后端 TODO
 
-### P0：节点 MVP 稳定化
-
-1. **正式持久化**
-   - [x] `serve-control --state-file` 采用同目录临时文件 + fsync + rename 的原子保存，避免普通写入在崩溃时截断主状态文件。
-   - [x] 为 mailbox deliveries、prekey bundles、consumed one-time prekeys、public peers 增加 SQLite 正式存储：`--state-db` / `state_db`。
-   - [x] 保留 snapshot import/export 作为迁移和调试能力。
-   - [x] 增加 state-file 崩溃恢复测试：push 后崩溃、take 未 ack 后崩溃、ack 后崩溃。
-
-2. **Mailbox 生命周期**
-   - [x] TTL 过期清理（push/take/restore/merge 路径会清理过期 delivery）。
-   - [x] 基础 per-user / per-node quota（`max_mailbox_messages_per_user` / `max_mailbox_bytes_per_user` / `max_mailbox_bytes`），并已提供 config/CLI/env 配置入口。
-   - [x] 基础 message_id 去重；delivery_id 去重保留在 snapshot merge 路径。
-   - [x] 持久化 quota/TTL/去重索引到正式数据库：SQLite `mailbox_deliveries` 表包含 `expires_at`、`to_user_id`、`message_id` 唯一索引。
-   - [x] state-file crash recovery 覆盖 mailbox push 后崩溃、take 未 ack 后崩溃、ack 后崩溃。
-   - [x] 控制面基础 per-client IP 限流：`--rate-limit-window-seconds` / `--rate-limit-max-requests`，超限返回 `429`，`/health` 不计入限流。
-   - [x] 控制面入站客户端连接配置读写超时，避免慢连接长时间占用单线程控制面处理循环；相关超时参数通过 `/health` 暴露。
-   - [x] 控制面超大请求体返回 `413 Payload Too Large`，超大 header 返回 `431 Request Header Fields Too Large`，错误路径真实 HTTP status 与统计值一致，避免全部混入 `400` 难以排查。
-   - [x] 控制面 HTTP parser 拒绝超大 method/path/header line、冲突重复 `Content-Length` 和非空 `Transfer-Encoding`，降低请求走私/解析歧义和超长首行消耗；真实 `serve-control` HTTP 集成测试覆盖 413/431/400 实际响应。
-   - [x] 控制面响应附加 no-store、nosniff、no-referrer、Permissions-Policy 和受限 CSP 等安全响应头，避免浏览器缓存或误用敏感控制面响应。
-   - [x] Mailbox `push` 支持全局限流：`mailbox_global_rate_limit_window_seconds` / `mailbox_global_rate_limit_max_messages`，默认关闭，超限返回 `429`。
-   - [x] Mailbox `push` 支持按 sender UserID 限流：`mailbox_sender_rate_limit_window_seconds` / `mailbox_sender_rate_limit_max_messages`，默认关闭，超限返回 `429`。
-   - [x] Mailbox `push` 异常 payload / 拒绝原因统计：`maintenance.mailbox_push_rejects` 与 OpenMetrics `lm_node_mailbox_push_rejections_total{reason=...}`。
-   - [x] `take` 不删除，只有处理成功后 `ack` 删除；已覆盖 state-file 与 SQLite `state_db` 下 push 后崩溃、take 未 ack 后崩溃、ack 后崩溃的重启重试语义。
-   - [x] Mailbox `take` 支持 `limit` 分页领取并返回 `returned` / `pending` / `more`，默认限制单次返回数量，避免大邮箱一次性响应过大。
-   - [x] Mailbox `ack` 限制单次 delivery id 数量和单个 id 长度，并使用集合匹配删除，避免超大 ack 请求造成过多 CPU/内存消耗。
-   - [x] Mailbox `ack` 异常 payload / 拒绝原因统计：`maintenance.mailbox_ack_rejects` 与 OpenMetrics `lm_node_mailbox_ack_rejections_total{reason=...}`，覆盖 invalid_json、invalid_user_id、too_many_ids、empty_id 和 id_too_large。
-   - [x] `GET /mailbox/status` 返回 per-user summary 与单个 delivery 的 `pending` / `delivered_unacked` / `acked` / `absent_or_expired` 状态，并将 ACK receipt/tombstone 纳入 snapshot 与 SQLite state_db 持久化，为“对方未取”“已取未 ACK”和“ACK 已完成”的客户端恢复逻辑提供节点端基础。
-   - [x] 增加节点 Mailbox 压力/故障自动化测试：批量写入 120 条、分页 take、部分 ACK、查询 acked/delivered_unacked 状态，并通过 snapshot 恢复验证 ACK tombstone 与未 ACK delivery 均保留。
-   - [x] `/health` 暴露 Mailbox take 默认上限、ack delivery id 数量上限、单个 id 长度上限、Mailbox 总字节/每用户字节/每用户消息数配额、控制面入站/peer 超时和 control-peer 响应大小上限，便于部署确认反滥用参数。
-
-3. **PreKey 生命周期**
-   - [x] signed prekey 轮换时重置旧 one-time prekey 消费记录。
-   - [x] one-time prekey 低水位提示：`remaining_one_time_prekeys` / `low_one_time_prekeys`。
-   - [x] bundle 过期清理：restore/get/take/merge 路径会移除过期 bundle 和消费状态。
-   - [x] 自动补货仍由客户端持有 private prekey 后重新发布；节点不生成用户密钥：`/prekey/get` / `/prekey/status` 返回 `replenishment_required`、`replenishment_actor="client"`、`node_generates_user_keys=false`。
-   - [x] 定义独立 signed one-time-prekey record 协议对象：`SignedOneTimePreKeyRecord` 可由身份签名、验签、导出/导入，避免未来新增 OTK 时必须重签整个 bundle。
-   - [x] 将节点 PreKey 存储/发布/消费路径从 bundle 内 one-time list 切换到独立 signed one-time-prekey records，避免 bundle 级签名与消费记录耦合；兼容旧 bundle 内 one_time_prekeys。
-   - [x] 节点拒绝超过 core 上限的 signed one-time-prekey record 批量发布，避免 PreKey 发布路径被超量 OTK 记录滥用。
-
-4. **控制面安全**
-   - [x] 未配置 token 时，除 `/health` 外只允许 loopback 客户端访问；生产 `scripts/run.sh` 在非 loopback 绑定且未显式提供 control token/token file 时会拒绝启动，并提供 `--check-config` 预检。
-   - [x] `--control-token` / `LM_NODE_CONTROL_TOKEN` 支持 Bearer token 保护非 health API。
-   - [x] `--cors-allow-origin` / `LM_NODE_CORS_ALLOW_ORIGIN` 支持 CORS 白名单。
-   - [x] token 可从配置文件、CLI 或环境变量加载。
-   - [x] `--control-token-file` / `LM_NODE_CONTROL_TOKEN_FILE` 和 config `control_token_file` 支持从 secret 文件加载；Unix 下会拒绝 group/other 权限过宽或 symlink secret 文件，降低 token 泄漏风险。
-   - [x] `--rate-limit-window-seconds` / `LM_NODE_RATE_LIMIT_WINDOW_SECONDS` / config `rate_limit_window_seconds` 与 `--rate-limit-max-requests` / `LM_NODE_RATE_LIMIT_MAX_REQUESTS` / config `rate_limit_max_requests` 支持基础限流。
-   - [x] token 轮换策略：见 `docs/NODE_CONFIG.md` 的 secret 文件原子替换、滚动更新和验证流程。
-   - [x] TLS/反向代理部署说明：见 `docs/NODE_CONFIG.md` 的 Nginx/Caddy 示例和部署检查清单。
-
-### P1：节点自动同步与网络
-
-1. **自动 snapshot sync**
-   - [x] CLI 参数配置 peer control URL 列表：`--sync-peer http://a,http://b`。
-   - [x] `serve-control` 定时拉取 `/sync/snapshot` 并 merge 到本地节点。
-   - [x] 合并 peers/mailbox/prekeys/consumed records 时保持幂等。
-   - [x] 增加 `/sync/status`，记录 attempts/successes/failures/last_success_at/last_error/next_attempt_at。
-   - [x] `--sync-peer-token` / `LM_NODE_SYNC_PEER_TOKEN` 支持从受 token 保护的 peer 拉取 snapshot。
-   - [x] `--sync-peer-token-file` / `LM_NODE_SYNC_PEER_TOKEN_FILE` 和 config `sync_peers[].token_file` 支持从 secret 文件加载，并复用 Unix secret 文件权限校验。
-   - [x] 同步失败指数退避：`--sync-max-backoff-seconds`。
-   - [x] `serve-control --config-file` / `LM_NODE_CONFIG_FILE` 支持 JSON 配置文件。
-   - [x] 敏感字段拆分：control/sync token 可通过环境变量或 secret 文件加载。
-   - [x] 配置文件 schema 文档：`docs/NODE_CONFIG.md` 与 `docs/examples/lm-node.config.example.json`。
-
-2. **DHT scaffold 演进**
-   - [x] 增加本地 `DhtRecordStore` scaffold：`store` / `find_value` / `closest_records` / `due_for_republish` / `prune_expired`。
-   - [x] 为 Public Peer、PreKey record、Mailbox hint 定义 namespaced deterministic record key。
-   - [x] 记录包含 TTL、`republish_at`、kind、value；支持 closest-k 本地记录查询和过期清理。
-   - [x] 控制面提供 `POST /dht/record`、`GET /dht/record`、`GET /dht/closest`，snapshot 保存/合并 DHT records。
-   - [x] 定义 `DhtRpcRequest` / `DhtRpcResponse` 并提供本地 `FindNode` / `FindValue` / `StoreRecord` handler scaffold。
-   - [x] 控制面 `POST /dht/rpc` 可执行 DHT RPC 消息，作为传输层接入前的兼容入口。
-   - [x] HTTP control-plane DHT RPC client helper 可向远端 `/dht/rpc` 发送 RPC JSON，并复用 peer bearer token；control-peer HTTP 请求配置连接/读写超时且响应读取有大小上限，避免恶意/异常 peer 卡住后台任务或返回超大响应占用内存。
-   - [x] serve-control 同步周期后可对 due-for-republish records 向已配置 control peers 执行 `StoreRecord` replication scaffold。
-   - [x] `/control/stats` 与 `/control/metrics` 暴露 DHT replication runner 的 runs、records、attempts、successes、failures 和 last run 时间。
-   - [x] serve-control 同步周期后可执行 bounded control-peer `FindNode` routing refresh runner scaffold，并统计返回节点数量。
-   - [x] routing refresh runner 可合并来自已配置 control peers 的可信返回节点：过滤过期、node_id/peer_id 不匹配、本机节点、FindNode 返回中的自引用/重复节点，以及已知响应 peer id 时未比响应 peer 更接近 refresh target 的节点，并写入 routing table，同时在运行统计/OpenMetrics 中暴露 rejected non-closer/duplicate routing nodes。
-   - [x] `RoutingPeer` 返回节点可携带 identity public key；verified merge 路径会校验 public peer announce 签名，snapshot / SQLite state_db 会持久化该字段。
-   - [x] DHT record 拒绝统计覆盖控制面 store、DHT RPC StoreRecord、sync snapshot 导入和 FindValue found/closer records，避免查询路径静默丢弃无效记录而无法观测攻击/故障。
-   - [x] HTTP/libp2p DHT transport 校验响应体 logical `request_id` 与请求一致，并将 DHT `Error` 响应视为失败，降低异常/恶意 peer 串扰响应被上层误用的风险。
-   - [x] DHT FindValue / FindNode 客户端侧对远端返回的 closer records/nodes 做处理上限，即使恶意 peer 忽略请求 limit 返回超量对象，也只进行有界合并和校验。
-   - [x] DHT FindValue runner 已支持有界迭代查询：初始 peer 返回 verified closer nodes 后，会按目标 key XOR distance 排序，并在 `max_peers` 限制内继续查询，减少单跳 scaffold 和恶意返回顺序的影响；控制面 `GET /dht/key?kind=...&value=...` 可派生 public-peer/prekey/mailbox-hint DHT key，`GET /dht/maintenance?factor=N&limit=N&max_targets=N` 可一键运行 replication 与 routing refresh，`GET /dht/replicate?factor=N` 可手动触发 due record replication runner，`GET /dht/routing-refresh?limit=N&max_targets=N` 可手动触发 refresh runner，`GET /dht/find-value?key=<hex>&limit=N&max_peers=N&alpha=N` 已接入该 runner，并支持 `kind/value` 直接派生 key 查询，并有真实 HTTP 双节点 e2e 覆盖；即使关闭自动 snapshot sync（`sync_interval_seconds=0`），仍可复用已配置 sync/control peers 进行手动 DHT 查询；HTTP-control transport 也会把 routing table 中同 scheme `http://` routing peers 加入 runner 候选，但不会向发现的第三方 peer 传播已配置 bearer token，避免 token 泄漏；已补基础终止条件：找到有效 record 后停止继续消耗查询预算；查询响应会返回命中的 record（如有），`/control/stats` 和 `/control/metrics` 已暴露 `query_rounds` / `alpha` / `exhausted` / `peers_quarantined` 以及手动 FindValue attempts/命中/closer 统计，并有真实 HTTP 双节点 e2e 覆盖，且 FindValue runner 已按 `alpha` 在每轮并发发起查询请求，不再只是顺序批处理；当响应 peer 的 peer_id 已知时，FindValue 会拒绝未比响应 peer 更接近目标 key 的 closer nodes，并暴露 `rejected_non_closer` 指标；FindValue 还会拒绝 closer nodes 中的自引用、已查询或已入队重复候选，并暴露 `rejected_duplicate` 指标，降低恶意/低质量 peer 用不前进或重复路由结果消耗查询预算；DHT runner 会根据 `sync_status` 中的 consecutive_failures/failures 对配置 peer 排序，优先健康 peer；replication、routing refresh 和 FindValue 的 DHT RPC 成功/失败也会回写 peer health、退避和连续失败状态；当 FindNode/FindValue 响应只提供不前进或重复的 routing hints 时，也会把响应 peer 记为可疑失败进入退避链路；并跳过 consecutive_failures 达到可配置阈值且仍处于退避期的本轮 quarantine peer，next_attempt_at 到期后重新纳入候选；`POST /sync/peer/reset` 可手动清除单个 peer 当前失败/退避状态，便于误隔离或网络恢复后快速恢复；`/control/metrics` 暴露 `lm_node_dht_peer_quarantined{peer=...}`，并聚合 replication/refresh/find-value 中被 quarantine 跳过的 peer 数，便于持续告警；仍需更完整的生产级查询终止策略、更强 peer scoring 和恶意路由防护；routing peer 合并失败已纳入 `maintenance.routing_peer_rejects` 与 OpenMetrics，便于观察 expired、node_id 不匹配、本机节点、缺少 identity public key、identity key 无效、签名无效、地址数量超限和单条地址过长等异常 closer nodes；routing peer announce 地址数量/长度也已设上限，避免恶意 peer 用超多/超长地址膨胀 routing table、snapshot 和控制面响应。
-   - [x] libp2p DHT RPC codec 显式限制 request/response 大小，并收紧 request-response 并发 streams；libp2p swarm 启用 connection-limits（pending/established/total/per-peer），`/health` 暴露这些上限，便于部署确认。
-   - [x] DHT runner 参数可通过 config/CLI/env 配置：replication factor、FindNode limit、每轮 refresh target 上限、transport 和 peer quarantine threshold；生产 `scripts/run.sh` 已透传这些 DHT runner 参数并支持 `--check-config` 预检；`--config-file` 模式不会用脚本默认值覆盖配置文件，只有显式参数或环境变量才作为 CLI override。
-   - [x] 生成 due-for-republish records 的 closest-k replication plan。
-   - [x] 生成 256 个 Kademlia bucket routing refresh target plan。
-   - [x] 控制面提供 `GET /dht/replication-plan` 与 `GET /dht/routing-refresh-plan`。
-   - [x] DHT runner/helper 通过 `DhtTransport` 抽象发送 `FindNode` / `FindValue` / `StoreRecord` RPC；当前默认实现仍是 HTTP control-plane `/dht/rpc`，为后续 TCP/WebSocket/QUIC 传输接入预留边界。
-   - [x] bounded `FindValue` lookup scaffold 可通过 transport 查询 peers，保存命中的 DHT record，并合并返回的 closer records 与 verified closer nodes。
-   - [x] 增加 libp2p request-response 协议 scaffold：`/lm-talk/dht-rpc/1` 使用 JSON 编码承载现有 `DhtRpcRequest` / `DhtRpcResponse`。
-   - [x] 增加 libp2p TCP/noise/yamux swarm scaffold，可挂载 DHT request-response behaviour 并监听本地地址。
-   - [x] libp2p inbound `DhtRpcRequest` 可复用 `NativeNode::handle_dht_rpc` 生成 response。
-   - [x] 本地双 libp2p swarm 可通过 request-response 完成 `FindNode` / `FindValue` / `StoreRecord` roundtrip，并复用现有 DHT record/routing 逻辑。
-   - [x] 增加 `Libp2pDhtTransport` helper，可通过 `libp2p://<multiaddr>` + `peer_id` 发送真实 request-response `FindNode` / `FindValue` / `StoreRecord` RPC。
-   - [x] serve-control DHT runner 可通过 config/CLI/env 选择 `http-control` 或 `libp2p` transport。
-   - [x] 增加 `serve-dht-libp2p` 常驻监听入口，可处理 inbound DHT request-response RPC 并持久化 state。
-   - [x] `serve-dht-libp2p` 支持配置 bootstrap peers，启动时拨号已知 libp2p DHT 节点作为 discovery seed。
-   - [x] libp2p DHT listener 连接 bootstrap peer 后会自动发送 `FindNode` discovery，并合并返回的 verified routing peers。
-   - [x] 已配置 control peers 支持按 `sync_peers[].peer_id` 匹配 closest-k target 执行 DHT `StoreRecord` replication；未配置 peer_id 时保持全量 control-peer 兼容行为。
-   - [x] 开放传输层 closest-k replication：libp2p transport runner 可复用已发现 routing peers 作为真实网络 RPC 目标。
-   - [x] 本地 DHT record store 已有基础容量上限，超出时优先淘汰最早过期/最早创建的记录，避免无界增长。
-   - [x] `/health` 暴露 `dht_record_capacity`，便于运维确认当前 DHT record 数量与容量上限。
-
-3. **节点可观测性**
-   - [x] 结构化日志：`log_format` / `--log-format` / `LM_NODE_LOG_FORMAT` 支持 `text` 或单行 JSON，覆盖启动、请求访问、sync、DHT runner 和状态保存错误事件。
-   - [x] `/health` 暴露 mailbox/prekey/peer 基础数量。
-   - [x] `/sync/status` 暴露同步 peer attempts/successes/failures/last_success_at/last_error/next_attempt_at/consecutive_failures。
-   - [x] `/control/stats` 暴露控制面 started_at、请求总数、2xx/4xx/5xx、bad request、unauthorized、CORS 拒绝和限流命中次数。
-   - [x] `/control/stats` 增加 endpoint 维度请求数、2xx/4xx/5xx、累计耗时、最大耗时和 last_status。
-   - [x] `/control/metrics` 导出 OpenMetrics 文本格式，覆盖控制面全局与 endpoint 指标。
-   - [x] `/control/stats` / `/control/metrics` 暴露 snapshot import/export 次数与字节数。
-   - [x] `/health` / `/control/stats` / `/control/metrics` 暴露过期清理运行次数、mailbox 过期 delivery 数和 prekey 过期 bundle 数。
-   - [x] `/control/stats` / `/control/metrics` 暴露 DHT control-peer replication runner 运行、records、attempts、success/failure 和 last run 时间。
-   - [x] `/control/stats` / `/control/metrics` 暴露 DHT routing refresh runner 运行、targets、attempts、success/failure、nodes_returned、nodes_merged 和 last run 时间。
-   - [x] `/control/metrics` 暴露每个 sync peer 的 attempts、successes、failures、consecutive_failures 和 next_attempt_at，便于部署观察自动同步退避状态。
-   - [x] `/control/stats` / `/control/metrics` 暴露后台任务调度延迟：`lm_node_background_schedule_delay_micros_*`。
-   - [x] `/control/stats` / `/control/metrics` 暴露持久化 SQLite 数据库页/空间指标：`lm_node_state_db_*`。
-   - [x] SQLite `state_db` 连接启用 WAL、`synchronous=FULL`、`busy_timeout=5000` 和 `foreign_keys=ON`，并有单元测试覆盖；Unix 下 `state_db` 主文件和 WAL/SHM sidecar 以及兼容 `state_file` 保存结果会收紧为 `0600`，降低未加密本地状态泄漏风险；`/health`、`/control/stats` 和 `/control/metrics` 明示 `state_db_encrypted`、`state_db.encryption_mode`、权限硬化状态；新增 `state_db_encryption_mode`（plain/external/sqlcipher feature）、`state_db_passphrase_file`、`state_db_require_encryption` / `--state-db-require-encryption` / `LM_NODE_STATE_DB_REQUIRE_ENCRYPTION` fail-closed 开关，要求非明文状态库时 plain SQLite 会拒绝启动；`lm_node/sqlcipher` feature 已接入 bundled SQLCipher + vendored OpenSSL，执行 `PRAGMA key` / `PRAGMA cipher_version`，并有错误口令拒绝测试与 `./scripts/sqlcipher-smoke.sh`；`serve-control` 与 `serve-dht-libp2p` 真实进程路径均有覆盖；JSON `state_file` 也支持 `lm-node-state-file-v1:` XChaCha20-Poly1305 加密、passphrase file、require-encryption fail-closed、stats/metrics 暴露。
-
 ### P2：生产网络能力
 
 1. **真正 DHT / Kademlia**
@@ -1073,11 +951,6 @@ MVP 群聊采用逐个加密。
 2. **Relay / TURN 替代能力**
    - 允许公网节点作为可选 relay/mailbox/bootstrap。
    - Relay 不得成为明文可见或强中心依赖。
-
-3. **节点部署规范**
-   - [x] systemd/container 示例：见 `docs/NODE_CONFIG.md`。
-   - [x] 数据备份/恢复：见 `docs/NODE_CONFIG.md`。
-   - [x] 升级兼容策略：见 `docs/NODE_CONFIG.md`。
 
 ## 法律与产品边界 TODO
 

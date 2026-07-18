@@ -9,7 +9,7 @@ usage() {
 Usage: ./scripts/release-check.sh [quick|full|fuzz-smoke]
 
 Release-candidate verification gate.
-  quick  fmt, Rust core/node targeted suites, fuzz harness cargo check, web typecheck/build/e2e (default)
+  quick  fmt, clippy, Rust core/node targeted suites, fuzz harness cargo check, web typecheck/build/e2e (default)
   full   quick plus full cargo test workspace
   fuzz-smoke  quick plus short cargo-fuzz smoke runs for every target
 
@@ -29,6 +29,9 @@ section() { echo "== $* =="; }
 cd "$ROOT"
 section "cargo fmt --check"
 cargo fmt --check
+
+section "cargo clippy"
+cargo clippy --workspace --all-targets -- -D warnings
 
 section "lm_core full tests"
 cargo test -p lm_core
