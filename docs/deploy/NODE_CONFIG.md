@@ -101,3 +101,25 @@ CLI 参数 > 环境变量 > config file > 默认值
 | `max_mailbox_messages_per_user` | `--max-mailbox-messages-per-user` | `LM_NODE_MAX_MAILBOX_MESSAGES_PER_USER` |
 | `mailbox_sender_rate_limit_window_seconds` | `--mailbox-sender-rate-limit-window-seconds` | `LM_NODE_MAILBOX_SENDER_RATE_LIMIT_WINDOW_SECONDS` |
 | `mailbox_sender_rate_limit_max_messages` | `--mailbox-sender-rate-limit-max-messages` | `LM_NODE_MAILBOX_SENDER_RATE_LIMIT_MAX_MESSAGES` |
+
+## node-admin 远程运维面板
+
+`apps/node-admin` 是一个独立的 Vue 前端，用于运维者监控和操作 lm_node 实例（健康、运行统计、sync peer、DHT 维护/复制/路由/查找、快照导入导出）。它只调用节点的 HTTP 控制面 REST API，**不加载任何用户身份、不使用 WASM**；需要身份签名的操作（PublicPeer / PreKey 发布）仍在聊天 App。
+
+远程（跨域）访问节点时，必须让节点同时具备：
+
+- **控制面令牌**：`--control-token <token>`（或 `--control-token-file`）。未配置 token 时节点仅允许 loopback 客户端访问，跨域请求会被拒绝。
+- **CORS 白名单**：`--cors-allow-origin <admin-origin>`，值为 node-admin 页面的 Origin（如 `http://127.0.0.1:4174`）。
+
+示例：
+
+```bash
+lm_node serve-control \
+  --bind 0.0.0.0:8787 \
+  --control-token "$(cat /etc/lm-node/control.token)" \
+  --cors-allow-origin http://127.0.0.1:4174
+```
+
+在 node-admin 页面填入节点地址和上面的 token 即可连接。令牌只保存在运维者本机浏览器的 localStorage。
+
+**混合内容提醒**：若 node-admin 以 https 提供（如 GitHub Pages），而节点是明文 http，浏览器会阻断请求。此时应在本机以 http 提供 node-admin，或为节点配置 TLS/反向代理。
