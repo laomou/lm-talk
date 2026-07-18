@@ -1,25 +1,25 @@
-# Release Signing / 发布签名与公证
+# 发布签名与公证
 
-This document tracks the production-trust distribution requirements for LM Talk native `lm_node` artifacts. Checksums alone are useful for integrity, but they are not a substitute for platform trust on macOS and Windows.
+本文件记录 LM Talk 原生 `lm_node` 产物的生产信任分发要求。仅靠校验和有助于完整性，但在 macOS 和 Windows 平台信任方面，校验和本身并不是充分证明。
 
-## Current status
+## 当前状态
 
-- Linux artifacts: checksum-only (`SHA256SUMS.txt` and per-artifact `.sha256`). Optional future hardening: minisign/cosign.
-- macOS artifacts: **not yet Developer ID signed or notarized**.
-- Windows artifacts: **not yet Authenticode / Azure Trusted Signing signed**.
+- Linux 产物：仅校验和 (`SHA256SUMS.txt` 和每个产物的 `.sha256`)。未来可选硬化：minisign/cosign。
+- macOS 产物：**尚未进行 Developer ID 签名或公证**。
+- Windows 产物：**尚未进行 Authenticode / Azure Trusted Signing 签名**。
 
-The release workflow emits `*-signing-evidence.json` for every native node package. Until real signing/notarization is implemented and verified, these reports intentionally mark production distribution readiness as `false`.
+发布工作流会为每个原生节点包生成 `*-signing-evidence.json`。在未实施并验证真实签名/公证前，这些报告会故意标记生产分发就绪为 `false`。
 
-## Required production evidence
+## 所需生产证据
 
 ### macOS
 
-Required before a production-trust macOS release:
+在生产信任 macOS 发布前必须具备：
 
-1. Developer ID Application signing for the `lm_node` binary/archive contents.
-2. Apple notarization submission for the release artifact or packaged app.
-3. Stapling where applicable.
-4. Verification logs archived with the release:
+1. 对 `lm_node` 二进制/归档内容进行 Developer ID Application 签名。
+2. 对发布产物或打包应用提交 Apple notarization。
+3. 在适用场景下执行 Stapling。
+4. 将验证日志与发布一起归档：
 
 ```bash
 codesign --verify --deep --strict --verbose=2 path/to/lm_node
@@ -27,7 +27,7 @@ spctl --assess --type execute --verbose path/to/lm_node
 xcrun notarytool log <submission-id>
 ```
 
-Expected release evidence fields:
+预期的发布证据字段：
 
 ```json
 {
@@ -39,18 +39,18 @@ Expected release evidence fields:
 
 ### Windows
 
-Required before a production-trust Windows release:
+在生产信任 Windows 发布前必须具备：
 
-1. Authenticode signature using an organization-controlled code-signing certificate or Azure Trusted Signing.
-2. Timestamped signature.
-3. Verification logs archived with the release:
+1. 使用组织控制的代码签名证书或 Azure Trusted Signing 生成 Authenticode 签名。
+2. 添加时间戳签名。
+3. 将验证日志与发布一起归档：
 
 ```powershell
 signtool verify /pa /v lm_node.exe
 Get-AuthenticodeSignature .\lm_node.exe
 ```
 
-Expected release evidence fields:
+预期的发布证据字段：
 
 ```json
 {
@@ -59,24 +59,24 @@ Expected release evidence fields:
 }
 ```
 
-## CI secret placeholders
+## CI 密钥占位符
 
-Do not commit signing credentials. Use GitHub Actions secrets or an external signing service.
+不要提交签名凭据。请使用 GitHub Actions secrets 或外部签名服务。
 
-Suggested secret names for a future implementation:
+建议为未来实现使用的 secret 名称：
 
-| Secret | Purpose |
+| Secret | 用途 |
 | --- | --- |
-| `APPLE_TEAM_ID` | Apple Developer Team ID. |
-| `APPLE_NOTARY_ISSUER_ID` | App Store Connect issuer ID for notarytool. |
-| `APPLE_NOTARY_KEY_ID` | App Store Connect key ID. |
-| `APPLE_NOTARY_PRIVATE_KEY` | App Store Connect private key. |
-| `MACOS_DEVELOPER_ID_CERT_P12` | Base64 encoded Developer ID certificate. |
-| `MACOS_DEVELOPER_ID_CERT_PASSWORD` | Certificate password. |
-| `WINDOWS_SIGNING_CERT_PFX` | Base64 encoded Authenticode certificate, if not using Azure Trusted Signing. |
-| `WINDOWS_SIGNING_CERT_PASSWORD` | Windows certificate password. |
-| `AZURE_TRUSTED_SIGNING_*` | Azure Trusted Signing identity/configuration, if used. |
+| `APPLE_TEAM_ID` | Apple Developer Team ID。 |
+| `APPLE_NOTARY_ISSUER_ID` | notarytool 的 App Store Connect issuer ID。 |
+| `APPLE_NOTARY_KEY_ID` | App Store Connect key ID。 |
+| `APPLE_NOTARY_PRIVATE_KEY` | App Store Connect 私钥。 |
+| `MACOS_DEVELOPER_ID_CERT_P12` | Base64 编码的 Developer ID 证书。 |
+| `MACOS_DEVELOPER_ID_CERT_PASSWORD` | 证书密码。 |
+| `WINDOWS_SIGNING_CERT_PFX` | Base64 编码的 Authenticode 证书（如不使用 Azure Trusted Signing）。 |
+| `WINDOWS_SIGNING_CERT_PASSWORD` | Windows 代码签名证书密码。 |
+| `AZURE_TRUSTED_SIGNING_*` | Azure Trusted Signing 身份/配置（如使用）。 |
 
-## Release gate
+## 发布门禁
 
-`RISK-005` in `docs/RELEASE_RISK_REGISTER.md` remains `Open` until signed/notarized evidence is attached and reviewed. The production release gate must remain blocked while macOS/Windows signing reports are incomplete.
+`docs/RELEASE_RISK_REGISTER.md` 中的 `RISK-005` 在签名/公证证据附加并审查前仍为 `Open`。当 macOS/Windows 签名报告不完整时，生产发布门禁必须保持阻塞。
