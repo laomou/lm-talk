@@ -1,64 +1,64 @@
-# Dependency Risk Review / 依赖风险复核
+# 依赖风险复核
 
-This document tracks dependency-security exceptions and the process for deciding whether a vulnerable dependency is reachable in LM Talk. It complements `scripts/audit.sh`, CI `dependency-audit`, GitHub `dependency-review`, and `docs/RELEASE_RISK_REGISTER.md`.
+本文档跟踪依赖安全例外以及判定漏洞依赖在 LM Talk 中是否可达的过程。它补充 `scripts/audit.sh`、CI `dependency-audit`、GitHub `dependency-review` 和 `docs/RELEASE_RISK_REGISTER.md`。
 
-## Current audit gates
+## 当前审计门禁
 
-| Ecosystem | Command / CI | Release evidence |
+| 生态 | 命令 / CI | 发布证据 |
 | --- | --- | --- |
-| Rust | `./scripts/audit.sh` runs `cargo audit --deny warnings` | CI `dependency-audit` log or local output |
-| Web npm | `npm audit --audit-level high` in `apps/web` | CI `dependency-audit` log or local output |
-| PR dependency diff | GitHub `dependency-review` | PR check status |
+| Rust | `./scripts/audit.sh` 运行 `cargo audit --deny warnings` | CI `dependency-audit` 日志或本地输出 |
+| Web npm | `npm audit --audit-level high` 在 `apps/web` 中 | CI `dependency-audit` 日志或本地输出 |
+| PR 依赖差异 | GitHub `dependency-review` | PR 检查状态 |
 
-`SKIP_CARGO_AUDIT=1` is only for environments without `cargo-audit`; it must not be used as release evidence.
+`SKIP_CARGO_AUDIT=1` 仅用于没有 `cargo-audit` 的环境；不得作为发布证据使用。
 
-## Current ignored Rust advisories
+## 当前忽略的 Rust advisory
 
-`scripts/audit.sh` currently ignores the following advisories. These exceptions must be revisited whenever dependencies or enabled features change.
+`scripts/audit.sh` 当前忽略以下 advisory。这些例外在依赖或启用特性更改时必须重新评估。
 
-| Advisory | Current rationale | Reachability assumption | Re-evaluate when | Release status |
+| Advisory | 当前理由 | 可达性假设 | 何时重新评估 | 发布状态 |
 | --- | --- | --- | --- | --- |
-| `RUSTSEC-2026-0118` | Transitive `hickory-proto` advisory pulled by unused optional `libp2p` DNS/mDNS dependency metadata. | LM Talk enables libp2p TCP/noise/yamux/request-response only; DNS/mDNS features are not enabled. | `libp2p` upgraded, DNS/mDNS features enabled, or advisory scope changes. | Exception allowed only with documented CI audit output. |
-| `RUSTSEC-2026-0119` | Same `hickory-proto` dependency family as above. | Same as above. | Same as above. | Exception allowed only with documented CI audit output. |
-| `RUSTSEC-2024-0436` | `paste` warning via transitive Linux netlink/proc-macro path, currently not security-relevant to LM Talk runtime protocol. | No direct LM Talk protocol parsing, crypto, node control, or Web boundary depends on `paste` behavior. | netlink stack or dependent crates become part of exposed node control/data path; dependency upgraded or advisory changes. | Exception allowed only with documented CI audit output. |
+| `RUSTSEC-2026-0118` | 由未使用的可选 `libp2p` DNS/mDNS 依赖元数据拉入的传递 `hickory-proto` advisory。 | LM Talk 仅启用 libp2p TCP/noise/yamux/request-response；未启用 DNS/mDNS 功能。 | `libp2p` 升级、启用 DNS/mDNS 功能或 advisory 范围更改时。 | 仅在有文档化的 CI 审计输出时允许例外。 |
+| `RUSTSEC-2026-0119` | 同上 `hickory-proto` 依赖系列。 | 同上。 | 同上。 | 仅在有文档化的 CI 审计输出时允许例外。 |
+| `RUSTSEC-2024-0436` | 通过传递的 Linux netlink/proc-macro 路径引入的 `paste` 警告，目前与 LM Talk 运行时协议无直接安全相关性。 | LM Talk 的 Web/原生节点控制面、Mailbox/DHT 解析、密码学操作未直接依赖 `paste` 行为。 | netlink 栈或依赖 crate 进入暴露的节点控制/数据路径；依赖升级或 advisory 更改时。 | 仅在有文档化的 CI 审计输出时允许例外。 |
 
-## Review workflow for a new advisory
+## 新 advisory 的复核工作流
 
-1. Identify direct or transitive dependency and enabled feature path.
-2. Determine whether vulnerable code is reachable from:
-   - Web/WASM boundary;
-   - native node control plane;
-   - Mailbox/DHT parsing;
-   - cryptographic operations;
-   - deployment/build/release tooling.
-3. If reachable and exploitable, treat as a release blocker until fixed or mitigated.
-4. If not reachable, document the feature/path reason in this file and add the narrowest possible `cargo audit --ignore` entry.
-5. Add a follow-up item to revisit the exception on dependency upgrade.
-6. Link the decision in `docs/RELEASE_RISK_REGISTER.md` when severity is medium or higher.
+1. 确定直接或传递依赖及启用的特性路径。
+2. 判定漏洞代码是否可从以下路径触达：
+   - Web/WASM 边界；
+   - 原生节点控制面；
+   - Mailbox/DHT 解析；
+   - 密码学操作；
+   - 部署/构建/发布工具链。
+3. 如果可达且可利用，则在修复或缓解前视为发布阻塞。
+4. 如果不可达，则在本文件中记录特性/路径理由，并为最窄范围的 `cargo audit --ignore` 添加条目。
+5. 添加后续项以在依赖升级时重新评估该例外。
+6. 将决策链接到 `docs/RELEASE_RISK_REGISTER.md`，当严重性为 medium 或更高时。
 
-## Dependency update policy
+## 依赖更新策略
 
-- Prefer removing unused dependency features before adding audit exceptions.
-- Keep `libp2p` features minimal: macros, noise, request-response, json, tcp, tokio, yamux.
-- Keep SQLCipher feature explicit; do not enable it by default for all artifacts unless release policy changes.
-- For Web dependencies, avoid adding runtime packages that execute untrusted HTML/markdown or broaden browser permission surface without review.
-- Dependabot PRs should include CI `dependency-review` status and release-note impact when security relevant.
+- 优先删除未使用的依赖特性，而不是添加审计例外。
+- 保持 `libp2p` 特性最小：macros、noise、request-response、json、tcp、tokio、yamux。
+- 保持 SQLCipher 特性显式；除非发布策略更改，否则不要默认为所有产物启用。
+- 对于 Web 依赖，避免添加会执行不信任 HTML/markdown 或扩大浏览器权限面的运行时包，除非经过审查。
+- Dependabot PR 应包含 CI `dependency-review` 状态和安全相关发布说明影响。
 
-## Release evidence requirements
+## 发布证据要求
 
-For each release candidate, archive:
+每个发布候选都应归档：
 
-- CI `dependency-audit` job log;
-- `./scripts/audit.sh` output if run locally;
-- list of active `cargo audit --ignore` exceptions from this file;
-- PR `dependency-review` status for dependency-changing PRs;
-- any accepted dependency risks copied into `docs/RELEASE_RISK_REGISTER.md`.
+- CI `dependency-audit` 任务日志；
+- 如果本地运行，则归档 `./scripts/audit.sh` 输出；
+- 本文件中主动生效的 `cargo audit --ignore` 例外列表；
+- 依赖更改 PR 的 `dependency-review` 状态；
+- 任何 Accepted 的依赖风险已复制到 `docs/RELEASE_RISK_REGISTER.md`。
 
-## No-go criteria
+## 否决标准
 
-A production release is **NO-GO** if:
+如果满足以下任一条件，则生产发布为 **NO-GO**：
 
-- A reachable high/critical advisory is unresolved.
-- An audit exception lacks reachability rationale.
-- `npm audit --audit-level high` fails without a documented accepted risk.
-- `cargo audit --deny warnings` fails for an advisory not explicitly reviewed here.
+- 可达的高/严重 advisory 未解决。
+- 审计例外缺少可达性理由。
+- `npm audit --audit-level high` 未通过且无文档化 Accepted 风险。
+- `cargo audit --deny warnings` 对未明确在此处审查的 advisory 失败。

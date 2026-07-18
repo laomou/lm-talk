@@ -1,47 +1,47 @@
-# Fuzzing / 模糊测试
+# 模糊测试
 
-LM Talk provides a `cargo-fuzz`/libFuzzer scaffold for untrusted protocol and node inputs. These harnesses are not a replacement for external security review, but they are intended to be part of the production release gate.
+LM Talk 提供 `cargo-fuzz` / libFuzzer 脚手架，用于不信任的协议和节点输入。这些 harness 不替代外部安全审计，但应作为生产发布门禁的一部分。
 
-## Prerequisites
+## 前提条件
 
 ```bash
 cargo install cargo-fuzz
 ```
 
-## Smoke check
+## Smoke 检查
 
-Before a release candidate, verify that all fuzz harnesses can start and execute at least a small number of inputs:
+在发布候选前，验证所有 fuzz harness 都能启动并执行至少少量输入：
 
 ```bash
 ./scripts/fuzz-smoke.sh
 ```
 
-This is only a harness-startup smoke test. It does not replace long-running fuzz campaigns.
+这仅是 harness 启动 smoke 测试。它不替代长期 fuzz 活动。
 
-## Targets
+## 目标
 
 ```bash
-# Core text import parsers: contact/friend/backup/prekey/signal/mailbox/message receipt/group/ratchet/file/device revoke
+# Core 文本导入解析：contact/friend/backup/prekey/signal/mailbox/message receipt/group/ratchet/file/device revoke
 ./scripts/fuzz.sh core_imports -- -max_total_time=60
 
-# Native node DHT RPC JSON and snapshot merge inputs
+# 原生节点 DHT RPC JSON 和快照合并输入
 ./scripts/fuzz.sh node_dht_rpc -- -max_total_time=60
 
-# Native node control request dispatch with arbitrary method/path/body splits
+# 原生节点控制请求调度，测试任意 method/path/body 分割
 ./scripts/fuzz.sh node_control_request -- -max_total_time=60
 ```
 
-For longer release candidates, run each target for multiple hours with saved corpora and commit only small, meaningful regression seeds. Any crash or timeout must be triaged before release.
+对于更长的发布候选，请让每个目标运行数小时，并保存语料库，只提交小且有意义的回归种子。任何崩溃或超时都必须在发布前进行分类。
 
-## Current scope
+## 当前范围
 
-- `core_imports` checks that all public text import parsers, including signed delivery/read receipts, tolerate arbitrary byte input without panics and still rely on their size/signature/format validation.
-- `node_dht_rpc` exercises `DhtRpcRequest` deserialization, `NativeNode::handle_dht_rpc`, `DhtRpcResponse` serialization, and `NodeStateSnapshot` merge paths.
-- `node_control_request` exercises `NativeNode::handle_control_request` with arbitrary method/path/body strings.
+- `core_imports` 检查所有公共文本导入解析器，包括签名的送达/已读回执、是否接受/拒绝、好友请求、备份、PreKey、Signal、Mailbox、Message、Group、Ratchet、文件、设备撤销等，确保它们不会 panic，并依然依赖大小/签名/格式验证。
+- `node_dht_rpc` 练习 `DhtRpcRequest` 反序列化、`NativeNode::handle_dht_rpc`、`DhtRpcResponse` 序列化和 `NodeStateSnapshot` 合并路径。
+- `node_control_request` 练习 `NativeNode::handle_control_request`，使用任意 method/path/body 字符串。
 
-## Remaining release work
+## 仍待完成的发布工作
 
-- Add persistent corpora from production-like captures with secrets stripped.
-- Add CI/nightly fuzz jobs with time budgets and artifact upload for crashes.
-- Add lower-level parser/crypto envelope fuzz targets as protocol formats stabilize.
-- Run independent AFL/libFuzzer campaigns and external security audit before claiming production readiness.
+- 从类似生产的捕获中添加持久语料库，剥离机密信息。
+- 添加带时间预算和崩溃产物上传的 CI/夜间 fuzz 任务。
+- 随着协议格式稳定，添加更底层的解析器/密码学信封 fuzz 目标。
+- 在声称生产就绪前运行独立 AFL/libFuzzer 活动和外部安全审计。

@@ -1,141 +1,141 @@
-# Protocol Stability / 协议稳定性
+# 协议稳定性
 
-This document defines the compatibility contract for LM Talk protocol objects before a production-ready release. It does not freeze every implementation detail yet; it marks which wire formats are stable enough for interop, which are transitional, and how changes must be introduced.
+本文档定义了 LM Talk 在生产就绪发布前协议对象的兼容契约。它并未冻结每个实现细节；而是标记哪些线格式已稳定到可互操作，哪些仍属过渡性，以及如何引入更改。
 
-## Stability levels
+## 稳定性级别
 
-- **Stable**: may be relied on by independently deployed clients/nodes. Breaking changes require a new type/version/prefix and migration guidance.
-- **Transitional**: usable in current clients but still subject to compatible changes. Breaking changes require explicit release notes and downgrade/interop guidance.
-- **Internal/debug**: not a public compatibility surface. Do not depend on it across releases.
+- **Stable**：可被独立部署的客户端/节点依赖。破坏性更改需要新的类型/版本/前缀和迁移指南。
+- **Transitional**：当前客户端可用，但仍可兼容性更改。破坏性更改需明确发布说明和降级/互操作指南。
+- **Internal/debug**：不是公共兼容面。不要跨发布依赖它。
 
-## Versioning rules
+## 版本规则
 
-1. Signed objects must include `type` and `version` in the signed/canonical fields.
-2. Exported text prefixes are part of the wire format and must not be reused for incompatible schemas.
-3. Incompatible changes require a new `type` or prefix, not silent reinterpretation.
-4. Readers should reject unsupported `version` values unless documented as forward-compatible.
-5. Size limits are part of the DoS boundary and may become stricter only with a migration note.
-6. Expiry fields must be checked by verifiers when present/required by the object type.
+1. 签名对象必须在签名/规范字段中包含 `type` 和 `version`。
+2. 导出文本前缀属于线格式，不能为不兼容 schema 重用。
+3. 不兼容更改应采用新 `type` 或前缀，而非静默重新解释。
+4. 阅读器应拒绝不支持的 `version` 值，除非已记录为前向兼容。
+5. 大小限制属于 DoS 边界，仅可在迁移说明下变得更严格。
+6. 过期字段在存在/对象类型要求时必须由验证器检查。
 
-## Stable wire objects
+## 稳定线对象
 
-These are intended to be stable for release-candidate interop:
+以下对象计划在发布候选互操作中保持稳定：
 
-| Object | Prefix / type | Stability | Notes |
+| 对象 | 前缀 / 类型 | 稳定性 | 说明 |
 | --- | --- | --- | --- |
-| Identity backup | `lm-identity-backup-v1:` | Stable | Passphrase-protected identity seed package. |
-| Contact Card | `lm-contact-card-v1:` | Stable | Signed identity, X25519 key, display name, and device certificates. DHT `ContactCard` records use this payload. |
-| Friend request | `lm-friend-request-v1:` | Stable | Signed request, expiry checked. |
-| Friend response | `lm-friend-response-v1:` | Stable | Signed response, binds to request/contact. |
-| Direct envelope legacy | `lm-direct-envelope-v1:` / `x25519-static-hkdf-xchacha20poly1305-v1` | Transitional | Kept for compatibility; strict E2EE should prefer Ratchet + per-device sealed slots. |
-| File package | `lm-file-package-v1:` | Stable | Encrypted file manifest/chunks; filename policy is local. |
-| Device cert | `lm-device-cert-v1` | Stable | Signed by identity key; includes device signing public key and device box public key. |
-| Device revoke | `lm-device-revoke-v1:` | Stable | Signed by identity key; clients should stop trusting revoked device IDs. |
-| Message receipt | `lm-message-receipt-v1:` | Stable | Delivered/read receipts for message IDs and delivery IDs. |
-| Mailbox message | `lm-mailbox-message-v1:` | Stable | Node validates sender signature and TTL before storing. |
-| Public peer announce | `lm-public-peer-announce-v1:` | Stable | DHT `PublicPeer` records use this payload. |
-| PreKey bundle | `lm-prekey-bundle-v1:` | Stable | DHT `PreKey` records use this payload. |
-| Signed one-time-prekey record | `lm-signed-one-time-prekey-v1:` | Stable | Used for replenishable one-time keys. |
-| MailboxHint DHT value | URL/string value | Transitional | Current record value is an address string; future signed hint object may replace it. |
+| 身份备份 | `lm-identity-backup-v1:` | Stable | 受口令保护的身份种子包。 |
+| Contact Card | `lm-contact-card-v1:` | Stable | 签名身份、X25519 密钥、显示名和设备证书。DHT `ContactCard` 记录使用该 payload。 |
+| 好友请求 | `lm-friend-request-v1:` | Stable | 签名请求，检查过期。 |
+| 好友响应 | `lm-friend-response-v1:` | Stable | 签名响应，绑定请求/联系人。 |
+| 旧版 DirectEnvelope | `lm-direct-envelope-v1:` / `x25519-static-hkdf-xchacha20poly1305-v1` | Transitional | 保持兼容；严格 E2EE 应优先 Ratchet + 每设备封闭槽。 |
+| 文件包 | `lm-file-package-v1:` | Stable | 加密文件清单/分片；文件名策略为本地处理。 |
+| 设备证书 | `lm-device-cert-v1` | Stable | 由身份密钥签名；包含设备签名公钥和设备箱公钥。 |
+| 设备撤销 | `lm-device-revoke-v1:` | Stable | 由身份密钥签名；客户端应停止信任撤销的设备 ID。 |
+| 消息回执 | `lm-message-receipt-v1:` | Stable | 针对消息 ID 和投递 ID 的送达/已读回执。 |
+| Mailbox 消息 | `lm-mailbox-message-v1:` | Stable | 节点在存储前验证发送者签名和 TTL。 |
+| 公共节点公告 | `lm-public-peer-announce-v1:` | Stable | DHT `PublicPeer` 记录使用该 payload。 |
+| PreKey bundle | `lm-prekey-bundle-v1:` | Stable | DHT `PreKey` 记录使用该 payload。 |
+| 签名一次性 PreKey 记录 | `lm-signed-one-time-prekey-v1:` | Stable | 用于可补货的一次性密钥。 |
+| MailboxHint DHT 值 | URL/string 值 | Transitional | 当前记录值为地址字符串；将来可能由签名 hint 对象替代。 |
 
-## Transitional / active-development objects
+## 过渡/活跃开发对象
 
-| Object | Type / prefix | Stability | Required caution |
+| 对象 | 类型 / 前缀 | 稳定性 | 需注意 |
 | --- | --- | --- | --- |
-| Double Ratchet state | `lm-ratchet-state-v1:` | Transitional | Local/export state, not a public network message. Changes require local migration. |
-| Ratchet envelope | `x3dh-double-ratchet-v1` | Transitional | Current Web path uses it for secure sessions; keep compatibility until protocol freeze. |
-| Secure session offer/response | `lm-secure-session-offer-v1`, `lm-secure-session-response-v1` | Transitional | Mailbox-carried setup helper. |
-| Group Sender Key distribution | `lm-group-sender-key-v1:` / payload prefix | Transitional | Membership/rotation policy still maturing. |
-| Group events | `lm-group-event-v1:` | Transitional | Policy state stable enough for demo, still needs external review. |
-| Per-device envelope | `lm-per-device-envelope-v1` | Transitional | Sealed slot crypto is supported; placeholder/fallback is compatibility-only and should be blocked in strict mode. |
-| Self-sync package | `lm-self-sync-v1` | Transitional | Signed lightweight same-user state sync; not a message-history sync protocol. |
-| Self-sync request | `lm-self-sync-request-v1` | Transitional | Gap repair request/response for recent self-sync packages. |
-| Full data backup | `lm-data-backup-v1:` | Transitional | Encrypted backup/restore format for same identity. |
-| Node state file | `lm-node-state-file-v1:` | Internal/operator | Native node local persistence format; do not treat as federation wire protocol. |
+| Double Ratchet 状态 | `lm-ratchet-state-v1:` | Transitional | 本地/导出状态，不是公共网络消息。更改需本地迁移。 |
+| Ratchet 信封 | `x3dh-double-ratchet-v1` | Transitional | 当前 Web 路径用于 secure session；协议冻结前保持兼容。 |
+| Secure session offer/response | `lm-secure-session-offer-v1`, `lm-secure-session-response-v1` | Transitional | Mailbox 运送的设置辅助。 |
+| 群组发送密钥分发 | `lm-group-sender-key-v1:` / payload 前缀 | Transitional | 成员/轮换策略仍在完善。 |
+| 群事件 | `lm-group-event-v1:` | Transitional | 策略已足够演示，仍需外部审查。 |
+| 每设备信封 | `lm-per-device-envelope-v1` | Transitional | 支持封闭槽；占位/回退仅兼容性用途，严格模式应阻断。 |
+| 自同步包 | `lm-self-sync-v1` | Transitional | 签名轻量同用户状态同步；不是消息历史同步协议。 |
+| 自同步请求 | `lm-self-sync-request-v1` | Transitional | 最近自同步包的缺口修复请求/响应。 |
+| 全数据备份 | `lm-data-backup-v1:` | Transitional | 用于同一身份的加密备份/恢复格式。 |
+| 节点状态文件 | `lm-node-state-file-v1:` | Internal/operator | 原生节点本地持久化格式；不要视为联邦网络协议。 |
 
-## DHT record kinds
+## DHT 记录类型
 
-Current node DHT record kinds and key namespaces are frozen for this release:
+当前节点 DHT 记录类型和键命名空间为该发布冻结：
 
-| Kind | Key namespace | Value format | Validation |
+| 类型 | 键命名空间 | 值格式 | 验证 |
 | --- | --- | --- | --- |
-| `PublicPeer` | `public-peer` over `peer_id` | `lm-public-peer-announce-v1:` export text | PublicPeer signature, expiry, and key/peer match. |
-| `PreKey` | `prekey` over `user_id` | `lm-prekey-bundle-v1:` export text | PreKey bundle signature, expiry, and key/user match. |
-| `MailboxHint` | `mailbox-hint` over `user_id` | Address string | Non-empty, size-limited, accepted URL/multiaddr/mailbox pattern in clients. |
-| `ContactCard` | `contact-card` over `user_id` | `lm-contact-card-v1:` export text | ContactCard signature, optional expiry, and key/user match. |
+| `PublicPeer` | `public-peer` over `peer_id` | `lm-public-peer-announce-v1:` 导出文本 | PublicPeer 签名、过期、键/peer 匹配。 |
+| `PreKey` | `prekey` over `user_id` | `lm-prekey-bundle-v1:` 导出文本 | PreKey bundle 签名、过期、键/用户匹配。 |
+| `MailboxHint` | `mailbox-hint` over `user_id` | 地址字符串 | 客户端接受非空、大小受限、可接受的 URL/multiaddr/mailbox 模式。 |
+| `ContactCard` | `contact-card` over `user_id` | `lm-contact-card-v1:` 导出文本 | ContactCard 签名、可选过期、键/用户匹配。 |
 
-Adding a DHT record kind requires a new namespace, validation rules, max-size review, test vector coverage, release notes, and discovery UI/diagnostics updates.
+添加 DHT 记录类型需新的命名空间、验证规则、最大大小审查、测试向量覆盖、发布说明和发现 UI/诊断更新。
 
-## Mailbox message kinds
+## Mailbox 消息类型
 
-Current mailbox kinds are frozen for this release:
+当前发布的 Mailbox 类型冻结为：
 
-| Kind | Typical payload | Notes |
+| 类型 | 典型负载 | 说明 |
 | --- | --- | --- |
-| `SignalOffer` | WebRTC/session offer text | Secure-session helper transport. |
-| `SignalAnswer` | WebRTC/session answer text | Secure-session helper transport. |
-| `DirectEnvelope` | Direct/Ratchet/per-device envelope payload | Main direct-message delivery path. |
-| `GroupFanout` | Per-recipient group envelope/fanout payload | Group delivery path. |
-| `DeliveryReceipt` | `lm-message-receipt-v1:` Delivered | Delivery-state reconciliation. |
-| `ReadReceipt` | `lm-message-receipt-v1:` Read | Read-state reconciliation. |
-| `Other` | Typed payload inspected by prefix/JSON `type` | Compatibility bucket for contact updates, device revokes, secure-session JSON, data backup, self-sync, and future transitional payloads. |
+| `SignalOffer` | WebRTC/session offer 文本 | 安全会话辅助传输。 |
+| `SignalAnswer` | WebRTC/session answer 文本 | 安全会话辅助传输。 |
+| `DirectEnvelope` | 直接/Ratchet/每设备信封负载 | 主要直接消息投递路径。 |
+| `GroupFanout` | 面向接收者的群组信封/fanout 负载 | 群组投递路径。 |
+| `DeliveryReceipt` | `lm-message-receipt-v1:` 已送达 | 送达状态协调。 |
+| `ReadReceipt` | `lm-message-receipt-v1:` 已读 | 已读状态协调。 |
+| `Other` | 通过前缀/JSON `type` 检查类型的负载 | 兼容性桶，用于联系人更新、设备撤销、安全会话 JSON、数据备份、自同步和未来过渡性负载。 |
 
-Web maps higher-level local outbox kinds such as `contact-update`, `device-revoke`, `self-sync`, and data backup onto Mailbox `Other`; receivers must inspect payload type/prefix for those higher-level objects. Adding a Mailbox kind requires node validation, Web mapping, backwards-compatible `Other` fallback guidance, and release notes for older nodes.
+Web 将更高级别的本地发件箱类型（如 `contact-update`、`device-revoke`、`self-sync` 和数据备份）映射到 Mailbox `Other`；接收方必须检查负载类型/前缀以识别这些高级对象。添加 Mailbox 类型需节点验证、Web 映射、向后兼容的 `Other` 回退指南和旧节点的发布说明。
 
-## Device and ContactCard update policy
+## 设备与 ContactCard 更新策略
 
-1. New devices should create a `lm-device-cert-v1` containing `device_box_public_key`.
-2. Contact Cards should preserve known valid device certs by `device_id` when re-exported.
-3. Contact Card updates should be distributed through Mailbox `contact-update`, same-user self-sync, and DHT `ContactCard` records.
-4. Receivers must preserve local trust state when merging Contact Cards: fingerprint verification, revocations, block state, and read-receipt policy are local decisions.
-5. Device revocation wins over stale Contact Card device lists.
-6. Strict E2EE mode should require verified contacts and sealed per-device slots for send/receive.
+1. 新设备应创建包含 `device_box_public_key` 的 `lm-device-cert-v1`。
+2. Contact Card 重新导出时应按 `device_id` 保留已知有效设备证书。
+3. Contact Card 更新应通过 Mailbox `contact-update`、同用户自同步和 DHT `ContactCard` 记录分发。
+4. 接收者在合并 Contact Cards 时必须保留本地信任状态：指纹验证、撤销、阻止状态和已读回执策略。
+5. 设备撤销优先于过时 Contact Card 设备列表。
+6. 严格 E2EE 模式应要求已验证联系人和封闭每设备槽进行发送/接收。
 
-## PreKey rotation policy
+## PreKey 轮换策略
 
-1. PreKey bundles may be republished when missing, expired, or low on one-time keys.
-2. Signed one-time-prekey records are consumed at most once per node state and consumed state must be snapshotted/synced.
-3. DHT `PreKey` records must verify bundle signature and key namespace.
-4. Clients should prefer signed one-time-prekey records when available, then fall back to reusable signed prekey behavior.
-5. Future incompatible PreKey changes require a new bundle prefix/type.
+1. 当缺失、过期或一次性密钥不足时，可重新发布 PreKey bundle。
+2. 签名一次性 PreKey 记录至多在节点状态中消费一次，消费状态必须快照/同步。
+3. DHT `PreKey` 记录必须验证 bundle 签名和键命名空间。
+4. 客户端应优先使用可用的签名一次性 PreKey 记录，然后回退到可重用签名 prekey 行为。
+5. 未来不兼容 PreKey 更改需采用新 bundle 前缀/类型。
 
-## Error compatibility
+## 错误兼容性
 
-Current user-visible errors are not yet a stable numeric error-code API. Until error codes are frozen:
+当前用户可见错误尚未成为稳定的数字错误代码 API。在错误代码冻结前：
 
-- Protocol verifiers should return precise typed errors internally.
-- Node HTTP endpoints should continue using stable status classes: `400` invalid input, `401` unauthorized, `413` payload too large, `429` rate limited, `5xx` server failures.
-- Release candidates must document any changed error text that Web UI depends on.
+- 协议验证器应在内部返回精确类型错误。
+- 节点 HTTP 端点应继续使用稳定状态类：`400` 无效输入、`401` 未授权、`413` 载荷过大、`429` 限流、`5xx` 服务器失败。
+- 发布候选必须记录任何 Web UI 依赖的错误文本更改。
 
-## Error text dependencies
+## 错误文本依赖
 
-The protocol does not yet expose stable numeric application error codes. The following text dependencies are known and must be reviewed before changing them:
+协议尚未公开稳定的数字应用错误代码。以下文本依赖项已知，并在更改前必须审查：
 
-| Area | Dependency | Current guard |
+| 领域 | 依赖 | 当前保护 |
 | --- | --- | --- |
-| `state_db` encryption | Tests and release evidence look for `encryption_mode is plain`, `SQLCipher provider requested`, and `state_db_encrypted` metrics. | `lm_node` tests and SQLCipher smoke scripts. |
-| `state_file` encryption | Tests expect fail-closed messages for missing passphrase and plaintext existing state file. | `lm_node` tests. |
-| DHT discovery classification | Web classifies errors containing `过期`, `验签`, `签名`, `signature`, `未找到`, `not found`, `record`, `格式`, `invalid`, `超时`, `timeout`, `failed to fetch`. | Web diagnostics/backoff logic. |
-| Strict E2EE / sealed slots | Web user-facing errors mention missing verified fingerprint, missing active devices, missing `device_box_public_key`, non-sealed inbound slots, and per-device envelope signature failures. | Web E2E and manual policy flows. |
-| Mailbox receipts | ContactCard update ACK and message receipt flows depend on `lm-message-receipt-v1:` parsing and delivery/read kind strings. | Core/Web tests. |
+| `state_db` 加密 | 测试和发布证据查找 `encryption_mode is plain`、`SQLCipher provider requested`、以及 `state_db_encrypted` 指标。 | `lm_node` 测试和 SQLCipher smoke 脚本。 |
+| `state_file` 加密 | 测试期望缺少口令和明文现有 state file 时出现 fail-closed 消息。 | `lm_node` 测试。 |
+| DHT 发现分类 | Web 根据包含 `过期`、`验签`、`签名`、`signature`、`未找到`、`not found`、`record`、`格式`、`invalid`、`超时`、`timeout`、`failed to fetch` 的错误进行分类。 | Web 诊断/退避逻辑。 |
+| 严格 E2EE / 封闭槽 | Web 面向用户的错误提示包含缺少已验证指纹、缺少活动设备、缺少 `device_box_public_key`、非封闭入站槽和每设备信封签名失败。 | Web E2E 和手动策略流。 |
+| Mailbox 回执 | Contact Card 更新 ACK 和消息回执流程依赖 `lm-message-receipt-v1:` 解析和送达/已读类型字符串。 | 核心/Web 测试。 |
 
-Changing these strings is allowed only with corresponding test updates and release notes. A future stable release should replace user-visible text matching with structured error codes.
+更改这些字符串仅在相应测试更新和发布说明到位时允许。未来稳定发布应用结构化错误代码替换基于文本的匹配。
 
-## Deprecation policy
+## 废弃策略
 
-- Legacy DirectEnvelope and placeholder per-device slots are compatibility paths.
-- New strict deployments should enable sealed-slot send/receive and verified-contact policies.
-- A future production release may warn by default or disable fallback paths after at least one release cycle with migration notes.
+- 旧版 DirectEnvelope 和占位/回退每设备槽为兼容路径。
+- 新的严格部署应启用封闭槽发送/接收和已验证联系人策略。
+- 未来生产发布可能在至少一个发布周期后发出默认警告或禁用回退路径，并附迁移说明。
 
-## Production freeze checklist
+## 生产冻结检查清单
 
-Before declaring protocol stability for a production release:
+在将协议稳定性标记为生产发布前：
 
-- [ ] External audit reviewed all stable and transitional objects above.
-- [x] Test vectors exist for stable signed/encrypted objects (see `docs/TEST_VECTOR_COVERAGE.md`).
-- [x] DHT record kind list and key derivation namespaces are frozen for the release.
-- [x] Mailbox kind mapping and fallback-to-Other behavior are documented.
-- [x] ContactCard/DeviceCert merge and revocation policy has interop tests.
-- [x] PreKey rotation/consumption policy has interop tests.
-- [x] Error-code/text dependencies in Web and node tests are documented.
-- [ ] Release evidence index links fuzz, federation, SQLCipher, and audit artifacts.
+- [ ] 外部审计审查了上述 Stable 和 Transitional 对象。
+- [x] 稳定签名/加密对象的测试向量已存在（见 `docs/TEST_VECTOR_COVERAGE.md`）。
+- [x] DHT 记录类型列表和键派生命名空间已冻结。
+- [x] Mailbox 类型映射和 `Other` 回退行为已记录。
+- [x] ContactCard/DeviceCert 合并和撤销策略已有互操作测试。
+- [x] PreKey 轮换/消费策略已有互操作测试。
+- [x] Web 和节点测试中的错误代码/文本依赖已记录。
+- [ ] 发布证据索引链接了 fuzz、联邦、SQLCipher 和审计产物。

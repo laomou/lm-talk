@@ -1,46 +1,46 @@
-# Public Federation Runbook / 公网联邦运行手册
+# 公网联邦运行手册
 
-This runbook defines how to deploy and validate a real public LM Talk federation. It is the operational procedure for producing the public-network evidence required by `docs/PRODUCTION_READINESS.md` and `docs/RELEASE_SIGNOFF.md`.
+本运行手册定义了如何部署和验证真实的公共 LM Talk 联邦。它是生成 `docs/PRODUCTION_READINESS.md` 和 `docs/RELEASE_SIGNOFF.md` 所需公网证据的操作流程。
 
-## Goal
+## 目标
 
-Operate at least three public `lm_node` instances that provide:
+运行至少三个公共 `lm_node` 实例，提供：
 
-- HTTPS control/Mailbox/DHT endpoints.
-- SQLCipher-encrypted `state_db` or explicitly accepted external encrypted storage.
-- Cross-node snapshot sync.
-- DHT publish/find for ContactCard, PreKey, MailboxHint, and PublicPeer records.
-- Mailbox push/take/ack across nodes.
-- Metrics and logs suitable for release evidence.
+- HTTPS 控制面 / Mailbox / DHT 端点。
+- SQLCipher 加密的 `state_db`，或明确接受的外部加密存储。
+- 跨节点快照同步。
+- ContactCard、PreKey、MailboxHint 和 PublicPeer 记录的 DHT 发布/查找。
+- 跨节点 Mailbox 推送/取回/确认。
+- 适合作为发布证据的指标和日志。
 
-## Minimum topology
+## 最低拓扑
 
-| Node | Example domain | Role | Required capabilities |
+| 节点 | 示例域名 | 角色 | 必需能力 |
 | --- | --- | --- | --- |
 | A | `node-a.example.com` | bootstrap + mailbox + DHT | `Bootstrap`, `Dht`, `Mailbox` |
 | B | `node-b.example.com` | mailbox + DHT | `Dht`, `Mailbox` |
 | C | `node-c.example.com` | mailbox + DHT | `Dht`, `Mailbox` |
 
-Each node should list the other two nodes in `sync_peers`.
+每个节点应在 `sync_peers` 中列出另外两个节点。
 
-## Pre-deployment checklist
+## 部署前检查清单
 
-- [ ] DNS A/AAAA records point to each host.
-- [ ] HTTPS certificates are issued and auto-renewing.
-- [ ] `cors_allow_origins` contains only the intended Web origins.
-- [ ] Unique `peer_id` per node.
-- [ ] Unique control token per node.
-- [ ] Distinct sync-peer tokens where possible.
-- [ ] `state_db_encryption_mode=sqlcipher` for SQLCipher deployments, or documented external encrypted volume exception.
-- [ ] `state_db_passphrase_file` exists, is not a symlink, and has `0600` permissions.
-- [ ] `state_file_passphrase_file` exists and has `0600` permissions if `state_file` is configured.
-- [ ] `/data` persistent volume is backed up and monitored.
-- [ ] Host firewall exposes only `80/443` publicly; `8787` remains private behind reverse proxy.
+- [ ] DNS A/AAAA 记录指向每台主机。
+- [ ] HTTPS 证书已签发并支持自动续期。
+- [ ] `cors_allow_origins` 只包含预期的 Web 源。
+- [ ] 每个节点使用唯一 `peer_id`。
+- [ ] 每个节点使用唯一控制令牌。
+- [ ] 可能时为不同同步对等节点配置不同的令牌。
+- [ ] SQLCipher 部署使用 `state_db_encryption_mode=sqlcipher`，或记录外部加密卷例外。
+- [ ] `state_db_passphrase_file` 存在，且不是符号链接，权限为 `0600`。
+- [ ] 如果配置了 `state_file`，则 `state_file_passphrase_file` 存在且权限为 `0600`。
+- [ ] `/data` 持久卷已备份并受监控。
+- [ ] 主机防火墙仅公开 `80/443`；`8787` 通过反向代理私有访问。
 
-## Deployment steps
+## 部署步骤
 
-1. Start from `deploy/lm-node-public` or adapt `deploy/lm-node-federation`.
-2. Create secrets:
+1. 从 `deploy/lm-node-public` 开始，或根据实际情况调整 `deploy/lm-node-federation`。
+2. 创建 secret：
 
 ```bash
 openssl rand -base64 32 > secrets/control-token
@@ -49,7 +49,7 @@ openssl rand -base64 32 > secrets/state-db-passphrase
 chmod 600 secrets/*
 ```
 
-3. Configure `config.json`:
+3. 配置 `config.json`：
 
 ```json
 {
@@ -68,21 +68,21 @@ chmod 600 secrets/*
 }
 ```
 
-4. Build SQLCipher binary when required:
+4. 在需要时构建 SQLCipher 二进制：
 
 ```bash
 LM_NODE_CARGO_FEATURES=sqlcipher docker compose build --no-cache lm-node
 ```
 
-5. Start:
+5. 启动：
 
 ```bash
 docker compose up -d
 ```
 
-## Validation commands
+## 验证命令
 
-Set variables:
+设置变量：
 
 ```bash
 export NODE_A=https://node-a.example.com
@@ -93,7 +93,7 @@ export TOKEN_B=...
 export TOKEN_C=...
 ```
 
-Health and stats:
+健康与统计：
 
 ```bash
 curl -fsS "$NODE_A/health"
@@ -101,7 +101,7 @@ curl -fsS -H "authorization: Bearer $TOKEN_A" "$NODE_A/control/stats" | tee node
 curl -fsS -H "authorization: Bearer $TOKEN_A" "$NODE_A/control/metrics" | tee node-a-metrics.txt
 ```
 
-SQLCipher evidence:
+SQLCipher 证据：
 
 ```bash
 jq '.state_db.encryption_mode, .state_db.encrypted' node-a-stats.json
@@ -109,13 +109,13 @@ grep 'lm_node_state_db_encrypted 1' node-a-metrics.txt
 grep 'lm_node_state_db_encryption_mode{mode="sqlcipher"} 1' node-a-metrics.txt
 ```
 
-DHT maintenance:
+DHT 维护：
 
 ```bash
 curl -fsS -H "authorization: Bearer $TOKEN_A" "$NODE_A/dht/maintenance?factor=3&limit=8&max_targets=8" | tee node-a-dht-maintenance.json
 ```
 
-Snapshot sync drill:
+快照同步演练：
 
 ```bash
 curl -fsS -H "authorization: Bearer $TOKEN_A" "$NODE_A/sync/snapshot" > node-a-snapshot.json
@@ -125,66 +125,66 @@ curl -fsS -H "authorization: Bearer $TOKEN_B" -H 'content-type: application/json
 curl -fsS -H "authorization: Bearer $TOKEN_B" "$NODE_B/sync/status" | tee node-b-sync-status.json
 ```
 
-## Required release evidence
+## 所需发布证据
 
-Archive the following for each public federation run:
+每次公网联邦运行应归档：
 
-- Sanitized `config.json` for each node.
-- Reverse proxy config for each node.
-- `/health` output for each node.
-- `/control/stats` and `/control/metrics` for each node.
-- SQLCipher encrypted state DB proof for each node using SQLCipher.
-- DHT maintenance output.
-- Snapshot export/import output.
-- Mailbox push/take/ack drill output.
-- Node outage recovery drill output.
-- Load test report with message counts, duration, failures, and metrics.
-- Logs for the validation window.
+- 每个节点的脱敏 `config.json`。
+- 每个节点的反向代理配置。
+- 每个节点的 `/health` 输出。
+- 每个节点的 `/control/stats` 和 `/control/metrics`。
+- 每个使用 SQLCipher 节点的 SQLCipher 加密状态 DB 证明。
+- DHT 维护输出。
+- 快照导出/导入输出。
+- Mailbox 推送/取回/确认演练输出。
+- 节点故障恢复演练输出。
+- 包含消息数量、持续时间、失败和指标的负载测试报告。
+- 验证期间的日志。
 
-## Operational drills
+## 运营演练
 
-### Node outage recovery
+### 节点故障恢复
 
-- Stop node B.
-- Push Mailbox messages to node A.
-- Restart node B.
-- Import or wait for sync from node A.
-- Verify node B can take messages.
+- 停止节点 B。
+- 向节点 A 推送 Mailbox 消息。
+- 重启节点 B。
+- 从节点 A 导入或等待同步。
+- 验证节点 B 是否可以取回消息。
 
-### ContactCard / PreKey / MailboxHint / PublicPeer discovery
+### ContactCard / PreKey / MailboxHint / PublicPeer 发现
 
-- Publish each record type from a Web client or node helper.
-- Verify it can be found from at least one other node.
-- Verify stale/invalid records are rejected.
+- 通过 Web 客户端或节点辅助工具发布每种记录类型。
+- 验证至少可从另一个节点查到。
+- 验证过期/无效记录被拒绝。
 
-### Token rotation
+### 令牌轮换
 
-- Configure `control_previous_tokens` with old token.
-- Deploy new token.
-- Verify old token works during grace period and is later removed.
+- 配置 `control_previous_tokens` 来保留旧令牌。
+- 部署新令牌。
+- 验证旧令牌在宽限期内仍可使用，并随后被移除。
 
-## Go / no-go for public federation evidence
+## 公网联邦证据 Go / No-Go
 
-A public federation run is **NO-GO** as production evidence if:
+若满足以下任一条件，则该公网联邦运行作为生产证据为 **NO-GO**：
 
-- Any node lacks HTTPS.
-- Any control endpoint accepts unauthenticated non-health requests.
-- SQLCipher mode is expected but metrics do not show `state_db_encrypted 1`.
-- Snapshot sync fails between nodes.
-- Mailbox push/take fails across nodes.
-- DHT ContactCard/PreKey publish/find fails across nodes.
-- Logs show repeated panics or unbounded rate-limit/quota failures.
+- 任何节点缺少 HTTPS。
+- 任何控制端点接受未经认证的非健康请求。
+- 预期启用 SQLCipher, 但指标未显示 `state_db_encrypted 1`。
+- 节点间快照同步失败。
+- 跨节点 Mailbox 推送/取回失败。
+- DHT ContactCard/PreKey 发布/查找跨节点失败。
+- 日志显示重复 panic 或不受限的速率限制/配额失败。
 
-## Report template
+## 报告模板
 
-| Item | Artifact/link | Status | Notes |
+| 项目 | 产物/链接 | 状态 | 备注 |
 | --- | --- | --- | --- |
-| Node A stats/metrics |  |  |  |
-| Node B stats/metrics |  |  |  |
-| Node C stats/metrics |  |  |  |
-| SQLCipher proof |  |  |  |
-| DHT publish/find |  |  |  |
-| Mailbox push/take/ack |  |  |  |
-| Outage recovery |  |  |  |
-| Load test |  |  |  |
-| Logs |  |  |  |
+| 节点 A 统计/指标 |  |  |  |
+| 节点 B 统计/指标 |  |  |  |
+| 节点 C 统计/指标 |  |  |  |
+| SQLCipher 证明 |  |  |  |
+| DHT 发布/查找 |  |  |  |
+| Mailbox 推送/取回/确认 |  |  |  |
+| 故障恢复 |  |  |  |
+| 负载测试 |  |  |  |
+| 日志 |  |  |  |

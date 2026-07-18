@@ -1,137 +1,137 @@
-# Public Deployment Report Template / 公网部署报告模板
+# 公网部署报告模板
 
-Use this template after running a real public LM Talk federation drill. It should be linked from `docs/RELEASE_EVIDENCE.md` and `docs/RELEASE_SIGNOFF.md` before any production-ready claim.
+在运行真实公共 LM Talk 联邦演练后使用此模板。它应链接到 `docs/RELEASE_EVIDENCE.md` 和 `docs/RELEASE_SIGNOFF.md`，在任何生产就绪声明前完成。
 
-## Deployment identity
+## 部署身份
 
-- Report ID:
-- Date/time UTC:
-- Operator:
-- Release/tag:
-- Commit SHA:
-- Web origin(s):
-- Node artifact(s):
-- SQLCipher artifact used: yes/no
+- 报告 ID：
+- UTC 日期/时间：
+- 运营人员：
+- 发布/标签：
+- 提交 SHA：
+- Web 来源：
+- 节点产物：
+- 使用的 SQLCipher 产物：是/否
 
-## Topology
+## 拓扑
 
-| Node | Domain | Region/provider | Peer ID | Role | Version/commit | SQLCipher mode | Notes |
+| 节点 | 域名 | 区域/供应商 | Peer ID | 角色 | 版本/提交 | SQLCipher 模式 | 备注 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | A |  |  |  | bootstrap + DHT + mailbox |  |  |  |
 | B |  |  |  | DHT + mailbox |  |  |  |
 | C |  |  |  | DHT + mailbox |  |  |  |
 
-## Configuration evidence
+## 配置证据
 
-Attach sanitized copies or links:
+附上脱敏副本或链接：
 
-- [ ] Node A `config.json`
-- [ ] Node B `config.json`
-- [ ] Node C `config.json`
-- [ ] Reverse proxy / TLS config for each node
-- [ ] Firewall/security-group summary
-- [ ] CORS allowlist
-- [ ] Token rotation plan
-- [ ] Backup/restore plan
+- [ ] 节点 A `config.json`
+- [ ] 节点 B `config.json`
+- [ ] 节点 C `config.json`
+- [ ] 每个节点的反向代理 / TLS 配置
+- [ ] 防火墙/安全组摘要
+- [ ] CORS 允许列表
+- [ ] 令牌轮换计划
+- [ ] 备份/恢复计划
 
-## Health and metrics
+## 健康与指标
 
-| Node | `/health` archived | `/control/stats` archived | `/control/metrics` archived | Status |
+| 节点 | `/health` 归档 | `/control/stats` 归档 | `/control/metrics` 归档 | 状态 |
 | --- | --- | --- | --- | --- |
 | A |  |  |  |  |
 | B |  |  |  |  |
 | C |  |  |  |  |
 
-Required checks:
+必需检查：
 
-- [ ] Every node serves HTTPS.
-- [ ] Only `/health` is unauthenticated.
-- [ ] Authenticated endpoints reject missing/wrong bearer token.
-- [ ] Metrics do not contain message plaintext, identity backups, tokens, or decrypted payloads.
+- [ ] 每个节点都提供 HTTPS。
+- [ ] 仅 `/health` 为未认证访问。
+- [ ] 未提供或错误的 Bearer token 时，认证端点被拒绝。
+- [ ] 指标中不包含明文消息、身份备份、令牌或解密载荷。
 
-## SQLCipher / persistence evidence
+## SQLCipher / 持久化证据
 
-For each node using SQLCipher:
+对于每个使用 SQLCipher 的节点：
 
-| Node | `state_db.encryption_mode` | `state_db.encrypted` | `lm_node_state_db_encrypted` | Wrong passphrase test | Status |
+| 节点 | `state_db.encryption_mode` | `state_db.encrypted` | `lm_node_state_db_encrypted` | 错误密码测试 | 状态 |
 | --- | --- | --- | --- | --- | --- |
 | A |  |  |  |  |  |
 | B |  |  |  |  |  |
 | C |  |  |  |  |  |
 
-Attach:
+附上：
 
-- [ ] `sqlcipher-deploy-smoke.log` or equivalent
-- [ ] `/control/stats` evidence
-- [ ] `/control/metrics` evidence
-- [ ] Wrong-passphrase fail-closed output
+- [ ] `sqlcipher-deploy-smoke.log` 或等效输出
+- [ ] `/control/stats` 证据
+- [ ] `/control/metrics` 证据
+- [ ] 错误密码 fail-closed 输出
 
-## DHT validation
+## DHT 验证
 
-| Record kind | Published from | Found from | Evidence | Status |
+| 记录类型 | 发布自 | 查找自 | 证据 | 状态 |
 | --- | --- | --- | --- | --- |
 | ContactCard |  |  |  |  |
 | PreKey |  |  |  |  |
 | MailboxHint |  |  |  |  |
 | PublicPeer |  |  |  |  |
 
-Required checks:
+必需检查：
 
-- [ ] Valid records are found from at least one other node.
-- [ ] Invalid/mismatched records are rejected.
-- [ ] DHT maintenance/replication output archived.
-- [ ] No repeated quarantine of healthy peers.
+- [ ] 有效记录至少可从另一个节点查到。
+- [ ] 无效/不匹配记录被拒绝。
+- [ ] DHT 维护/复制输出已归档。
+- [ ] 没有健康对等节点被重复隔离。
 
-## Mailbox validation
+## Mailbox 验证
 
-| Scenario | Evidence | Status |
+| 场景 | 证据 | 状态 |
 | --- | --- | --- |
-| Push signed message to node A |  |  |
-| Take from node A |  |  |
-| Snapshot/import to node B |  |  |
-| Take recovered message from node B |  |  |
-| Ack delivery and verify tombstone/status |  |  |
-| Quota/rate-limit behavior under short load |  |  |
+| 向节点 A 推送签名消息 |  |  |
+| 从节点 A 取回 |  |  |
+| 将快照导入节点 B |  |  |
+| 从节点 B 取回恢复消息 |  |  |
+| 确认交付并验证 tombstone/状态 |  |  |
+| 短时负载下配额/限流行为 |  |  |
 
-## Federation / chaos / load
+## 联邦 / 混沌 / 负载
 
-| Drill | Command/report | Duration/count | Result | Notes |
+| 演练 | 命令/报告 | 持续/计数 | 结果 | 备注 |
 | --- | --- | --- | --- | --- |
-| Basic smoke |  |  |  |  |
-| Node outage recovery |  |  |  |  |
-| Short load |  |  |  |  |
-| Longer load/partition test |  |  |  |  |
+| 基础 smoke |  |  |  |  |
+| 节点故障恢复 |  |  |  |  |
+| 短时负载 |  |  |  |  |
+| 较长负载/分区测试 |  |  |  |  |
 
-Attach `federation-report.json`, logs, and any load-test summaries.
+附上 `federation-report.json`、日志和任何负载测试摘要。
 
-## Client/Web validation
+## 客户端/Web 验证
 
-| Flow | Evidence | Status |
+| 流程 | 证据 | 状态 |
 | --- | --- | --- |
-| Web client connects to all nodes |  |  |
-| ContactCard DHT publish/find |  |  |
-| PreKey DHT publish/find |  |  |
-| Mailbox send/receive |  |  |
-| Strict E2EE mode send/receive |  |  |
-| Device cert update/ACK convergence |  |  |
-| Self-sync receipt/outbox summaries |  |  |
+| Web 客户端连接所有节点 |  |  |
+| ContactCard DHT 发布/查找 |  |  |
+| PreKey DHT 发布/查找 |  |  |
+| Mailbox 发送/接收 |  |  |
+| 严格 E2EE 模式发送/接收 |  |  |
+| 设备证书更新/ACK 收敛 |  |  |
+| 自同步回执/发件箱摘要 |  |  |
 
-## Incidents and anomalies
+## 事件与异常
 
-List any unexpected errors, warnings, quarantined peers, rate-limit spikes, failed mailbox deliveries, or DHT lookup failures.
+列出任何意外错误、警告、隔离对等节点、速率限制峰值、Mailbox 投递失败或 DHT 查找失败。
 
-| Time UTC | Node/client | Symptom | Root cause | Resolution | Follow-up |
+| UTC 时间 | 节点/客户端 | 症状 | 根因 | 解决 | 跟进行动 |
 | --- | --- | --- | --- | --- | --- |
 |  |  |  |  |  |  |
 
-## Go / no-go conclusion
+## Go / No-Go 结论
 
-- Decision: `GO` / `NO-GO`
-- Blocking issues:
-- Accepted risks:
-- Required follow-up tickets:
-- Operator sign-off:
-- Security reviewer sign-off:
-- Date/time UTC:
+- 决策：`通过` / `不通过`
+- 阻塞问题：
+- 已接受风险：
+- 需要后续工单：
+- 运营人员签核：
+- 安全审核人签核：
+- UTC 日期/时间：
 
-A deployment report is **NO-GO** as production evidence if any node lacks HTTPS, SQLCipher evidence is missing for a SQLCipher deployment, cross-node Mailbox recovery fails, DHT ContactCard/PreKey discovery fails, or logs show repeated panics during the validation window.
+若任何节点缺少 HTTPS、SQLCipher 证据缺失（对于 SQLCipher 部署）、跨节点 Mailbox 恢复失败、DHT ContactCard/PreKey 发现失败，或验证期间日志显示重复 panic，则部署报告作为生产证据为 **不通过**。

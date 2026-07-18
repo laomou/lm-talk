@@ -1,55 +1,55 @@
-# Audit Remediation Tracker / 审计修复跟踪
+# 审计修复跟踪
 
-Use this tracker after each internal or external security audit. Every finding must have an owner, status, fix/mitigation evidence, and release decision before LM Talk can be claimed production-ready.
+在每次内部或外部安全审计后使用本跟踪表。每个发现都必须在 LM Talk 被声明为生产就绪前包含负责人、状态、修复/缓解证据和发布决策。
 
-## Status values
+## 状态值
 
-- `Open`: finding accepted for tracking, no fix merged yet.
-- `In progress`: fix or mitigation is being implemented.
-- `Fixed`: fix merged and verified.
-- `Accepted risk`: risk explicitly accepted for this release with mitigation/justification.
-- `Duplicate`: covered by another finding.
-- `Won't fix`: not applicable or rejected, with rationale.
+- `Open`：发现已受理跟踪，尚未合并修复。
+- `In progress`：修复或缓解正在实施中。
+- `Fixed`：修复已合并并已验证。
+- `Accepted risk`：该发布明确接受的残余风险，需附带缓解/理由。
+- `Duplicate`：已被另一个发现覆盖。
+- `Won't fix`：不适用或拒绝修复，需说明理由。
 
-## Severity values
+## 严重性值
 
-- `Critical`: exploitable compromise of E2EE content, identity private keys, SQLCipher state, or remote code execution.
-- `High`: serious bypass of trust, device revocation, strict E2EE, DHT poisoning protection, auth, or persistence confidentiality.
-- `Medium`: meaningful security degradation with prerequisites or limited blast radius.
-- `Low`: hardening, diagnostic leakage, or defense-in-depth issue.
-- `Info`: non-security or documentation/process finding.
+- `Critical`：可利用导致 E2EE 内容、身份私钥、SQLCipher 状态或发布签名密钥泄露，或远程代码执行。
+- `High`：严重信任绕过、设备撤销、严格 E2EE、DHT 污染保护、认证或持久性机密性绕过。
+- `Medium`：有意义的安全降级，需具备前提条件或有限影响范围。
+- `Low`：增强硬化、诊断泄露、或深度防御问题。
+- `Info`：非安全或文档/流程类发现。
 
-## Findings
+## 发现
 
-| ID | Severity | Component | Summary | Status | Owner | Fix commit(s) | Verification evidence | Release decision |
+| ID | 严重性 | 组件 | 摘要 | 状态 | 负责人 | 修复提交 | 验证证据 | 发布决策 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| AUDIT-0001 | TBD | TBD | Placeholder: replace with first audit finding. | Open |  |  |  |  |
+| AUDIT-0001 | TBD | TBD | 占位符：替换为首个审计发现。 | Open |  |  |  |  |
 
-## Required fields per finding
+## 每个发现所需字段
 
-Each finding should include, either in the table or linked issue:
+每个发现都应在表格中或链接的问题中包含：
 
-- Affected component(s): `lm_core`, `lm_wasm`, Web, `lm_node`, deployment, CI/release, docs.
-- Threat model / exploit narrative.
-- Reproduction steps or proof-of-concept when safe to store.
-- Expected security property.
-- Actual observed behavior.
-- Fix plan and owner.
-- Fix commit(s) or accepted-risk rationale.
-- Verification command(s), test(s), or artifact(s).
-- Reviewer sign-off.
+- 受影响组件：`lm_core`、`lm_wasm`、Web、`lm_node`、部署、CI/发布、docs。
+- 威胁模型 / 利用叙述。
+- 重现步骤或概念验证（在安全存储允许的前提下）。
+- 期望的安全属性。
+- 实际观察到的行为。
+- 修复计划和负责人。
+- 修复提交或已接受风险理由。
+- 验证命令、测试或产物。
+- 审核人签核。
 
-## Release gate
+## 发布门禁
 
-A production release is **NO-GO** if any finding is:
+如果任何发现满足以下条件，则生产发布为 **NO-GO**：
 
-- `Critical` and not `Fixed`.
-- `High` and not `Fixed` or explicitly `Accepted risk` by the release owner and security reviewer.
-- Missing verification evidence after being marked `Fixed`.
+- `Critical` 且未标记为 `Fixed`。
+- `High` 且未标记为 `Fixed`，或者未被发布负责人和安全审核人明确标记为 `Accepted risk`。
+- 标记为 `Fixed` 后缺少验证证据。
 
-Before release sign-off, copy the final finding summary into `docs/RELEASE_SIGNOFF.md` and link the audit report in `docs/RELEASE_EVIDENCE.md`.
+在发布签核前，将最终发现摘要复制到 `docs/RELEASE_SIGNOFF.md` 并在 `docs/RELEASE_EVIDENCE.md` 中链接审计报告。
 
-## Suggested issue labels
+## 建议的问题标签
 
 - `audit`
 - `security`

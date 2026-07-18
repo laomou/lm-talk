@@ -1,175 +1,175 @@
-# Incident Response Runbook / 安全事件响应手册
+# 安全事件响应手册
 
-This runbook defines operational response steps for LM Talk security incidents. It is intended for public-node operators, release owners, and security reviewers.
+本手册定义了 LM Talk 安全事件的运营响应步骤。它面向公共节点运营商、发布负责人和安全审核人。
 
-## Severity levels
+## 严重性级别
 
-- **SEV-1 Critical**: likely compromise of user plaintext, identity private keys, SQLCipher state DB passphrase, release signing keys, or remote code execution on public nodes.
-- **SEV-2 High**: node control token leak, device compromise without identity backup leak, DHT poisoning at scale, Mailbox abuse causing service disruption, or bypass of strict E2EE policy.
-- **SEV-3 Medium**: localized delivery disruption, stale/invalid DHT records, isolated dependency vulnerability without known exploit, or limited metadata leakage.
-- **SEV-4 Low**: diagnostics/doc issues, non-sensitive log exposure, or nuisance abuse.
+- **SEV-1 Critical**：用户明文、身份私钥、SQLCipher 状态 DB 口令、发布签名密钥泄露，或公共节点远程代码执行的可能妥协。
+- **SEV-2 High**：节点控制令牌泄露、设备妥协且身份备份未泄露、DHT 污染大规模、Mailbox 滥用导致服务中断，或严格 E2EE 策略绕过。
+- **SEV-3 Medium**：本地投递中断、过期/无效 DHT 记录、孤立依赖漏洞、或有限元数据泄露。
+- **SEV-4 Low**：诊断/文档问题、非敏感日志曝光或骚扰性滥用。
 
-## First 15 minutes
+## 前 15 分钟
 
-1. Assign incident commander and scribe.
-2. Record UTC start time, reporter, affected version/commit, and affected nodes/clients.
-3. Preserve logs and evidence before restarting services where possible.
-4. Classify severity and affected component:
-   - identity / device / Web client;
-   - public node / Mailbox / DHT;
-   - release artifact / CI / signing;
-   - dependency / supply chain.
-5. If active compromise is suspected, contain before triage.
+1. 指派事件指挥和记录员。
+2. 记录 UTC 开始时间、报告人、受影响版本/提交、受影响节点/客户端。
+3. 在重启服务前尽量保留日志和证据。
+4. 分类严重性和受影响组件：
+   - 身份 / 设备 / Web 客户端；
+   - 公共节点 / Mailbox / DHT；
+   - 发布产物 / CI / 签名；
+   - 依赖 / 供应链。
+5. 如果怀疑发生主动妥协，则先遏制再分类。
 
-## Evidence to preserve
+## 要保留的证据
 
-- Node `/health`, `/control/stats`, `/control/metrics`.
-- Node logs for the incident window.
-- Sanitized `config.json` and reverse-proxy config.
-- Relevant Mailbox delivery IDs and DHT record keys, not decrypted content.
-- Release artifact SHA256 and `RELEASE_INFO.txt`.
-- Client logs/screenshots with secrets redacted.
-- Fuzz crash artifacts or exploit inputs, if applicable.
+- 节点 `/health`、`/control/stats`、`/control/metrics`。
+- 事件窗口的节点日志。
+- 脱敏 `config.json` 和反向代理配置。
+- 相关 Mailbox 投递 ID 和 DHT 记录键，但不包括解密内容。
+- 发布产物 SHA256 和 `RELEASE_INFO.txt`。
+- 客户端日志/截图，需脱敏秘密。
+- fuzz 崩溃产物或可利用输入（如适用）。
 
-Never paste identity backups, SQLCipher passphrases, control tokens, or decrypted message content into public issues.
+切勿将身份备份、SQLCipher 口令、控制令牌或解密消息内容粘贴到公开 issue 中。
 
-## Incident playbooks
+## 事件操作手册
 
-### Identity backup or passphrase leak
+### 身份备份或口令泄露
 
-Impact: attacker may restore the user's identity and sign objects as that user.
+影响：攻击者可能恢复用户身份并以该身份签名对象。
 
-Actions:
+操作：
 
-1. Treat as SEV-1 for the affected user.
-2. Instruct user to stop using the compromised identity for high-trust communication.
-3. Create a new identity and verify fingerprints with contacts through an out-of-band channel.
-4. Re-establish friendships / ContactCards under the new identity.
-5. Revoke old device trust in client UI where possible, but note identity-level compromise cannot be fully repaired by device revoke.
-6. Publish warning through trusted channel; do not rely solely on compromised identity.
+1. 对受影响用户视为 SEV-1。
+2. 指示用户停止使用受影响身份进行高信任通信。
+3. 创建新身份并通过带外通道验证指纹。
+4. 重新建立好友/ContactCard。
+5. 在客户端 UI 中撤销旧设备信任，但注意身份级妥协无法完全通过设备撤销修复。
+6. 通过受信任渠道发布警告；不要仅依赖受影响身份。
 
-### Device lost or device private backup leak
+### 设备遗失或设备私有备份泄露
 
-Impact: attacker may receive/open sealed slots for that device if they also have required local secrets/backups.
+影响：如果攻击者还拥有所需本地密钥/备份，可能接收/打开该设备的封闭槽。
 
-Actions:
+操作：
 
-1. Generate a `lm-device-revoke-v1` for the lost device.
-2. Fan out device revoke to friends.
-3. Publish updated ContactCard through Mailbox and DHT.
-4. Confirm strict E2EE preflight shows no stale device blockers.
-5. Ask contacts to sync and verify revoked device appears in their contact details.
+1. 为丢失设备生成 `lm-device-revoke-v1`。
+2. 通过好友网络发布设备撤销。
+3. 通过 Mailbox 和 DHT 发布更新的 ContactCard。
+4. 确认严格 E2EE 预检不再显示陈旧设备阻塞。
+5. 让联系人同步并验证撤销设备出现在其联系人详情中。
 
-### SQLCipher state DB passphrase leak
+### SQLCipher 状态 DB 口令泄露
 
-Impact: attacker with disk access may decrypt native node state DB.
+影响：攻击者若有磁盘访问权限，可能解密原生节点状态 DB。
 
-Actions:
+操作：
 
-1. Treat as SEV-1 for affected node.
-2. Stop node or isolate host.
-3. Rotate `state_db_passphrase_file` and create a new SQLCipher state DB from a trusted snapshot if available.
-4. Rotate control tokens and sync-peer tokens.
-5. Review whether Mailbox deliveries, PreKey state, DHT records, and consumed one-time-prekey state were exposed.
-6. Archive `/control/stats` and `/control/metrics` after recovery showing SQLCipher mode.
+1. 对受影响节点视为 SEV-1。
+2. 停止节点或隔离主机。
+3. 轮换 `state_db_passphrase_file` 并在可信快照可用时创建新的 SQLCipher 状态 DB。
+4. 轮换控制令牌和 sync-peer 令牌。
+5. 审查 Mailbox 投递、PreKey 状态、DHT 记录和消费一次性 PreKey 状态是否暴露。
+6. 恢复后归档显示 SQLCipher 模式的 `/control/stats` 和 `/control/metrics`。
 
-### Node control token leak
+### 节点控制令牌泄露
 
-Impact: attacker may access node control APIs and mutate Mailbox/DHT/snapshot state.
+影响：攻击者可能访问节点控制 API 并修改 Mailbox/DHT/快照状态。
 
-Actions:
+操作：
 
-1. Treat as SEV-2 or SEV-1 if state mutation is confirmed.
-2. Add leaked token to `control_previous_tokens` only if a grace window is required; otherwise remove immediately.
-3. Generate a new `control_token_file`.
-4. Rotate sync peer token references.
-5. Review `/control/stats` endpoint counters for unauthorized/bad request spikes.
-6. Re-run federation smoke and DHT validation.
+1. 若确认状态修改，则视为 SEV-2 或 SEV-1。
+2. 若需要宽限期，可将泄露令牌添加到 `control_previous_tokens`；否则立即移除。
+3. 生成新的 `control_token_file`。
+4. 轮换 sync peer 令牌引用。
+5. 审查 `/control/stats` 端点计数以查找未经授权/错误请求激增。
+6. 重新运行联邦 smoke 和 DHT 验证。
 
-### DHT poisoning or malicious peers
+### DHT 污染或恶意对等节点
 
-Impact: clients may receive invalid records, closer-node abuse, or degraded discovery.
+影响：客户端可能接收无效记录、更近节点滥用或发现降级。
 
-Actions:
+操作：
 
-1. Capture DHT record keys, bad records, and peer IDs.
-2. Confirm validation rejects bad records.
-3. Check quarantine metrics and peer health diagnostics.
-4. Reset or remove malicious sync peers if they are configured control peers.
-5. Re-run DHT maintenance and routing refresh.
-6. Publish corrected ContactCard/PreKey/MailboxHint/PublicPeer records.
+1. 捕获 DHT 记录键、坏记录和对等节点 ID。
+2. 确认验证拒绝坏记录。
+3. 检查隔离指标和对等节点健康诊断。
+4. 如果配置为控制对等节点，则重置或删除恶意对等节点。
+5. 重新运行 DHT 维护和路由刷新。
+6. 发布更正的 ContactCard/PreKey/MailboxHint/PublicPeer 记录。
 
-### Mailbox abuse / quota exhaustion
+### Mailbox 滥用 / 配额耗尽
 
-Impact: users may be unable to receive messages or nodes may degrade.
+影响：用户可能无法接收消息或节点可能降级。
 
-Actions:
+操作：
 
-1. Check mailbox quota metrics and reject counters.
-2. Increase rate limiting only if current settings are too permissive.
-3. Identify abusive sender user IDs from signed Mailbox metadata.
-4. Preserve delivery IDs and reject stats.
-5. Consider temporary token/CORS restrictions for public endpoint abuse.
-6. Re-run load smoke after mitigation.
+1. 检查 mailbox 配额指标和拒绝计数。
+2. 仅在当前设置过宽时增加限流。
+3. 从签名 Mailbox 元数据中识别滥用发送者用户 ID。
+4. 保留投递 ID 和拒绝统计。
+5. 考虑对公共端点实施临时令牌/CORS 限制。
+6. 缓解后重新运行负载 smoke。
 
-### Release artifact compromise
+### 发布产物妥协
 
-Impact: users may run malicious or unverified binaries.
+影响：用户可能运行恶意或未经验证的二进制。
 
-Actions:
+操作：
 
-1. Treat as SEV-1.
-2. Remove affected release artifacts if possible.
-3. Publish advisory with bad SHA256 values.
-4. Rotate release/signing credentials if compromise suspected.
-5. Rebuild artifacts from a clean environment.
-6. Re-run release checks, SQLCipher smoke, federation validation, and dependency audit.
-7. Publish new release with new checksums and explicit upgrade instructions.
+1. 视为 SEV-1。
+2. 尽可能移除受影响发布产物。
+3. 发布包含错误 SHA256 的公告。
+4. 若怀疑凭据泄露，则轮换发布/签名凭据。
+5. 从干净环境重新构建产物。
+6. 重新运行发布检查、SQLCipher smoke、联邦验证和依赖审计。
+7. 发布带新校验和和明确升级说明的新版本。
 
-### Dependency vulnerability
+### 依赖漏洞
 
-Actions:
+操作：
 
-1. Determine whether vulnerable code is reachable with enabled features.
-2. Update dependency or disable feature.
-3. Run `./scripts/audit.sh` and release check.
-4. If reachable and exploitable, publish advisory and mitigation timeline.
-5. Update ignored advisory rationale if an exception remains.
+1. 确定漏洞代码在启用特性下是否可达。
+2. 更新依赖或禁用特性。
+3. 运行 `./scripts/audit.sh` 和发布检查。
+4. 如果可达且可利用，则发布公告和缓解时间表。
+5. 若例外仍保留，则更新文档化理由。
 
-## Communications
+## 通信
 
-Use severity-based communication:
+按严重性分级沟通：
 
-- SEV-1: immediate SECURITY.md contact path, release advisory, direct operator notification.
-- SEV-2: security advisory or operator notice within 24 hours.
-- SEV-3/4: release notes or issue tracker as appropriate.
+- SEV-1：立即使用 `SECURITY.md` 联系路径、发布公告、直接通知运营商。
+- SEV-2：24 小时内发布安全公告或运营商通知。
+- SEV-3/4：根据情况使用发布说明或 issue 跟进。
 
-Public communications should include:
+公开沟通应包括：
 
-- affected versions/commits;
-- affected deployment modes;
-- user/operator action required;
-- whether E2EE content confidentiality is believed impacted;
-- fixed version or mitigation;
-- evidence preservation guidance.
+- 受影响版本/提交；
+- 受影响部署模式；
+- 用户/运营商所需操作；
+- E2EE 内容机密性是否受影响；
+- 修复版本或缓解措施；
+- 证据保留指南。
 
-## Recovery validation
+## 恢复验证
 
-Before closing an incident, collect:
+在关闭事件前，收集：
 
-- Fix commit(s).
-- Test command outputs.
-- Relevant smoke report(s): SQLCipher, federation, fuzz if applicable.
-- Updated metrics showing healthy state.
-- Audit/remediation tracker entry status.
-- Release evidence/signoff updates if a release is affected.
+- 修复提交。
+- 测试命令输出。
+- 相关 smoke 报告：SQLCipher、联邦、fuzz（如适用）。
+- 更新后的指标，显示健康状态。
+- 审计/修复跟踪条目状态。
+- 受影响发布的证据/签核更新。
 
-## Post-incident review
+## 事后回顾
 
-Within one week:
+在一周内：
 
-1. Fill `docs/AUDIT_REMEDIATION_TRACKER.md` entry or issue link.
-2. Document root cause and missed detection.
-3. Add regression tests or smoke checks.
-4. Update runbooks/config defaults if needed.
-5. Record accepted residual risk.
+1. 填写 `docs/AUDIT_REMEDIATION_TRACKER.md` 条目或链接 issue。
+2. 记录根因和未检测原因。
+3. 添加回归测试或 smoke 检查。
+4. 如果需要，更新运行手册/配置默认值。
+5. 记录已接受残余风险。

@@ -1,132 +1,132 @@
-# Crypto Review Notes / 密码学审计说明
+# 密码学审计说明
 
-This document is a concise guide for reviewers of LM Talk's cryptographic design and implementation. It summarizes key lifecycle, trust boundaries, and known limitations. It should be read together with `docs/SECURITY_AUDIT_SCOPE.md`, `docs/PROTOCOL_STABILITY.md`, and `docs/TEST_VECTOR_COVERAGE.md`.
+本文档是 LM Talk 密码学设计和实现审查者的简明指南。它总结了关键生命周期、信任边界和已知限制。应与 `docs/SECURITY_AUDIT_SCOPE.md`、`docs/PROTOCOL_STABILITY.md` 和 `docs/TEST_VECTOR_COVERAGE.md` 一起阅读。
 
-## Identity and root keys
+## 身份和根密钥
 
-- Each user identity owns an Ed25519 signing key and X25519 public key derived from the identity seed.
-- Identity backups are passphrase protected and exported with `lm-identity-backup-v1:`.
-- Web local storage derives an application storage key from the restored identity and encrypts sensitive IndexedDB records.
-- Re-encrypting the identity backup rotates the local IndexedDB encryption key and rewrites local records.
-- User IDs are derived from identity public keys; verifiers reject mismatched user/public-key pairs.
+- 每个用户身份拥有 Ed25519 签名密钥和从身份种子派生的 X25519 公钥。
+- 身份备份受口令保护，并以 `lm-identity-backup-v1:` 导出。
+- Web 本地存储从恢复的身份派生应用存储密钥，并对敏感 IndexedDB 记录进行加密。
+- 重新加密身份备份会旋转本地 IndexedDB 加密密钥并重写本地记录。
+- 用户 ID 从身份公钥派生；验证器会拒绝不匹配的用户/公钥对。
 
-## Contact trust boundary
+## 联系人信任边界
 
-- Contact Cards are signed identity objects (`lm-contact-card-v1:`) containing identity public keys, X25519 public keys, and device certificates.
-- Fingerprint verification is a local trust decision. Remote ContactCard updates must not overwrite local fingerprint verification state.
-- Block state, read-receipt policy, revocation state, and local safety policy are local state and must survive ContactCard merges.
-- DHT ContactCard records are public discovery records; they are integrity protected by ContactCard signatures but not private.
+- 联系人名片是签名身份对象（`lm-contact-card-v1:`），包含身份公钥、X25519 公钥和设备证书。
+- 指纹验证是本地信任决策。远程联系人名片更新不得覆盖本地指纹验证状态。
+- 阻止状态、已读回执策略、撤销状态和本地安全策略为本地状态，必须在联系人名片合并时保留。
+- DHT ContactCard 记录是公开发现记录；它们通过 ContactCard 签名保证完整性，但不保证隐私。
 
-## Device lifecycle
+## 设备生命周期
 
-- Device certificates (`lm-device-cert-v1`) are signed by the identity key.
-- Device certs include:
-  - device signing public key;
-  - `device_box_public_key` for per-device sealed slot encryption;
-  - device ID derived from the device signing public key.
-- Device revocations (`lm-device-revoke-v1:`) are signed by the identity key.
-- Revocation wins over stale ContactCard device lists.
-- Own device certificates propagate through same-user self-sync, ContactCard Mailbox updates, and DHT ContactCard publishing.
+- 设备证书（`lm-device-cert-v1`）由身份密钥签名。
+- 设备证书包括：
+  - 设备签名公钥；
+  - per-device sealed slot 加密所用的 `device_box_public_key`；
+  - 从设备签名公钥派生的设备 ID。
+- 设备撤销（`lm-device-revoke-v1:`）由身份密钥签名。
+- 撤销优先于过期 ContactCard 中的设备列表。
+- 自有设备证书通过同用户自同步、ContactCard Mailbox 更新和 DHT ContactCard 发布传播。
 
-## X3DH and PreKey handling
+## X3DH 和 PreKey 处理
 
-- PreKey bundles (`lm-prekey-bundle-v1:`) are signed by the identity key.
-- Signed one-time-prekey records (`lm-signed-one-time-prekey-v1:`) are independently signed and tied to bundle/user/signed-prekey IDs.
-- Nodes persist consumed one-time-prekey IDs and merge consumed state through snapshots.
-- Clients prefer signed one-time-prekey records when available and fall back to reusable signed prekey behavior.
-- PreKey DHT records are validated against DHT key namespace and bundle signature.
+- PreKey bundle（`lm-prekey-bundle-v1:`）由身份密钥签名。
+- 签名一次性 PreKey 记录（`lm-signed-one-time-prekey-v1:`）独立签名，并绑定到 bundle/user/signed-prekey ID。
+- 节点持久化消费一次性 PreKey ID，并通过快照合并消费状态。
+- 客户端优先使用可用的签名一次性 PreKey 记录，并回退到可重用签名 PreKey 行为。
+- PreKey DHT 记录根据 DHT 键命名空间和 bundle 签名进行验证。
 
-## Direct messages and Ratchet
+## 直接消息和 Ratchet
 
-- Legacy DirectEnvelope uses static X25519 + HKDF + XChaCha20-Poly1305. This is a compatibility path, not the preferred strict deployment path.
-- Ratchet state and message keys are covered by deterministic vectors. Ratchet state export is sensitive local state.
-- Strict deployments should use Ratchet sessions delivered inside per-device sealed slots.
-- Replay and skipped-message-key bounds are enforced in Ratchet state transitions.
+- 旧版 DirectEnvelope 使用静态 X25519 + HKDF + XChaCha20-Poly1305。这是兼容路径，而非首选严格部署路径。
+- Ratchet 状态和消息密钥由确定性向量覆盖。Ratchet 状态导出属于敏感本地状态。
+- 严格部署应使用封闭槽内的 Ratchet 会话。
+- 在 Ratchet 状态转换中强制执行重放和跳过消息密钥边界。
 
-## Per-device sealed slots
+## 每设备密封槽
 
-- Per-device envelope v1 (`lm-per-device-envelope-v1`) is a signed outer package listing target device slots.
-- Sealed slots use X25519 ephemeral DH + HKDF + XChaCha20-Poly1305 with slot AAD binding:
-  - conversation id;
-  - sender user id;
-  - target device id;
-  - created_at.
-- The outer envelope signature covers target devices, fallback ciphertext, and metadata.
-- Placeholder/fallback slots exist only for compatibility; strict mode rejects non-sealed inbound/outbound paths.
-- Missing `device_box_public_key` should be treated as a downgrade risk.
+- 每设备信封 v1（`lm-per-device-envelope-v1`）为签名外部包，列出目标设备槽。
+- 封闭槽使用 X25519 临时 DH + HKDF + XChaCha20-Poly1305，槽 AAD 绑定：
+  - 会话 id；
+  - 发送方用户 id；
+  - 目标设备 id；
+  - created_at。
+- 外层信封签名覆盖目标设备、回退密文和元数据。
+- 占位/回退槽仅用于兼容；严格模式拒绝非封闭的入站/出站路径。
+- 缺少 `device_box_public_key` 应视为降级风险。
 
-## Group encryption
+## 群组加密
 
-- Group Sender Key state uses HKDF chain advancement and XChaCha20-Poly1305 sender envelopes.
-- Group membership events define when sender-key rotation is required.
-- Group event policy currently remains transitional and requires external review before protocol freeze.
-- New members do not automatically receive historical messages; history transfer must be explicit and re-encrypted.
+- 群组发送密钥状态使用 HKDF 链推进和 XChaCha20-Poly1305 发送者信封。
+- 群组成员事件定义何时需要发送密钥轮换。
+- 群组事件策略目前仍属过渡性，需要外部审查后才可协议冻结。
+- 新成员不会自动接收历史消息；历史传输必须显式重新加密。
 
-## File encryption
+## 文件加密
 
-- File chunks are encrypted independently with static X25519 + HKDF + XChaCha20-Poly1305.
-- File manifests include hash, name, MIME type, size, chunk size, and chunk count.
-- Filename risk handling is local UI policy; cryptographic verification covers encrypted chunk integrity and file hash verification.
+- 文件分片使用静态 X25519 + HKDF + XChaCha20-Poly1305 独立加密。
+- 文件清单包含哈希、名称、MIME 类型、大小、分片大小和分片数量。
+- 文件名风险处理为本地 UI 策略；密码学验证覆盖加密分片完整性和文件哈希验证。
 
-## Self-sync
+## 自同步
 
-- Self-sync packages (`lm-self-sync-v1`) and requests (`lm-self-sync-request-v1`) are signed by the identity key.
-- Self-sync is a lightweight same-user state protocol, not a full message-history sync channel.
-- It carries contact/device/trust state, DHT history, receipt states, outbox summaries, own device certs, and gap-repair metadata.
-- Sequence and previous-sync IDs support dedupe and gap detection.
-- Recent packages are cached temporarily for gap repair.
+- 自同步包（`lm-self-sync-v1`）和请求（`lm-self-sync-request-v1`）由身份密钥签名。
+- 自同步是轻量级同用户状态协议，不是完整消息历史同步通道。
+- 它携带联系人/设备/信任状态、DHT 历史、回执状态、发件箱摘要、自有设备证书和缺口修复元数据。
+- 顺序和前一同步 ID 支持去重和缺口检测。
+- 最近的包会暂时缓存以便缺口修复。
 
-## Local persistence
+## 本地持久化
 
-- Web IndexedDB sensitive records are application-layer encrypted.
-- Native `state_db` supports:
-  - plain mode;
-  - external encrypted volume mode;
-  - SQLCipher mode behind the `lm_node/sqlcipher` feature.
-- SQLCipher mode uses `state_db_passphrase_file`, `PRAGMA key`, and `PRAGMA cipher_version` validation.
-- Wrong SQLCipher passphrases must fail closed and must not silently create a fresh node state.
-- JSON `state_file` supports XChaCha20-Poly1305 application-layer encryption for compatibility/snapshot workflows.
+- Web IndexedDB 敏感记录做应用层加密。
+- 原生 `state_db` 支持：
+  - plain 模式；
+  - 外部加密卷模式；
+  - `lm_node/sqlcipher` 功能下的 SQLCipher 模式。
+- SQLCipher 模式使用 `state_db_passphrase_file`、`PRAGMA key` 和 `PRAGMA cipher_version` 验证。
+- 错误 SQLCipher 密码必须 fail-closed，且不得悄然创建空白节点状态。
+- JSON `state_file` 支持兼容/快照工作流的 XChaCha20-Poly1305 应用层加密。
 
-## Node trust boundary
+## 节点信任边界
 
-- Mailbox nodes are not trusted with plaintext. They store signed encrypted payloads and metadata.
-- DHT nodes are not trusted. Records are validated by kind-specific signatures/key namespaces.
-- Control-plane tokens protect node APIs except `/health`; operators must configure CORS and TLS correctly.
-- Node metrics should not leak message plaintext, private keys, or decrypted payloads.
+- Mailbox 节点不可信任明文。它们存储签名加密负载和元数据。
+- DHT 节点不可信任。记录通过类型特定签名/键命名空间验证。
+- 控制面令牌保护节点 API（除 `/health`）；运营商必须正确配置 CORS 和 TLS。
+- 节点指标不应泄露消息明文、私钥或解密载荷。
 
-## Metadata limitations
+## 元数据限制
 
-LM Talk does not currently hide all metadata. The following may be visible to nodes or observers depending on transport/deployment:
+LM Talk 目前不能隐藏所有元数据。以下内容可能因传输/部署而对节点或观察者可见：
 
-- user IDs and DHT keys;
-- mailbox delivery timing and size;
-- record kinds and publication timing;
-- node peer IDs and addresses;
-- approximate traffic volume;
-- ContactCard public fields and device counts.
+- 用户 ID 和 DHT 键；
+- Mailbox 投递时间和大小；
+- 记录类型和发布时序；
+- 节点 peer ID 和地址；
+- 近似流量量；
+- ContactCard 公开字段和设备计数。
 
-This system is content-confidential and integrity-protected, not anonymous or traffic-analysis resistant.
+该系统是内容机密且完整性受保护，而非匿名或抗流量分析。
 
-## Reviewer focus questions
+## 审查者关注问题
 
-1. Are all signed canonical fields complete and stable for each object?
-2. Can any remote update overwrite local trust decisions?
-3. Can a malicious node trigger downgrade from sealed slots to fallback paths under strict policy?
-4. Can device revocation be bypassed by stale ContactCards or self-sync packages?
-5. Can one-time-prekeys be reused across node snapshot merges?
-6. Do Web/WASM boundaries expose raw secrets longer than necessary?
-7. Do SQLCipher and state_file fail closed on missing/wrong passphrases?
-8. Do DHT validation failures quarantine/penalize malicious peers without blocking honest recovery?
-9. Are size limits and parsing errors sufficient for malformed payloads?
-10. Are release artifacts and deployment templates aligned with the intended security mode?
+1. 每个对象的签名规范字段是否完整且稳定？
+2. 是否存在远程更新覆盖本地信任决策的情况？
+3. 恶意节点是否能在严格策略下触发从封闭槽到回退路径的降级？
+4. 设备撤销是否能被过期 ContactCard 或自同步包绕过？
+5. 一次性 PreKey 是否能在节点快照合并中重复使用？
+6. Web/WASM 边界是否暴露了比必要时间更长的原始秘密？
+7. SQLCipher 和 state_file 是否在缺少/错误口令时 fail-closed？
+8. DHT 验证失败能否隔离/惩罚恶意对等节点，而不会阻止诚实节点恢复？
+9. 对畸形负载的大小限制和解析错误是否足够？
+10. 发布产物和部署模板是否与预期安全模式一致？
 
-## Strict E2EE control-message exception
+## 严格 E2EE 控制消息例外
 
-Strict E2EE send policy is fail-closed for user content: direct messages, files, group messages, group events, group invitations, secure-session payloads, and normal outbox retries must satisfy verified-contact and sealed-slot requirements before sending.
+严格 E2EE 发送策略对用户内容是 fail-closed 的：直接消息、文件、群消息、群事件、群邀请、secure-session 载荷和普通发件箱重试必须在发送前满足已验证联系人和封闭槽要求。
 
-Two outbound control-message families intentionally bypass the strict send-content gate because they are required to repair or revoke trust state:
+两个出站控制消息家族故意绕过严格发送内容门禁，因为它们用于修复或撤销信任状态：
 
-- `lm-contact-card-v1:` / `contact-update` fanout, used to distribute fresh ContactCards, device certificates, and `device_box_public_key` values needed to reach sealed-slot readiness.
-- `lm-device-revoke-v1`, used to stop peers from trusting a lost or retired device.
+- `lm-contact-card-v1:` / `contact-update` fanout，用于分发新的 ContactCard、设备证书和 `device_box_public_key`，以达到封闭槽准备状态。
+- `lm-device-revoke-v1`，用于阻止节点信任丢失或退役设备。
 
-These exceptions do not carry message/file plaintext. They remain signed protocol objects and should be reviewed as trust-state repair paths, not as content-delivery downgrade paths. Inbound content still enforces verified-contact and sealed-slot policy, and strict mode blocks risky group creation, group invites, group messages, group events, file send/decrypt, secure sessions, and mailbox receipts.
+这些例外不携带消息/文件明文。它们仍是签名协议对象，应作为信任状态修复路径审查，而非内容传递降级路径。入站内容仍然强制执行已验证联系人和封闭槽策略，严格模式会阻止有风险的群组创建、群组邀请、群组消息、群组事件、文件发送/解密、secure session 和 Mailbox 回执。
