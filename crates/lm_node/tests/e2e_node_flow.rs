@@ -1,7 +1,7 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use lm_core::{
-    Identity, MailboxMessage, MailboxMessageKind, PreKeyBundle, RatchetEnvelope, RatchetRole,
-    RatchetSessionState, SignedOneTimePreKeyRecord,
+    GroupSenderEnvelope, GroupSenderKeyState, Identity, MailboxMessage, MailboxMessageKind,
+    PreKeyBundle, RatchetEnvelope, RatchetRole, RatchetSessionState, SignedOneTimePreKeyRecord,
     x3dh_initiator_secret_with_one_time_prekey_record, x3dh_responder_secret,
 };
 use lm_node::{ControlRequest, NativeNode, NodeConfig, NodeStateSnapshot};
@@ -279,4 +279,127 @@ fn mailbox_pressure_partial_ack_status_and_snapshot_recovery() {
         lm_node::MailboxDeliveryState::DeliveredUnacked
     );
     assert_eq!(restored.mailbox.pending_for(bob.user_id()), 110);
+}
+
+#[test]
+fn group_sender_key_fanout_via_mailbox() {
+    // 1. Create 3 identities: Alice, Bob, Carol
+    let (alice, _) = Identity::create_with_passphrase("alice group fanout").unwrap();
+    let (bob, _) = Identity::create_with_passphrase("bob group fanout").unwrap();
+    let (carol, _) = Identity::create_with_passphrase("carol group fanout").unwrap();
+
+    let alice_card = alice
+        .export_contact_card(Some("Alice".into()), None, vec![])
+        .unwrap();
+
+    let mut node = NativeNode::new(NodeConfig {
+        peer_id: "group-fanout-node".into(),
+        ..Default::default()
+    });
+
+    let group_id = uuid::Uuid::new_v4();
+
+    // 2. Alice creates a GroupSenderKeyState and generates her distribution
+    let mut alice_sender_state = GroupSenderKeyState::new(&alice, group_id).unwrap();
+    let distribution = alice_sender_state.to_distribution(&alice).unwrap();
+
+    // 3. Bob and Carol import Alice's distribution (verify signature using Alice's contact card)
+    let mut bob_receiver_state =
+        GroupSenderKeyState::from_distribution(&distribution, &alice_card).unwrap();
+    let mut carol_receiver_state =
+        GroupSenderKeyState::from_distribution(&distribution, &alice_card).unwrap();
+
+    // 4. Alice encrypts a group message using her sender key state
+    let envelope = alice_sender_state
+        .encrypt_text("hello group via mailbox".into())
+        .unwrap();
+    let envelope_json = serde_json::to_string(&envelope).unwrap();
+
+    // 5. Alice pushes the encrypted envelope to Bob and Carol's mailboxes
+    let bob_mailbox_msg = MailboxMessage::new(
+        &alice,
+        bob.user_id().clone(),
+        MailboxMessageKind::GroupFanout,
+        envelope_json.clone(),
+        3600,
+    )
+    .unwrap();
+    let push_bob = node.handle_control_request(ControlRequest {
+        method: "POST".into(),
+        path: "/mailbox/push".into(),
+        body: serde_json::json!({
+            "message_text": bob_mailbox_msg.to_export_text().unwrap(),
+            "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
+        })
+        .to_string(),
+        headers: Vec::new(),
+    });
+    assert_eq!(push_bob.status, 201, "push to bob: {}", push_bob.body);
+
+    let carol_mailbox_msg = MailboxMessage::new(
+        &alice,
+        carol.user_id().clone(),
+        MailboxMessageKind::GroupFanout,
+        envelope_json,
+        3600,
+    )
+    .unwrap();
+    let push_carol = node.handle_control_request(ControlRequest {
+        method: "POST".into(),
+        path: "/mailbox/push".into(),
+        body: serde_json::json!({
+            "message_text": carol_mailbox_msg.to_export_text().unwrap(),
+            "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
+        })
+        .to_string(),
+        headers: Vec::new(),
+    });
+    assert_eq!(
+        push_carol.status, 201,
+        "push to carol: {}",
+        push_carol.body
+    );
+
+    // 6. Bob takes from mailbox, decrypts the group message
+    let take_bob = node.handle_control_request(ControlRequest {
+        method: "GET".into(),
+        path: format!("/mailbox/take?user_id={}", bob.user_id()),
+        body: String::new(),
+        headers: Vec::new(),
+    });
+    assert_eq!(take_bob.status, 200, "take bob: {}", take_bob.body);
+    let bob_body: serde_json::Value = serde_json::from_str(&take_bob.body).unwrap();
+    let bob_ciphertext = bob_body["messages"][0]["message"]["ciphertext"]
+        .as_str()
+        .unwrap();
+    let bob_envelope: GroupSenderEnvelope = serde_json::from_str(bob_ciphertext).unwrap();
+    let bob_plain = bob_receiver_state.decrypt(&bob_envelope).unwrap();
+
+    // 7. Carol takes from mailbox, decrypts the same group message
+    let take_carol = node.handle_control_request(ControlRequest {
+        method: "GET".into(),
+        path: format!("/mailbox/take?user_id={}", carol.user_id()),
+        body: String::new(),
+        headers: Vec::new(),
+    });
+    assert_eq!(
+        take_carol.status, 200,
+        "take carol: {}",
+        take_carol.body
+    );
+    let carol_body: serde_json::Value = serde_json::from_str(&take_carol.body).unwrap();
+    let carol_ciphertext = carol_body["messages"][0]["message"]["ciphertext"]
+        .as_str()
+        .unwrap();
+    let carol_envelope: GroupSenderEnvelope = serde_json::from_str(carol_ciphertext).unwrap();
+    let carol_plain = carol_receiver_state.decrypt(&carol_envelope).unwrap();
+
+    // 8. Assert both get the same plaintext
+    assert_eq!(bob_plain.text, "hello group via mailbox");
+    assert_eq!(carol_plain.text, "hello group via mailbox");
+    assert_eq!(bob_plain.group_id, group_id);
+    assert_eq!(carol_plain.group_id, group_id);
+    assert_eq!(bob_plain.sender_user_id, *alice.user_id());
+    assert_eq!(carol_plain.sender_user_id, *alice.user_id());
+    assert_eq!(bob_plain.message_id, carol_plain.message_id);
 }
