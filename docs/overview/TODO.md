@@ -27,7 +27,7 @@
 
 - `lm_node` 仍是控制面 + snapshot sync scaffold，不是真正生产 DHT。
 - Mailbox/PreKey 可支撑 demo；Mailbox 已有基础 TTL/配额/message_id 去重、take 分页、ack 批量限制与拒绝统计、delivery 状态查询和 ACK tombstone 持久化、控制面 per-client IP 限流和 SQLite state_db 持久化，但仍缺完整客户端状态合并、多设备回执同步与更强反滥用。
-- Core 协议对象已可测，属性测试和跨平台测试向量已补齐；Double Ratchet replay、乱序 skipped-key 消费和 skip-window 边界已有属性测试；常见导入文本/附件 JSON 解析已补 malformed 输入不崩溃和超限拒绝覆盖；已新增 cargo-fuzz/libFuzzer harness 脚手架。仍需长时间 fuzz 运行、持续语料回归、AFL/独立安全测试和外部安全审计。
+- Core 协议对象已可测，属性测试和跨平台测试向量已补齐；Double Ratchet replay、乱序 skipped-key 消费和 skip-window 边界已有属性测试；常见导入文本/附件 JSON 解析已补 malformed 输入不崩溃和超限拒绝覆盖；已新增 cargo-fuzz/libFuzzer harness 脚手架和每周定时 fuzz CI（`.github/workflows/fuzz.yml`，运行 3 个 target）。仍需长时间 fuzz 运行、持续语料回归、AFL/独立安全测试和外部安全审计。
 - 本地持久化仍偏 Web IndexedDB / MemoryStore；Native node 已有 SQLite state_db，SQLCipher/客户端完整数据加密仍未实现；Native JSON state_file 已支持环境变量/secret file/config 口令的应用层加密、fail-closed 要求、stats/metrics/Web 诊断作为过渡方案。
 
 ---
@@ -172,7 +172,7 @@
 
 7. **PWA / 离线包**
    - Web 版供应链风险提示已存在，设置页已展示 PWA Service Worker / 缓存状态和 Web 包版本。
-   - Web 静态入口已加入 CSP meta 和 no-referrer 策略，限制脚本/对象/frame/form 等默认能力，同时保留 WASM、PWA、blob/data 预览和用户配置同步节点连接能力；Web E2E 覆盖 CSP/referrer meta 存在。
+   - Web 静态入口已加入 CSP meta 和 no-referrer 策略，限制脚本/对象/frame/form 等默认能力，同时保留 WASM、PWA、blob/data 预览和用户配置同步节点连接能力；CSP `connect-src` 已收紧为只允许 `https:`/`wss:` 加本地开发 localhost，不再允许裸 `http:`/`ws:`；Web E2E 覆盖 CSP/referrer meta 存在。
    - Service Worker 注册 URL 和缓存名已带构建版本，避免不同构建共用同一个离线缓存。
    - 设置页已展示当前 `lm-talk-pwa-*` 固定缓存名，便于确认离线包对应构建版本。
    - 固定版本离线包已具备静态资源缓存优先策略，首次在线后可按构建版本离线使用。
@@ -310,13 +310,15 @@
    - 大群、成员变更 epoch、历史策略还需完整设计。
 
 4. **生产级身份备份**
-   - Web 当前存在 wasm-local 可用性路径；生产要重新做浏览器安全加密备份。
+   - Web 当前存在 wasm-local 可用性路径；wasm-local 备份 KDF 已从单次 SHA-256 升级为 PBKDF2-HMAC-SHA256（600k 迭代），生产仍建议进一步评估 Argon2id。
    - 支持改提示词、重新导出、备份完整性校验。
 
 5. **安全审计与测试增强**
    - 固定协议测试向量、属性测试、跨平台一致性测试、浏览器真实流程 E2E 已建立。
    - 已补核心导入解析的 fuzz-like malformed 输入属性测试，覆盖 Contact/Friend/Backup/PreKey/Signal/DHT/Mailbox/Group/Ratchet/File/Device revoke 等文本入口；附件 Manifest、Chunk JSON、Chunk ciphertext decode 前检查和 Device revoke import 也有显式长度上限。
-   - 已新增 `fuzz/` cargo-fuzz/libFuzzer harness：`core_imports`、`node_dht_rpc`、`node_control_request`；运行方式见 `docs/FUZZING.md`。
+   - 已新增 `fuzz/` cargo-fuzz/libFuzzer harness：`core_imports`、`node_dht_rpc`、`node_control_request`；运行方式见 `docs/FUZZING.md`；并新增每周定时 `.github/workflows/fuzz.yml` CI，自动运行这 3 个 target。
+   - 已补负向加密测试（错误密钥、跨用户、密文篡改）、群 Sender Key fanout 经 Mailbox 层的端到端测试，以及 `contact_card_dht` / `public_peer` 的测试向量断言。
+   - CI 已新增 `-D warnings` 的 clippy job。
    - 已新增 `scripts/release-check.sh`、`scripts/fuzz-smoke.sh` 和 `docs/RELEASE_CHECKLIST.md`，将 fmt、Rust core/node、node e2e、fuzz harness compile check、可选 fuzz smoke、Web build/e2e 串成发布候选自动化门禁；GitHub Actions CI 会运行 `release-check quick`，新增 `dependency-audit` job 执行 `cargo audit` 与 runtime/build-toolchain `npm audit`，并在 PR 上运行 `dependency-review` 阻止高危依赖变更。
    - 已新增 tag 触发的 native node release workflow，会为 Linux x86_64、macOS Intel/Apple Silicon、Windows x86_64 构建 `lm_node` 归档并发布 SHA256/构建信息；仍需补 macOS notarization、Windows Authenticode/code signing 和签名 provenance。
    - 已新增仓库级 `SECURITY.md`，说明私下漏洞报告流程、敏感材料脱敏要求和已知非生产阻塞项。
@@ -457,6 +459,8 @@ lm-signal-answer-v1:base64url(...)
 ### 6. 协议错误码
 
 需要统一错误码，方便 Rust core、WASM 和 UI 协作。
+
+已新增专用错误变体 `InvalidFormat`、`NotFound`、`DecryptionFailed`、`CounterExhausted`，替换先前被误用的错误变体。
 
 建议错误码：
 
@@ -746,6 +750,8 @@ Web 版应明确风险。
 - `RatchetSessionState` 可序列化/反序列化。
 - root key、发送链、接收链、DH key、计数器可持久化。
 - skipped message keys 有上限并支持乱序接收。
+- 计数器改用 `checked_add`，溢出返回 `CounterExhausted` 错误而非饱和累加。
+- `RatchetSessionState` / `RatchetMessageKey` / `RatchetSkippedKey` / `RatchetDhKeyPair` 已在 drop 时通过 Zeroize/ZeroizeOnDrop 清零敏感密钥材料。
 - WASM/Web 调试 API 可创建测试状态对、推进发送/接收链、执行 DH step。
 
 待定义/实现：

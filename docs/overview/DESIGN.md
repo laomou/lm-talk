@@ -269,6 +269,16 @@ lm-talk/
     lm_node/
       src/
         lib.rs
+        kademlia.rs
+        mailbox.rs
+        prekey_store.rs
+        config.rs
+        control.rs
+        main.rs
+        metrics.rs
+        dht_runner.rs
+        state_db.rs
+        control_server.rs
 
   apps/
     web/
@@ -338,7 +348,7 @@ UserID = hash(identity_public_key)
 8. 恢复成功
 ```
 
-浏览器 WASM 当前为可用性保留一个 `lm-identity-backup-v1:wasm-local:` 备份子格式：身份种子仍由 Web RNG 生成，备份加密使用归一化提示词参与的 wasm-local key derivation 和 AEAD；native/core 的标准导出备份继续使用 Argon2id。浏览器路径暂不把 Argon2id 作为上线阻塞项，后续生产级 Web 备份方案需要单独评估性能、兼容性和参数。
+浏览器 WASM 当前为可用性保留一个 `lm-identity-backup-v1:wasm-local:` 备份子格式：身份种子仍由 Web RNG 生成，备份加密使用归一化提示词参与的 wasm-local key derivation（PBKDF2-HMAC-SHA256，600k 迭代）和 AEAD；native/core 的标准导出备份继续使用 Argon2id。浏览器路径暂不把 Argon2id 作为上线阻塞项，后续生产级 Web 备份方案需要单独评估性能、兼容性和参数。
 
 ---
 
@@ -731,6 +741,8 @@ Sender Key 或 MLS
   "ciphertext": "base64..."
 }
 ```
+
+消息 Envelope（`DirectEnvelope` / `RatchetEnvelope`）现在会校验 `created_at`：拒绝早于 7 天或超过未来 5 分钟的消息，降低重放和时钟异常风险。
 
 ---
 
@@ -1224,6 +1236,8 @@ pub struct OutboxItem {
 4. 超过 expires_at 后标记 Expired
 ```
 
+`Outbox::purge_completed()` 可对终态（已发送/过期等）条目做垃圾回收，避免 outbox 无界增长。
+
 ---
 
 ## 15. 本地存储设计
@@ -1441,6 +1455,8 @@ parallelism = 1
 salt = random 32 bytes
 ```
 
+浏览器 WASM 的 `wasm-local` 备份子格式 KDF 已从单次 SHA-256 升级为 PBKDF2-HMAC-SHA256（600k 迭代）；生产级 Web 备份是否恢复 Argon2id 仍需单独评估。
+
 ---
 
 ### 17.2 AEAD
@@ -1495,6 +1511,8 @@ Rust WASM 需要正确配置 `getrandom` 的 JS 支持。
 - 不在日志中打印私钥
 - 不在 Debug 输出敏感字段
 - release 模式关闭敏感日志
+
+当前进展：Identity 的 SigningKey 和 X25519Secret 已在 drop 时清零（已在 ed25519-dalek / x25519-dalek 上启用 zeroize feature）；Double Ratchet 的 `RatchetSessionState` / `RatchetMessageKey` / `RatchetSkippedKey` / `RatchetDhKeyPair` 也通过 Zeroize/ZeroizeOnDrop 在 drop 时清零密钥材料。
 
 ---
 
@@ -1934,6 +1952,7 @@ Public Peer：
 - 每个群成员可以为某个群生成自己的 Sender Key chain。
 - Sender Key Distribution 由发送者身份签名。
 - 群消息使用 Sender Key chain 派生 message key，经 XChaCha20-Poly1305 加密。
+- `GroupSenderKeyState` 会缓存乱序到达的 skipped message keys（上限 256），支持乱序投递，不再破坏性地快进链条。
 - Web 群聊在本群存在自己的 Sender Key 时优先生成 Sender Envelope，否则回退 pairwise fanout。
 
 限制：当前 Sender Key 仍需手动分发 distribution；成员变更后的 key rotation、管理员权限、MLS 树更新还未实现。
