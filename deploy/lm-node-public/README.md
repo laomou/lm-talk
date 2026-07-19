@@ -8,9 +8,8 @@ This directory is a minimal self-hosted `lm_node` deployment for a public Mailbo
 - `docker-compose.yml` runs one `lm_node` service behind a Caddy HTTPS reverse proxy.
 - `Caddyfile.example` is a TLS reverse-proxy starter config.
 - `config.example.json` is a hardened starter config with:
-  - persistent SQLite state under `/data`;
-  - `state_db_encryption_mode = external` and `state_db_require_encryption = true` so operators must provide encrypted disk/volume storage;
-  - encrypted JSON `state_file` fallback using a passphrase file;
+  - persistent plaintext SQLite state under `/data` (at-rest protection via full-disk encryption / LUKS/dm-crypt);
+  - JSON `state_file` snapshot fallback with hardened file permissions;
   - bearer-token control auth;
   - mailbox quotas and rate limits;
   - JSON logs.
@@ -24,15 +23,6 @@ cd deploy/lm-node-public
 ./install.sh \
   --domain lm-node.example.com \
   --web-origin https://YOUR_GITHUB_USER.github.io
-```
-
-For SQLCipher-enabled database encryption:
-
-```bash
-./install.sh \
-  --domain lm-node.example.com \
-  --web-origin https://YOUR_GITHUB_USER.github.io \
-  --sqlcipher
 ```
 
 Verify the deployed node:
@@ -51,9 +41,7 @@ cp config.example.json config.json
 cp Caddyfile.example Caddyfile
 mkdir -p secrets
 openssl rand -base64 32 > secrets/control-token
-openssl rand -base64 32 > secrets/state-file-passphrase
-openssl rand -base64 32 > secrets/state-db-passphrase
-chmod 600 secrets/control-token secrets/state-file-passphrase secrets/state-db-passphrase
+chmod 600 secrets/control-token
 # Edit config.json: peer_id and cors_allow_origins.
 # Edit Caddyfile: replace lm-node.example.com with your node domain.
 docker compose up -d --build
@@ -62,7 +50,7 @@ docker compose up -d --build
 ## Production notes
 
 - The compose template includes Caddy for TLS. Keep port `8787` internal unless you are deploying behind another HTTPS reverse proxy. Do not expose plaintext HTTP to browsers on the public internet.
-- Use an encrypted disk/volume for `/data` when `state_db_encryption_mode = external`. For database-level encryption, set `LM_NODE_CARGO_FEATURES=sqlcipher`, change `state_db_encryption_mode` to `sqlcipher`, and keep `state_db_passphrase_file` mounted from `secrets/state-db-passphrase`.
+- Use a full-disk-encrypted disk/volume (LUKS/dm-crypt) for `/data` to protect the plaintext `state_db` at rest.
 - Keep `control_token_file` secret and rotate it using `control_previous_tokens` if needed.
 - Add other public nodes to `sync_peers` for state snapshot replication.
 - Set `cors_allow_origins` to the exact Web origin(s), not `*`.
@@ -82,18 +70,3 @@ For multiple public nodes, add peers to each node's `sync_peers` list:
 ```
 
 Use distinct control tokens per peer where possible. Snapshot sync copies public peers, DHT records, mailbox deliveries, PreKey bundles, and consumed one-time-prekey state according to the current node sync implementation.
-
-
-## Optional SQLCipher build
-
-The Dockerfile accepts `CARGO_FEATURES`. To build with bundled SQLCipher + vendored OpenSSL:
-
-```bash
-LM_NODE_CARGO_FEATURES=sqlcipher docker compose build --no-cache lm-node
-# Then edit config.json:
-#   "state_db_encryption_mode": "sqlcipher"
-# Keep state_db_passphrase_file pointing at /run/secrets/state-db-passphrase.
-docker compose up -d
-```
-
-With `sqlcipher` enabled, startup fails closed if the passphrase file is missing or the linked SQLite library does not expose `PRAGMA cipher_version`.

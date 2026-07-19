@@ -56,7 +56,7 @@ LM Talk 旨在提供：
 - PublicPeer、PreKey、MailboxHint 和 ContactCard 的 DHT 记录验证。
 - Kademlia 距离/查询逻辑、更近节点过滤、对等节点健康/隔离、污染记录拒绝和复制/路由刷新计划。
 - 快照导入/导出合并语义和 sync_peer token 处理。
-- SQLite `state_db` 模式、WAL/同步/忙超时/FK pragmas、权限、SQLCipher 提供器、fail-closed 加密持久化、错误口令拒绝和指标。
+- SQLite `state_db` 模式（明文）、WAL/同步/忙超时/FK pragmas 和权限。
 - JSON `state_file` 加密、口令文件权限、迁移/Fail-closed 行为和兼容性风险。
 - OpenMetrics 输出正确性以及无敏感载荷泄露。
 - 发布/联邦 smoke 测试使用的 CLI 辅助工具。
@@ -66,8 +66,8 @@ LM Talk 旨在提供：
 审查：
 
 - `deploy/lm-node-public` 和 `deploy/lm-node-federation` 模板、Caddy TLS 代理配置、secret 挂载、CORS 来源、暴露端口和加密卷假设。
-- `release-node.yml` 产物构建矩阵、SQLCipher Linux 产物、发布说明、校验和生成和 `RELEASE_INFO.txt` 特性标记。
-- 手动 SQLCipher smoke、联邦 smoke/混沌/负载报告产物。
+- `release-node.yml` 产物构建矩阵、发布说明、校验和生成和 `RELEASE_INFO.txt` 特性标记。
+- 联邦 smoke/混沌/负载报告产物。
 - macOS 公证和 Windows 代码签名缺口。
 
 ## 威胁模型关注点
@@ -81,7 +81,7 @@ LM Talk 旨在提供：
 - 从封闭每设备槽到旧版/回退信封的降级。
 - 污染 DHT 记录和恶意更近节点响应。
 - 浏览器本地妥协（未达到实时密钥提取）。
-- 原生节点磁盘妥协，使用和不使用 SQLCipher/外部磁盘加密。
+- 原生节点磁盘妥协（state_db 为明文，依赖整盘加密）。
 - 令牌泄露或薄弱的 CORS/控制面部署。
 - 通过 Mailbox/DHT/控制面请求的资源耗尽。
 
@@ -102,7 +102,6 @@ LM Talk 旨在提供：
 
 - 针对准确发布的已完成 `docs/RELEASE_EVIDENCE.md`。
 - `./scripts/release-check.sh full` 输出。
-- SQLCipher smoke/部署产物，显示加密状态 DB 指标和错误口令失败。
 - 联邦 `run-all.sh` 报告和公网部署拓扑。
 - 包含语料/崩溃产物和分类笔记的 fuzz 活动报告。
 - 外部审计报告和修复提交。

@@ -7,7 +7,7 @@
 运行至少三个公共 `lm_node` 实例，提供：
 
 - HTTPS 控制面 / Mailbox / DHT 端点。
-- SQLCipher 加密的 `state_db`，或明确接受的外部加密存储。
+- 明文 `state_db` 存储，磁盘静态保护由整盘加密（LUKS/dm-crypt）承担。
 - 跨节点快照同步。
 - ContactCard、PreKey、MailboxHint 和 PublicPeer 记录的 DHT 发布/查找。
 - 跨节点 Mailbox 推送/取回/确认。
@@ -31,9 +31,6 @@
 - [ ] 每个节点使用唯一 `peer_id`。
 - [ ] 每个节点使用唯一控制令牌。
 - [ ] 可能时为不同同步对等节点配置不同的令牌。
-- [ ] SQLCipher 部署使用 `state_db_encryption_mode=sqlcipher`，或记录外部加密卷例外。
-- [ ] `state_db_passphrase_file` 存在，且不是符号链接，权限为 `0600`。
-- [ ] 如果配置了 `state_file`，则 `state_file_passphrase_file` 存在且权限为 `0600`。
 - [ ] `/data` 持久卷已备份并受监控。
 - [ ] 主机防火墙仅公开 `80/443`；`8787` 通过反向代理私有访问。
 
@@ -44,8 +41,6 @@
 
 ```bash
 openssl rand -base64 32 > secrets/control-token
-openssl rand -base64 32 > secrets/state-file-passphrase
-openssl rand -base64 32 > secrets/state-db-passphrase
 chmod 600 secrets/*
 ```
 
@@ -56,9 +51,6 @@ chmod 600 secrets/*
   "bind": "0.0.0.0:8787",
   "peer_id": "node-a",
   "state_db": "/data/lm-node.sqlite3",
-  "state_db_encryption_mode": "sqlcipher",
-  "state_db_passphrase_file": "/run/secrets/state-db-passphrase",
-  "state_db_require_encryption": true,
   "control_token_file": "/run/secrets/control-token",
   "cors_allow_origins": ["https://YOUR_WEB_ORIGIN"],
   "sync_peers": [
@@ -68,13 +60,7 @@ chmod 600 secrets/*
 }
 ```
 
-4. 在需要时构建 SQLCipher 二进制：
-
-```bash
-LM_NODE_CARGO_FEATURES=sqlcipher docker compose build --no-cache lm-node
-```
-
-5. 启动：
+4. 启动：
 
 ```bash
 docker compose up -d
@@ -101,14 +87,6 @@ curl -fsS -H "authorization: Bearer $TOKEN_A" "$NODE_A/control/stats" | tee node
 curl -fsS -H "authorization: Bearer $TOKEN_A" "$NODE_A/control/metrics" | tee node-a-metrics.txt
 ```
 
-SQLCipher 证据：
-
-```bash
-jq '.state_db.encryption_mode, .state_db.encrypted' node-a-stats.json
-grep 'lm_node_state_db_encrypted 1' node-a-metrics.txt
-grep 'lm_node_state_db_encryption_mode{mode="sqlcipher"} 1' node-a-metrics.txt
-```
-
 DHT 维护：
 
 ```bash
@@ -133,7 +111,6 @@ curl -fsS -H "authorization: Bearer $TOKEN_B" "$NODE_B/sync/status" | tee node-b
 - 每个节点的反向代理配置。
 - 每个节点的 `/health` 输出。
 - 每个节点的 `/control/stats` 和 `/control/metrics`。
-- 每个使用 SQLCipher 节点的 SQLCipher 加密状态 DB 证明。
 - DHT 维护输出。
 - 快照导出/导入输出。
 - Mailbox 推送/取回/确认演练输出。
@@ -169,7 +146,6 @@ curl -fsS -H "authorization: Bearer $TOKEN_B" "$NODE_B/sync/status" | tee node-b
 
 - 任何节点缺少 HTTPS。
 - 任何控制端点接受未经认证的非健康请求。
-- 预期启用 SQLCipher, 但指标未显示 `state_db_encrypted 1`。
 - 节点间快照同步失败。
 - 跨节点 Mailbox 推送/取回失败。
 - DHT ContactCard/PreKey 发布/查找跨节点失败。
@@ -182,7 +158,6 @@ curl -fsS -H "authorization: Bearer $TOKEN_B" "$NODE_B/sync/status" | tee node-b
 | 节点 A 统计/指标 |  |  |  |
 | 节点 B 统计/指标 |  |  |  |
 | 节点 C 统计/指标 |  |  |  |
-| SQLCipher 证明 |  |  |  |
 | DHT 发布/查找 |  |  |  |
 | Mailbox 推送/取回/确认 |  |  |  |
 | 故障恢复 |  |  |  |

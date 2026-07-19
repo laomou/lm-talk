@@ -17,8 +17,6 @@ cd deploy/lm-node-federation
 mkdir -p secrets
 for n in a b c; do
   openssl rand -base64 32 > "secrets/node-$n-token"
-  openssl rand -base64 32 > "secrets/state-file-passphrase-$n"
-  openssl rand -base64 32 > "secrets/state-db-passphrase-$n"
 done
 chmod 600 secrets/*
 docker compose up -d --build
@@ -35,9 +33,8 @@ For real public nodes:
 
 1. Replace the `Caddyfile.*` `:80` sites with real HTTPS hostnames.
 2. Update each `sync_peers[].url` to the public HTTPS URL of the peer.
-3. Use unique peer IDs, unique tokens, and encrypted persistent volumes.
-4. Use `state_db_encryption_mode = external` with encrypted volumes, or build with `LM_NODE_CARGO_FEATURES=sqlcipher` and switch each node config to `state_db_encryption_mode = sqlcipher` for database-level encryption testing.
-5. Set `cors_allow_origins` to your deployed Web origins.
+3. Use unique peer IDs, unique tokens, and full-disk-encrypted persistent volumes (LUKS/dm-crypt) for at-rest protection of the plaintext `state_db`.
+4. Set `cors_allow_origins` to your deployed Web origins.
 
 This template is for federation/bootstrap testing. Run long-lived nodes with monitoring on `/health`, `/control/stats`, and `/control/metrics`.
 

@@ -50,20 +50,19 @@
 当推送匹配 `v*` 的 Git 标签，或手动触发具有标签名的工作流时，`.github/workflows/release-node.yml` 会构建发布原生 `lm_node` 二进制包。工作流会构建并发布：
 
 - `lm_node-linux-x86_64.tar.gz`
-- `lm_node-linux-x86_64-sqlcipher.tar.gz`
 - `lm_node-macos-x86_64.tar.gz`
 - `lm_node-macos-arm64.tar.gz`
 - `lm_node-windows-x86_64.zip`
 
 每个归档都包含 `lm_node` 二进制、关键部署/安全文档和 `RELEASE_INFO.txt`，其中记录源码提交、构建时间、Rust 工具链详情和二进制 SHA256。GitHub Release 还包括每个产物的 `.sha256` 文件和合并的 `SHA256SUMS.txt`。
 
-发布工作流完成后，在分享标签前验证已发布产物和 SQLCipher 发布 smoke 证据：
+发布工作流完成后，在分享标签前验证已发布产物：
 
 ```bash
 ./scripts/release-verify.sh v0.1.0
 ```
 
-该命令会下载发布产物，验证 `SHA256SUMS.txt`，验证每个平台的 `.sha256` 文件，并检查归档的 SQLCipher smoke 报告是否证明 SQLCipher 产物的 `state_db` 指标已加密。
+该命令会下载发布产物，验证 `SHA256SUMS.txt`，并验证每个平台的 `.sha256` 文件。
 
 若要将已发布产物验证纳入自动化证据包：
 
@@ -71,7 +70,7 @@
 RUN_RELEASE_ASSET_VERIFY=1 RELEASE_TAG_VERIFY=v0.1.0 RELEASE_VERSION=v0.1.0 ./scripts/release-preprod.sh
 ```
 
-证据采集器会将 `release-asset-verify-report.json` 与常规的 release-check、fuzz、SQLCipher、联邦和风险登记门禁报告一起归档。
+证据采集器会将 `release-asset-verify-report.json` 与常规的 release-check、fuzz、联邦和风险登记门禁报告一起归档。
 
 从当前提交剪切发布候选版本：
 
@@ -101,22 +100,21 @@ python3 scripts/release-package.py \
 - 具有已保存语料库和崩溃分类的长时 fuzz 活动，超出 harness 编译检查。
 - 真实网络混沌/负载测试：延迟、丢包、重连、畸形/恶意节点、持续 Mailbox/DHT 负载。
 - 对核心密码学、Web/WASM 绑定、节点控制面和部署指南的外部安全审计。
-- 原生节点 SQLCipher 数据库加密由 `lm_node/sqlcipher` 功能实现并由 `./scripts/check-sqlcipher.sh` 覆盖；在生产就绪发布前，必须归档 release workflow 的 `lm_node-linux-x86_64-sqlcipher-smoke` 产物，或等效部署运行，证明所选发布产物已用 `sqlcipher` 构建、以 `state_db_encryption_mode=sqlcipher` 启动，并报告已加密的 state DB 指标。JSON `state_file` 仅作为兼容/快照路径。
+- 原生节点 `state_db` 为明文 SQLite，磁盘静态保护由整盘加密（LUKS/dm-crypt）承担；JSON `state_file` 仅作为兼容/快照路径。
 - 超出备份合并启发式的多设备同步与回执状态协调。
 
 ## 发布候选证据保留
 
 每个发布候选应使用 `docs/RELEASE_EVIDENCE.md` 作为结构化证据索引。
 
-在称某个节点构建为生产就绪前，还应为任何配置的状态持久化模式归档证据：
+在称某个节点构建为生产就绪前，还应为任何配置的状态持久化路径归档证据：
 
-- `state_db`：`./scripts/check-sqlcipher.sh` 输出以及 release workflow 中的 `lm_node-linux-x86_64-sqlcipher-smoke` 产物（或等效部署证据），其中包含 `/control/stats` 和 `/control/metrics` 检查结果，确认 `state_db.encryption_mode=sqlcipher`、`state_db_encrypted=true`，以及 `lm_node_state_db_encrypted 1` 对应于该发布产物/配置。
-- `state_file`：`/control/stats` 和 `/control/metrics` 显示 `state_file.encrypted=true` / `lm_node_state_file_encrypted 1`，并且 `state_file.permissions_hardened=true`；同时保留密码文件权限检查证据。
+- `state_db`：明文 SQLite；归档 `/control/stats` 和 `/control/metrics` 检查结果，确认 `state_db_permissions_hardened=true` / `lm_node_state_db_permissions_hardened 1`，并记录磁盘静态保护由整盘加密（LUKS/dm-crypt）承担。
+- `state_file`：`/control/stats` 和 `/control/metrics` 显示 `state_file.permissions_hardened=true` / `lm_node_state_file_permissions_hardened 1`；同时保留文件权限检查证据。
 
 每个发布候选还应归档：
 
 - `./scripts/release-check.sh full` 的输出。
-- `./scripts/check-sqlcipher.sh` 的输出/产物、手动 SQLCipher Smoke 工作流和 release workflow 的 `lm_node-linux-x86_64-sqlcipher-smoke` 产物（如果 SQLCipher state DB 加密属于该发布）。
 - fuzz 活动命令、持续时间、语料/崩溃产物和分类笔记。使用 `./scripts/fuzz-campaign.sh` 生成 JSON 活动报告以及每个目标的日志/语料/产物目录。
 - 网络/负载测试报告和拓扑。
 - 安全审计包（`docs/EXTERNAL_AUDIT_PACKET.md`）、审计报告和修复说明。

@@ -1670,7 +1670,7 @@ MVP 不做：
 
 仍需补齐：
 
-- SQLCipher 或其他加密数据库；当前 SQLite state_db 未做数据库级加密，高敏部署应依赖磁盘加密或后续 SQLCipher。
+- 节点 state_db 按设计使用明文 SQLite；数据库级加密被评估为 security theater，因为离线消息已是端到端密文、prekey/public-peer/DHT 记录本就公开，磁盘保护依赖整盘加密（LUKS/dm-crypt）。
 - 真正 DHT 节点发现、传输层 RPC 执行、远端记录复制和定时 routing table refresh。
 - 后续将 control-peer DHT replication scaffold 升级为按 closest-k target 选择远端，并为开放传输层返回节点补充可携带 identity public key 的端到端签名校验。
 - WebRTC signaling、relay/TURN 替代能力。
@@ -1923,7 +1923,7 @@ Public Peer：
 
 存储：
   Web 使用 IndexedDB。
-  Native node 当前使用 SQLite state_db；SQLCipher 或等价数据库加密仍是后续增强。
+  Native node 使用明文 SQLite state_db；磁盘保护依赖整盘加密。
   数据只存本地。
 ```
 

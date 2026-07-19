@@ -17,7 +17,6 @@ Node options:
   --config-file PATH      JSON config for lm_node serve-control
   --bind HOST:PORT
   --state-db PATH         default: ./lm-node-state.prd.sqlite3 unless --config-file is used
-  --state-db-require-encryption true|false fail closed if DB encryption is required (needs a sqlcipher build)
   --state-file PATH       optional legacy JSON snapshot state file
   --peer-id ID            default: lm-node-prd
   --control-token TOKEN   require Authorization: Bearer TOKEN for non-health APIs
@@ -81,8 +80,6 @@ state_file="$ROOT/lm-node-state.prd.json"
 state_file_set=0
 state_db="$ROOT/lm-node-state.prd.sqlite3"
 state_db_set=0
-state_db_require_encryption="${LM_NODE_STATE_DB_REQUIRE_ENCRYPTION:-false}"
-state_db_require_encryption_set=$([[ -n "${LM_NODE_STATE_DB_REQUIRE_ENCRYPTION:-}" ]] && echo 1 || echo 0)
 peer_id="lm-node-prd"
 peer_id_set=0
 control_token="${LM_NODE_CONTROL_TOKEN:-}"
@@ -119,7 +116,6 @@ while [[ $# -gt 0 ]]; do
     --ipv6) bind="[::]:8787"; bind_set=1; shift ;;
     --bind) bind="${2:?--bind requires HOST:PORT}"; bind_set=1; shift 2 ;;
     --state-db) state_db="${2:?--state-db requires PATH}"; state_db_set=1; shift 2 ;;
-    --state-db-require-encryption) state_db_require_encryption="${2:?--state-db-require-encryption requires true|false}"; state_db_require_encryption_set=1; shift 2 ;;
     --state-file) state_file="${2:?--state-file requires PATH}"; state_file_set=1; shift 2 ;;
     --peer-id) peer_id="${2:?--peer-id requires ID}"; peer_id_set=1; shift 2 ;;
     --control-token) control_token="${2:?--control-token requires TOKEN}"; shift 2 ;;
@@ -190,12 +186,6 @@ fi
 if [[ -z "$config_file" || "$state_db_set" == "1" ]]; then
   echo "状态数据库：$state_db"
 fi
-if [[ "$state_db_require_encryption" == "true" ]]; then
-  echo "状态数据库加密要求：required（当前 lm_node plain SQLite 会拒绝启动）"
-fi
-if [[ -z "$config_file" || "$state_db_require_encryption_set" == "1" ]]; then
-  args+=(--state-db-require-encryption "$state_db_require_encryption")
-fi
 if [[ "$state_file_set" == "1" ]]; then
   echo "兼容 JSON 状态文件：$state_file"
 fi
@@ -245,9 +235,6 @@ if [[ -z "$config_file" || "$peer_id_set" == "1" ]]; then
 fi
 if [[ -z "$config_file" || "$state_db_set" == "1" ]]; then
   args+=(--state-db "$state_db")
-fi
-if [[ -z "$config_file" || "$state_db_require_encryption_set" == "1" ]]; then
-  args+=(--state-db-require-encryption "$state_db_require_encryption")
 fi
 if [[ "$state_file_set" == "1" ]]; then
   args+=(--state-file "$state_file")

@@ -17,8 +17,6 @@
 | 完整发布检查 | `./scripts/release-check.sh full` 输出 |  |  |
 | 依赖审计 | `./scripts/check-audit.sh` / CI `dependency-audit` 日志 |  |  |
 | 依赖风险复核 | 已审查 `docs/DEPENDENCY_RISK_REVIEW.md`；活动审计例外已说明 |  |  |
-| SQLCipher smoke | `./scripts/check-sqlcipher.sh` 或 SQLCipher Smoke 工作流产物 |  |  |
-| SQLCipher 发布二进制 smoke | 发布工作流中的 `lm_node-linux-x86_64-sqlcipher-smoke` 产物 |  |  |
 | 联邦验证 | `tests/deploy/lm-node-federation/run-all.sh` 生成的 `federation-report.json` 或工作流产物 |  |  |
 | 测试向量覆盖 | `cargo test -p lm_core --test test_vectors` 并审查 `docs/TEST_VECTOR_COVERAGE.md` 中的高优先级缺口 |  |  |
 | Fuzz smoke | `FUZZ_SMOKE_REPORT=fuzz-smoke-report.json ./scripts/fuzz-smoke.sh` 输出/报告或 `./scripts/release-check.sh fuzz-smoke` 日志 |  |  |
@@ -29,20 +27,17 @@
 | 产物 | 预期证据 | SHA256 / 链接 | 状态 |
 | --- | --- | --- | --- |
 | `lm_node-linux-x86_64.tar.gz` | `RELEASE_INFO.txt`、`.sha256` |  |  |
-| `lm_node-linux-x86_64-sqlcipher.tar.gz` | 包含 `sqlcipher_enabled=true` 的 `RELEASE_INFO.txt`、`.sha256`、SQLCipher smoke 产物 |  |  |
 | `lm_node-macos-x86_64.tar.gz` | `RELEASE_INFO.txt`、`.sha256` |  |  |
 | `lm_node-macos-arm64.tar.gz` | `RELEASE_INFO.txt`、`.sha256` |  |  |
 | `lm_node-windows-x86_64.zip` | `RELEASE_INFO.txt`、`.sha256` |  |  |
 | `SHA256SUMS.txt` | 合并校验和文件 |  |  |
 
-## 持久化 / 加密证据
+## 持久化证据
 
 | 模式 | 所需证明 | 产物/链接 | 状态 |
 | --- | --- | --- | --- |
-| SQLCipher `state_db` | `/control/stats` 显示 `state_db.encryption_mode=sqlcipher` 和 `state_db.encrypted=true` |  |  |
-| SQLCipher 指标 | `/control/metrics` 包含 `lm_node_state_db_encrypted 1` 和 `lm_node_state_db_encryption_mode{mode="sqlcipher"} 1` |  |  |
-| 错误密码短语 fail-closed | `sqlcipher-deploy-smoke.sh` 错误密码检查 |  |  |
-| 加密 `state_file`（如使用） | stats/metrics 显示加密且权限已加固 |  |  |
+| 明文 `state_db` | `/control/stats` 与 `/control/metrics` 显示 `state_db_permissions_hardened=true` / `lm_node_state_db_permissions_hardened 1`；磁盘静态保护由整盘加密（LUKS/dm-crypt）承担 |  |  |
+| `state_file`（如使用） | stats/metrics 显示 `state_file_permissions_hardened=true` / `lm_node_state_file_permissions_hardened 1`，并保留文件权限检查证据 |  |  |
 
 ## 网络 / 联邦证据
 
@@ -103,7 +98,7 @@ RELEASE_VERSION=preprod-local ./scripts/release-preprod.sh
 可选参数：
 
 ```bash
-RUN_FULL=0 RUN_FUZZ_SMOKE=1 RUN_SQLCIPHER=1 ./scripts/release-preprod.sh
+RUN_FULL=0 RUN_FUZZ_SMOKE=1 ./scripts/release-preprod.sh
 RUN_FUZZ_CAMPAIGN=1 FUZZ_CAMPAIGN_DURATION=3600 ./scripts/release-preprod.sh
 RUN_FEDERATION=1 ./scripts/release-preprod.sh
 ```

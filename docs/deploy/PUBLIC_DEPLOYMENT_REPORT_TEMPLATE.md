@@ -11,15 +11,14 @@
 - 提交 SHA：
 - Web 来源：
 - 节点产物：
-- 使用的 SQLCipher 产物：是/否
 
 ## 拓扑
 
-| 节点 | 域名 | 区域/供应商 | Peer ID | 角色 | 版本/提交 | SQLCipher 模式 | 备注 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| A |  |  |  | bootstrap + DHT + mailbox |  |  |  |
-| B |  |  |  | DHT + mailbox |  |  |  |
-| C |  |  |  | DHT + mailbox |  |  |  |
+| 节点 | 域名 | 区域/供应商 | Peer ID | 角色 | 版本/提交 | 备注 |
+| --- | --- | --- | --- | --- | --- | --- |
+| A |  |  |  | bootstrap + DHT + mailbox |  |  |
+| B |  |  |  | DHT + mailbox |  |  |
+| C |  |  |  | DHT + mailbox |  |  |
 
 ## 配置证据
 
@@ -48,23 +47,6 @@
 - [ ] 仅 `/health` 为未认证访问。
 - [ ] 未提供或错误的 Bearer token 时，认证端点被拒绝。
 - [ ] 指标中不包含明文消息、身份备份、令牌或解密载荷。
-
-## SQLCipher / 持久化证据
-
-对于每个使用 SQLCipher 的节点：
-
-| 节点 | `state_db.encryption_mode` | `state_db.encrypted` | `lm_node_state_db_encrypted` | 错误密码测试 | 状态 |
-| --- | --- | --- | --- | --- | --- |
-| A |  |  |  |  |  |
-| B |  |  |  |  |  |
-| C |  |  |  |  |  |
-
-附上：
-
-- [ ] `sqlcipher-deploy-smoke.log` 或等效输出
-- [ ] `/control/stats` 证据
-- [ ] `/control/metrics` 证据
-- [ ] 错误密码 fail-closed 输出
 
 ## DHT 验证
 
@@ -134,4 +116,4 @@
 - 安全审核人签核：
 - UTC 日期/时间：
 
-若任何节点缺少 HTTPS、SQLCipher 证据缺失（对于 SQLCipher 部署）、跨节点 Mailbox 恢复失败、DHT ContactCard/PreKey 发现失败，或验证期间日志显示重复 panic，则部署报告作为生产证据为 **不通过**。
+若任何节点缺少 HTTPS、跨节点 Mailbox 恢复失败、DHT ContactCard/PreKey 发现失败，或验证期间日志显示重复 panic，则部署报告作为生产证据为 **不通过**。

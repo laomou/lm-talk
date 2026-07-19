@@ -38,31 +38,17 @@ health_ok=false
 stats_ok=false
 metrics_ok=false
 auth_ok=false
-state_db_encrypted=false
 
 if curl -fsS "$URL/health" > "$TMP_DIR/health.json"; then health_ok=true; fi
 if curl -fsS -H "authorization: Bearer $TOKEN" "$URL/control/stats" > "$TMP_DIR/stats.json"; then stats_ok=true; auth_ok=true; fi
 if curl -fsS -H "authorization: Bearer $TOKEN" "$URL/control/metrics" > "$TMP_DIR/metrics.txt"; then metrics_ok=true; fi
 
-if [[ "$stats_ok" == "true" ]]; then
-  state_db_encrypted="$(python3 - <<'PY' "$TMP_DIR/stats.json"
-import json, sys
-try:
-    stats=json.load(open(sys.argv[1]))
-    db=stats.get('state_db') or {}
-    print('true' if db.get('encrypted') is True or db.get('encryption_mode') in ('external','sqlcipher') else 'false')
-except Exception:
-    print('false')
-PY
-)"
-fi
-
 status=ok
 if [[ "$health_ok" != true || "$stats_ok" != true || "$metrics_ok" != true ]]; then status=failed; fi
 
-REPORT="$(python3 - <<'PY' "$URL" "$status" "$health_ok" "$auth_ok" "$stats_ok" "$metrics_ok" "$state_db_encrypted"
+REPORT="$(python3 - <<'PY' "$URL" "$status" "$health_ok" "$auth_ok" "$stats_ok" "$metrics_ok"
 import json, sys, time
-url,status,health,auth,stats,metrics,encrypted=sys.argv[1:]
+url,status,health,auth,stats,metrics=sys.argv[1:]
 print(json.dumps({
   'schema':'lm-node-public-verify-v1',
   'url':url,
@@ -73,7 +59,6 @@ print(json.dumps({
     'auth':auth=='true',
     'stats':stats=='true',
     'metrics':metrics=='true',
-    'state_db_encrypted_or_external':encrypted=='true',
   }
 }, indent=2))
 PY

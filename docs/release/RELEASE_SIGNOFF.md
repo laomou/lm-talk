@@ -19,8 +19,6 @@
 | 已完成的 `docs/RELEASE_EVIDENCE.md` 副本 |  |  |  |
 | `./scripts/release-check.sh full` 输出 |  |  |  |
 | 依赖审计 / 依赖复核 |  |  |  |
-| SQLCipher smoke 工作流产物 |  |  |  |
-| SQLCipher 发布二进制 smoke 产物 |  |  |  |
 | 联邦 `run-all.sh` 报告 |  |  |  |
 | 联邦 chaos/load 报告 |  |  |  |
 | Fuzz smoke 报告 |  |  |  |
@@ -55,7 +53,6 @@
 | 风险登记已审查：无未认领 Critical/High 风险 |  |  |
 | 已接受已知元数据泄露 |  |  |
 | 严格 E2EE 降级/回退策略已接受 |  |  |
-| SQLCipher 部署证据已接受 |  |  |
 | 令牌/CORS/部署指南已接受 |  |  |
 
 ## 运营签核
@@ -87,7 +84,6 @@
 1. 外部审计报告和修复评审。
 2. 长时 fuzz 活动报告和崩溃分类。
 3. 来自真实拓扑的联邦 chaos/load 证据。
-4. 当使用 state_db 时，SQLCipher 发布产物 smoke 证据。
-5. 生产桌面/原生分发的 macOS 公证 / Windows 签名证据。
-6. 已完成的发布证据索引。
-7. 已完成的风险登记，且无未认领的 open Critical/High 风险。
+4. 生产桌面/原生分发的 macOS 公证 / Windows 签名证据。
+5. 已完成的发布证据索引。
+6. 已完成的风险登记，且无未认领的 open Critical/High 风险。

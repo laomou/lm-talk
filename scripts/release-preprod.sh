@@ -9,7 +9,6 @@ EVIDENCE_DIR="${RELEASE_EVIDENCE_DIR:-$ROOT/release-evidence}"
 RUN_FULL="${RUN_FULL:-1}"
 RUN_FUZZ_SMOKE="${RUN_FUZZ_SMOKE:-1}"
 RUN_FUZZ_CAMPAIGN="${RUN_FUZZ_CAMPAIGN:-0}"
-RUN_SQLCIPHER="${RUN_SQLCIPHER:-1}"
 RUN_FEDERATION="${RUN_FEDERATION:-0}"
 RUN_RELEASE_ASSET_VERIFY="${RUN_RELEASE_ASSET_VERIFY:-0}"
 RUN_RISK_REGISTER_GATE="${RUN_RISK_REGISTER_GATE:-1}"
@@ -25,17 +24,6 @@ if [[ "$RUN_FULL" == "1" ]]; then
   ./scripts/release-check.sh full 2>&1 | tee "$ROOT/release-check.log"
 else
   echo "== release-check full skipped =="
-fi
-
-if [[ "$RUN_SQLCIPHER" == "1" ]]; then
-  echo "== sqlcipher smoke =="
-  ./scripts/check-sqlcipher.sh 2>&1 | tee "$ROOT/sqlcipher-smoke.log"
-  echo "== sqlcipher deploy smoke =="
-  LM_NODE_SQLCIPHER_SMOKE_REPORT="$ROOT/sqlcipher-smoke-report.json" \
-    LM_NODE_SQLCIPHER_SMOKE_LOG="$ROOT/sqlcipher-deploy-smoke.log" \
-    ./scripts/check-sqlcipher-deploy.sh 2>&1 | tee "$ROOT/sqlcipher-deploy-smoke.stdout.log"
-else
-  echo "== sqlcipher smoke skipped =="
 fi
 
 if [[ "$RUN_FUZZ_SMOKE" == "1" ]]; then

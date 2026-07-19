@@ -40,7 +40,6 @@
 
 - 优先删除未使用的依赖特性，而不是添加审计例外。
 - 保持 `libp2p` 特性最小：macros、noise、request-response、json、tcp、tokio、yamux。
-- 保持 SQLCipher 特性显式；除非发布策略更改，否则不要默认为所有产物启用。
 - 对于 Web 依赖，避免添加会执行不信任 HTML/markdown 或扩大浏览器权限面的运行时包，除非经过审查。
 - Dependabot PR 应包含 CI `dependency-review` 状态和安全相关发布说明影响。
 

@@ -28,7 +28,7 @@ src/
 ├── main.rs             (CLI dispatch + main())
 ├── cli.rs              (argument parsing, subcommands)
 ├── secrets.rs          (secret file read/validate, passphrase handling)
-├── state_db.rs         (SQLite open/init/load/save, StateDbEncryptionMode)
+├── state_db.rs         (SQLite open/init/load/save)
 ├── state_file.rs       (atomic write, file permissions, JSON state file I/O)
 ├── control_server.rs   (serve_control TCP loop, HTTP parsing, auth, CORS)
 ├── metrics.rs          (OpenMetrics text rendering, ControlRuntimeStats)

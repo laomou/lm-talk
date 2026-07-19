@@ -1836,7 +1836,6 @@ mod tests {
             body["mailbox_ack_id_max_bytes"],
             DEFAULT_MAX_MAILBOX_ACK_ID_BYTES
         );
-        assert_eq!(body["state_db_encrypted"], false);
         assert_eq!(body["state_db_permissions_hardened"], true);
         assert_eq!(body["libp2p_dht_rpc_request_max_bytes"], 1024 * 1024);
         assert_eq!(body["libp2p_dht_rpc_response_max_bytes"], 8 * 1024 * 1024);

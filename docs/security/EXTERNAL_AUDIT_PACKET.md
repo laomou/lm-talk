@@ -39,9 +39,9 @@
 | 核心密码/协议 | `crates/lm_core/src`, `test-vectors/`, `crates/lm_core/tests` | 身份、ContactCard、设备证书/撤销、X3DH、Double Ratchet、群组发送密钥、文件包、回执、过期/版本/大小检查。 |
 | WASM 桥接 | `crates/lm_wasm/src` | JS/WASM 边界验证、错误映射、密码学辅助暴露、每设备槽封装/打开。 |
 | Web 客户端 | `apps/web/src`, `apps/web/tests` | 严格 E2EE 预检、指纹/设备 UX、IndexedDB 加密、备份/导入、自同步、封闭槽降级阻断、本地删除/重新加密。 |
-| 原生节点 | `crates/lm_node/src` | 控制面解析/认证/限流、Mailbox/PreKey/DHT 行为、对等隔离、SQLCipher 提供器、指标、持久化恢复。 |
-| 联邦部署 | `deploy/lm-node-public`, `deploy/lm-node-federation` | TLS/Caddy 模板、密钥挂载、CORS 源、暴露端口、加密卷假设。 |
-| 发布供应链 | `.github/workflows`, `scripts/release-package.py`, `scripts/release-verify.sh`, `scripts/release-preprod.sh` | 跨平台构建、校验和、SQLCipher 产物证明、证据采集、依赖审计门禁。 |
+| 原生节点 | `crates/lm_node/src` | 控制面解析/认证/限流、Mailbox/PreKey/DHT 行为、对等隔离、指标、持久化恢复。 |
+| 联邦部署 | `deploy/lm-node-public`, `deploy/lm-node-federation` | TLS/Caddy 模板、密钥挂载、CORS 源、暴露端口、整盘加密卷假设。 |
+| 发布供应链 | `.github/workflows`, `scripts/release-package.py`, `scripts/release-verify.sh`, `scripts/release-preprod.sh` | 跨平台构建、校验和、证据采集、依赖审计门禁。 |
 
 ## 测试和证据命令
 
@@ -53,8 +53,6 @@
 ./scripts/release-risk-gate.sh
 FUZZ_SMOKE_REPORT=fuzz-smoke-report.json ./scripts/fuzz-smoke.sh
 FUZZ_CAMPAIGN_DURATION=3600 ./scripts/fuzz-campaign.sh
-./scripts/check-sqlcipher.sh
-./scripts/check-sqlcipher-deploy.sh
 RUN_RELEASE_ASSET_VERIFY=1 RELEASE_TAG_VERIFY=<tag> RELEASE_VERSION=<tag> ./scripts/release-preprod.sh
 ```
 
@@ -76,7 +74,6 @@ MESSAGE_COUNT=100 tests/deploy/lm-node-federation/load-smoke.sh
 - 是否重放、重排、重复、延迟、超大、畸形和过期对象被拒绝或安全处理？
 - 自同步是否保留信任/设备/撤销状态，而不复活陈旧或撤销设备？
 - 原生节点限额/限流是否防止实际未授权或令牌认证的资源耗尽？
-- SQLCipher 模式是否 fail-closed，并为确切发布产物报告可靠的加密状态指标？
 - 发布产物和依赖审计例外是否避免可达的供应链风险？
 
 ## 已知发布阻塞项待验证

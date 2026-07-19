@@ -1,5 +1,5 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use lm_core::{Identity, MailboxMessage, MailboxMessageKind, PublicPeerAnnounce, UserId, crypto};
+use lm_core::{Identity, MailboxMessage, MailboxMessageKind, PublicPeerAnnounce, UserId};
 use lm_node::{
     ConsumedOneTimePreKey, ControlRequest, DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES,
     DhtRecord, DhtRecordReplicationPlan, DhtRpcRequest, DhtRpcResponse, MailboxDelivery,
@@ -37,7 +37,6 @@ mod libp2p_transport;
 use libp2p_transport::*;
 
 const MAX_CONTROL_PEER_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
-const ENCRYPTED_STATE_FILE_PREFIX: &str = "lm-node-state-file-v1:";
 const CONTROL_PEER_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 const CONTROL_PEER_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const CONTROL_CLIENT_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -166,44 +165,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or_default();
             let peer_id = optional_arg(&args, "--peer-id")?.unwrap_or("lm-node-dev".into());
             let state_file = optional_arg(&args, "--state-file")?;
-            let state_file_passphrase_from_file = optional_secret_file_arg(
-                &args,
-                "--state-file-passphrase-file",
-                "LM_NODE_STATE_FILE_PASSPHRASE_FILE",
-                None,
-            )?;
-            install_state_file_passphrase_override(state_file_passphrase_from_file);
-            let state_file_require_encryption =
-                optional_arg(&args, "--state-file-require-encryption")?
-                    .or_else(|| env::var("LM_NODE_STATE_FILE_REQUIRE_ENCRYPTION").ok())
-                    .map(|value| value.parse::<bool>())
-                    .transpose()?
-                    .unwrap_or(false);
-            validate_state_file_encryption_requirement(
-                state_file_require_encryption,
-                state_file.as_deref(),
-            )?;
             let state_db = optional_arg(&args, "--state-db")?;
-            let state_db_encryption_mode = install_state_db_encryption_mode_override(
-                optional_arg(&args, "--state-db-encryption-mode")?,
-            )?;
-            let state_db_passphrase_from_file = optional_secret_file_arg(
-                &args,
-                "--state-db-passphrase-file",
-                "LM_NODE_STATE_DB_PASSPHRASE_FILE",
-                None,
-            )?;
-            install_state_db_passphrase_override(state_db_passphrase_from_file);
-            let state_db_require_encryption = optional_arg(&args, "--state-db-require-encryption")?
-                .or_else(|| env::var("LM_NODE_STATE_DB_REQUIRE_ENCRYPTION").ok())
-                .map(|value| value.parse::<bool>())
-                .transpose()?
-                .unwrap_or(false);
-            validate_state_db_encryption_requirement(
-                state_db_require_encryption,
-                state_db_encryption_mode,
-                state_db.as_deref(),
-            )?;
             let mut node = if let Some(path) = &state_db {
                 load_node_state_db_or_new(
                     path,
@@ -211,7 +173,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         peer_id: peer_id.clone(),
                         ..Default::default()
                     },
-                    state_db_encryption_mode,
                 )?
             } else if let Some(path) = &state_file {
                 load_node_state(path).unwrap_or_else(|_| {
@@ -259,47 +220,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .or(file_config.peer_id)
                 .unwrap_or("lm-node-dev".into());
             let state_file = optional_arg(&args, "--state-file")?.or(file_config.state_file);
-            let state_file_passphrase_from_file = optional_secret_file_arg(
-                &args,
-                "--state-file-passphrase-file",
-                "LM_NODE_STATE_FILE_PASSPHRASE_FILE",
-                file_config.state_file_passphrase_file,
-            )?;
-            install_state_file_passphrase_override(state_file_passphrase_from_file);
-            let state_file_require_encryption =
-                optional_arg(&args, "--state-file-require-encryption")?
-                    .or_else(|| env::var("LM_NODE_STATE_FILE_REQUIRE_ENCRYPTION").ok())
-                    .map(|value| value.parse::<bool>())
-                    .transpose()?
-                    .or(file_config.state_file_require_encryption)
-                    .unwrap_or(false);
-            validate_state_file_encryption_requirement(
-                state_file_require_encryption,
-                state_file.as_deref(),
-            )?;
             let state_db = optional_arg(&args, "--state-db")?.or(file_config.state_db);
-            let state_db_encryption_mode = install_state_db_encryption_mode_override(
-                optional_arg(&args, "--state-db-encryption-mode")?
-                    .or(file_config.state_db_encryption_mode),
-            )?;
-            let state_db_passphrase_from_file = optional_secret_file_arg(
-                &args,
-                "--state-db-passphrase-file",
-                "LM_NODE_STATE_DB_PASSPHRASE_FILE",
-                file_config.state_db_passphrase_file,
-            )?;
-            install_state_db_passphrase_override(state_db_passphrase_from_file);
-            let state_db_require_encryption = optional_arg(&args, "--state-db-require-encryption")?
-                .or_else(|| env::var("LM_NODE_STATE_DB_REQUIRE_ENCRYPTION").ok())
-                .map(|value| value.parse::<bool>())
-                .transpose()?
-                .or(file_config.state_db_require_encryption)
-                .unwrap_or(false);
-            validate_state_db_encryption_requirement(
-                state_db_require_encryption,
-                state_db_encryption_mode,
-                state_db.as_deref(),
-            )?;
             let sync_peer_token_direct = optional_arg(&args, "--sync-peer-token")?
                 .or_else(|| env::var("LM_NODE_SYNC_PEER_TOKEN").ok());
             let sync_peer_token_from_file = optional_secret_file_arg(
@@ -485,7 +406,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         dht_peer_quarantine_consecutive_failures,
                         ..Default::default()
                     },
-                    state_db_encryption_mode,
                 )?
             } else if let Some(path) = &state_file {
                 load_node_state(path).unwrap_or_else(|_| {
@@ -633,62 +553,6 @@ fn choose_secret(direct: Option<String>, file_value: Option<String>) -> Option<S
     direct.or(file_value)
 }
 
-fn install_state_file_passphrase_override(value: Option<String>) {
-    if let Some(value) = value {
-        // Safe here because this is called during single-threaded startup before
-        // the control/libp2p worker loops are spawned.
-        unsafe { std::env::set_var("LM_NODE_STATE_FILE_PASSPHRASE", value) }
-    }
-}
-
-fn install_state_db_passphrase_override(value: Option<String>) {
-    if let Some(value) = value {
-        // Safe here because this is called during single-threaded startup before
-        // the control/libp2p worker loops are spawned.
-        unsafe { std::env::set_var("LM_NODE_STATE_DB_PASSPHRASE", value) }
-    }
-}
-
-fn validate_state_file_encryption_requirement(
-    required: bool,
-    state_file: Option<&str>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if !required {
-        return Ok(());
-    }
-    let Some(path) = state_file else {
-        return Err("state_file encryption is required but no state_file is configured".into());
-    };
-    if state_file_passphrase()?.is_none() {
-        return Err("state_file encryption is required but no passphrase was provided via LM_NODE_STATE_FILE_PASSPHRASE, LM_NODE_STATE_FILE_PASSPHRASE_FILE, --state-file-passphrase-file, or config".into());
-    }
-    let path_ref = Path::new(path);
-    if path_ref.exists() {
-        let text = fs::read_to_string(path_ref)?;
-        if !text.trim().starts_with(ENCRYPTED_STATE_FILE_PREFIX) {
-            return Err("state_file encryption is required but existing state_file is plaintext; migrate by starting without require flag once with a passphrase, then enable require flag".into());
-        }
-    }
-    Ok(())
-}
-
-fn install_state_db_encryption_mode_override(
-    value: Option<String>,
-) -> Result<StateDbEncryptionMode, Box<dyn std::error::Error>> {
-    let mode = StateDbEncryptionMode::parse(
-        value.or_else(|| env::var("LM_NODE_STATE_DB_ENCRYPTION_MODE").ok()),
-    )?;
-    // Safe here because this is called during single-threaded startup before
-    // the control/libp2p worker loops are spawned.
-    unsafe { std::env::set_var("LM_NODE_STATE_DB_ENCRYPTION_MODE", mode.as_str()) };
-    Ok(mode)
-}
-
-fn state_db_encryption_mode() -> StateDbEncryptionMode {
-    StateDbEncryptionMode::parse(env::var("LM_NODE_STATE_DB_ENCRYPTION_MODE").ok())
-        .unwrap_or(StateDbEncryptionMode::Plain)
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SyncPeerConfig {
     url: String,
@@ -784,12 +648,7 @@ struct ServeControlConfigFile {
     bind: Option<String>,
     peer_id: Option<String>,
     state_file: Option<String>,
-    state_file_passphrase_file: Option<String>,
-    state_file_require_encryption: Option<bool>,
     state_db: Option<String>,
-    state_db_encryption_mode: Option<String>,
-    state_db_passphrase_file: Option<String>,
-    state_db_require_encryption: Option<bool>,
     control_token: Option<String>,
     control_token_file: Option<String>,
     control_previous_tokens: Option<Vec<String>>,
@@ -829,128 +688,26 @@ impl ServeControlConfigFile {
     }
 }
 
-fn state_file_passphrase() -> Result<Option<String>, Box<dyn std::error::Error>> {
-    if let Some(value) = env::var("LM_NODE_STATE_FILE_PASSPHRASE")
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-    {
-        return Ok(Some(value));
-    }
-    if let Ok(path) = env::var("LM_NODE_STATE_FILE_PASSPHRASE_FILE") {
-        let path = path.trim();
-        if !path.is_empty() {
-            return read_secret_file(path).map(Some);
-        }
-    }
-    Ok(None)
-}
-
-fn state_file_key(passphrase: &str) -> [u8; 32] {
-    let mut input = b"lm-node.state-file.v1".to_vec();
-    input.extend_from_slice(passphrase.as_bytes());
-    *blake3::hash(&input).as_bytes()
-}
-
-fn encrypt_state_file_text(
-    plaintext: &str,
-    passphrase: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let key = state_file_key(passphrase);
-    let mut nonce = [0u8; 24];
-    getrandom::getrandom(&mut nonce)?;
-    let ciphertext = crypto::xchacha20poly1305_encrypt(
-        &key,
-        &nonce,
-        plaintext.as_bytes(),
-        b"lm-node.state-file.v1",
-    )?;
-    Ok(format!(
-        "{}{}:{}",
-        ENCRYPTED_STATE_FILE_PREFIX,
-        BASE64.encode(nonce),
-        BASE64.encode(ciphertext)
-    ))
-}
-
-fn decrypt_state_file_text(
-    text: &str,
-    passphrase: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let rest = text
-        .trim()
-        .strip_prefix(ENCRYPTED_STATE_FILE_PREFIX)
-        .ok_or("not an encrypted state file")?;
-    let (nonce_text, ciphertext_text) = rest
-        .split_once(':')
-        .ok_or("invalid encrypted state file format")?;
-    let nonce: [u8; 24] = BASE64
-        .decode(nonce_text)?
-        .try_into()
-        .map_err(|_| "invalid encrypted state file nonce")?;
-    let ciphertext = BASE64.decode(ciphertext_text)?;
-    let key = state_file_key(passphrase);
-    let plaintext =
-        crypto::xchacha20poly1305_decrypt(&key, &nonce, &ciphertext, b"lm-node.state-file.v1")?;
-    Ok(String::from_utf8(plaintext)?)
-}
-
 fn load_node_state_db_or_new(
     path: &str,
     fallback_config: NodeConfig,
-    mode: StateDbEncryptionMode,
 ) -> Result<NativeNode, Box<dyn std::error::Error>> {
     match load_node_state_db(path) {
         Ok(node) => Ok(node),
-        Err(err)
-            if mode.requires_strict_open()
-                && Path::new(path).exists()
-                && !err.to_string().contains("no saved config") =>
-        {
-            Err(format!("failed to open encrypted state_db with configured provider: {err}").into())
-        }
         Err(_) => Ok(NativeNode::new(fallback_config)),
     }
 }
 
 fn load_node_state(path: &str) -> Result<NativeNode, Box<dyn std::error::Error>> {
     let text = fs::read_to_string(path)?;
-    let text = if text.starts_with(ENCRYPTED_STATE_FILE_PREFIX) {
-        let passphrase = state_file_passphrase()?
-            .ok_or("encrypted state_file requires LM_NODE_STATE_FILE_PASSPHRASE or LM_NODE_STATE_FILE_PASSPHRASE_FILE")?;
-        decrypt_state_file_text(&text, &passphrase)?
-    } else {
-        text
-    };
     let snapshot: NodeStateSnapshot = serde_json::from_str(&text)?;
     Ok(NativeNode::from_state_snapshot(snapshot))
 }
 
 fn save_node_state(path: &str, node: &NativeNode) -> Result<(), Box<dyn std::error::Error>> {
     let text = serde_json::to_string_pretty(&node.to_state_snapshot())?;
-    let text = match state_file_passphrase()? {
-        Some(passphrase) => encrypt_state_file_text(&text, &passphrase)?,
-        None => text,
-    };
     atomic_write_text(Path::new(path), &text)?;
     Ok(())
-}
-
-fn open_state_db_with_provider(
-    path: &str,
-    provider: StateDbEncryptionProvider,
-) -> Result<Connection, Box<dyn std::error::Error>> {
-    if let Some(parent) = Path::new(path)
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        fs::create_dir_all(parent)?;
-    }
-    let conn = Connection::open(path)?;
-    provider.apply_to_connection(&conn)?;
-    init_state_db(&conn)?;
-    set_state_db_private_permissions(Path::new(path))?;
-    Ok(conn)
 }
 
 fn state_db_stats_opt(path: Option<&str>) -> Option<StateDbStats> {
@@ -972,10 +729,8 @@ fn file_permissions_hardened(_path: &Path) -> bool {
 
 fn state_file_stats(path: &str) -> Result<StateFileStats, Box<dyn std::error::Error>> {
     let path_ref = Path::new(path);
-    let text = fs::read_to_string(path_ref)?;
     Ok(StateFileStats {
         file_bytes: fs::metadata(path_ref).map(|m| m.len()).unwrap_or(0),
-        encrypted: text.trim().starts_with(ENCRYPTED_STATE_FILE_PREFIX),
         permissions_hardened: file_permissions_hardened(path_ref),
     })
 }
@@ -1267,8 +1022,8 @@ Commands:\n  \
 announce --backup-file <file> --passphrase <text> [--peer-id <id>] [--addr <multiaddr,csv>] [--cap <bootstrap,dht,relay,mailbox>]\n  \
 inspect-public --text-file <file> --identity-public-key <base64>\n  \
 run [--peer-id <id>] [--addr <multiaddr>]\n  \
-serve-dht-libp2p [--listen <multiaddr>] [--bootstrap-peer <libp2p://multiaddr|peer_id,csv>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>] [--state-db-encryption-mode <plain|external>] [--state-db-passphrase-file <file>] [--state-db-require-encryption <true|false>]\n  \
-serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>] [--state-db-encryption-mode <plain|external>] [--state-db-passphrase-file <file>] [--state-db-require-encryption <true|false>] [--control-token <token>] [--control-previous-token <old-token,csv>] [--web-admin <dir-or-zip>] [--sync-peer <url,csv>] [--sync-interval-seconds <n>] [--dht-transport <http-control|libp2p>] [--dht-peer-quarantine-consecutive-failures <n>] [--rate-limit-window-seconds <n>] [--rate-limit-max-requests <n>] [--log-format <text|json>] [--mailbox-global-rate-limit-window-seconds <n>] [--mailbox-global-rate-limit-max-messages <n>] [--mailbox-sender-rate-limit-window-seconds <n>] [--mailbox-sender-rate-limit-max-messages <n>]\n"
+serve-dht-libp2p [--listen <multiaddr>] [--bootstrap-peer <libp2p://multiaddr|peer_id,csv>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>]\n  \
+serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>] [--control-token <token>] [--control-previous-token <old-token,csv>] [--web-admin <dir-or-zip>] [--sync-peer <url,csv>] [--sync-interval-seconds <n>] [--dht-transport <http-control|libp2p>] [--dht-peer-quarantine-consecutive-failures <n>] [--rate-limit-window-seconds <n>] [--rate-limit-max-requests <n>] [--log-format <text|json>] [--mailbox-global-rate-limit-window-seconds <n>] [--mailbox-global-rate-limit-max-messages <n>] [--mailbox-sender-rate-limit-window-seconds <n>] [--mailbox-sender-rate-limit-max-messages <n>]\n"
     );
 }
 
@@ -1279,23 +1034,22 @@ mod tests {
         ControlHttpResponse, ControlLogger, ControlRuntimeStats, ControlSecurityConfig,
         DEFAULT_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES, DhtFindValueRunStats,
         DhtReplicationRunStats, DhtRoutingRefreshRunStats, DhtRunnerConfig, DhtTransport,
-        DhtTransportKind, ENCRYPTED_STATE_FILE_PREFIX, LogFormat, MAX_CONTROL_PEER_RESPONSE_BYTES,
+        DhtTransportKind, LogFormat, MAX_CONTROL_PEER_RESPONSE_BYTES,
         MAX_CONTROL_REQUEST_HEADER_LINE_BYTES, NodeMaintenanceStats, RateLimitConfig, RateLimiter,
-        ServeControlConfigFile, StateDbEncryptionMode, StateDbEncryptionProvider, StateDbStats,
+        ServeControlConfigFile, StateDbStats,
         StateFileStats, SyncPeerConfig, atomic_write_text, configure_control_client_stream,
         configure_control_peer_stream, connect_control_peer, control_error_http_response,
-        current_unix_timestamp, decrypt_state_file_text, dht_find_value_with_transport,
+        current_unix_timestamp, dht_find_value_with_transport,
         dht_runner_peer_configs, dht_runner_peer_configs_with_quarantine_count,
-        encrypt_state_file_text, handle_control_dht_find_value_run,
+        handle_control_dht_find_value_run,
         handle_control_dht_maintenance_run, handle_control_dht_replication_run,
         handle_control_dht_routing_refresh_run, http_control_request, libp2p_dht_swarm,
-        load_node_state, load_node_state_db, normalize_state_db_encryption_mode, open_state_db,
-        open_state_db_with_provider, parse_content_length_and_validate_headers,
+        load_node_state_db, open_state_db,
+        parse_content_length_and_validate_headers,
         parse_dht_transport_kind, parse_log_format, read_secret_file, request_is_authorized,
         run_dht_replication, run_dht_replication_with_transport, run_dht_routing_refresh,
-        run_dht_routing_refresh_with_transport, save_node_state, save_node_state_db, send_dht_rpc,
-        state_db_stats, status_for_request_error, status_reason, sync_backoff_delay_seconds,
-        validate_state_db_encryption_requirement, validate_state_file_encryption_requirement,
+        run_dht_routing_refresh_with_transport, save_node_state_db, send_dht_rpc,
+        status_for_request_error, status_reason, sync_backoff_delay_seconds,
     };
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use futures::StreamExt;
@@ -1311,9 +1065,7 @@ mod tests {
         Barrier, Mutex,
         atomic::{AtomicUsize, Ordering},
     };
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-    static TEST_ENV_MUTEX: Mutex<()> = Mutex::new(());
+    use std::time::Duration;
 
     #[derive(Default)]
     struct FakeDhtTransport {
@@ -3547,13 +3299,10 @@ connection: close
                 page_size_bytes: 4096,
                 freelist_count: 2,
                 file_bytes: 40960,
-                encrypted: false,
-                encryption_mode: "plain".into(),
                 permissions_hardened: true,
             }),
             Some(&StateFileStats {
                 file_bytes: 2048,
-                encrypted: true,
                 permissions_hardened: true,
             }),
             Some(&NodeSyncStatus {
@@ -3709,8 +3458,6 @@ connection: close
         assert!(metrics.contains("lm_node_state_db_pages{kind=\"free\"} 2"));
         assert!(metrics.contains("lm_node_state_db_page_size_bytes 4096"));
         assert!(metrics.contains("lm_node_state_db_file_bytes 40960"));
-        assert!(metrics.contains("lm_node_state_db_encrypted 0"));
-        assert!(metrics.contains(r#"lm_node_state_db_encryption_mode{mode="plain"} 1"#));
         assert!(metrics.contains("lm_node_state_db_permissions_hardened 1"));
         assert!(metrics.ends_with("# EOF\n"));
     }
@@ -3756,31 +3503,6 @@ connection: close
         assert_eq!(leftovers, 1);
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir(&dir);
-    }
-
-    #[test]
-    fn state_db_stats_report_external_encryption_mode_without_db_encrypted_flag() {
-        let _guard = TEST_ENV_MUTEX.lock().unwrap();
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("lm-node-external-mode-{unique}.sqlite3"));
-        unsafe { std::env::set_var("LM_NODE_STATE_DB_ENCRYPTION_MODE", "external") };
-        let mut node = NativeNode::new(NodeConfig::default());
-        node.config.peer_id = "external-mode-node".into();
-        save_node_state_db(path.to_str().unwrap(), &node).unwrap();
-        let stats = state_db_stats(path.to_str().unwrap()).unwrap();
-        assert_eq!(stats.encryption_mode, "external");
-        assert!(
-            !stats.encrypted,
-            "external protection is not database-level encryption"
-        );
-        assert!(stats.permissions_hardened);
-        unsafe { std::env::remove_var("LM_NODE_STATE_DB_ENCRYPTION_MODE") };
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_file(path.with_extension("sqlite3-wal"));
-        let _ = std::fs::remove_file(path.with_extension("sqlite3-shm"));
     }
 
     #[test]
@@ -3948,207 +3670,6 @@ connection: close
     }
 
     #[test]
-    fn encrypted_state_file_save_load_roundtrip_uses_passphrase_env() {
-        let _guard = TEST_ENV_MUTEX.lock().unwrap();
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("lm-node-encrypted-state-{unique}.json"));
-        let node = NativeNode::new(NodeConfig {
-            peer_id: "encrypted-state-file-node".into(),
-            ..Default::default()
-        });
-        unsafe {
-            std::env::set_var(
-                "LM_NODE_STATE_FILE_PASSPHRASE",
-                "test state file passphrase",
-            )
-        };
-        save_node_state(path.to_str().unwrap(), &node).unwrap();
-        let saved = std::fs::read_to_string(&path).unwrap();
-        assert!(saved.starts_with(ENCRYPTED_STATE_FILE_PREFIX));
-        assert!(!saved.contains("encrypted-state-file-node"));
-        let restored = load_node_state(path.to_str().unwrap()).unwrap();
-        assert_eq!(restored.config.peer_id, "encrypted-state-file-node");
-        unsafe {
-            std::env::set_var(
-                "LM_NODE_STATE_FILE_PASSPHRASE",
-                "wrong state file passphrase",
-            )
-        };
-        assert!(load_node_state(path.to_str().unwrap()).is_err());
-        unsafe { std::env::remove_var("LM_NODE_STATE_FILE_PASSPHRASE") };
-        let _ = std::fs::remove_file(path);
-    }
-
-    #[test]
-    fn encrypted_state_file_text_roundtrips_and_rejects_wrong_passphrase() {
-        let plaintext = r#"{"version":1,"config":{"peer_id":"encrypted-state"}}"#;
-        let encrypted = encrypt_state_file_text(plaintext, "correct horse battery staple").unwrap();
-        assert!(encrypted.starts_with(ENCRYPTED_STATE_FILE_PREFIX));
-        assert!(!encrypted.contains("encrypted-state"));
-        let decrypted =
-            decrypt_state_file_text(&encrypted, "correct horse battery staple").unwrap();
-        assert_eq!(decrypted, plaintext);
-        assert!(decrypt_state_file_text(&encrypted, "wrong passphrase").is_err());
-    }
-
-    #[test]
-    fn state_file_encryption_requirement_fails_closed_without_passphrase() {
-        let _guard = TEST_ENV_MUTEX.lock().unwrap();
-        unsafe { std::env::remove_var("LM_NODE_STATE_FILE_PASSPHRASE") };
-        unsafe { std::env::remove_var("LM_NODE_STATE_FILE_PASSPHRASE_FILE") };
-        let err = validate_state_file_encryption_requirement(true, Some("missing-state.json"))
-            .unwrap_err();
-        assert!(err.to_string().contains("no passphrase"));
-        assert!(validate_state_file_encryption_requirement(false, None).is_ok());
-        let err = validate_state_file_encryption_requirement(true, None).unwrap_err();
-        assert!(err.to_string().contains("no state_file"));
-    }
-
-    #[test]
-    fn state_file_encryption_requirement_rejects_plaintext_existing_file() {
-        let _guard = TEST_ENV_MUTEX.lock().unwrap();
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("lm-node-plaintext-state-{unique}.json"));
-        std::fs::write(&path, "{\"version\":1}\n").unwrap();
-        unsafe {
-            std::env::set_var(
-                "LM_NODE_STATE_FILE_PASSPHRASE",
-                "state file require passphrase",
-            )
-        };
-        let err = validate_state_file_encryption_requirement(true, path.to_str()).unwrap_err();
-        assert!(err.to_string().contains("existing state_file is plaintext"));
-        let encrypted =
-            encrypt_state_file_text("{\"version\":1}", "state file require passphrase").unwrap();
-        std::fs::write(&path, format!("{encrypted}\n")).unwrap();
-        assert!(validate_state_file_encryption_requirement(true, path.to_str()).is_ok());
-        unsafe { std::env::remove_var("LM_NODE_STATE_FILE_PASSPHRASE") };
-        let _ = std::fs::remove_file(path);
-    }
-
-    #[test]
-    fn state_db_encryption_requirement_fails_closed_until_supported() {
-        assert!(
-            validate_state_db_encryption_requirement(false, StateDbEncryptionMode::Plain, None)
-                .is_ok()
-        );
-        let err = validate_state_db_encryption_requirement(
-            true,
-            StateDbEncryptionMode::Plain,
-            Some("state.sqlite3"),
-        )
-        .unwrap_err();
-        assert!(err.to_string().contains("encryption_mode is plain"));
-        assert!(
-            validate_state_db_encryption_requirement(
-                true,
-                StateDbEncryptionMode::External,
-                Some("state.sqlite3")
-            )
-            .is_ok()
-        );
-        let err =
-            validate_state_db_encryption_requirement(true, StateDbEncryptionMode::External, None)
-                .unwrap_err();
-        assert!(err.to_string().contains("no state_db"));
-        let err = normalize_state_db_encryption_mode(Some("sqlcipher".into())).unwrap_err();
-        assert!(
-            err.to_string().contains("requires building")
-                || err.to_string().contains("not supported")
-        );
-    }
-
-    #[test]
-    fn state_db_encryption_provider_models_current_modes() {
-        let plain = StateDbEncryptionProvider::new(StateDbEncryptionMode::Plain);
-        assert_eq!(plain.mode().as_str(), "plain");
-        assert!(!plain.is_database_encrypted());
-        let external = StateDbEncryptionProvider::new(StateDbEncryptionMode::External);
-        assert_eq!(external.mode().as_str(), "external");
-        assert!(!external.is_database_encrypted());
-        #[cfg(feature = "sqlcipher")]
-        assert!(StateDbEncryptionMode::SqlCipher.is_database_encrypted());
-        let reserved = StateDbEncryptionProvider::with_passphrase(
-            StateDbEncryptionMode::External,
-            Some("secret".into()),
-        );
-        assert!(reserved.has_passphrase());
-    }
-
-    #[cfg(feature = "sqlcipher")]
-    #[test]
-    fn sqlcipher_provider_initializes_cipher() {
-        let mode = StateDbEncryptionMode::parse(Some("sqlcipher".into())).unwrap();
-        assert_eq!(mode.as_str(), "sqlcipher");
-        assert!(mode.is_database_encrypted());
-        let provider = StateDbEncryptionProvider::with_passphrase(mode, Some("secret".into()));
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        provider.apply_to_connection(&conn).unwrap();
-        let cipher_version: String = conn
-            .query_row("PRAGMA cipher_version", [], |row| row.get(0))
-            .unwrap();
-        assert!(!cipher_version.trim().is_empty());
-    }
-
-    #[cfg(feature = "sqlcipher")]
-    #[test]
-    fn sqlcipher_state_db_rejects_wrong_passphrase() {
-        let unique = format!("{}-{}", std::process::id(), current_unix_timestamp());
-        let path = std::env::temp_dir().join(format!("lm-node-sqlcipher-{unique}.sqlite3"));
-        let good = StateDbEncryptionProvider::with_passphrase(
-            StateDbEncryptionMode::SqlCipher,
-            Some("correct horse battery staple".into()),
-        );
-        let bad = StateDbEncryptionProvider::with_passphrase(
-            StateDbEncryptionMode::SqlCipher,
-            Some("wrong passphrase".into()),
-        );
-        let conn = open_state_db_with_provider(path.to_str().unwrap(), good).unwrap();
-        conn.execute(
-            "INSERT INTO meta(key, value) VALUES (?1, ?2)",
-            rusqlite::params!["probe", "\"ok\""],
-        )
-        .unwrap();
-        drop(conn);
-        let wrong = open_state_db_with_provider(path.to_str().unwrap(), bad);
-        assert!(
-            wrong.is_err(),
-            "wrong SQLCipher passphrase should not open state_db"
-        );
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_file(path.with_extension("sqlite3-wal"));
-        let _ = std::fs::remove_file(path.with_extension("sqlite3-shm"));
-    }
-
-    #[test]
-    fn open_state_db_uses_encryption_provider_boundary() {
-        let unique = format!("{}-{}", std::process::id(), current_unix_timestamp());
-        let path = std::env::temp_dir().join(format!("lm-node-provider-{unique}.sqlite3"));
-        let conn = open_state_db_with_provider(
-            path.to_str().unwrap(),
-            StateDbEncryptionProvider::new(StateDbEncryptionMode::External),
-        )
-        .unwrap();
-        let count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='meta'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(count, 1);
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_file(path.with_extension("sqlite3-wal"));
-        let _ = std::fs::remove_file(path.with_extension("sqlite3-shm"));
-    }
-
-    #[test]
     fn secret_file_loader_trims_and_rejects_empty_files() {
         let path = std::env::temp_dir().join(format!(
             "lm-node-secret-test-{}-{}.txt",
@@ -4197,12 +3718,7 @@ connection: close
                 "bind": "127.0.0.1:9999",
                 "peer_id": "cfg-node",
                 "state_file": "state.json",
-                "state_file_passphrase_file": "state.pass",
-                "state_file_require_encryption": true,
                 "state_db": "state.sqlite3",
-                "state_db_encryption_mode": "external",
-                "state_db_passphrase_file": "db.secret",
-                "state_db_require_encryption": true,
                 "control_token": "control",
                 "control_token_file": "control.secret",
                 "control_previous_tokens": ["old-control"],
@@ -4234,18 +3750,7 @@ connection: close
         assert_eq!(config.bind.as_deref(), Some("127.0.0.1:9999"));
         assert_eq!(config.peer_id.as_deref(), Some("cfg-node"));
         assert_eq!(config.state_file.as_deref(), Some("state.json"));
-        assert_eq!(
-            config.state_file_passphrase_file.as_deref(),
-            Some("state.pass")
-        );
-        assert_eq!(config.state_file_require_encryption, Some(true));
         assert_eq!(config.state_db.as_deref(), Some("state.sqlite3"));
-        assert_eq!(config.state_db_encryption_mode.as_deref(), Some("external"));
-        assert_eq!(
-            config.state_db_passphrase_file.as_deref(),
-            Some("db.secret")
-        );
-        assert_eq!(config.state_db_require_encryption, Some(true));
         assert_eq!(config.control_token.as_deref(), Some("control"));
         assert_eq!(config.control_token_file.as_deref(), Some("control.secret"));
         assert_eq!(

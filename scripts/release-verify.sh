@@ -54,13 +54,10 @@ REPORT_FILE="${RELEASE_VERIFY_REPORT:-}"
 
 EXPECTED_ASSETS=(
   "lm_node-linux-x86_64.tar.gz"
-  "lm_node-linux-x86_64-sqlcipher.tar.gz"
   "lm_node-macos-x86_64.tar.gz"
   "lm_node-macos-arm64.tar.gz"
   "lm_node-windows-x86_64.zip"
   "SHA256SUMS.txt"
-  "sqlcipher-release-smoke-report.json"
-  "sqlcipher-release-smoke.log"
 )
 
 printf '== Downloading LM Talk node release %s into %s ==\n' "$TAG" "$DOWNLOAD_DIR"
@@ -90,34 +87,11 @@ sha256_check SHA256SUMS.txt
 
 printf '== Verifying per-artifact checksums ==\n'
 for archive in lm_node-linux-x86_64.tar.gz \
-  lm_node-linux-x86_64-sqlcipher.tar.gz \
   lm_node-macos-x86_64.tar.gz \
   lm_node-macos-arm64.tar.gz \
   lm_node-windows-x86_64.zip; do
   sha256_check "$archive.sha256"
 done
-
-printf '== Inspecting SQLCipher release smoke report ==\n'
-python3 - <<'PY'
-import json
-from pathlib import Path
-report = json.loads(Path('sqlcipher-release-smoke-report.json').read_text())
-checks = set(report.get('checks') or [])
-legacy_ok = (
-    report.get('status') == 'ok'
-    and 'serve_control_sqlcipher_state_db_metrics' in checks
-    and 'serve_control_sqlcipher_wrong_passphrase_rejected' in checks
-)
-detailed_ok = (
-    report.get('status') == 'ok'
-    and report.get('stats_state_db_encrypted') is True
-    and report.get('metrics_state_db_encrypted') is True
-    and report.get('wrong_passphrase_rejected') is True
-)
-if not (detailed_ok or legacy_ok):
-    raise SystemExit('SQLCipher smoke report did not prove encrypted state_db metrics and wrong-passphrase rejection')
-print('SQLCipher smoke report proves encrypted state_db metrics and wrong-passphrase rejection')
-PY
 
 if [[ -n "$REPORT_FILE" ]]; then
   printf '== Writing release verification report: %s ==\n' "$REPORT_FILE"
@@ -140,7 +114,6 @@ report = {
     "download_dir": download_dir,
     "expected_platform_archives": [
         "lm_node-linux-x86_64.tar.gz",
-        "lm_node-linux-x86_64-sqlcipher.tar.gz",
         "lm_node-macos-x86_64.tar.gz",
         "lm_node-macos-arm64.tar.gz",
         "lm_node-windows-x86_64.zip",
@@ -149,7 +122,6 @@ report = {
         "expected_assets_present": True,
         "combined_sha256sums_verified": True,
         "per_artifact_sha256_verified": True,
-        "sqlcipher_smoke_report_verified": True,
     },
     "assets": assets,
 }

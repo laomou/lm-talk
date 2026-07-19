@@ -94,7 +94,6 @@ def main() -> int:
     cargo = run_text(["cargo", "-V"], repo)
     cargo_features = " ".join(args.cargo_features.replace(",", " ").split())
     cargo_features_display = cargo_features or "default"
-    sqlcipher_enabled = "sqlcipher" in set(cargo_features.split())
 
     with tempfile.TemporaryDirectory(prefix="lm-node-release-") as tmp:
         staging = Path(tmp) / args.package_name
@@ -127,7 +126,6 @@ def main() -> int:
             f"binary={binary_name}\n"
             f"binary_sha256={binary_sha}\n"
             f"cargo_features={cargo_features_display}\n"
-            f"sqlcipher_enabled={str(sqlcipher_enabled).lower()}\n"
             f"source_commit={commit}\n"
             f"source_dirty={dirty}\n"
             f"build_time_utc={build_time}\n"

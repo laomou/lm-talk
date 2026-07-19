@@ -12,7 +12,6 @@ pub(super) struct ControlStatsResponse<'a> {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub(super) struct StateFileStats {
     pub(crate) file_bytes: u64,
-    pub(crate) encrypted: bool,
     pub(crate) permissions_hardened: bool,
 }
 
@@ -22,8 +21,6 @@ pub(super) struct StateDbStats {
     pub(crate) page_size_bytes: u64,
     pub(crate) freelist_count: u64,
     pub(crate) file_bytes: u64,
-    pub(crate) encrypted: bool,
-    pub(crate) encryption_mode: String,
     pub(crate) permissions_hardened: bool,
 }
 
@@ -1086,17 +1083,6 @@ impl ControlRuntimeStats {
             push_metric_value(&mut out, "lm_node_state_file_bytes", state_file.file_bytes);
             push_metric_help(
                 &mut out,
-                "lm_node_state_file_encrypted",
-                "Whether the JSON state_file is encrypted with the application-layer format.",
-            );
-            push_metric_type(&mut out, "lm_node_state_file_encrypted", "gauge");
-            push_metric_value(
-                &mut out,
-                "lm_node_state_file_encrypted",
-                if state_file.encrypted { 1 } else { 0 },
-            );
-            push_metric_help(
-                &mut out,
                 "lm_node_state_file_permissions_hardened",
                 "Whether the JSON state_file permissions are restricted to the node user.",
             );
@@ -1150,30 +1136,6 @@ impl ControlRuntimeStats {
             );
             push_metric_type(&mut out, "lm_node_state_db_file_bytes", "gauge");
             push_metric_value(&mut out, "lm_node_state_db_file_bytes", state_db.file_bytes);
-            push_metric_help(
-                &mut out,
-                "lm_node_state_db_encrypted",
-                "Whether the SQLite state database is encrypted at the database layer.",
-            );
-            push_metric_type(&mut out, "lm_node_state_db_encrypted", "gauge");
-            push_metric_value(
-                &mut out,
-                "lm_node_state_db_encrypted",
-                if state_db.encrypted { 1 } else { 0 },
-            );
-            push_metric_help(
-                &mut out,
-                "lm_node_state_db_encryption_mode",
-                "SQLite state database encryption mode. Current plain mode is not database encryption.",
-            );
-            push_metric_type(&mut out, "lm_node_state_db_encryption_mode", "gauge");
-            push_labeled_metric_value(
-                &mut out,
-                "lm_node_state_db_encryption_mode",
-                "mode",
-                &state_db.encryption_mode,
-                1,
-            );
             push_metric_help(
                 &mut out,
                 "lm_node_state_db_permissions_hardened",

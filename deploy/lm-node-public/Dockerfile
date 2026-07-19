@@ -2,12 +2,7 @@
 FROM rust:1-bookworm AS builder
 WORKDIR /src
 COPY . .
-ARG CARGO_FEATURES=""
-RUN if [ -n "$CARGO_FEATURES" ]; then \
-      cargo build --locked --release -p lm_node --features "$CARGO_FEATURES"; \
-    else \
-      cargo build --locked --release -p lm_node; \
-    fi
+RUN cargo build --locked --release -p lm_node
 
 FROM debian:bookworm-slim AS runtime
 RUN useradd --system --create-home --uid 10001 lmnode \

@@ -145,7 +145,7 @@ jobs:
 
           Verify downloads with `SHA256SUMS.txt` or the per-artifact `.sha256` files. Each archive also includes `RELEASE_INFO.txt` with the source commit, build timestamp, Rust toolchain details, and binary SHA256.
 
-          Storage note: the node's `state_db` holds relay/mailbox operating state — offline message deliveries are already end-to-end ciphertext, and prekey/public-peer/DHT records are public by design. For disk-at-rest protection prefer full-disk encryption (LUKS/dm-crypt). A `sqlcipher` build feature is available for database-level encryption of the metadata if a deployment requires it (`cargo build -p lm_node --features sqlcipher`).
+          Storage note: the node's `state_db` holds relay/mailbox operating state — offline message deliveries are already end-to-end ciphertext, and prekey/public-peer/DHT records are public by design. State is stored as plaintext; for disk-at-rest protection use full-disk encryption (LUKS/dm-crypt).
 
           Security note: these artifacts are automated CI builds. macOS notarization and Windows code signing are scaffolded as evidence reports but not yet implemented; keep unsigned / non-notarized artifacts as a release blocker for a production-trust distribution channel. Review `*-signing-evidence.json` for each artifact.
           EOF

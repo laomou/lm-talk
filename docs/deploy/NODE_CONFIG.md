@@ -26,11 +26,8 @@ CLI 参数 > 环境变量 > config file > 默认值
 |---|---:|---:|---|
 | `bind` | string | `127.0.0.1:8787` | 控制面监听地址。生产部署建议绑定 loopback，由反向代理负责 TLS。 |
 | `peer_id` | string | `lm-node-dev` | 本节点 public peer id。 |
-| `state_db` | string | 无 | SQLite 正式状态数据库；按表保存 mailbox、prekey bundle、signed one-time-prekey records、consumed prekey、public peer/routing peer、DHT record 等节点状态。 |
-| `state_db_encryption_mode` | string | `plain` | `plain` 表示未加密 SQLite；`external` 表示由外部磁盘/文件系统加密承担保护；`sqlcipher` 为数据库级加密 provider。state_db 存的是中继/邮箱运营状态（离线消息已是端到端密文，prekey/public-peer/DHT 记录本就公开），磁盘保护优先用整盘加密（LUKS/dm-crypt）。如部署确有库级加密需求，用 `cargo build -p lm_node --features sqlcipher` 构建，选 `sqlcipher` 模式并提供口令后执行 `PRAGMA key`。 |
-| `state_db_passphrase_file` | string | - | 预留给 DB 级加密 provider 的口令文件入口；当前 plain/external 模式不会使用该口令，但启动时会按 secret file 权限规则读取并注入 provider 边界；`sqlcipher` feature 会要求该口令并通过 provider 传给 `PRAGMA key`。 |
-| `state_db_require_encryption` | bool | `false` | 要求非 `plain` 模式时 fail-closed；当前内置 SQLite 仍是 plain，若使用外部全盘/目录加密可显式设置 `external`。 |
-| `state_file` | string | 无 | 兼容 JSON snapshot 状态文件；保存时采用同目录临时文件 + fsync + rename；Unix 下保存后权限收紧为 `0600`。设置 `LM_NODE_STATE_FILE_PASSPHRASE`、`LM_NODE_STATE_FILE_PASSPHRASE_FILE` 或配置文件 `state_file_passphrase_file` 后会以应用层加密格式保存/读取。可与 `state_db` 同时配置作为调试导出。 |
+| `state_db` | string | 无 | 明文 SQLite 正式状态数据库；按表保存 mailbox、prekey bundle、signed one-time-prekey records、consumed prekey、public peer/routing peer、DHT record 等节点状态。state_db 存的是中继/邮箱运营状态（离线消息已是端到端密文，prekey/public-peer/DHT 记录本就公开），磁盘静态保护由整盘加密（LUKS/dm-crypt）承担。 |
+| `state_file` | string | 无 | 兼容 JSON snapshot 状态文件；保存时采用同目录临时文件 + fsync + rename；Unix 下保存后权限收紧为 `0600`。可与 `state_db` 同时配置作为调试导出。 |
 | `control_token` | string | 无 | 控制面 Bearer token。配置后除 `/health` 外都要求 `Authorization: Bearer ...`。 |
 | `control_token_file` | string | 无 | 从文件读取控制面 Bearer token；文件内容会 trim，空文件报错；Unix 下要求 regular file 且权限不能向 group/other 开放（建议 `chmod 600`），并拒绝 symlink。 |
 | `control_previous_tokens` | string[] | `[]` | 旧控制面 Bearer token 列表，用于无停机轮换 grace window；只应短期保留。 |
@@ -72,11 +69,6 @@ CLI 参数 > 环境变量 > config file > 默认值
 | `bind` | `--bind` | - |
 | `peer_id` | `--peer-id` | - |
 | `state_db` | `--state-db` | - |
-| `state_db_encryption_mode` | `--state-db-encryption-mode <plain|external>` | `LM_NODE_STATE_DB_ENCRYPTION_MODE` |
-| `state_db_passphrase_file` | `--state-db-passphrase-file <file>` | `LM_NODE_STATE_DB_PASSPHRASE_FILE` |
-| `state_db_require_encryption` | `--state-db-require-encryption` | `LM_NODE_STATE_DB_REQUIRE_ENCRYPTION` |
-| `state_file_passphrase_file` | `--state-file-passphrase-file` | `LM_NODE_STATE_FILE_PASSPHRASE` / `LM_NODE_STATE_FILE_PASSPHRASE_FILE` |
-| `state_file_require_encryption` | `--state-file-require-encryption` | `LM_NODE_STATE_FILE_REQUIRE_ENCRYPTION` |
 | `state_file` | `--state-file` | - |
 | `control_token` | `--control-token` | `LM_NODE_CONTROL_TOKEN` |
 | `control_token_file` | `--control-token-file` | `LM_NODE_CONTROL_TOKEN_FILE` |

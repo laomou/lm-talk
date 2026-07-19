@@ -1,168 +1,16 @@
 use super::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum StateDbEncryptionMode {
-    Plain,
-    External,
-    #[cfg(feature = "sqlcipher")]
-    SqlCipher,
-}
-
-impl StateDbEncryptionMode {
-    pub(super) fn as_str(self) -> &'static str {
-        match self {
-            Self::Plain => "plain",
-            Self::External => "external",
-            #[cfg(feature = "sqlcipher")]
-            Self::SqlCipher => "sqlcipher",
-        }
-    }
-
-    pub(super) fn is_database_encrypted(self) -> bool {
-        match self {
-            Self::Plain | Self::External => false,
-            #[cfg(feature = "sqlcipher")]
-            Self::SqlCipher => true,
-        }
-    }
-
-    pub(super) fn requires_strict_open(self) -> bool {
-        match self {
-            Self::Plain | Self::External => false,
-            #[cfg(feature = "sqlcipher")]
-            Self::SqlCipher => true,
-        }
-    }
-
-    pub(super) fn parse(value: Option<String>) -> Result<Self, Box<dyn std::error::Error>> {
-        let mode = value
-            .unwrap_or_else(|| "plain".to_string())
-            .trim()
-            .to_ascii_lowercase();
-        match mode.as_str() {
-            "plain" => Ok(Self::Plain),
-            "external" => Ok(Self::External),
-            #[cfg(feature = "sqlcipher")]
-            "sqlcipher" => Ok(Self::SqlCipher),
-            #[cfg(not(feature = "sqlcipher"))]
-            "sqlcipher" => Err(
-                "state_db_encryption_mode=sqlcipher requires building lm_node with the sqlcipher feature"
-                    .into(),
-            ),
-            _ => Err(format!(
-                "unsupported state_db_encryption_mode: {mode}; expected plain or external"
-            )
-            .into()),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct StateDbEncryptionProvider {
-    pub(crate) mode: StateDbEncryptionMode,
-    pub(crate) passphrase: Option<String>,
-}
-
-impl StateDbEncryptionProvider {
-    pub(super) fn current() -> Self {
-        Self {
-            mode: state_db_encryption_mode(),
-            passphrase: env::var("LM_NODE_STATE_DB_PASSPHRASE").ok(),
-        }
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(super) fn new(mode: StateDbEncryptionMode) -> Self {
-        Self {
-            mode,
-            passphrase: None,
-        }
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(super) fn with_passphrase(mode: StateDbEncryptionMode, passphrase: Option<String>) -> Self {
-        Self { mode, passphrase }
-    }
-
-    pub(super) fn mode(&self) -> StateDbEncryptionMode {
-        self.mode
-    }
-
-    pub(super) fn is_database_encrypted(&self) -> bool {
-        self.mode.is_database_encrypted()
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(super) fn has_passphrase(&self) -> bool {
-        self.passphrase
-            .as_deref()
-            .is_some_and(|value| !value.is_empty())
-    }
-
-    pub(super) fn apply_to_connection(
-        &self,
-        _conn: &Connection,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        match self.mode {
-            StateDbEncryptionMode::Plain | StateDbEncryptionMode::External => Ok(()),
-            #[cfg(feature = "sqlcipher")]
-            StateDbEncryptionMode::SqlCipher => {
-                let Some(passphrase) = self.passphrase.as_deref().filter(|value| !value.is_empty())
-                else {
-                    return Err("state_db_encryption_mode=sqlcipher requires state_db_passphrase_file or LM_NODE_STATE_DB_PASSPHRASE_FILE".into());
-                };
-                let escaped = passphrase.replace('\'', "''");
-                _conn.execute_batch(&format!("PRAGMA key = '{}';", escaped))?;
-                let cipher_version = _conn
-                    .query_row("PRAGMA cipher_version", [], |row| row.get::<_, String>(0))
-                    .optional()?;
-                if cipher_version
-                    .as_deref()
-                    .unwrap_or_default()
-                    .trim()
-                    .is_empty()
-                {
-                    return Err("SQLCipher provider requested but the linked SQLite library does not expose PRAGMA cipher_version; rebuild with a SQLCipher-capable rusqlite/libsqlite3".into());
-                }
-                _conn.execute_batch(
-                    r#"
-                    PRAGMA cipher_memory_security = ON;
-                    PRAGMA cipher_plaintext_header_size = 0;
-                    "#,
-                )?;
-                Ok(())
-            }
-        }
-    }
-}
-
-#[cfg_attr(not(test), allow(dead_code))]
-pub(super) fn normalize_state_db_encryption_mode(
-    value: Option<String>,
-) -> Result<String, Box<dyn std::error::Error>> {
-    Ok(StateDbEncryptionMode::parse(value)?.as_str().to_string())
-}
-
-pub(super) fn validate_state_db_encryption_requirement(
-    required: bool,
-    mode: StateDbEncryptionMode,
-    state_db: Option<&str>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if !required {
-        return Ok(());
-    }
-    if state_db.is_none() {
-        return Err("state_db encryption is required but no state_db is configured".into());
-    }
-    if mode == StateDbEncryptionMode::Plain {
-        Err("state_db encryption is required but encryption_mode is plain; use SQLCipher/equivalent or explicitly configure external encrypted storage".into())
-    } else {
-        Ok(())
-    }
-}
-
 pub(super) fn open_state_db(path: &str) -> Result<Connection, Box<dyn std::error::Error>> {
-    open_state_db_with_provider(path, StateDbEncryptionProvider::current())
+    if let Some(parent) = Path::new(path)
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)?;
+    }
+    let conn = Connection::open(path)?;
+    init_state_db(&conn)?;
+    set_state_db_private_permissions(Path::new(path))?;
+    Ok(conn)
 }
 
 pub(super) fn init_state_db(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
@@ -442,11 +290,6 @@ pub(super) fn state_db_stats(path: &str) -> Result<StateDbStats, Box<dyn std::er
         page_size_bytes,
         freelist_count,
         file_bytes,
-        encryption_mode: StateDbEncryptionProvider::current()
-            .mode()
-            .as_str()
-            .to_string(),
-        encrypted: StateDbEncryptionProvider::current().is_database_encrypted(),
         permissions_hardened: true,
     })
 }

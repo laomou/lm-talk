@@ -14,14 +14,13 @@ Options:
   --peer-id ID           Node peer id. Default: derived from domain.
   --data-dir DIR         Deployment directory. Default: current deploy/lm-node-public directory.
   --email EMAIL          ACME contact email for Caddy. Optional.
-  --sqlcipher           Build lm_node with SQLCipher and set state_db_encryption_mode=sqlcipher.
   --allow-any-origin    Use CORS ["*"] for testing only; not recommended for production.
   --dry-run             Generate files and print next steps without running docker compose.
   -h, --help            Show this help.
 
 Examples:
   ./install.sh --domain node.example.com --web-origin https://laomou.github.io
-  ./install.sh --domain node.example.com --web-origin https://app.example.com --sqlcipher --data-dir /opt/lm-talk-node
+  ./install.sh --domain node.example.com --web-origin https://app.example.com --data-dir /opt/lm-talk-node
 USAGE
 }
 
@@ -30,7 +29,6 @@ DOMAIN=""
 PEER_ID=""
 DATA_DIR="$SCRIPT_DIR"
 EMAIL=""
-SQLCIPHER=0
 DRY_RUN=0
 ALLOW_ANY_ORIGIN=0
 WEB_ORIGINS=()
@@ -42,7 +40,6 @@ while [[ $# -gt 0 ]]; do
     --peer-id) PEER_ID="${2:-}"; shift 2 ;;
     --data-dir) DATA_DIR="${2:-}"; shift 2 ;;
     --email) EMAIL="${2:-}"; shift 2 ;;
-    --sqlcipher) SQLCIPHER=1; shift ;;
     --allow-any-origin) ALLOW_ANY_ORIGIN=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -98,20 +95,13 @@ secret_file() {
   fi
 }
 secret_file "$DATA_DIR/secrets/control-token"
-secret_file "$DATA_DIR/secrets/state-file-passphrase"
-secret_file "$DATA_DIR/secrets/state-db-passphrase"
 
-python3 - <<'PY' "$SCRIPT_DIR/config.example.json" "$DATA_DIR/config.json" "$DOMAIN" "$PEER_ID" "$SQLCIPHER" "$ALLOW_ANY_ORIGIN" "${WEB_ORIGINS[@]}"
+python3 - <<'PY' "$SCRIPT_DIR/config.example.json" "$DATA_DIR/config.json" "$DOMAIN" "$PEER_ID" "$ALLOW_ANY_ORIGIN" "${WEB_ORIGINS[@]}"
 import json, pathlib, sys
-src, dst, domain, peer_id, sqlcipher, allow_any, *origins = sys.argv[1:]
+src, dst, domain, peer_id, allow_any, *origins = sys.argv[1:]
 config = json.loads(pathlib.Path(src).read_text())
 config['peer_id'] = peer_id
 config['cors_allow_origins'] = ['*'] if allow_any == '1' else origins
-config['state_db_encryption_mode'] = 'sqlcipher' if sqlcipher == '1' else 'external'
-config['state_db_require_encryption'] = True
-config['state_db_passphrase_file'] = '/run/secrets/state-db-passphrase'
-config['state_file_passphrase_file'] = '/run/secrets/state-file-passphrase'
-config['state_file_require_encryption'] = True
 pathlib.Path(dst).write_text(json.dumps(config, indent=2) + '\n')
 PY
 
@@ -141,13 +131,7 @@ $DOMAIN {
 EOF_CADDY
 } > "$DATA_DIR/Caddyfile"
 
-if [[ "$SQLCIPHER" == "1" ]]; then
-  cat > "$DATA_DIR/.env" <<'EOF_ENV'
-LM_NODE_CARGO_FEATURES=sqlcipher
-EOF_ENV
-else
-  : > "$DATA_DIR/.env"
-fi
+: > "$DATA_DIR/.env"
 
 CONTROL_TOKEN="$(cat "$DATA_DIR/secrets/control-token")"
 cat > "$DATA_DIR/DEPLOYMENT_INFO.txt" <<EOF_INFO
@@ -157,7 +141,6 @@ Peer ID: $PEER_ID
 Config: $DATA_DIR/config.json
 Caddyfile: $DATA_DIR/Caddyfile
 Control token file: $DATA_DIR/secrets/control-token
-SQLCipher build: $([[ "$SQLCIPHER" == "1" ]] && echo yes || echo no)
 Web sync service URL: https://$DOMAIN
 Web sync token: $CONTROL_TOKEN
 EOF_INFO

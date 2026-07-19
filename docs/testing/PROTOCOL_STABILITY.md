@@ -113,8 +113,6 @@ Web 将更高级别的本地发件箱类型（如 `contact-update`、`device-rev
 
 | 领域 | 依赖 | 当前保护 |
 | --- | --- | --- |
-| `state_db` 加密 | 测试和发布证据查找 `encryption_mode is plain`、`SQLCipher provider requested`、以及 `state_db_encrypted` 指标。 | `lm_node` 测试和 SQLCipher smoke 脚本。 |
-| `state_file` 加密 | 测试期望缺少口令和明文现有 state file 时出现 fail-closed 消息。 | `lm_node` 测试。 |
 | DHT 发现分类 | Web 根据包含 `过期`、`验签`、`签名`、`signature`、`未找到`、`not found`、`record`、`格式`、`invalid`、`超时`、`timeout`、`failed to fetch` 的错误进行分类。 | Web 诊断/退避逻辑。 |
 | 严格 E2EE / 封闭槽 | Web 面向用户的错误提示包含缺少已验证指纹、缺少活动设备、缺少 `device_box_public_key`、非封闭入站槽和每设备信封签名失败。 | Web E2E 和手动策略流。 |
 | Mailbox 回执 | Contact Card 更新 ACK 和消息回执流程依赖 `lm-message-receipt-v1:` 解析和送达/已读类型字符串。 | 核心/Web 测试。 |
@@ -138,4 +136,4 @@ Web 将更高级别的本地发件箱类型（如 `contact-update`、`device-rev
 - [x] ContactCard/DeviceCert 合并和撤销策略已有互操作测试。
 - [x] PreKey 轮换/消费策略已有互操作测试。
 - [x] Web 和节点测试中的错误代码/文本依赖已记录。
-- [ ] 发布证据索引链接了 fuzz、联邦、SQLCipher 和审计产物。
+- [ ] 发布证据索引链接了 fuzz、联邦和审计产物。
