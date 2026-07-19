@@ -123,6 +123,10 @@ def main() -> int:
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, destination)
 
+        example_config = repo / "docs/examples/lm-node.config.example.json"
+        if example_config.is_file():
+            shutil.copy2(example_config, staging / "node.config.example.json")
+
         if args.web_admin_zip:
             admin_zip = Path(args.web_admin_zip)
             if not admin_zip.is_absolute():
