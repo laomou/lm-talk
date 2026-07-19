@@ -33,10 +33,6 @@ jobs:
             target: x86_64-unknown-linux-gnu
             package_name: lm_node-linux-x86_64
             cargo_features: ''
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            package_name: lm_node-linux-x86_64-sqlcipher
-            cargo_features: sqlcipher
           - os: macos-15-intel
             target: x86_64-apple-darwin
             package_name: lm_node-macos-x86_64
@@ -93,7 +89,7 @@ jobs:
           grep -q "LM Talk" lm_node_help.txt
 
       - name: Smoke test SQLCipher release binary
-        if: ${{ matrix.package_name == 'lm_node-linux-x86_64-sqlcipher' }}
+        if: ${{ matrix.package_name == 'lm_node-linux-x86_64' }}
         shell: bash
         env:
           LM_NODE_SQLCIPHER_BIN: target/${{ matrix.target }}/release/lm_node
@@ -102,7 +98,7 @@ jobs:
         run: ./scripts/check-sqlcipher-deploy.sh
 
       - name: Upload SQLCipher release smoke report
-        if: ${{ matrix.package_name == 'lm_node-linux-x86_64-sqlcipher' && always() }}
+        if: ${{ matrix.package_name == 'lm_node-linux-x86_64' && always() }}
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.package_name }}-smoke
@@ -162,14 +158,13 @@ jobs:
           This release publishes native `lm_node` binaries for:
 
           - Linux x86_64: `lm_node-linux-x86_64.tar.gz`
-          - Linux x86_64 with bundled SQLCipher: `lm_node-linux-x86_64-sqlcipher.tar.gz`
           - macOS Intel: `lm_node-macos-x86_64.tar.gz`
           - macOS Apple Silicon: `lm_node-macos-arm64.tar.gz`
           - Windows x86_64: `lm_node-windows-x86_64.zip`
 
           Verify downloads with `SHA256SUMS.txt` or the per-artifact `.sha256` files. Each archive also includes `RELEASE_INFO.txt` with the source commit, build timestamp, Rust toolchain details, and binary SHA256.
 
-          SQLCipher note: the `lm_node-linux-x86_64-sqlcipher` artifact is built with the `lm_node/sqlcipher` feature for database-level `state_db` encryption. Verify deployment with `./scripts/check-sqlcipher-deploy.sh` or archived `/control/stats` + `/control/metrics` evidence showing `state_db_encrypted=true`.
+          SQLCipher note: all artifacts are built with the `sqlcipher` feature (default) for database-level `state_db` encryption. Verify deployment with `./scripts/check-sqlcipher-deploy.sh` or archived `/control/stats` + `/control/metrics` evidence showing `state_db_encrypted=true`.
 
           Security note: these artifacts are automated CI builds. macOS notarization and Windows code signing are scaffolded as evidence reports but not yet implemented; keep unsigned / non-notarized artifacts as a release blocker for a production-trust distribution channel. Review `*-signing-evidence.json` for each artifact.
           EOF

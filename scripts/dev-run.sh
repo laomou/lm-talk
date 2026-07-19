@@ -17,7 +17,7 @@ Node options:
   --config-file PATH      JSON config for lm_node serve-control
   --bind HOST:PORT
   --state-db PATH         default: ./lm-node-state.prd.sqlite3 unless --config-file is used
-  --state-db-require-encryption true|false fail closed if DB encryption is required (current build: false)
+  --state-db-require-encryption true|false fail closed if DB encryption is required (sqlcipher built in by default)
   --state-file PATH       optional legacy JSON snapshot state file
   --peer-id ID            default: lm-node-prd
   --control-token TOKEN   require Authorization: Bearer TOKEN for non-health APIs

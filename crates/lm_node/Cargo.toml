@@ -22,5 +22,5 @@ uuid.workspace = true
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [features]
-default = []
+default = ["sqlcipher"]
 sqlcipher = ["rusqlite/bundled-sqlcipher-vendored-openssl"]
