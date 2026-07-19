@@ -9,7 +9,7 @@ REPORT="${RISK_REGISTER_GATE_REPORT:-}"
 usage() {
   cat <<'USAGE'
 Usage:
-  scripts/risk-register-gate.sh [risk-register.md]
+  scripts/release-risk-gate.sh [risk-register.md]
 
 Environment:
   RISK_REGISTER_GATE_MODE=strict|report

@@ -41,7 +41,7 @@
 | Web 客户端 | `apps/web/src`, `apps/web/tests` | 严格 E2EE 预检、指纹/设备 UX、IndexedDB 加密、备份/导入、自同步、封闭槽降级阻断、本地删除/重新加密。 |
 | 原生节点 | `crates/lm_node/src` | 控制面解析/认证/限流、Mailbox/PreKey/DHT 行为、对等隔离、SQLCipher 提供器、指标、持久化恢复。 |
 | 联邦部署 | `deploy/lm-node-public`, `deploy/lm-node-federation` | TLS/Caddy 模板、密钥挂载、CORS 源、暴露端口、加密卷假设。 |
-| 发布供应链 | `.github/workflows`, `scripts/package-node-release.py`, `scripts/verify-node-release.sh`, `scripts/preprod-evidence.sh` | 跨平台构建、校验和、SQLCipher 产物证明、证据采集、依赖审计门禁。 |
+| 发布供应链 | `.github/workflows`, `scripts/release-package.py`, `scripts/release-verify.sh`, `scripts/release-preprod.sh` | 跨平台构建、校验和、SQLCipher 产物证明、证据采集、依赖审计门禁。 |
 
 ## 测试和证据命令
 
@@ -49,13 +49,13 @@
 
 ```bash
 ./scripts/release-check.sh full
-./scripts/audit.sh
-./scripts/risk-register-gate.sh
+./scripts/check-audit.sh
+./scripts/release-risk-gate.sh
 FUZZ_SMOKE_REPORT=fuzz-smoke-report.json ./scripts/fuzz-smoke.sh
 FUZZ_CAMPAIGN_DURATION=3600 ./scripts/fuzz-campaign.sh
-./scripts/sqlcipher-smoke.sh
-./scripts/sqlcipher-deploy-smoke.sh
-RUN_RELEASE_ASSET_VERIFY=1 RELEASE_TAG_VERIFY=<tag> RELEASE_VERSION=<tag> ./scripts/preprod-evidence.sh
+./scripts/check-sqlcipher.sh
+./scripts/check-sqlcipher-deploy.sh
+RUN_RELEASE_ASSET_VERIFY=1 RELEASE_TAG_VERIFY=<tag> RELEASE_VERSION=<tag> ./scripts/release-preprod.sh
 ```
 
 对于联邦证据：

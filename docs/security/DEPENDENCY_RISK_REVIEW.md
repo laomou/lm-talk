@@ -1,12 +1,12 @@
 # 依赖风险复核
 
-本文档跟踪依赖安全例外以及判定漏洞依赖在 LM Talk 中是否可达的过程。它补充 `scripts/audit.sh`、CI `dependency-audit`、GitHub `dependency-review` 和 `docs/RELEASE_RISK_REGISTER.md`。
+本文档跟踪依赖安全例外以及判定漏洞依赖在 LM Talk 中是否可达的过程。它补充 `scripts/check-audit.sh`、CI `dependency-audit`、GitHub `dependency-review` 和 `docs/RELEASE_RISK_REGISTER.md`。
 
 ## 当前审计门禁
 
 | 生态 | 命令 / CI | 发布证据 |
 | --- | --- | --- |
-| Rust | `./scripts/audit.sh` 运行 `cargo audit --deny warnings` | CI `dependency-audit` 日志或本地输出 |
+| Rust | `./scripts/check-audit.sh` 运行 `cargo audit --deny warnings` | CI `dependency-audit` 日志或本地输出 |
 | Web npm | `npm audit --audit-level high` 在 `apps/web` 中 | CI `dependency-audit` 日志或本地输出 |
 | PR 依赖差异 | GitHub `dependency-review` | PR 检查状态 |
 
@@ -14,7 +14,7 @@
 
 ## 当前忽略的 Rust advisory
 
-`scripts/audit.sh` 当前忽略以下 advisory。这些例外在依赖或启用特性更改时必须重新评估。
+`scripts/check-audit.sh` 当前忽略以下 advisory。这些例外在依赖或启用特性更改时必须重新评估。
 
 | Advisory | 当前理由 | 可达性假设 | 何时重新评估 | 发布状态 |
 | --- | --- | --- | --- | --- |
@@ -49,7 +49,7 @@
 每个发布候选都应归档：
 
 - CI `dependency-audit` 任务日志；
-- 如果本地运行，则归档 `./scripts/audit.sh` 输出；
+- 如果本地运行，则归档 `./scripts/check-audit.sh` 输出；
 - 本文件中主动生效的 `cargo audit --ignore` 例外列表；
 - 依赖更改 PR 的 `dependency-review` 状态；
 - 任何 Accepted 的依赖风险已复制到 `docs/RELEASE_RISK_REGISTER.md`。

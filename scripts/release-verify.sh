@@ -6,11 +6,11 @@ usage() {
 Verify LM Talk native node GitHub Release assets.
 
 Usage:
-  scripts/verify-node-release.sh <tag> [download-dir]
+  scripts/release-verify.sh <tag> [download-dir]
 
 Example:
-  scripts/verify-node-release.sh v0.1.2
-  scripts/verify-node-release.sh v0.1.2 /tmp/lm-talk-v0.1.2
+  scripts/release-verify.sh v0.1.2
+  scripts/release-verify.sh v0.1.2 /tmp/lm-talk-v0.1.2
 
 The script downloads the expected node release assets with `gh release download`,
 verifies `SHA256SUMS.txt`, verifies each per-artifact `.sha256`, and fails if

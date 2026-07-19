@@ -29,11 +29,11 @@ fi
 
 if [[ "$RUN_SQLCIPHER" == "1" ]]; then
   echo "== sqlcipher smoke =="
-  ./scripts/sqlcipher-smoke.sh 2>&1 | tee "$ROOT/sqlcipher-smoke.log"
+  ./scripts/check-sqlcipher.sh 2>&1 | tee "$ROOT/sqlcipher-smoke.log"
   echo "== sqlcipher deploy smoke =="
   LM_NODE_SQLCIPHER_SMOKE_REPORT="$ROOT/sqlcipher-smoke-report.json" \
     LM_NODE_SQLCIPHER_SMOKE_LOG="$ROOT/sqlcipher-deploy-smoke.log" \
-    ./scripts/sqlcipher-deploy-smoke.sh 2>&1 | tee "$ROOT/sqlcipher-deploy-smoke.stdout.log"
+    ./scripts/check-sqlcipher-deploy.sh 2>&1 | tee "$ROOT/sqlcipher-deploy-smoke.stdout.log"
 else
   echo "== sqlcipher smoke skipped =="
 fi
@@ -63,7 +63,7 @@ fi
 if [[ "$RUN_RELEASE_ASSET_VERIFY" == "1" ]]; then
   echo "== release asset verification: $RELEASE_TAG_VERIFY =="
   RELEASE_VERIFY_REPORT="$ROOT/release-asset-verify-report.json" \
-    ./scripts/verify-node-release.sh "$RELEASE_TAG_VERIFY" "$EVIDENCE_DIR/release-assets-$RELEASE_TAG_VERIFY"
+    ./scripts/release-verify.sh "$RELEASE_TAG_VERIFY" "$EVIDENCE_DIR/release-assets-$RELEASE_TAG_VERIFY"
 else
   echo "== release asset verification skipped =="
 fi
@@ -72,13 +72,13 @@ if [[ "$RUN_RISK_REGISTER_GATE" == "1" ]]; then
   echo "== risk register gate report =="
   RISK_REGISTER_GATE_MODE=report \
     RISK_REGISTER_GATE_REPORT="$ROOT/risk-register-gate-report.json" \
-    ./scripts/risk-register-gate.sh 2>&1 | tee "$ROOT/risk-register-gate.log"
+    ./scripts/release-risk-gate.sh 2>&1 | tee "$ROOT/risk-register-gate.log"
 else
   echo "== risk register gate skipped =="
 fi
 
 echo "== collect release evidence =="
-RELEASE_VERSION="$RELEASE_VERSION" RELEASE_EVIDENCE_DIR="$EVIDENCE_DIR" ./scripts/collect-release-evidence.sh
+RELEASE_VERSION="$RELEASE_VERSION" RELEASE_EVIDENCE_DIR="$EVIDENCE_DIR" ./scripts/release-evidence.sh
 
 echo "== preprod evidence complete =="
 echo "index=$EVIDENCE_DIR/release-evidence-index.json"

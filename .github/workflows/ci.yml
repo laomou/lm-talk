@@ -100,7 +100,7 @@ jobs:
         run: npm ci
 
       - name: Dependency audit
-        run: ./scripts/audit.sh
+        run: ./scripts/check-audit.sh
 
 
   sqlcipher-provider:

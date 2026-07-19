@@ -22,7 +22,7 @@
 | RISK-006 | 长时 fuzz、混沌和负载证据已有脚本/模板，但不一定完成生产时长运行。 | High | Open | 已有 `scripts/fuzz-campaign.sh`、联邦运行手册和证据模板；发布必须归档真实报告。 | 长时 fuzz 活动报告及语料/崩溃分类，以及长时联邦混沌/负载报告。 | TODO fuzz report; TODO federation report. | TODO(test/release owner) | TODO(no-go until evidence archived) |
 | RISK-007 | 外部安全审计有范围/跟踪，但仓库证据中没有完成的第三方报告。 | High | Open | `docs/SECURITY_AUDIT_SCOPE.md` 和 `docs/AUDIT_REMEDIATION_TRACKER.md`；在没有审计报告/修复前发布为否决。 | 第三方审计报告、审查提交/标签、修复跟踪和接受残余风险声明。 | `docs/EXTERNAL_AUDIT_PACKET.md`; TODO 审计报告。 | TODO(security owner) | TODO(no-go until audit complete) |
 | RISK-008 | SQLCipher 安全性依赖于构建和部署正确的 SQLCipher 产物及强密码处理。 | Medium | Open | SQLCipher 功能、部署 smoke、发布 smoke 产物和证据检查清单；发布必须归档精确产物证明。 | SQLCipher 产物验证、部署 smoke JSON、证明已加密 state DB 的指标和密码处理审查。 | TODO `sqlcipher-release-smoke-report.json`; TODO release asset verifier. | TODO(ops/release owner) | TODO(no-go/mitigated) |
-| RISK-009 | 依赖 advisory 异常可能在功能更改或上游依赖行为改变时变为可达。 | Medium | Open | `scripts/audit.sh` 记录了窄范围的忽略；依赖升级和功能更改时应重新评估。 | 当前依赖审计输出、依赖风险复核和针对发布的可接受异常文档。 | `docs/DEPENDENCY_RISK_REVIEW.md`; TODO 审计日志。 | TODO(dependency owner) | TODO(no-go/accepted with review) |
+| RISK-009 | 依赖 advisory 异常可能在功能更改或上游依赖行为改变时变为可达。 | Medium | Open | `scripts/check-audit.sh` 记录了窄范围的忽略；依赖升级和功能更改时应重新评估。 | 当前依赖审计输出、依赖风险复核和针对发布的可接受异常文档。 | `docs/DEPENDENCY_RISK_REVIEW.md`; TODO 审计日志。 | TODO(dependency owner) | TODO(no-go/accepted with review) |
 | RISK-010 | 公共联邦可用性取决于运营商部署质量、TLS/CORS 正确性、令牌卫生和备份操作。 | Medium | Open | 已有部署模板和运行手册；生产证据要求真实公共部署报告。 | 公共部署报告证明 TLS/CORS/令牌/备份操作和持续联邦检查。 | `docs/PUBLIC_FEDERATION_RUNBOOK.md`; TODO 公共部署报告。 | TODO(ops owner) | TODO(no-go/accepted with ops signoff) |
 
 ## 接受规则
@@ -37,13 +37,13 @@
 在发布签核前运行生产风险门禁：
 
 ```bash
-./scripts/risk-register-gate.sh
+./scripts/release-risk-gate.sh
 ```
 
 Strict 模式在任何 Medium/High/Critical 风险为 `Open` 或 `Rejected`、缺少负责人或缺少发布决策时退出非零。若要打印相同发现而不使更大证据收集任务失败：
 
 ```bash
-RISK_REGISTER_GATE_MODE=report ./scripts/risk-register-gate.sh
+RISK_REGISTER_GATE_MODE=report ./scripts/release-risk-gate.sh
 ```
 
 生产发布不得绕过此门禁；应按照以上接受规则解决、缓解或明确接受每个非低残余风险。

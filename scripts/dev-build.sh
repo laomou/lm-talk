@@ -6,7 +6,7 @@ export PATH="$ROOT/.tools/node/bin:$PATH"
 
 usage() {
   cat <<'USAGE'
-Usage: ./scripts/build.sh [all|node|web]
+Usage: ./scripts/dev-build.sh [all|node|web]
 
 Production builds only.
   all   build release lm_node and production web bundle (default)

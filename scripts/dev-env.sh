@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
   cat <<'USAGE'
-Usage: ./scripts/env.sh [all|web|wasm]
+Usage: ./scripts/dev-env.sh [all|web|wasm]
 
 Prepare local toolchain helpers. This is setup only; it does not build or run LM Talk.
 

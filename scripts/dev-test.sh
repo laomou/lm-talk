@@ -6,7 +6,7 @@ export PATH="$ROOT/.tools/node/bin:$PATH"
 
 usage() {
   cat <<'USAGE'
-Usage: ./scripts/test.sh [all|rust|fmt|e2e|web|typecheck]
+Usage: ./scripts/dev-test.sh [all|rust|fmt|e2e|web|typecheck]
 
 Test/check commands.
   all        fmt, Rust tests, core/node e2e, web typecheck, web build, web e2e (default)

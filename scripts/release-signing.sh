@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  scripts/signing-evidence.sh --package-name NAME --target TRIPLE --out FILE
+  scripts/release-signing.sh --package-name NAME --target TRIPLE --out FILE
 
 Creates a machine-readable signing/notarization evidence report for a release
 artifact. This script currently records production signing readiness and fails

@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
   cat <<'USAGE'
-Usage: ./scripts/run.sh node [options]
+Usage: ./scripts/dev-run.sh node [options]
 
 Production runtime only. This script never uses `cargo run`.
 It builds release and then execs target/release/lm_node.

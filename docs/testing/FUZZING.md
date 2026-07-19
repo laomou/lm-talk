@@ -22,13 +22,13 @@ cargo install cargo-fuzz
 
 ```bash
 # Core 文本导入解析：contact/friend/backup/prekey/signal/mailbox/message receipt/group/ratchet/file/device revoke
-./scripts/fuzz.sh core_imports -- -max_total_time=60
+./scripts/fuzz-run.sh core_imports -- -max_total_time=60
 
 # 原生节点 DHT RPC JSON 和快照合并输入
-./scripts/fuzz.sh node_dht_rpc -- -max_total_time=60
+./scripts/fuzz-run.sh node_dht_rpc -- -max_total_time=60
 
 # 原生节点控制请求调度，测试任意 method/path/body 分割
-./scripts/fuzz.sh node_control_request -- -max_total_time=60
+./scripts/fuzz-run.sh node_control_request -- -max_total_time=60
 ```
 
 对于更长的发布候选，请让每个目标运行数小时，并保存语料库，只提交小且有意义的回归种子。任何崩溃或超时都必须在发布前进行分类。

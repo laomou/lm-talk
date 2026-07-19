@@ -25,12 +25,12 @@ jobs:
       - name: Run SQLCipher unit smoke
         run: |
           set -euo pipefail
-          ./scripts/sqlcipher-smoke.sh | tee sqlcipher-smoke.log
+          ./scripts/check-sqlcipher.sh | tee sqlcipher-smoke.log
 
       - name: Run SQLCipher deploy smoke
         run: |
           set -euo pipefail
-          ./scripts/sqlcipher-deploy-smoke.sh | tee sqlcipher-deploy-smoke.log
+          ./scripts/check-sqlcipher-deploy.sh | tee sqlcipher-deploy-smoke.log
 
       - name: Write SQLCipher report
         if: always()

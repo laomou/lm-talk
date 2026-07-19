@@ -60,6 +60,6 @@ if [[ "$mode" == "fuzz-smoke" ]]; then
 fi
 
 section "web typecheck/build/e2e"
-./scripts/test.sh web
+./scripts/dev-test.sh web
 
 section "release-check $mode ok"

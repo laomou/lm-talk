@@ -15,9 +15,9 @@
 | --- | --- | --- | --- |
 | 快速发布检查 | `./scripts/release-check.sh quick` 或 CI `release-check` 日志 |  |  |
 | 完整发布检查 | `./scripts/release-check.sh full` 输出 |  |  |
-| 依赖审计 | `./scripts/audit.sh` / CI `dependency-audit` 日志 |  |  |
+| 依赖审计 | `./scripts/check-audit.sh` / CI `dependency-audit` 日志 |  |  |
 | 依赖风险复核 | 已审查 `docs/DEPENDENCY_RISK_REVIEW.md`；活动审计例外已说明 |  |  |
-| SQLCipher smoke | `./scripts/sqlcipher-smoke.sh` 或 SQLCipher Smoke 工作流产物 |  |  |
+| SQLCipher smoke | `./scripts/check-sqlcipher.sh` 或 SQLCipher Smoke 工作流产物 |  |  |
 | SQLCipher 发布二进制 smoke | 发布工作流中的 `lm_node-linux-x86_64-sqlcipher-smoke` 产物 |  |  |
 | 联邦验证 | `tests/deploy/lm-node-federation/run-all.sh` 生成的 `federation-report.json` 或工作流产物 |  |  |
 | 测试向量覆盖 | `cargo test -p lm_core --test test_vectors` 并审查 `docs/TEST_VECTOR_COVERAGE.md` 中的高优先级缺口 |  |  |
@@ -87,7 +87,7 @@
 运行发布门禁后，将本地报告汇总到一个目录：
 
 ```bash
-RELEASE_VERSION=vX.Y.Z RELEASE_EVIDENCE_DIR=release-evidence ./scripts/collect-release-evidence.sh
+RELEASE_VERSION=vX.Y.Z RELEASE_EVIDENCE_DIR=release-evidence ./scripts/release-evidence.sh
 ```
 
 该辅助工具会在存在时复制已知报告文件，并写入 `release-evidence-index.json`，标记为 `complete` / `incomplete`。这不替代人工审查；请在上表中填写 CI 产物、发布产物、审计和批准链接。
@@ -97,15 +97,15 @@ RELEASE_VERSION=vX.Y.Z RELEASE_EVIDENCE_DIR=release-evidence ./scripts/collect-r
 要获取本地预生产证据包，请运行：
 
 ```bash
-RELEASE_VERSION=preprod-local ./scripts/preprod-evidence.sh
+RELEASE_VERSION=preprod-local ./scripts/release-preprod.sh
 ```
 
 可选参数：
 
 ```bash
-RUN_FULL=0 RUN_FUZZ_SMOKE=1 RUN_SQLCIPHER=1 ./scripts/preprod-evidence.sh
-RUN_FUZZ_CAMPAIGN=1 FUZZ_CAMPAIGN_DURATION=3600 ./scripts/preprod-evidence.sh
-RUN_FEDERATION=1 ./scripts/preprod-evidence.sh
+RUN_FULL=0 RUN_FUZZ_SMOKE=1 RUN_SQLCIPHER=1 ./scripts/release-preprod.sh
+RUN_FUZZ_CAMPAIGN=1 FUZZ_CAMPAIGN_DURATION=3600 ./scripts/release-preprod.sh
+RUN_FEDERATION=1 ./scripts/release-preprod.sh
 ```
 
-该脚本会写入已知日志/报告，然后调用 `scripts/collect-release-evidence.sh`。它是证据采集辅助工具，不替代发布负责人或安全审核人的签核。
+该脚本会写入已知日志/报告，然后调用 `scripts/release-evidence.sh`。它是证据采集辅助工具，不替代发布负责人或安全审核人的签核。

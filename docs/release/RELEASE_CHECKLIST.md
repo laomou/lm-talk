@@ -13,16 +13,16 @@
 依赖漏洞检查应单独运行（GitHub Actions 中的 `dependency-audit` 任务在推送和拉取请求时执行；`dependency-review` 也会检查拉取请求中的依赖差异）：
 
 ```bash
-./scripts/audit.sh
+./scripts/check-audit.sh
 ```
 
 在生产签核前，运行风险登记门禁。该门禁故意不包含在快速 CI 中，因为开发阶段允许存在未决风险，但它对生产发布来说是一个否决门禁：
 
 ```bash
-./scripts/risk-register-gate.sh
+./scripts/release-risk-gate.sh
 ```
 
-`./scripts/audit.sh` 中当前的审计例外范围很窄：`hickory-proto` 的 advisory 被忽略，是因为它来自未启用的可选 `libp2p` DNS/mDNS 依赖元数据，而 LM Talk 仅启用 TCP/noise/yamux/request-response；`paste` 被忽略，是因为它是通过 `libp2p-tcp` 间接引入的 Linux netlink proc-macro 警告。每当 `libp2p` 升级或启用 DNS/mDNS 功能时，必须重新评估这些例外。
+`./scripts/check-audit.sh` 中当前的审计例外范围很窄：`hickory-proto` 的 advisory 被忽略，是因为它来自未启用的可选 `libp2p` DNS/mDNS 依赖元数据，而 LM Talk 仅启用 TCP/noise/yamux/request-response；`paste` 被忽略，是因为它是通过 `libp2p-tcp` 间接引入的 Linux netlink proc-macro 警告。每当 `libp2p` 升级或启用 DNS/mDNS 功能时，必须重新评估这些例外。
 
 对于一个更慢但包含完整 Cargo 工作区测试套件的本地门禁：
 
@@ -60,7 +60,7 @@
 发布工作流完成后，在分享标签前验证已发布产物和 SQLCipher 发布 smoke 证据：
 
 ```bash
-./scripts/verify-node-release.sh v0.1.0
+./scripts/release-verify.sh v0.1.0
 ```
 
 该命令会下载发布产物，验证 `SHA256SUMS.txt`，验证每个平台的 `.sha256` 文件，并检查归档的 SQLCipher smoke 报告是否证明 SQLCipher 产物的 `state_db` 指标已加密。
@@ -68,7 +68,7 @@
 若要将已发布产物验证纳入自动化证据包：
 
 ```bash
-RUN_RELEASE_ASSET_VERIFY=1 RELEASE_TAG_VERIFY=v0.1.0 RELEASE_VERSION=v0.1.0 ./scripts/preprod-evidence.sh
+RUN_RELEASE_ASSET_VERIFY=1 RELEASE_TAG_VERIFY=v0.1.0 RELEASE_VERSION=v0.1.0 ./scripts/release-preprod.sh
 ```
 
 证据采集器会将 `release-asset-verify-report.json` 与常规的 release-check、fuzz、SQLCipher、联邦和风险登记门禁报告一起归档。
@@ -84,7 +84,7 @@ git push origin v0.1.0
 
 ```bash
 cargo build --locked --release -p lm_node --target x86_64-unknown-linux-gnu
-python3 scripts/package-node-release.py \
+python3 scripts/release-package.py \
   --target x86_64-unknown-linux-gnu \
   --package-name lm_node-linux-x86_64 \
   --out-dir dist
@@ -101,7 +101,7 @@ python3 scripts/package-node-release.py \
 - 具有已保存语料库和崩溃分类的长时 fuzz 活动，超出 harness 编译检查。
 - 真实网络混沌/负载测试：延迟、丢包、重连、畸形/恶意节点、持续 Mailbox/DHT 负载。
 - 对核心密码学、Web/WASM 绑定、节点控制面和部署指南的外部安全审计。
-- 原生节点 SQLCipher 数据库加密由 `lm_node/sqlcipher` 功能实现并由 `./scripts/sqlcipher-smoke.sh` 覆盖；在生产就绪发布前，必须归档 release workflow 的 `lm_node-linux-x86_64-sqlcipher-smoke` 产物，或等效部署运行，证明所选发布产物已用 `sqlcipher` 构建、以 `state_db_encryption_mode=sqlcipher` 启动，并报告已加密的 state DB 指标。JSON `state_file` 仅作为兼容/快照路径。
+- 原生节点 SQLCipher 数据库加密由 `lm_node/sqlcipher` 功能实现并由 `./scripts/check-sqlcipher.sh` 覆盖；在生产就绪发布前，必须归档 release workflow 的 `lm_node-linux-x86_64-sqlcipher-smoke` 产物，或等效部署运行，证明所选发布产物已用 `sqlcipher` 构建、以 `state_db_encryption_mode=sqlcipher` 启动，并报告已加密的 state DB 指标。JSON `state_file` 仅作为兼容/快照路径。
 - 超出备份合并启发式的多设备同步与回执状态协调。
 
 ## 发布候选证据保留
@@ -110,20 +110,20 @@ python3 scripts/package-node-release.py \
 
 在称某个节点构建为生产就绪前，还应为任何配置的状态持久化模式归档证据：
 
-- `state_db`：`./scripts/sqlcipher-smoke.sh` 输出以及 release workflow 中的 `lm_node-linux-x86_64-sqlcipher-smoke` 产物（或等效部署证据），其中包含 `/control/stats` 和 `/control/metrics` 检查结果，确认 `state_db.encryption_mode=sqlcipher`、`state_db_encrypted=true`，以及 `lm_node_state_db_encrypted 1` 对应于该发布产物/配置。
+- `state_db`：`./scripts/check-sqlcipher.sh` 输出以及 release workflow 中的 `lm_node-linux-x86_64-sqlcipher-smoke` 产物（或等效部署证据），其中包含 `/control/stats` 和 `/control/metrics` 检查结果，确认 `state_db.encryption_mode=sqlcipher`、`state_db_encrypted=true`，以及 `lm_node_state_db_encrypted 1` 对应于该发布产物/配置。
 - `state_file`：`/control/stats` 和 `/control/metrics` 显示 `state_file.encrypted=true` / `lm_node_state_file_encrypted 1`，并且 `state_file.permissions_hardened=true`；同时保留密码文件权限检查证据。
 
 每个发布候选还应归档：
 
 - `./scripts/release-check.sh full` 的输出。
-- `./scripts/sqlcipher-smoke.sh` 的输出/产物、手动 SQLCipher Smoke 工作流和 release workflow 的 `lm_node-linux-x86_64-sqlcipher-smoke` 产物（如果 SQLCipher state DB 加密属于该发布）。
+- `./scripts/check-sqlcipher.sh` 的输出/产物、手动 SQLCipher Smoke 工作流和 release workflow 的 `lm_node-linux-x86_64-sqlcipher-smoke` 产物（如果 SQLCipher state DB 加密属于该发布）。
 - fuzz 活动命令、持续时间、语料/崩溃产物和分类笔记。使用 `./scripts/fuzz-campaign.sh` 生成 JSON 活动报告以及每个目标的日志/语料/产物目录。
 - 网络/负载测试报告和拓扑。
 - 安全审计包（`docs/EXTERNAL_AUDIT_PACKET.md`）、审计报告和修复说明。
 - 确认 RELEASE.md 联系/流程在发布分支中是最新的。
 - 验证使用的构建产物哈希和部署配置。
 - 每个原生产物的签名/公证证据（`*-signing-evidence.json`）以及 `docs/RELEASE_SIGNING.md` 的审查；如果 macOS/Windows 生产发行报告不完整，则仍视为否决。
-- `./scripts/audit.sh` / CI `dependency-audit` 的输出。
-- `./scripts/risk-register-gate.sh` 的输出，证明每个非低残余风险都有负责人、证据要求、证据链接和发布决策；`./scripts/preprod-evidence.sh` 会归档 `risk-register-gate.log` 和 `risk-register-gate-report.json`，并在 `release-evidence-index.json` 中记录机器可读的 `production_gate.risk_register_gate_status` / 计数。
+- `./scripts/check-audit.sh` / CI `dependency-audit` 的输出。
+- `./scripts/release-risk-gate.sh` 的输出，证明每个非低残余风险都有负责人、证据要求、证据链接和发布决策；`./scripts/release-preprod.sh` 会归档 `risk-register-gate.log` 和 `risk-register-gate-report.json`，并在 `release-evidence-index.json` 中记录机器可读的 `production_gate.risk_register_gate_status` / 计数。
 - 对于拉取请求，CI `dependency-review` 对新增易受攻击依赖的状态。
 - 对 Dependabot 生成的依赖更新 PR 的审查状态（`cargo`、Web npm 和 GitHub Actions）。
