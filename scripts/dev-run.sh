@@ -17,7 +17,6 @@ Node options:
   --config-file PATH      JSON config for lm_node serve-control
   --bind HOST:PORT
   --state-db PATH         default: ./lm-node-state.prd.sqlite3 unless --config-file is used
-  --state-file PATH       optional legacy JSON snapshot state file
   --peer-id ID            default: lm-node-prd
   --control-token TOKEN   require Authorization: Bearer TOKEN for non-health APIs
   --control-token-file PATH read control token from file
@@ -76,8 +75,6 @@ esac
 config_file="${LM_NODE_CONFIG_FILE:-}"
 bind="0.0.0.0:8787"
 bind_set=0
-state_file="$ROOT/lm-node-state.prd.json"
-state_file_set=0
 state_db="$ROOT/lm-node-state.prd.sqlite3"
 state_db_set=0
 peer_id="lm-node-prd"
@@ -116,7 +113,6 @@ while [[ $# -gt 0 ]]; do
     --ipv6) bind="[::]:8787"; bind_set=1; shift ;;
     --bind) bind="${2:?--bind requires HOST:PORT}"; bind_set=1; shift 2 ;;
     --state-db) state_db="${2:?--state-db requires PATH}"; state_db_set=1; shift 2 ;;
-    --state-file) state_file="${2:?--state-file requires PATH}"; state_file_set=1; shift 2 ;;
     --peer-id) peer_id="${2:?--peer-id requires ID}"; peer_id_set=1; shift 2 ;;
     --control-token) control_token="${2:?--control-token requires TOKEN}"; shift 2 ;;
     --control-token-file) control_token_file="${2:?--control-token-file requires PATH}"; shift 2 ;;
@@ -171,7 +167,6 @@ ERR
 
 validate_prd_run_security
 
-mkdir -p "$(dirname "$state_file")"
 mkdir -p "$(dirname "$state_db")"
 echo "启动 LM Talk 同步服务（PRD）"
 if [[ -n "$config_file" ]]; then
@@ -185,9 +180,6 @@ if [[ -z "$config_file" || "$peer_id_set" == "1" ]]; then
 fi
 if [[ -z "$config_file" || "$state_db_set" == "1" ]]; then
   echo "状态数据库：$state_db"
-fi
-if [[ "$state_file_set" == "1" ]]; then
-  echo "兼容 JSON 状态文件：$state_file"
 fi
 if [[ -n "$control_token" || -n "$control_token_file" ]]; then
   echo "控制面认证：Bearer token enabled"
@@ -235,9 +227,6 @@ if [[ -z "$config_file" || "$peer_id_set" == "1" ]]; then
 fi
 if [[ -z "$config_file" || "$state_db_set" == "1" ]]; then
   args+=(--state-db "$state_db")
-fi
-if [[ "$state_file_set" == "1" ]]; then
-  args+=(--state-file "$state_file")
 fi
 if [[ -n "$control_token" ]]; then
   args+=(--control-token "$control_token")

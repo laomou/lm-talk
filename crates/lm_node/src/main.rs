@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     env, fs,
-    fs::{File, OpenOptions},
     io::{Read, Write},
     net::{IpAddr, TcpListener, TcpStream, ToSocketAddrs},
     path::{Path, PathBuf},
@@ -164,7 +163,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .transpose()?
                 .unwrap_or_default();
             let peer_id = optional_arg(&args, "--peer-id")?.unwrap_or("lm-node-dev".into());
-            let state_file = optional_arg(&args, "--state-file")?;
             let state_db = optional_arg(&args, "--state-db")?;
             let mut node = if let Some(path) = &state_db {
                 load_node_state_db_or_new(
@@ -174,26 +172,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         ..Default::default()
                     },
                 )?
-            } else if let Some(path) = &state_file {
-                load_node_state(path).unwrap_or_else(|_| {
-                    NativeNode::new(NodeConfig {
-                        peer_id: peer_id.clone(),
-                        ..Default::default()
-                    })
-                })
             } else {
                 NativeNode::new(NodeConfig {
                     peer_id,
                     ..Default::default()
                 })
             };
-            serve_libp2p_dht(
-                &listen,
-                &bootstrap_peers,
-                &mut node,
-                state_file.as_deref(),
-                state_db.as_deref(),
-            )?;
+            serve_libp2p_dht(&listen, &bootstrap_peers, &mut node, state_db.as_deref())?;
         }
         "distance" => {
             let a = required_arg(&args, "--a")?;
@@ -219,7 +204,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let peer_id = optional_arg(&args, "--peer-id")?
                 .or(file_config.peer_id)
                 .unwrap_or("lm-node-dev".into());
-            let state_file = optional_arg(&args, "--state-file")?.or(file_config.state_file);
             let state_db = optional_arg(&args, "--state-db")?.or(file_config.state_db);
             let sync_peer_token_direct = optional_arg(&args, "--sync-peer-token")?
                 .or_else(|| env::var("LM_NODE_SYNC_PEER_TOKEN").ok());
@@ -407,21 +391,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         ..Default::default()
                     },
                 )?
-            } else if let Some(path) = &state_file {
-                load_node_state(path).unwrap_or_else(|_| {
-                    NativeNode::new(NodeConfig {
-                        peer_id: peer_id.clone(),
-                        mailbox_sender_rate_limit_window_seconds,
-                        mailbox_sender_rate_limit_max_messages,
-                        mailbox_global_rate_limit_window_seconds,
-                        mailbox_global_rate_limit_max_messages,
-                        max_mailbox_bytes,
-                        max_mailbox_bytes_per_user,
-                        max_mailbox_messages_per_user,
-                        dht_peer_quarantine_consecutive_failures,
-                        ..Default::default()
-                    })
-                })
             } else {
                 NativeNode::new(NodeConfig {
                     peer_id,
@@ -452,7 +421,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             serve_control(
                 &bind,
                 &mut node,
-                state_file.as_deref(),
                 state_db.as_deref(),
                 sync_peers,
                 sync_interval_seconds,
@@ -647,7 +615,6 @@ fn compact_json(value: &serde_json::Value) -> String {
 struct ServeControlConfigFile {
     bind: Option<String>,
     peer_id: Option<String>,
-    state_file: Option<String>,
     state_db: Option<String>,
     control_token: Option<String>,
     control_token_file: Option<String>,
@@ -698,91 +665,8 @@ fn load_node_state_db_or_new(
     }
 }
 
-fn load_node_state(path: &str) -> Result<NativeNode, Box<dyn std::error::Error>> {
-    let text = fs::read_to_string(path)?;
-    let snapshot: NodeStateSnapshot = serde_json::from_str(&text)?;
-    Ok(NativeNode::from_state_snapshot(snapshot))
-}
-
-fn save_node_state(path: &str, node: &NativeNode) -> Result<(), Box<dyn std::error::Error>> {
-    let text = serde_json::to_string_pretty(&node.to_state_snapshot())?;
-    atomic_write_text(Path::new(path), &text)?;
-    Ok(())
-}
-
 fn state_db_stats_opt(path: Option<&str>) -> Option<StateDbStats> {
     path.and_then(|path| state_db_stats(path).ok())
-}
-
-#[cfg(unix)]
-fn file_permissions_hardened(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    fs::metadata(path)
-        .map(|metadata| metadata.permissions().mode() & 0o077 == 0)
-        .unwrap_or(false)
-}
-
-#[cfg(not(unix))]
-fn file_permissions_hardened(_path: &Path) -> bool {
-    true
-}
-
-fn state_file_stats(path: &str) -> Result<StateFileStats, Box<dyn std::error::Error>> {
-    let path_ref = Path::new(path);
-    Ok(StateFileStats {
-        file_bytes: fs::metadata(path_ref).map(|m| m.len()).unwrap_or(0),
-        permissions_hardened: file_permissions_hardened(path_ref),
-    })
-}
-
-fn state_file_stats_opt(path: Option<&str>) -> Option<StateFileStats> {
-    path.and_then(|path| state_file_stats(path).ok())
-}
-
-fn atomic_write_text(path: &Path, text: &str) -> Result<(), Box<dyn std::error::Error>> {
-    if let Some(parent) = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        fs::create_dir_all(parent)?;
-    }
-    let tmp_path = atomic_temp_path(path);
-    {
-        let mut file = create_private_file(&tmp_path)?;
-        file.write_all(text.as_bytes())?;
-        file.write_all(b"\n")?;
-        file.sync_all()?;
-    }
-    fs::rename(&tmp_path, path)?;
-    set_private_file_permissions(path)?;
-    sync_parent_dir(path);
-    Ok(())
-}
-
-fn atomic_temp_path(path: &Path) -> PathBuf {
-    let mut file_name = path
-        .file_name()
-        .map(|name| name.to_os_string())
-        .unwrap_or_else(|| "lm-node-state".into());
-    file_name.push(format!(
-        ".tmp.{}.{}",
-        process::id(),
-        current_unix_timestamp()
-    ));
-    path.with_file_name(file_name)
-}
-
-fn create_private_file(path: &Path) -> Result<File, Box<dyn std::error::Error>> {
-    let mut options = OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let file = options.open(path)?;
-    set_private_file_permissions(path)?;
-    Ok(file)
 }
 
 #[cfg(unix)]
@@ -812,23 +696,6 @@ fn path_with_suffix(path: &Path, suffix: &str) -> PathBuf {
     let mut value = path.as_os_str().to_os_string();
     value.push(suffix);
     PathBuf::from(value)
-}
-
-fn sync_parent_dir(path: &Path) {
-    #[cfg(unix)]
-    {
-        if let Some(parent) = path
-            .parent()
-            .filter(|parent| !parent.as_os_str().is_empty())
-            && let Ok(dir) = File::open(parent)
-        {
-            let _ = dir.sync_all();
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-    }
 }
 
 fn run_snapshot_sync(
@@ -1043,7 +910,6 @@ serve-control 常用选项
   --peer-id <id>           节点 ID (默认自动生成)
 
 serve-control 高级选项 (均有默认值, 通常无需设置)
-  --state-file <file>                            JSON 格式状态文件 (state-db 的替代)
   --control-previous-token <old-token,csv>       token 轮换时的旧 token
   --sync-peer <url,csv> --sync-interval-seconds <n>    定时从对端节点同步快照
   --dht-transport <http-control|libp2p>          DHT 传输方式
@@ -1056,7 +922,7 @@ serve-control 高级选项 (均有默认值, 通常无需设置)
 其他命令
   announce --backup-file <file> --passphrase <text> [--peer-id <id>] [--addr <multiaddr,csv>] [--cap <bootstrap,dht,relay,mailbox>]
   inspect-public --text-file <file> --identity-public-key <base64>
-  serve-dht-libp2p [--listen <multiaddr>] [--bootstrap-peer <libp2p://multiaddr|peer_id,csv>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>]
+  serve-dht-libp2p [--listen <multiaddr>] [--bootstrap-peer <libp2p://multiaddr|peer_id,csv>] [--peer-id <id>] [--state-db <sqlite>]
   run [--peer-id <id>] [--addr <multiaddr>]
 "
     );
@@ -1071,16 +937,15 @@ mod tests {
         DhtReplicationRunStats, DhtRoutingRefreshRunStats, DhtRunnerConfig, DhtTransport,
         DhtTransportKind, LogFormat, MAX_CONTROL_PEER_RESPONSE_BYTES,
         MAX_CONTROL_REQUEST_HEADER_LINE_BYTES, NodeMaintenanceStats, RateLimitConfig, RateLimiter,
-        ServeControlConfigFile, StateDbStats, StateFileStats, SyncPeerConfig, atomic_write_text,
-        configure_control_client_stream, configure_control_peer_stream, connect_control_peer,
-        control_error_http_response, current_unix_timestamp, dht_find_value_with_transport,
-        dht_runner_peer_configs, dht_runner_peer_configs_with_quarantine_count,
-        handle_control_dht_find_value_run, handle_control_dht_maintenance_run,
-        handle_control_dht_replication_run, handle_control_dht_routing_refresh_run,
-        http_control_request, libp2p_dht_swarm, load_node_state_db, open_state_db,
-        parse_content_length_and_validate_headers, parse_dht_transport_kind, parse_log_format,
-        read_secret_file, request_is_authorized, run_dht_replication,
-        run_dht_replication_with_transport, run_dht_routing_refresh,
+        ServeControlConfigFile, StateDbStats, SyncPeerConfig, configure_control_client_stream,
+        configure_control_peer_stream, connect_control_peer, control_error_http_response,
+        current_unix_timestamp, dht_find_value_with_transport, dht_runner_peer_configs,
+        dht_runner_peer_configs_with_quarantine_count, handle_control_dht_find_value_run,
+        handle_control_dht_maintenance_run, handle_control_dht_replication_run,
+        handle_control_dht_routing_refresh_run, http_control_request, libp2p_dht_swarm,
+        load_node_state_db, open_state_db, parse_content_length_and_validate_headers,
+        parse_dht_transport_kind, parse_log_format, read_secret_file, request_is_authorized,
+        run_dht_replication, run_dht_replication_with_transport, run_dht_routing_refresh,
         run_dht_routing_refresh_with_transport, save_node_state_db, send_dht_rpc,
         status_for_request_error, status_reason, sync_backoff_delay_seconds,
     };
@@ -3334,10 +3199,6 @@ connection: close
                 file_bytes: 40960,
                 permissions_hardened: true,
             }),
-            Some(&StateFileStats {
-                file_bytes: 2048,
-                permissions_hardened: true,
-            }),
             Some(&NodeSyncStatus {
                 peers: [(
                     "http://peer.example".to_string(),
@@ -3508,34 +3369,6 @@ connection: close
         assert!(limiter.check(ip, now, config));
         assert!(!limiter.check(ip, now, config));
         assert!(limiter.check(ip, now + std::time::Duration::from_secs(10), config));
-    }
-
-    #[test]
-    fn atomic_write_text_replaces_existing_file_and_cleans_temp() {
-        let dir = std::env::temp_dir().join(format!(
-            "lm-node-atomic-save-test-{}-{}",
-            std::process::id(),
-            current_unix_timestamp()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("state.json");
-        std::fs::write(&path, "old").unwrap();
-
-        atomic_write_text(&path, "new-state").unwrap();
-
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new-state\n");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            assert_eq!(
-                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-                0o600
-            );
-        }
-        let leftovers = std::fs::read_dir(&dir).unwrap().count();
-        assert_eq!(leftovers, 1);
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_dir(&dir);
     }
 
     #[test]
@@ -3750,7 +3583,6 @@ connection: close
             r#"{
                 "bind": "127.0.0.1:9999",
                 "peer_id": "cfg-node",
-                "state_file": "state.json",
                 "state_db": "state.sqlite3",
                 "control_token": "control",
                 "control_token_file": "control.secret",
@@ -3782,7 +3614,6 @@ connection: close
         .unwrap();
         assert_eq!(config.bind.as_deref(), Some("127.0.0.1:9999"));
         assert_eq!(config.peer_id.as_deref(), Some("cfg-node"));
-        assert_eq!(config.state_file.as_deref(), Some("state.json"));
         assert_eq!(config.state_db.as_deref(), Some("state.sqlite3"));
         assert_eq!(config.control_token.as_deref(), Some("control"));
         assert_eq!(config.control_token_file.as_deref(), Some("control.secret"));

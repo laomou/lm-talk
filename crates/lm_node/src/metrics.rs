@@ -6,13 +6,6 @@ pub(super) struct ControlStatsResponse<'a> {
     pub(crate) runtime: &'a ControlRuntimeStats,
     pub(crate) maintenance: NodeMaintenanceStats,
     pub(crate) state_db: Option<StateDbStats>,
-    pub(crate) state_file: Option<StateFileStats>,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub(super) struct StateFileStats {
-    pub(crate) file_bytes: u64,
-    pub(crate) permissions_hardened: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -163,7 +156,6 @@ impl ControlRuntimeStats {
         &self,
         maintenance: &NodeMaintenanceStats,
         state_db: Option<&StateDbStats>,
-        state_file: Option<&StateFileStats>,
         sync_status: Option<&NodeSyncStatus>,
         dht_peer_quarantine_threshold: u32,
     ) -> String {
@@ -1071,30 +1063,6 @@ impl ControlRuntimeStats {
                 &mut out,
                 "lm_node_maintenance_last_pruned_at",
                 last_pruned_at,
-            );
-        }
-        if let Some(state_file) = state_file {
-            push_metric_help(
-                &mut out,
-                "lm_node_state_file_bytes",
-                "JSON state_file size in bytes.",
-            );
-            push_metric_type(&mut out, "lm_node_state_file_bytes", "gauge");
-            push_metric_value(&mut out, "lm_node_state_file_bytes", state_file.file_bytes);
-            push_metric_help(
-                &mut out,
-                "lm_node_state_file_permissions_hardened",
-                "Whether the JSON state_file permissions are restricted to the node user.",
-            );
-            push_metric_type(&mut out, "lm_node_state_file_permissions_hardened", "gauge");
-            push_metric_value(
-                &mut out,
-                "lm_node_state_file_permissions_hardened",
-                if state_file.permissions_hardened {
-                    1
-                } else {
-                    0
-                },
             );
         }
         if let Some(state_db) = state_db {

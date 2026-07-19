@@ -203,14 +203,10 @@ fn handle_libp2p_dht_server_event(
 #[allow(dead_code)]
 fn persist_libp2p_dht_state(
     node: &NativeNode,
-    state_file: Option<&str>,
     state_db: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(path) = state_db {
         save_node_state_db(path, node)?;
-    }
-    if let Some(path) = state_file {
-        save_node_state(path, node)?;
     }
     Ok(())
 }
@@ -220,7 +216,6 @@ pub(super) fn serve_libp2p_dht(
     listen: &str,
     bootstrap_peers: &[Libp2pBootstrapPeer],
     node: &mut NativeNode,
-    state_file: Option<&str>,
     state_db: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -239,7 +234,7 @@ pub(super) fn serve_libp2p_dht(
             if handle_libp2p_dht_server_event(node, &mut swarm, &mut pending_discovery, event)
                 .is_some()
             {
-                persist_libp2p_dht_state(node, state_file, state_db)?;
+                persist_libp2p_dht_state(node, state_db)?;
             }
         }
         #[allow(unreachable_code)]

@@ -136,7 +136,6 @@ pub(super) fn control_error_http_response(status: u16, body: &str) -> String {
 pub(super) fn serve_control(
     bind: &str,
     node: &mut NativeNode,
-    state_file: Option<&str>,
     state_db: Option<&str>,
     sync_peers: Vec<SyncPeerConfig>,
     sync_interval_seconds: u64,
@@ -383,15 +382,6 @@ pub(super) fn serve_control(
                     }),
                 );
             }
-            if let Some(path) = state_file
-                && let Err(err) = save_node_state(path, node)
-            {
-                logger.error(
-                    "state_file.save_error",
-                    format!("state save error: {err}"),
-                    serde_json::json!({"path": path, "error": err.to_string()}),
-                );
-            }
             if let Some(path) = state_db
                 && let Err(err) = save_node_state_db(path, node)
             {
@@ -415,7 +405,6 @@ pub(super) fn serve_control(
                     &mut rate_limiter,
                     rate_limit,
                     &mut runtime_stats,
-                    state_file,
                     state_db,
                     &dht_configured_peers,
                     dht_runner,
@@ -432,14 +421,6 @@ pub(super) fn serve_control(
                     );
                     let response = control_error_http_response(status, &body);
                     let _ = stream.write_all(response.as_bytes());
-                } else if let Some(path) = state_file
-                    && let Err(err) = save_node_state(path, node)
-                {
-                    logger.error(
-                        "state_file.save_error",
-                        format!("state save error: {err}"),
-                        serde_json::json!({"path": path, "error": err.to_string()}),
-                    );
                 }
                 if let Some(path) = state_db
                     && let Err(err) = save_node_state_db(path, node)
@@ -471,7 +452,6 @@ pub(super) fn handle_stream(
     rate_limiter: &mut RateLimiter,
     rate_limit: RateLimitConfig,
     runtime_stats: &mut ControlRuntimeStats,
-    state_file: Option<&str>,
     state_db: Option<&str>,
     dht_configured_peers: &[SyncPeerConfig],
     dht_runner: DhtRunnerConfig,
@@ -538,7 +518,6 @@ pub(super) fn handle_stream(
                 runtime: runtime_stats,
                 maintenance: node.maintenance_stats().clone(),
                 state_db: state_db_stats_opt(state_db),
-                state_file: state_file_stats_opt(state_file),
             },
         )
     } else if request.method == "GET" && request.path.starts_with("/api/control/metrics") {
@@ -548,7 +527,6 @@ pub(super) fn handle_stream(
             runtime_stats.to_openmetrics(
                 node.maintenance_stats(),
                 state_db_stats_opt(state_db).as_ref(),
-                state_file_stats_opt(state_file).as_ref(),
                 Some(&node.sync_status),
                 dht_runner.peer_quarantine_consecutive_failures,
             ),

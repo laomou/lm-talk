@@ -9,7 +9,6 @@ This directory is a minimal self-hosted `lm_node` deployment for a public Mailbo
 - `Caddyfile.example` is a TLS reverse-proxy starter config.
 - `config.example.json` is a hardened starter config with:
   - persistent plaintext SQLite state under `/data` (at-rest protection via full-disk encryption / LUKS/dm-crypt);
-  - JSON `state_file` snapshot fallback with hardened file permissions;
   - bearer-token control auth;
   - mailbox quotas and rate limits;
   - JSON logs.

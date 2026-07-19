@@ -44,7 +44,6 @@ CLI 参数 > 环境变量 > config file > 默认值
 | `bind` | string | `127.0.0.1:8787` | 控制面监听地址。生产部署建议绑定 loopback，由反向代理负责 TLS。 |
 | `peer_id` | string | `lm-node-dev` | 本节点 public peer id。 |
 | `state_db` | string | 无 | 明文 SQLite 正式状态数据库；按表保存 mailbox、prekey bundle、signed one-time-prekey records、consumed prekey、public peer/routing peer、DHT record 等节点状态。state_db 存的是中继/邮箱运营状态（离线消息已是端到端密文，prekey/public-peer/DHT 记录本就公开），磁盘静态保护由整盘加密（LUKS/dm-crypt）承担。 |
-| `state_file` | string | 无 | 兼容 JSON snapshot 状态文件；保存时采用同目录临时文件 + fsync + rename；Unix 下保存后权限收紧为 `0600`。可与 `state_db` 同时配置作为调试导出。 |
 | `control_token` | string | 无 | 控制面 Bearer token。配置后除 `/health` 外都要求 `Authorization: Bearer ...`。 |
 | `control_token_file` | string | 无 | 从文件读取控制面 Bearer token；文件内容会 trim，空文件报错；Unix 下要求 regular file 且权限不能向 group/other 开放（建议 `chmod 600`），并拒绝 symlink。 |
 | `control_previous_tokens` | string[] | `[]` | 旧控制面 Bearer token 列表，用于无停机轮换 grace window；只应短期保留。 |
@@ -86,7 +85,6 @@ CLI 参数 > 环境变量 > config file > 默认值
 | `bind` | `--bind` | - |
 | `peer_id` | `--peer-id` | - |
 | `state_db` | `--state-db` | - |
-| `state_file` | `--state-file` | - |
 | `control_token` | `--control-token` | `LM_NODE_CONTROL_TOKEN` |
 | `control_token_file` | `--control-token-file` | `LM_NODE_CONTROL_TOKEN_FILE` |
 | `control_previous_tokens` | `--control-previous-token old1,old2` | `LM_NODE_CONTROL_PREVIOUS_TOKENS` |

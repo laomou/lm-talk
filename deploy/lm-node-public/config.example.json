@@ -2,7 +2,6 @@
   "bind": "0.0.0.0:8787",
   "peer_id": "lm-node-public-1",
   "state_db": "/data/lm-node.sqlite3",
-  "state_file": "/data/lm-node-state.json",
   "control_token_file": "/run/secrets/control-token",
   "cors_allow_origins": [
     "https://YOUR_GITHUB_USER.github.io"
