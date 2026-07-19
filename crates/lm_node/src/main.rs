@@ -463,6 +463,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|value| parse_csv(&value))
                 .or(file_config.cors_allow_origins)
                 .unwrap_or_default();
+            let admin_dir =
+                optional_arg(&args, "--admin-dir")?.or_else(|| env::var("LM_NODE_ADMIN_DIR").ok());
             let security = ControlSecurityConfig {
                 token,
                 previous_tokens: control_previous_tokens,
@@ -547,6 +549,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     window_seconds: rate_limit_window_seconds,
                     max_requests: rate_limit_max_requests,
                 },
+                admin_dir.as_deref(),
                 ControlLogger::new(log_format),
             )?;
         }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { createNodeApi } from './nodeApi'
 import type { NodeConfig } from './types'
 import HealthPanel from './components/HealthPanel.vue'
@@ -19,6 +19,10 @@ function loadConfig(): NodeConfig {
     }
   } catch {
     // ignore malformed storage
+  }
+  // Auto-detect: if served from the node itself (same origin), use that as default URL
+  if (location.hostname === '127.0.0.1' || location.hostname === 'localhost' || location.hostname === '[::1]') {
+    return { url: location.origin, token: '' }
   }
   return { url: 'http://127.0.0.1:8787', token: '' }
 }
@@ -44,6 +48,15 @@ function connect() {
 function disconnect() {
   config.value = null
 }
+
+// Auto-connect when served from loopback on the default node port (same-origin)
+onMounted(() => {
+  const host = location.hostname
+  const port = location.port
+  if ((host === '127.0.0.1' || host === 'localhost' || host === '::1') && port === '8787') {
+    connect()
+  }
+})
 </script>
 
 <template>

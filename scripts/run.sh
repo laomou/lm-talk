@@ -298,4 +298,8 @@ fi
 if [[ -z "$config_file" || "$log_format_set" == "1" ]]; then
   args+=(--log-format "$log_format")
 fi
+admin_dist="$ROOT/apps/node-admin/dist"
+if [[ -d "$admin_dist" ]]; then
+  args+=(--admin-dir "$admin_dist")
+fi
 exec "$ROOT/target/release/lm_node" "${args[@]}"

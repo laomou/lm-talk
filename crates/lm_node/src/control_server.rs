@@ -144,6 +144,7 @@ pub(super) fn serve_control(
     dht_runner: DhtRunnerConfig,
     security: ControlSecurityConfig,
     rate_limit: RateLimitConfig,
+    admin_dir: Option<&str>,
     logger: ControlLogger,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(bind)?;
@@ -418,6 +419,7 @@ pub(super) fn serve_control(
                     state_db,
                     &dht_configured_peers,
                     dht_runner,
+                    admin_dir,
                     &logger,
                 ) {
                     let status = status_for_request_error(&err.to_string());
@@ -473,6 +475,7 @@ pub(super) fn handle_stream(
     state_db: Option<&str>,
     dht_configured_peers: &[SyncPeerConfig],
     dht_runner: DhtRunnerConfig,
+    admin_dir: Option<&str>,
     logger: &ControlLogger,
 ) -> Result<(), Box<dyn std::error::Error>> {
     configure_control_client_stream(stream)?;
@@ -483,6 +486,40 @@ pub(super) fn handle_stream(
     let method = request.method.clone();
     let path = request.path.clone();
     let request_body_bytes = request.body.len();
+
+    // /admin/* — loopback-only static file serving (no auth, no rate limit, no CORS)
+    if request.method == "GET" && (request.path == "/admin" || request.path.starts_with("/admin/"))
+    {
+        let is_loopback = peer_addr
+            .as_ref()
+            .map(|addr| addr.ip().is_loopback())
+            .unwrap_or(false);
+        if !is_loopback {
+            let response = ControlHttpResponse::text(403, "admin panel is loopback only");
+            write_response(
+                stream,
+                &response,
+                runtime_stats,
+                &endpoint,
+                &method,
+                started_at,
+                request_body_bytes,
+            )?;
+            return Ok(());
+        }
+        let response = serve_admin_file(admin_dir, &request.path);
+        write_response(
+            stream,
+            &response,
+            runtime_stats,
+            &endpoint,
+            &method,
+            started_at,
+            request_body_bytes,
+        )?;
+        return Ok(());
+    }
+
     let origin = request.header("origin").map(str::to_string);
     let response = if !security.allows_origin(origin.as_deref()) {
         ControlHttpResponse::text(403, "cors origin not allowed")
@@ -1086,4 +1123,77 @@ impl ControlHttpResponse {
 
 pub(super) fn find_header_end(buffer: &[u8]) -> Option<usize> {
     buffer.windows(4).position(|window| window == b"\r\n\r\n")
+}
+
+fn serve_admin_file(admin_dir: Option<&str>, request_path: &str) -> ControlHttpResponse {
+    let Some(dir) = admin_dir else {
+        return ControlHttpResponse::text(404, "admin panel not configured (use --admin-dir)");
+    };
+    let rel_path = request_path
+        .strip_prefix("/admin")
+        .unwrap_or("")
+        .trim_start_matches('/');
+    let file_path = if rel_path.is_empty() || rel_path == "/" {
+        format!("{}/index.html", dir)
+    } else {
+        let clean = rel_path.split('?').next().unwrap_or(rel_path);
+        if clean.contains("..") {
+            return ControlHttpResponse::text(400, "invalid path");
+        }
+        format!("{}/{}", dir, clean)
+    };
+    match std::fs::read(&file_path) {
+        Ok(content) => {
+            let content_type = mime_for_path(&file_path);
+            ControlHttpResponse {
+                status: 200,
+                content_type: content_type.to_string(),
+                body: String::from_utf8_lossy(&content).into_owned(),
+            }
+        }
+        Err(_) => ControlHttpResponse::text(404, "not found"),
+    }
+}
+
+fn mime_for_path(path: &str) -> &'static str {
+    if path.ends_with(".html") {
+        "text/html; charset=utf-8"
+    } else if path.ends_with(".js") {
+        "application/javascript; charset=utf-8"
+    } else if path.ends_with(".css") {
+        "text/css; charset=utf-8"
+    } else if path.ends_with(".json") {
+        "application/json"
+    } else if path.ends_with(".svg") {
+        "image/svg+xml"
+    } else if path.ends_with(".png") {
+        "image/png"
+    } else if path.ends_with(".ico") {
+        "image/x-icon"
+    } else if path.ends_with(".wasm") {
+        "application/wasm"
+    } else {
+        "application/octet-stream"
+    }
+}
+
+fn write_response(
+    stream: &mut TcpStream,
+    response: &ControlHttpResponse,
+    _runtime_stats: &mut ControlRuntimeStats,
+    _endpoint: &str,
+    _method: &str,
+    _started_at: Instant,
+    _request_body_bytes: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let raw = format!(
+        "HTTP/1.1 {} {}\r\ncontent-type: {}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+        response.status,
+        status_reason(response.status),
+        response.content_type,
+        response.body.len(),
+        response.body
+    );
+    stream.write_all(raw.as_bytes())?;
+    Ok(())
 }
