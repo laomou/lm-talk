@@ -431,17 +431,27 @@ test('消息同步可完成好友请求和消息收发', async ({ browser }) => 
   await bob.getByRole('button', { name: '同步' }).click()
   await expect(bob.getByText(/Mailbox 容量：/)).toBeVisible()
   await expect.poll(async () => bob.locator('.contact').filter({ hasText: 'Alice' }).count(), { timeout: 15_000 }).toBeGreaterThan(0)
-  await bob.goto('/#/contacts')
-  await bob.getByRole('button', { name: '同步' }).click()
-  await bob.goto('/#/chat')
-  await bob.locator('.contact').filter({ hasText: 'Alice' }).click()
-  await expect(bob.locator('.bubble.in').filter({ hasText: '你好 Bob' })).toHaveCount(1)
+  // Message delivery over the mailbox is asynchronous: a single sync click does
+  // not guarantee the ciphertext has been fetched and decrypted yet. Re-sync
+  // until the inbound bubble appears rather than betting on one round trip.
+  await expect.poll(async () => {
+    await bob.goto('/#/contacts')
+    await bob.getByRole('button', { name: '同步' }).click()
+    await bob.goto('/#/chat')
+    await bob.locator('.contact').filter({ hasText: 'Alice' }).click()
+    return bob.locator('.bubble.in').filter({ hasText: '你好 Bob' }).count()
+  }, { timeout: 30_000 }).toBe(1)
   await alice.goto('/#/contacts')
   await alice.getByRole('button', { name: '收件箱' }).click()
-  await alice.getByRole('button', { name: '同步' }).click()
-  await alice.goto('/#/chat')
-  await alice.locator('.contact').filter({ hasText: 'Bob' }).click()
-  await expect(alice.locator('.bubble.out').filter({ hasText: '你好 Bob' })).toContainText('已送达')
+  // The delivery receipt travels back over the mailbox too (Bob acks, Alice
+  // pulls), so re-sync until the outbound bubble flips to 已送达.
+  await expect.poll(async () => {
+    await alice.goto('/#/contacts')
+    await alice.getByRole('button', { name: '同步' }).click()
+    await alice.goto('/#/chat')
+    await alice.locator('.contact').filter({ hasText: 'Bob' }).click()
+    return alice.locator('.bubble.out').filter({ hasText: '你好 Bob' }).filter({ hasText: '已送达' }).count()
+  }, { timeout: 30_000 }).toBeGreaterThan(0)
 
   await bob.goto('/#/chat')
   await bob.locator('.contact').filter({ hasText: 'Alice' }).click()
