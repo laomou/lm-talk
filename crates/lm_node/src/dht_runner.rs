@@ -19,7 +19,7 @@ impl DhtTransport for HttpControlDhtTransport {
         request: &DhtRpcRequest,
     ) -> Result<DhtRpcResponse, Box<dyn std::error::Error>> {
         let body = serde_json::json!({ "request": request }).to_string();
-        let response = http_control_request(peer, "POST", "/dht/rpc", &body)?;
+        let response = http_control_request(peer, "POST", "/api/dht/rpc", &body)?;
         let response = serde_json::from_str(&response)?;
         validate_dht_rpc_response(request, response)
     }

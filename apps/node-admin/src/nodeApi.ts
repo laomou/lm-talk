@@ -64,18 +64,18 @@ export function createNodeApi(getConfig: () => NodeConfig, timeoutMs = 10_000) {
     request(path, { method: 'POST', body: JSON.stringify(jsonBody) })
 
   return {
-    health: (): Promise<HealthResponse> => get('/health'),
-    stats: (): Promise<ControlStatsResponse> => get('/control/stats'),
-    metricsText: (): Promise<string> => request('/control/metrics').then(String),
-    syncStatus: (): Promise<SyncStatusResponse> => get('/sync/status'),
-    resetPeer: (peerUrl: string) => post('/sync/peer/reset', { url: peerUrl }),
-    dhtMaintenance: () => get('/dht/maintenance?factor=3&limit=8&max_targets=8'),
-    dhtReplicate: () => get('/dht/replicate?factor=3'),
-    dhtRoutingRefresh: () => get('/dht/routing-refresh?limit=8&max_targets=8'),
+    health: (): Promise<HealthResponse> => get('/api/health'),
+    stats: (): Promise<ControlStatsResponse> => get('/api/control/stats'),
+    metricsText: (): Promise<string> => request('/api/control/metrics').then(String),
+    syncStatus: (): Promise<SyncStatusResponse> => get('/api/sync/status'),
+    resetPeer: (peerUrl: string) => post('/api/sync/peer/reset', { url: peerUrl }),
+    dhtMaintenance: () => get('/api/dht/maintenance?factor=3&limit=8&max_targets=8'),
+    dhtReplicate: () => get('/api/dht/replicate?factor=3'),
+    dhtRoutingRefresh: () => get('/api/dht/routing-refresh?limit=8&max_targets=8'),
     dhtFindValue: (key: string) =>
-      get(`/dht/find-value?key=${encodeURIComponent(key)}&limit=8&max_peers=8&alpha=3`),
-    snapshotExport: () => get('/sync/snapshot'),
-    snapshotImport: (snapshot: unknown) => post('/sync/import', { snapshot }),
+      get(`/api/dht/find-value?key=${encodeURIComponent(key)}&limit=8&max_peers=8&alpha=3`),
+    snapshotExport: () => get('/api/sync/snapshot'),
+    snapshotImport: (snapshot: unknown) => post('/api/sync/import', { snapshot }),
   }
 }
 

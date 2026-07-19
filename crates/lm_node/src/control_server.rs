@@ -171,7 +171,7 @@ pub(super) fn serve_control(
     );
     logger.info(
         "control.endpoints",
-        "endpoints: GET /health, GET /control/stats, GET /control/metrics, POST /announce, GET /peers/closest, POST /mailbox/push, GET /mailbox/take, GET /mailbox/status, POST /mailbox/ack, POST /prekey/publish, GET /prekey/get, GET /prekey/status, GET /dht/key, POST/GET /dht/record, GET /dht/closest, POST /dht/rpc, GET /dht/find-value, GET /dht/maintenance, GET /dht/replicate, GET /dht/routing-refresh, GET /dht/replication-plan, GET /dht/routing-refresh-plan, GET /sync/snapshot, GET /sync/status, POST /sync/peer/reset, POST /sync/import"
+        "endpoints: GET /api/health, GET /api/control/stats, GET /api/control/metrics, POST /api/announce, GET /api/peers/closest, POST /api/mailbox/push, GET /api/mailbox/take, GET /api/mailbox/status, POST /api/mailbox/ack, POST /api/prekey/publish, GET /api/prekey/get, GET /api/prekey/status, GET /api/dht/key, POST/GET /api/dht/record, GET /api/dht/closest, POST /api/dht/rpc, GET /api/dht/find-value, GET /api/dht/maintenance, GET /api/dht/replicate, GET /api/dht/routing-refresh, GET /api/dht/replication-plan, GET /api/dht/routing-refresh-plan, GET /api/sync/snapshot, GET /api/sync/status, POST /api/sync/peer/reset, POST /api/sync/import"
             .to_string(),
         serde_json::Value::Null,
     );
@@ -493,7 +493,7 @@ pub(super) fn handle_stream(
         ControlHttpResponse::from_control(node.handle_control_request(request))
     } else if !request_is_authorized(&request, security, peer_addr.as_ref()) {
         ControlHttpResponse::text(401, "unauthorized")
-    } else if request.method == "GET" && request.path.starts_with("/control/stats") {
+    } else if request.method == "GET" && request.path.starts_with("/api/control/stats") {
         node.prune_expired_records();
         ControlHttpResponse::json(
             200,
@@ -504,7 +504,7 @@ pub(super) fn handle_stream(
                 state_file: state_file_stats_opt(state_file),
             },
         )
-    } else if request.method == "GET" && request.path.starts_with("/control/metrics") {
+    } else if request.method == "GET" && request.path.starts_with("/api/control/metrics") {
         node.prune_expired_records();
         ControlHttpResponse::openmetrics(
             200,
@@ -516,7 +516,7 @@ pub(super) fn handle_stream(
                 dht_runner.peer_quarantine_consecutive_failures,
             ),
         )
-    } else if request.method == "GET" && request.path.starts_with("/dht/find-value") {
+    } else if request.method == "GET" && request.path.starts_with("/api/dht/find-value") {
         handle_control_dht_find_value_run(
             node,
             dht_configured_peers,
@@ -524,7 +524,7 @@ pub(super) fn handle_stream(
             &request.path,
             Some(runtime_stats),
         )
-    } else if request.method == "GET" && request.path.starts_with("/dht/maintenance") {
+    } else if request.method == "GET" && request.path.starts_with("/api/dht/maintenance") {
         handle_control_dht_maintenance_run(
             node,
             dht_configured_peers,
@@ -532,7 +532,7 @@ pub(super) fn handle_stream(
             &request.path,
             Some(runtime_stats),
         )
-    } else if request.method == "GET" && request.path.starts_with("/dht/replicate") {
+    } else if request.method == "GET" && request.path.starts_with("/api/dht/replicate") {
         handle_control_dht_replication_run(
             node,
             dht_configured_peers,
@@ -540,7 +540,7 @@ pub(super) fn handle_stream(
             &request.path,
             Some(runtime_stats),
         )
-    } else if request.method == "GET" && request.path.starts_with("/dht/routing-refresh") {
+    } else if request.method == "GET" && request.path.starts_with("/api/dht/routing-refresh") {
         handle_control_dht_routing_refresh_run(
             node,
             dht_configured_peers,
@@ -875,7 +875,7 @@ pub(super) fn request_is_within_rate_limit(
     rate_limiter: &mut RateLimiter,
     rate_limit: RateLimitConfig,
 ) -> bool {
-    if request.method == "GET" && request.path.starts_with("/health") {
+    if request.method == "GET" && request.path.starts_with("/api/health") {
         return true;
     }
     let Some(peer_addr) = peer_addr else {
@@ -889,7 +889,7 @@ pub(super) fn request_is_authorized(
     security: &ControlSecurityConfig,
     peer_addr: Option<&std::net::SocketAddr>,
 ) -> bool {
-    if request.method == "GET" && request.path.starts_with("/health") {
+    if request.method == "GET" && request.path.starts_with("/api/health") {
         return true;
     }
     if security.has_bearer_tokens() {

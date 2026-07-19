@@ -24,7 +24,7 @@ fn node_prekey_sync_mailbox_ratchet_e2e() {
         PreKeyBundle::new_with_signed_one_time_prekey_records(&bob, 5, 1, 3600).unwrap();
     let publish = node_b.handle_control_request(ControlRequest {
         method: "POST".into(),
-        path: "/prekey/publish".into(),
+        path: "/api/prekey/publish".into(),
         body: serde_json::json!({
             "prekey_bundle_text": bob_prekey.to_export_text().unwrap(),
             "signed_one_time_prekey_record_texts": bob_signed_otks
@@ -42,7 +42,7 @@ fn node_prekey_sync_mailbox_ratchet_e2e() {
         &node_b
             .handle_control_request(ControlRequest {
                 method: "GET".into(),
-                path: "/sync/snapshot".into(),
+                path: "/api/sync/snapshot".into(),
                 body: String::new(),
                 headers: Vec::new(),
             })
@@ -51,7 +51,7 @@ fn node_prekey_sync_mailbox_ratchet_e2e() {
     .unwrap();
     let import = node_a.handle_control_request(ControlRequest {
         method: "POST".into(),
-        path: "/sync/import".into(),
+        path: "/api/sync/import".into(),
         body: serde_json::json!({ "snapshot": snapshot }).to_string(),
         headers: Vec::new(),
     });
@@ -59,7 +59,7 @@ fn node_prekey_sync_mailbox_ratchet_e2e() {
 
     let get = node_a.handle_control_request(ControlRequest {
         method: "GET".into(),
-        path: format!("/prekey/get?user_id={}", bob.user_id()),
+        path: format!("/api/prekey/get?user_id={}", bob.user_id()),
         body: String::new(),
         headers: Vec::new(),
     });
@@ -122,7 +122,7 @@ fn node_prekey_sync_mailbox_ratchet_e2e() {
     .unwrap();
     let push = node_a.handle_control_request(ControlRequest {
         method: "POST".into(),
-        path: "/mailbox/push".into(),
+        path: "/api/mailbox/push".into(),
         body: serde_json::json!({
             "message_text": mailbox.to_export_text().unwrap(),
             "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
@@ -137,7 +137,7 @@ fn node_prekey_sync_mailbox_ratchet_e2e() {
         &node_a
             .handle_control_request(ControlRequest {
                 method: "GET".into(),
-                path: "/sync/snapshot".into(),
+                path: "/api/sync/snapshot".into(),
                 body: String::new(),
                 headers: Vec::new(),
             })
@@ -146,7 +146,7 @@ fn node_prekey_sync_mailbox_ratchet_e2e() {
     .unwrap();
     let import = node_b.handle_control_request(ControlRequest {
         method: "POST".into(),
-        path: "/sync/import".into(),
+        path: "/api/sync/import".into(),
         body: serde_json::json!({ "snapshot": snapshot }).to_string(),
         headers: Vec::new(),
     });
@@ -154,7 +154,7 @@ fn node_prekey_sync_mailbox_ratchet_e2e() {
 
     let take = node_b.handle_control_request(ControlRequest {
         method: "GET".into(),
-        path: format!("/mailbox/take?user_id={}", bob.user_id()),
+        path: format!("/api/mailbox/take?user_id={}", bob.user_id()),
         body: String::new(),
         headers: Vec::new(),
     });
@@ -188,7 +188,7 @@ fn mailbox_pressure_partial_ack_status_and_snapshot_recovery() {
         .unwrap();
         let push = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/mailbox/push".into(),
+            path: "/api/mailbox/push".into(),
             body: serde_json::json!({
                 "message_text": mailbox.to_export_text().unwrap(),
                 "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
@@ -201,7 +201,7 @@ fn mailbox_pressure_partial_ack_status_and_snapshot_recovery() {
 
     let take = node.handle_control_request(ControlRequest {
         method: "GET".into(),
-        path: format!("/mailbox/take?user_id={}&limit=25", bob.user_id()),
+        path: format!("/api/mailbox/take?user_id={}&limit=25", bob.user_id()),
         body: String::new(),
         headers: Vec::new(),
     });
@@ -220,7 +220,7 @@ fn mailbox_pressure_partial_ack_status_and_snapshot_recovery() {
 
     let ack = node.handle_control_request(ControlRequest {
         method: "POST".into(),
-        path: "/mailbox/ack".into(),
+        path: "/api/mailbox/ack".into(),
         body: serde_json::json!({
             "user_id": bob.user_id().to_string(),
             "delivery_ids": acked_ids,
@@ -236,7 +236,7 @@ fn mailbox_pressure_partial_ack_status_and_snapshot_recovery() {
     let acked_status = node.handle_control_request(ControlRequest {
         method: "GET".into(),
         path: format!(
-            "/mailbox/status?user_id={}&delivery_id={}",
+            "/api/mailbox/status?user_id={}&delivery_id={}",
             bob.user_id(),
             deliveries[0]["delivery_id"].as_str().unwrap()
         ),
@@ -251,7 +251,7 @@ fn mailbox_pressure_partial_ack_status_and_snapshot_recovery() {
     let unacked_status = node.handle_control_request(ControlRequest {
         method: "GET".into(),
         path: format!(
-            "/mailbox/status?user_id={}&delivery_id={unacked_id}",
+            "/api/mailbox/status?user_id={}&delivery_id={unacked_id}",
             bob.user_id()
         ),
         body: String::new(),
@@ -326,7 +326,7 @@ fn group_sender_key_fanout_via_mailbox() {
     .unwrap();
     let push_bob = node.handle_control_request(ControlRequest {
         method: "POST".into(),
-        path: "/mailbox/push".into(),
+        path: "/api/mailbox/push".into(),
         body: serde_json::json!({
             "message_text": bob_mailbox_msg.to_export_text().unwrap(),
             "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
@@ -346,7 +346,7 @@ fn group_sender_key_fanout_via_mailbox() {
     .unwrap();
     let push_carol = node.handle_control_request(ControlRequest {
         method: "POST".into(),
-        path: "/mailbox/push".into(),
+        path: "/api/mailbox/push".into(),
         body: serde_json::json!({
             "message_text": carol_mailbox_msg.to_export_text().unwrap(),
             "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
@@ -359,7 +359,7 @@ fn group_sender_key_fanout_via_mailbox() {
     // 6. Bob takes from mailbox, decrypts the group message
     let take_bob = node.handle_control_request(ControlRequest {
         method: "GET".into(),
-        path: format!("/mailbox/take?user_id={}", bob.user_id()),
+        path: format!("/api/mailbox/take?user_id={}", bob.user_id()),
         body: String::new(),
         headers: Vec::new(),
     });
@@ -374,7 +374,7 @@ fn group_sender_key_fanout_via_mailbox() {
     // 7. Carol takes from mailbox, decrypts the same group message
     let take_carol = node.handle_control_request(ControlRequest {
         method: "GET".into(),
-        path: format!("/mailbox/take?user_id={}", carol.user_id()),
+        path: format!("/api/mailbox/take?user_id={}", carol.user_id()),
         body: String::new(),
         headers: Vec::new(),
     });

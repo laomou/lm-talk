@@ -62,13 +62,18 @@ fn real_http_control_plane_dht_find_value_runs_iterative_query() {
     .unwrap();
     let record = DhtRecord::public_peer(&announce, announce.to_export_text().unwrap(), 3600);
     let key = record.key;
-    let store = http_json(&base_a, "POST", "/dht/record", json!({ "record": record }));
+    let store = http_json(
+        &base_a,
+        "POST",
+        "/api/dht/record",
+        json!({ "record": record }),
+    );
     assert_eq!(store.status, 201, "{}", store.body);
 
     let find = http_request(
         &base_b,
         "GET",
-        &format!("/dht/find-value?key={key}&limit=8&max_peers=2"),
+        &format!("/api/dht/find-value?key={key}&limit=8&max_peers=2"),
         "",
     );
     assert_eq!(find.status, 200, "{}", find.body);
@@ -77,7 +82,7 @@ fn real_http_control_plane_dht_find_value_runs_iterative_query() {
     assert_eq!(body["stats"]["attempts"], 1);
     assert_eq!(body["stats"]["found_records"], 1);
 
-    let get = http_request(&base_b, "GET", &format!("/dht/record?key={key}"), "");
+    let get = http_request(&base_b, "GET", &format!("/api/dht/record?key={key}"), "");
     assert_eq!(get.status, 200, "{}", get.body);
     let get_body: serde_json::Value = serde_json::from_str(&get.body).unwrap();
     assert_eq!(get_body["found"], true);
@@ -86,7 +91,7 @@ fn real_http_control_plane_dht_find_value_runs_iterative_query() {
         announce.to_export_text().unwrap()
     );
 
-    let stats = http_request(&base_b, "GET", "/control/stats", "");
+    let stats = http_request(&base_b, "GET", "/api/control/stats", "");
     assert_eq!(stats.status, 200, "{}", stats.body);
     let stats_body: serde_json::Value = serde_json::from_str(&stats.body).unwrap();
     assert_eq!(stats_body["dht_find_value_runs"], 1);
@@ -95,7 +100,7 @@ fn real_http_control_plane_dht_find_value_runs_iterative_query() {
     assert_eq!(stats_body["dht_find_value_found_records"], 1);
     assert!(stats_body["last_dht_find_value_at"].as_u64().is_some());
 
-    let metrics = http_request(&base_b, "GET", "/control/metrics", "");
+    let metrics = http_request(&base_b, "GET", "/api/control/metrics", "");
     assert_eq!(metrics.status, 200, "{}", metrics.body);
     assert!(metrics.body.contains("lm_node_dht_find_value_runs_total 1"));
     assert!(
@@ -121,13 +126,13 @@ fn real_http_control_plane_syncs_prekeys_and_mailbox_between_nodes() {
     wait_for_health(&base_a);
     wait_for_health(&base_b);
 
-    let health = http_request(&base_a, "GET", "/health", "");
+    let health = http_request(&base_a, "GET", "/api/health", "");
     assert_eq!(health.status, 200);
     assert!(health.body.contains("http-node-a"));
     let health_body: serde_json::Value = serde_json::from_str(&health.body).unwrap();
     assert_eq!(health_body["dht_record_capacity"].as_u64().unwrap(), 4096);
 
-    let cors = http_request(&base_a, "OPTIONS", "/prekey/get", "");
+    let cors = http_request(&base_a, "OPTIONS", "/api/prekey/get", "");
     assert_eq!(cors.status, 200);
 
     let (alice, _) = Identity::create_with_passphrase("http alice").unwrap();
@@ -139,7 +144,7 @@ fn real_http_control_plane_syncs_prekeys_and_mailbox_between_nodes() {
     let publish = http_json(
         &base_b,
         "POST",
-        "/prekey/publish",
+        "/api/prekey/publish",
         json!({
             "prekey_bundle_text": bob_bundle.to_export_text().unwrap(),
             "signed_one_time_prekey_record_texts": bob_signed_otks
@@ -151,13 +156,13 @@ fn real_http_control_plane_syncs_prekeys_and_mailbox_between_nodes() {
     assert_eq!(publish.status, 201, "{}", publish.body);
 
     // Node A imports node B's snapshot and can then serve Bob's prekey.
-    let snapshot_b = http_request(&base_b, "GET", "/sync/snapshot", "");
+    let snapshot_b = http_request(&base_b, "GET", "/api/sync/snapshot", "");
     assert_eq!(snapshot_b.status, 200);
     let snapshot: NodeStateSnapshot = serde_json::from_str(&snapshot_b.body).unwrap();
     let import = http_json(
         &base_a,
         "POST",
-        "/sync/import",
+        "/api/sync/import",
         json!({ "snapshot": snapshot }),
     );
     assert_eq!(import.status, 200, "{}", import.body);
@@ -165,7 +170,7 @@ fn real_http_control_plane_syncs_prekeys_and_mailbox_between_nodes() {
     let get_prekey = http_request(
         &base_a,
         "GET",
-        &format!("/prekey/get?user_id={}&consume=true", bob.user_id()),
+        &format!("/api/prekey/get?user_id={}&consume=true", bob.user_id()),
         "",
     );
     assert_eq!(get_prekey.status, 200, "{}", get_prekey.body);
@@ -193,7 +198,7 @@ fn real_http_control_plane_syncs_prekeys_and_mailbox_between_nodes() {
     let push = http_json_with_headers(
         &base_a,
         "POST",
-        "/mailbox/push",
+        "/api/mailbox/push",
         json!({
             "message_text": mailbox.to_export_text().unwrap(),
             "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
@@ -203,13 +208,13 @@ fn real_http_control_plane_syncs_prekeys_and_mailbox_between_nodes() {
     assert_eq!(push.status, 201, "{}", push.body);
 
     // Node B imports node A's snapshot and Bob can take + ack the delivery.
-    let snapshot_a = http_request(&base_a, "GET", "/sync/snapshot", "");
+    let snapshot_a = http_request(&base_a, "GET", "/api/sync/snapshot", "");
     assert_eq!(snapshot_a.status, 200);
     let snapshot: NodeStateSnapshot = serde_json::from_str(&snapshot_a.body).unwrap();
     let import = http_json(
         &base_b,
         "POST",
-        "/sync/import",
+        "/api/sync/import",
         json!({ "snapshot": snapshot }),
     );
     assert_eq!(import.status, 200, "{}", import.body);
@@ -217,7 +222,7 @@ fn real_http_control_plane_syncs_prekeys_and_mailbox_between_nodes() {
     let take = http_request(
         &base_b,
         "GET",
-        &format!("/mailbox/take?user_id={}", bob.user_id()),
+        &format!("/api/mailbox/take?user_id={}", bob.user_id()),
         "",
     );
     assert_eq!(take.status, 200, "{}", take.body);
@@ -233,7 +238,7 @@ fn real_http_control_plane_syncs_prekeys_and_mailbox_between_nodes() {
     let ack = http_json(
         &base_b,
         "POST",
-        "/mailbox/ack",
+        "/api/mailbox/ack",
         json!({
             "user_id": bob.user_id().to_string(),
             "delivery_ids": [delivery_id],
@@ -247,7 +252,7 @@ fn real_http_control_plane_syncs_prekeys_and_mailbox_between_nodes() {
     let take_again = http_request(
         &base_b,
         "GET",
-        &format!("/mailbox/take?user_id={}", bob.user_id()),
+        &format!("/api/mailbox/take?user_id={}", bob.user_id()),
         "",
     );
     assert_eq!(take_again.status, 200);
@@ -294,7 +299,7 @@ fn real_http_control_plane_auto_snapshot_sync_imports_mailbox() {
     let push = http_json_with_headers(
         &base_a,
         "POST",
-        "/mailbox/push",
+        "/api/mailbox/push",
         json!({
             "message_text": mailbox.to_export_text().unwrap(),
             "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
@@ -308,7 +313,7 @@ fn real_http_control_plane_auto_snapshot_sync_imports_mailbox() {
         let take = http_request(
             &base_b,
             "GET",
-            &format!("/mailbox/take?user_id={}", bob.user_id()),
+            &format!("/api/mailbox/take?user_id={}", bob.user_id()),
             "",
         );
         assert_eq!(take.status, 200, "{}", take.body);
@@ -328,7 +333,7 @@ fn real_http_control_plane_auto_snapshot_sync_imports_mailbox() {
         thread::sleep(Duration::from_millis(100));
     }
 
-    let sync_status = http_request(&base_b, "GET", "/sync/status", "");
+    let sync_status = http_request(&base_b, "GET", "/api/sync/status", "");
     assert_eq!(sync_status.status, 200, "{}", sync_status.body);
     let sync_body: serde_json::Value = serde_json::from_str(&sync_status.body).unwrap();
     let peer_status = &sync_body["peers"][format!("http://{base_a}")];
@@ -366,7 +371,7 @@ fn real_http_control_plane_state_file_recovers_mailbox_push_take_and_ack() {
     let push = http_json(
         &base_push,
         "POST",
-        "/mailbox/push",
+        "/api/mailbox/push",
         json!({
             "message_text": mailbox.to_export_text().unwrap(),
             "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
@@ -382,7 +387,7 @@ fn real_http_control_plane_state_file_recovers_mailbox_push_take_and_ack() {
     let take = http_request(
         &base_take,
         "GET",
-        &format!("/mailbox/take?user_id={}", bob.user_id()),
+        &format!("/api/mailbox/take?user_id={}", bob.user_id()),
         "",
     );
     assert_eq!(take.status, 200, "{}", take.body);
@@ -404,7 +409,7 @@ fn real_http_control_plane_state_file_recovers_mailbox_push_take_and_ack() {
     let retake = http_request(
         &base_retake,
         "GET",
-        &format!("/mailbox/take?user_id={}", bob.user_id()),
+        &format!("/api/mailbox/take?user_id={}", bob.user_id()),
         "",
     );
     assert_eq!(retake.status, 200, "{}", retake.body);
@@ -414,7 +419,7 @@ fn real_http_control_plane_state_file_recovers_mailbox_push_take_and_ack() {
     let ack = http_json(
         &base_retake,
         "POST",
-        "/mailbox/ack",
+        "/api/mailbox/ack",
         json!({
             "user_id": bob.user_id().to_string(),
             "delivery_ids": [delivery_id],
@@ -434,7 +439,7 @@ fn real_http_control_plane_state_file_recovers_mailbox_push_take_and_ack() {
     let after_ack = http_request(
         &base_after_ack,
         "GET",
-        &format!("/mailbox/take?user_id={}", bob.user_id()),
+        &format!("/api/mailbox/take?user_id={}", bob.user_id()),
         "",
     );
     assert_eq!(after_ack.status, 200, "{}", after_ack.body);
@@ -471,13 +476,13 @@ fn real_http_control_plane_state_db_recovers_mailbox_push_take_and_ack() {
     let mut node =
         spawn_node_with_state_db(&base_push, "http-sqlite-recovery-node", &state_db, &[]);
     wait_for_health(&base_push);
-    let health = http_request(&base_push, "GET", "/health", "");
+    let health = http_request(&base_push, "GET", "/api/health", "");
     assert_eq!(health.status, 200, "{}", health.body);
     assert!(health.body.contains("http-sqlite-recovery-node"));
     let push = http_json(
         &base_push,
         "POST",
-        "/mailbox/push",
+        "/api/mailbox/push",
         json!({
             "message_text": mailbox.to_export_text().unwrap(),
             "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
@@ -494,7 +499,7 @@ fn real_http_control_plane_state_db_recovers_mailbox_push_take_and_ack() {
     let take = http_request(
         &base_take,
         "GET",
-        &format!("/mailbox/take?user_id={}", bob.user_id()),
+        &format!("/api/mailbox/take?user_id={}", bob.user_id()),
         "",
     );
     assert_eq!(take.status, 200, "{}", take.body);
@@ -517,7 +522,7 @@ fn real_http_control_plane_state_db_recovers_mailbox_push_take_and_ack() {
     let retake = http_request(
         &base_retake,
         "GET",
-        &format!("/mailbox/take?user_id={}", bob.user_id()),
+        &format!("/api/mailbox/take?user_id={}", bob.user_id()),
         "",
     );
     assert_eq!(retake.status, 200, "{}", retake.body);
@@ -527,7 +532,7 @@ fn real_http_control_plane_state_db_recovers_mailbox_push_take_and_ack() {
     let ack = http_json(
         &base_retake,
         "POST",
-        "/mailbox/ack",
+        "/api/mailbox/ack",
         json!({
             "user_id": bob.user_id().to_string(),
             "delivery_ids": [delivery_id],
@@ -547,7 +552,7 @@ fn real_http_control_plane_state_db_recovers_mailbox_push_take_and_ack() {
     let after_ack = http_request(
         &base_after_ack,
         "GET",
-        &format!("/mailbox/take?user_id={}", bob.user_id()),
+        &format!("/api/mailbox/take?user_id={}", bob.user_id()),
         "",
     );
     assert_eq!(after_ack.status, 200, "{}", after_ack.body);
@@ -591,12 +596,12 @@ fn real_http_control_plane_loads_config_file() {
     let _node = spawn_node_config(&config_file);
     wait_for_health(&base);
 
-    let unauthorized = http_request(&base, "GET", "/sync/snapshot", "");
+    let unauthorized = http_request(&base, "GET", "/api/sync/snapshot", "");
     assert_eq!(unauthorized.status, 401);
     let authorized = http_request_with_headers(
         &base,
         "GET",
-        "/sync/snapshot",
+        "/api/sync/snapshot",
         "",
         &[
             ("authorization", "Bearer config-secret"),
@@ -686,7 +691,7 @@ fn real_http_control_plane_rejects_parser_abuse_with_precise_status() {
     let body_too_large = raw_http_request(
         &base,
         &format!(
-            "POST /sync/import HTTP/1.1\r\nhost: {base}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+            "POST /api/sync/import HTTP/1.1\r\nhost: {base}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
             4 * 1024 * 1024 + 1
         ),
     );
@@ -706,7 +711,7 @@ fn real_http_control_plane_rejects_parser_abuse_with_precise_status() {
     let conflicting_content_length = raw_http_request(
         &base,
         &format!(
-            "POST /sync/import HTTP/1.1\r\nhost: {base}\r\ncontent-length: 2\r\ncontent-length: 3\r\nconnection: close\r\n\r\n{{}}",
+            "POST /api/sync/import HTTP/1.1\r\nhost: {base}\r\ncontent-length: 2\r\ncontent-length: 3\r\nconnection: close\r\n\r\n{{}}",
         ),
     );
     assert_eq!(
@@ -723,7 +728,7 @@ fn real_http_control_plane_rejects_parser_abuse_with_precise_status() {
     let transfer_encoding = raw_http_request(
         &base,
         &format!(
-            "POST /sync/import HTTP/1.1\r\nhost: {base}\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n0\r\n\r\n",
+            "POST /api/sync/import HTTP/1.1\r\nhost: {base}\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n0\r\n\r\n",
         ),
     );
     assert_eq!(transfer_encoding.status, 400, "{}", transfer_encoding.body);
@@ -751,12 +756,12 @@ fn real_http_control_plane_rate_limits_non_health_requests() {
     wait_for_health(&base);
 
     // Health checks stay outside the limiter so supervisors can keep probing.
-    assert_eq!(http_request(&base, "GET", "/health", "").status, 200);
-    assert_eq!(http_request(&base, "GET", "/health", "").status, 200);
+    assert_eq!(http_request(&base, "GET", "/api/health", "").status, 200);
+    assert_eq!(http_request(&base, "GET", "/api/health", "").status, 200);
 
-    let first = http_request(&base, "GET", "/sync/status", "");
+    let first = http_request(&base, "GET", "/api/sync/status", "");
     assert_eq!(first.status, 200, "{}", first.body);
-    let limited = http_request(&base, "GET", "/sync/status", "");
+    let limited = http_request(&base, "GET", "/api/sync/status", "");
     assert_eq!(limited.status, 429, "{}", limited.body);
 }
 
@@ -779,7 +784,7 @@ fn real_http_control_plane_exposes_runtime_stats() {
     let baseline = http_request_with_headers(
         &base,
         "GET",
-        "/control/stats",
+        "/api/control/stats",
         "",
         &[("authorization", "Bearer stats-secret")],
     );
@@ -790,18 +795,18 @@ fn real_http_control_plane_exposes_runtime_stats() {
     let baseline_4xx = baseline["responses_4xx"].as_u64().unwrap();
     let baseline_unauthorized = baseline["unauthorized"].as_u64().unwrap();
     let baseline_cors_rejected = baseline["cors_rejected"].as_u64().unwrap();
-    let baseline_stats_endpoint = baseline["endpoints"]["GET /control/stats"]["requests"]
+    let baseline_stats_endpoint = baseline["endpoints"]["GET /api/control/stats"]["requests"]
         .as_u64()
         .unwrap_or(0);
     let baseline_sync_export_bytes = baseline["sync_snapshot_export_bytes"].as_u64().unwrap();
     let baseline_sync_exports = baseline["sync_snapshot_exports"].as_u64().unwrap();
 
-    let unauthorized = http_request(&base, "GET", "/sync/status", "");
+    let unauthorized = http_request(&base, "GET", "/api/sync/status", "");
     assert_eq!(unauthorized.status, 401);
     let forbidden_origin = http_request_with_headers(
         &base,
         "GET",
-        "/sync/status",
+        "/api/sync/status",
         "",
         &[
             ("authorization", "Bearer stats-secret"),
@@ -812,7 +817,7 @@ fn real_http_control_plane_exposes_runtime_stats() {
     let ok = http_request_with_headers(
         &base,
         "GET",
-        "/sync/status",
+        "/api/sync/status",
         "",
         &[("authorization", "Bearer stats-secret")],
     );
@@ -820,7 +825,7 @@ fn real_http_control_plane_exposes_runtime_stats() {
     let snapshot = http_request_with_headers(
         &base,
         "GET",
-        "/sync/snapshot",
+        "/api/sync/snapshot",
         "",
         &[("authorization", "Bearer stats-secret")],
     );
@@ -829,7 +834,7 @@ fn real_http_control_plane_exposes_runtime_stats() {
     let stats = http_request_with_headers(
         &base,
         "GET",
-        "/control/stats",
+        "/api/control/stats",
         "",
         &[("authorization", "Bearer stats-secret")],
     );
@@ -850,7 +855,7 @@ fn real_http_control_plane_exposes_runtime_stats() {
         body["cors_rejected"].as_u64().unwrap(),
         baseline_cors_rejected + 1
     );
-    let sync_endpoint = &body["endpoints"]["GET /sync/status"];
+    let sync_endpoint = &body["endpoints"]["GET /api/sync/status"];
     assert_eq!(sync_endpoint["requests"].as_u64().unwrap(), 3);
     assert_eq!(sync_endpoint["responses_2xx"].as_u64().unwrap(), 1);
     assert_eq!(sync_endpoint["responses_4xx"].as_u64().unwrap(), 2);
@@ -858,7 +863,7 @@ fn real_http_control_plane_exposes_runtime_stats() {
     assert!(sync_endpoint["max_duration_micros"].as_u64().is_some());
     assert_eq!(sync_endpoint["last_status"].as_u64().unwrap(), 200);
     assert_eq!(
-        body["endpoints"]["GET /control/stats"]["requests"]
+        body["endpoints"]["GET /api/control/stats"]["requests"]
             .as_u64()
             .unwrap(),
         baseline_stats_endpoint + 1
@@ -887,7 +892,7 @@ fn real_http_control_plane_exposes_runtime_stats() {
     let metrics = http_request_with_headers(
         &base,
         "GET",
-        "/control/metrics",
+        "/api/control/metrics",
         "",
         &[("authorization", "Bearer stats-secret")],
     );
@@ -903,13 +908,11 @@ fn real_http_control_plane_exposes_runtime_stats() {
             .contains("lm_node_control_security_events_total{event=\"unauthorized\"}")
     );
     assert!(metrics.body.contains(
-        "lm_node_control_endpoint_requests_total{endpoint=\"GET /sync/status\",class=\"4xx\"}"
+        "lm_node_control_endpoint_requests_total{endpoint=\"GET /api/sync/status\",class=\"4xx\"}"
     ));
-    assert!(
-        metrics.body.contains(
-            "lm_node_control_endpoint_duration_micros_total{endpoint=\"GET /sync/status\"}"
-        )
-    );
+    assert!(metrics.body.contains(
+        "lm_node_control_endpoint_duration_micros_total{endpoint=\"GET /api/sync/status\"}"
+    ));
     assert!(metrics.body.ends_with("# EOF\n"));
 }
 
@@ -929,13 +932,13 @@ fn real_http_control_plane_requires_token_and_enforces_cors() {
     );
     wait_for_health(&base);
 
-    let unauthorized = http_request(&base, "GET", "/sync/snapshot", "");
+    let unauthorized = http_request(&base, "GET", "/api/sync/snapshot", "");
     assert_eq!(unauthorized.status, 401);
 
     let forbidden_origin = http_request_with_headers(
         &base,
         "GET",
-        "/sync/snapshot",
+        "/api/sync/snapshot",
         "",
         &[
             ("authorization", "Bearer secret-token"),
@@ -947,7 +950,7 @@ fn real_http_control_plane_requires_token_and_enforces_cors() {
     let authorized = http_request_with_headers(
         &base,
         "GET",
-        "/sync/snapshot",
+        "/api/sync/snapshot",
         "",
         &[
             ("authorization", "Bearer secret-token"),
@@ -1118,7 +1121,7 @@ fn free_port() -> u16 {
 fn wait_for_health(addr: &str) {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        if let Ok(response) = try_http_request(addr, "GET", "/health", "")
+        if let Ok(response) = try_http_request(addr, "GET", "/api/health", "")
             && response.status == 200
         {
             return;

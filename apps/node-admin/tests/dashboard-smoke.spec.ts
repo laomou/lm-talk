@@ -5,7 +5,7 @@ const NODE_ORIGIN = 'http://node.test'
 async function installMockNode(page: Page) {
   await page.route(`${NODE_ORIGIN}/**`, async (route) => {
     const url = new URL(route.request().url())
-    if (url.pathname === '/health') {
+    if (url.pathname === '/api/health') {
       return route.fulfill({
         json: {
           status: 'ok',
@@ -21,7 +21,7 @@ async function installMockNode(page: Page) {
         },
       })
     }
-    if (url.pathname === '/control/stats') {
+    if (url.pathname === '/api/control/stats') {
       return route.fulfill({
         json: {
           requests_total: 42,
@@ -32,11 +32,11 @@ async function installMockNode(page: Page) {
           rate_limited: 0,
           cors_rejected: 0,
           bad_requests: 0,
-          endpoints: { '/health': { requests: 30, responses_2xx: 30 } },
+          endpoints: { '/api/health': { requests: 30, responses_2xx: 30 } },
         },
       })
     }
-    if (url.pathname === '/sync/status') {
+    if (url.pathname === '/api/sync/status') {
       return route.fulfill({
         json: {
           peers: {
@@ -45,7 +45,7 @@ async function installMockNode(page: Page) {
         },
       })
     }
-    if (url.pathname === '/dht/maintenance') {
+    if (url.pathname === '/api/dht/maintenance') {
       return route.fulfill({
         json: { peers: 2, records: 4, routing_peers: 3, replication: {}, routing_refresh: {} },
       })
@@ -74,7 +74,7 @@ test('节点管理面板可连接并展示健康与运行 DHT 维护', async ({ 
   await expect(page.getByText('请求总数 42', { exact: true })).toBeVisible()
 
   // Trigger DHT maintenance and confirm the request is issued + result rendered.
-  const maintenanceRequest = page.waitForRequest(`${NODE_ORIGIN}/dht/maintenance*`)
+  const maintenanceRequest = page.waitForRequest(`${NODE_ORIGIN}/api/dht/maintenance*`)
   await page.getByRole('button', { name: '运行 DHT 维护' }).click()
   await maintenanceRequest
   await expect(page.getByLabel('DHT 运维结果')).toContainText('"records": 4')

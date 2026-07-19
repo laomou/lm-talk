@@ -96,16 +96,16 @@ async function installMockSyncNode(context: BrowserContext, mailboxes: Map<strin
     const req = route.request()
     const url = new URL(req.url())
     if (url.hostname !== 'sync.test' && url.hostname !== 'mailbox.test') return route.continue()
-    if (url.pathname === '/health') return route.fulfill({ json: { ok: true, peers: 2, prekeys: 1, mailbox_deliveries: 0, mailbox_bytes: 0, mailbox_max_bytes: 10485760, mailbox_max_bytes_per_user: 2097152, mailbox_max_messages_per_user: 1000 } })
-    if (url.pathname === '/prekey/publish') return route.fulfill({ json: { ok: true } })
-    if (url.pathname === '/sync/status') return route.fulfill({ json: syncPeerHealth })
-    if (url.pathname === '/dht/key') {
+    if (url.pathname === '/api/health') return route.fulfill({ json: { ok: true, peers: 2, prekeys: 1, mailbox_deliveries: 0, mailbox_bytes: 0, mailbox_max_bytes: 10485760, mailbox_max_bytes_per_user: 2097152, mailbox_max_messages_per_user: 1000 } })
+    if (url.pathname === '/api/prekey/publish') return route.fulfill({ json: { ok: true } })
+    if (url.pathname === '/api/sync/status') return route.fulfill({ json: syncPeerHealth })
+    if (url.pathname === '/api/dht/key') {
       const requested = url.searchParams.get('kind')
       const kind = requested === 'mailbox-hint' ? 'MailboxHint' : requested === 'public-peer' ? 'PublicPeer' : 'PreKey'
       return route.fulfill({ json: { kind, value: url.searchParams.get('value'), key: 'b'.repeat(64) } })
     }
-    if (url.pathname === '/dht/record') return route.fulfill({ json: { stored: true, inserted: true, key: 'b'.repeat(64), records: 1 } })
-    if (url.pathname === '/dht/find-value') {
+    if (url.pathname === '/api/dht/record') return route.fulfill({ json: { stored: true, inserted: true, key: 'b'.repeat(64), records: 1 } })
+    if (url.pathname === '/api/dht/find-value') {
       const key = url.searchParams.get('key') || 'b'.repeat(64)
       const kindParam = url.searchParams.get('kind')
       const expired = key === 'c'.repeat(64)
@@ -114,10 +114,10 @@ async function installMockSyncNode(context: BrowserContext, mailboxes: Map<strin
         : { key, kind: 'PreKey', value: 'lm-prekey-bundle-v1:mock-dht-prekey', expires_at: expired ? 1 : Math.floor(Date.now() / 1000) + 3600 }
       return route.fulfill({ json: { key, found: true, record, records: 1, stats: { attempts: 2, successes: 2, failures: 0, found_records: 1, closer_records: 0, peers_quarantined: 0 } } })
     }
-    if (url.pathname === '/dht/maintenance') return route.fulfill({ json: { peers: 2, records: 4, routing_peers: 3, replication: { records: 4, attempts: 2, successes: 2, failures: 0, peers_quarantined: 0 }, routing_refresh: { targets: 8, attempts: 2, successes: 2, failures: 0, nodes_returned: 3, nodes_merged: 1, peers_quarantined: 0 } } })
-    if (url.pathname === '/dht/replicate') return route.fulfill({ json: { peers: 2, records: 4, stats: { records: 4, attempts: 2, successes: 2, failures: 0, peers_quarantined: 0 } } })
-    if (url.pathname === '/dht/routing-refresh') return route.fulfill({ json: { peers: 2, routing_peers: 3, stats: { targets: 8, attempts: 2, successes: 2, failures: 0, nodes_returned: 3, nodes_merged: 1, peers_quarantined: 0 } } })
-    if (url.pathname === '/sync/peer/reset') {
+    if (url.pathname === '/api/dht/maintenance') return route.fulfill({ json: { peers: 2, records: 4, routing_peers: 3, replication: { records: 4, attempts: 2, successes: 2, failures: 0, peers_quarantined: 0 }, routing_refresh: { targets: 8, attempts: 2, successes: 2, failures: 0, nodes_returned: 3, nodes_merged: 1, peers_quarantined: 0 } } })
+    if (url.pathname === '/api/dht/replicate') return route.fulfill({ json: { peers: 2, records: 4, stats: { records: 4, attempts: 2, successes: 2, failures: 0, peers_quarantined: 0 } } })
+    if (url.pathname === '/api/dht/routing-refresh') return route.fulfill({ json: { peers: 2, routing_peers: 3, stats: { targets: 8, attempts: 2, successes: 2, failures: 0, nodes_returned: 3, nodes_merged: 1, peers_quarantined: 0 } } })
+    if (url.pathname === '/api/sync/peer/reset') {
       const body = req.postDataJSON() as { url?: string }
       const peer = body.url ? syncPeerHealth.peers[body.url] : undefined
       if (peer) {
@@ -128,18 +128,18 @@ async function installMockSyncNode(context: BrowserContext, mailboxes: Map<strin
       }
       return route.fulfill({ json: { url: body.url, reset: Boolean(peer), status: peer ?? null } })
     }
-    if (url.pathname === '/mailbox/ack') {
+    if (url.pathname === '/api/mailbox/ack') {
       const body = req.postDataJSON() as { user_id?: string; delivery_ids?: string[] }
       for (const id of body.delivery_ids ?? []) deliveryStatus.set(`${body.user_id || ''}:${id}`, 'acked')
       return route.fulfill({ json: { ok: true, pending_bytes: 0, max_bytes_per_user: 2097152 } })
     }
-    if (url.pathname === '/mailbox/status') {
+    if (url.pathname === '/api/mailbox/status') {
       const userId = url.searchParams.get('user_id') || ''
       const deliveryId = url.searchParams.get('delivery_id') || ''
       const status = deliveryStatus.get(`${userId}:${deliveryId}`) || 'absent_or_expired'
       return route.fulfill({ json: { user_id: userId, summary: { bytes: 1024 }, max_bytes_per_user: 2097152, delivery: { delivery_id: deliveryId, status } } })
     }
-    if (url.pathname === '/mailbox/push') {
+    if (url.pathname === '/api/mailbox/push') {
       const body = req.postDataJSON() as { message_text: string }
       const message = decodePrefixedJson(body.message_text)
       const deliveryId = `mock-${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -157,7 +157,7 @@ async function installMockSyncNode(context: BrowserContext, mailboxes: Map<strin
       mailboxes.set(key, queue)
       return route.fulfill({ json: { delivery_id: deliveryId, pending_bytes: queue.length * 1024, max_bytes_per_user: 2097152 } })
     }
-    if (url.pathname === '/mailbox/take') {
+    if (url.pathname === '/api/mailbox/take') {
       const userId = url.searchParams.get('user_id') || ''
       const limit = Math.max(1, Math.min(Number(url.searchParams.get('limit') || '1') || 1, 1))
       const queued = mailboxes.get(userId) ?? []
@@ -214,6 +214,7 @@ async function enableSync(page: Page) {
   const syncInput = page.locator('#sync-service-input')
   if (!(await syncInput.isVisible())) await page.getByRole('button', { name: '编辑地址' }).click()
   await syncInput.fill('http://sync.test')
+  await syncInput.dispatchEvent('change')
   const button = page.getByRole('button', { name: '开启同步' })
   if (await button.isVisible()) await button.click()
   await expect(page.getByRole('button', { name: '关闭同步' })).toBeVisible()
@@ -760,6 +761,7 @@ test('最小端到端：加好友后发送并解密一条加密消息', async ({
 
   await enableSync(alice)
   await enableSync(bob)
+  await alice.waitForTimeout(500)
 
   // Alice adds Bob and sends a friend request via mailbox.
   await alice.goto('/#/contacts')

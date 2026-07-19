@@ -1424,13 +1424,13 @@ impl ControlRuntimeStats {
             return;
         }
         match endpoint {
-            "GET /sync/snapshot" => {
+            "GET /api/sync/snapshot" => {
                 self.sync_snapshot_exports = self.sync_snapshot_exports.saturating_add(1);
                 self.sync_snapshot_export_bytes = self
                     .sync_snapshot_export_bytes
                     .saturating_add(response_body_bytes as u64);
             }
-            "POST /sync/import" => {
+            "POST /api/sync/import" => {
                 self.sync_snapshot_imports = self.sync_snapshot_imports.saturating_add(1);
                 self.sync_snapshot_import_bytes = self
                     .sync_snapshot_import_bytes

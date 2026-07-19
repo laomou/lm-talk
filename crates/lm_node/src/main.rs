@@ -1147,7 +1147,7 @@ fn current_unix_timestamp() -> u64 {
 }
 
 fn fetch_snapshot(peer: &SyncPeerConfig) -> Result<NodeStateSnapshot, Box<dyn std::error::Error>> {
-    let body = http_control_request(peer, "GET", "/sync/snapshot", "")?;
+    let body = http_control_request(peer, "GET", "/api/sync/snapshot", "")?;
     Ok(serde_json::from_str(&body)?)
 }
 
@@ -1364,7 +1364,7 @@ mod tests {
                 let mut raw = [0u8; 4096];
                 let len = stream.read(&mut raw).unwrap();
                 let request = String::from_utf8_lossy(&raw[..len]);
-                assert!(request.starts_with("POST /dht/rpc HTTP/1.1"));
+                assert!(request.starts_with("POST /api/dht/rpc HTTP/1.1"));
                 assert!(request.contains("StoreRecord"));
                 let request_id = extract_dht_rpc_request_id_from_http(&request);
                 let body = serde_json::to_string(&DhtRpcResponse::StoreResult {
@@ -1395,7 +1395,7 @@ mod tests {
                 let mut raw = [0u8; 4096];
                 let len = stream.read(&mut raw).unwrap();
                 let request = String::from_utf8_lossy(&raw[..len]);
-                assert!(request.starts_with("POST /dht/rpc HTTP/1.1"));
+                assert!(request.starts_with("POST /api/dht/rpc HTTP/1.1"));
                 let request_id = extract_dht_rpc_request_id_from_http(&request);
                 let body = serde_json::to_string(&DhtRpcResponse::Nodes {
                     request_id,
@@ -2171,7 +2171,7 @@ mod tests {
             &mut node,
             &[],
             DhtRunnerConfig::default(),
-            "/dht/maintenance?factor=2&limit=4&max_targets=2",
+            "/api/dht/maintenance?factor=2&limit=4&max_targets=2",
             None,
         );
         assert_eq!(response.status, 200, "{}", response.body);
@@ -2195,7 +2195,7 @@ mod tests {
             &mut node,
             &peers,
             DhtRunnerConfig::default(),
-            "/dht/maintenance?factor=2&limit=4&max_targets=2",
+            "/api/dht/maintenance?factor=2&limit=4&max_targets=2",
             None,
         );
         assert_eq!(response.status, 200, "{}", response.body);
@@ -2212,7 +2212,7 @@ mod tests {
             &mut node,
             &[],
             DhtRunnerConfig::default(),
-            "/dht/replicate?factor=2",
+            "/api/dht/replicate?factor=2",
             None,
         );
         assert_eq!(empty.status, 200, "{}", empty.body);
@@ -2245,7 +2245,7 @@ mod tests {
             &mut node,
             &peers,
             DhtRunnerConfig::default(),
-            "/dht/replicate?factor=2",
+            "/api/dht/replicate?factor=2",
             None,
         );
         assert_eq!(quarantined.status, 200, "{}", quarantined.body);
@@ -2263,7 +2263,7 @@ mod tests {
             &mut node,
             &[],
             DhtRunnerConfig::default(),
-            "/dht/routing-refresh?limit=4&max_targets=2",
+            "/api/dht/routing-refresh?limit=4&max_targets=2",
             None,
         );
         assert_eq!(empty.status, 200, "{}", empty.body);
@@ -2285,7 +2285,7 @@ mod tests {
             &mut node,
             &peers,
             DhtRunnerConfig::default(),
-            "/dht/routing-refresh?limit=4&max_targets=2",
+            "/api/dht/routing-refresh?limit=4&max_targets=2",
             None,
         );
         assert_eq!(quarantined.status, 200, "{}", quarantined.body);
@@ -2301,7 +2301,7 @@ mod tests {
             &mut node,
             &[],
             DhtRunnerConfig::default(),
-            "/dht/find-value",
+            "/api/dht/find-value",
             None,
         );
         assert_eq!(missing.status, 400);
@@ -2312,7 +2312,7 @@ mod tests {
             &mut node,
             &[],
             DhtRunnerConfig::default(),
-            &format!("/dht/find-value?key={key}&limit=8&max_peers=2"),
+            &format!("/api/dht/find-value?key={key}&limit=8&max_peers=2"),
             None,
         );
         assert_eq!(ok.status, 200, "{}", ok.body);
@@ -2330,7 +2330,7 @@ mod tests {
             &[],
             DhtRunnerConfig::default(),
             &format!(
-                "/dht/find-value?kind=mailbox-hint&value={}&limit=8&max_peers=2",
+                "/api/dht/find-value?kind=mailbox-hint&value={}&limit=8&max_peers=2",
                 target_identity.user_id()
             ),
             None,
@@ -2354,7 +2354,7 @@ mod tests {
             &[],
             DhtRunnerConfig::default(),
             &format!(
-                "/dht/find-value?kind=mailbox-hint&value={}&limit=8&max_peers=2",
+                "/api/dht/find-value?kind=mailbox-hint&value={}&limit=8&max_peers=2",
                 target_identity.user_id()
             ),
             None,
@@ -2380,7 +2380,7 @@ mod tests {
             &mut node,
             &peers,
             DhtRunnerConfig::default(),
-            &format!("/dht/find-value?key={key}&limit=8&max_peers=2"),
+            &format!("/api/dht/find-value?key={key}&limit=8&max_peers=2"),
             None,
         );
         assert_eq!(quarantined.status, 200, "{}", quarantined.body);
@@ -3025,7 +3025,7 @@ mod tests {
             let mut raw = [0u8; 4096];
             let len = stream.read(&mut raw).unwrap();
             let request = String::from_utf8_lossy(&raw[..len]);
-            assert!(request.starts_with("POST /dht/rpc HTTP/1.1"));
+            assert!(request.starts_with("POST /api/dht/rpc HTTP/1.1"));
             assert!(request.contains("authorization: Bearer rpc-token"));
             assert!(request.contains("StoreRecord"));
             let body = serde_json::to_string(&DhtRpcResponse::StoreResult {
@@ -3082,7 +3082,7 @@ mod tests {
             let mut raw = [0u8; 4096];
             let len = stream.read(&mut raw).unwrap();
             let request = String::from_utf8_lossy(&raw[..len]);
-            assert!(request.starts_with("POST /dht/rpc HTTP/1.1"));
+            assert!(request.starts_with("POST /api/dht/rpc HTTP/1.1"));
             let body = serde_json::to_string(&DhtRpcResponse::StoreResult {
                 request_id: "wrong-request-id".into(),
                 stored: true,
@@ -3203,7 +3203,7 @@ connection: close
             token: None,
             peer_id: None,
         };
-        let err = http_control_request(&peer, "GET", "/sync/snapshot", "").unwrap_err();
+        let err = http_control_request(&peer, "GET", "/api/sync/snapshot", "").unwrap_err();
         assert!(err.to_string().contains("response too large"));
         server.join().unwrap();
     }
@@ -3249,10 +3249,10 @@ connection: close
         let line = logger.render_line(
             "info",
             "control.request",
-            "control request: GET /health status=200 duration_micros=5".into(),
+            "control request: GET /api/health status=200 duration_micros=5".into(),
             serde_json::json!({
                 "method": "GET",
-                "path": "/health",
+                "path": "/api/health",
                 "status": 200,
                 "duration_micros": 5,
             }),
@@ -3302,7 +3302,7 @@ connection: close
         };
         let request = |token: &str| lm_node::ControlRequest {
             method: "GET".into(),
-            path: "/sync/status".into(),
+            path: "/api/sync/status".into(),
             body: String::new(),
             headers: vec![("authorization".into(), format!("Bearer {token}"))],
         };
@@ -3351,14 +3351,14 @@ connection: close
     fn control_request_header_parser_rejects_smuggling_inputs() {
         assert_eq!(
             parse_content_length_and_validate_headers(
-                "POST /sync/import HTTP/1.1\r\ncontent-length: 7\r\ncontent-length: 7"
+                "POST /api/sync/import HTTP/1.1\r\ncontent-length: 7\r\ncontent-length: 7"
             )
             .unwrap(),
             7
         );
         assert!(
             parse_content_length_and_validate_headers(
-                "POST /sync/import HTTP/1.1\r\ncontent-length: 7\r\ncontent-length: 8"
+                "POST /api/sync/import HTTP/1.1\r\ncontent-length: 7\r\ncontent-length: 8"
             )
             .unwrap_err()
             .to_string()
@@ -3366,7 +3366,7 @@ connection: close
         );
         assert!(
             parse_content_length_and_validate_headers(
-                "POST /sync/import HTTP/1.1\r\ntransfer-encoding: chunked"
+                "POST /api/sync/import HTTP/1.1\r\ntransfer-encoding: chunked"
             )
             .unwrap_err()
             .to_string()
@@ -3374,7 +3374,7 @@ connection: close
         );
         assert!(
             parse_content_length_and_validate_headers(&format!(
-                "GET /health HTTP/1.1\r\nx-long: {}",
+                "GET /api/health HTTP/1.1\r\nx-long: {}",
                 "a".repeat(MAX_CONTROL_REQUEST_HEADER_LINE_BYTES + 1)
             ))
             .unwrap_err()
@@ -3386,8 +3386,8 @@ connection: close
     #[test]
     fn control_runtime_stats_counts_status_classes_and_security_events() {
         let mut stats = ControlRuntimeStats::new(123);
-        stats.record_response("GET /health", 200, std::time::Duration::from_micros(10));
-        stats.record_response("GET /health", 201, std::time::Duration::from_micros(20));
+        stats.record_response("GET /api/health", 200, std::time::Duration::from_micros(10));
+        stats.record_response("GET /api/health", 201, std::time::Duration::from_micros(20));
         stats.record_response(
             "POST /mailbox/push",
             400,
@@ -3411,9 +3411,9 @@ connection: close
         assert_eq!(stats.unauthorized, 1);
         assert_eq!(stats.cors_rejected, 1);
         assert_eq!(stats.rate_limited, 1);
-        stats.record_sync_snapshot_bytes("GET /sync/snapshot", 200, 0, 321);
-        stats.record_sync_snapshot_bytes("POST /sync/import", 200, 123, 10);
-        stats.record_sync_snapshot_bytes("POST /sync/import", 400, 999, 10);
+        stats.record_sync_snapshot_bytes("GET /api/sync/snapshot", 200, 0, 321);
+        stats.record_sync_snapshot_bytes("POST /api/sync/import", 200, 123, 10);
+        stats.record_sync_snapshot_bytes("POST /api/sync/import", 400, 999, 10);
         assert_eq!(stats.sync_snapshot_exports, 1);
         assert_eq!(stats.sync_snapshot_export_bytes, 321);
         assert_eq!(stats.sync_snapshot_imports, 1);
@@ -3500,7 +3500,7 @@ connection: close
             stats.last_dht_routing_refresh_schedule_delay_micros,
             Some(33)
         );
-        let health = stats.endpoints.get("GET /health").unwrap();
+        let health = stats.endpoints.get("GET /api/health").unwrap();
         assert_eq!(health.requests, 2);
         assert_eq!(health.responses_2xx, 2);
         assert_eq!(health.total_duration_micros, 30);

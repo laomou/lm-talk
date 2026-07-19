@@ -1812,7 +1812,7 @@ mod tests {
         let mut node = NativeNode::new(NodeConfig::default());
         let response = node.handle_control_request(ControlRequest {
             method: "GET".into(),
-            path: "/health".into(),
+            path: "/api/health".into(),
             body: String::new(),
             headers: Vec::new(),
         });
@@ -1874,14 +1874,14 @@ mod tests {
         .to_string();
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/announce".into(),
+            path: "/api/announce".into(),
             body,
             headers: Vec::new(),
         });
         assert_eq!(response.status, 201);
         let response = node.handle_control_request(ControlRequest {
             method: "GET".into(),
-            path: "/peers/closest?target=peer-a&limit=1".into(),
+            path: "/api/peers/closest?target=peer-a&limit=1".into(),
             body: String::new(),
             headers: Vec::new(),
         });
@@ -1899,7 +1899,7 @@ mod tests {
         let mut node = NativeNode::new(NodeConfig::default());
         let prekey = node.handle_control_request(ControlRequest {
             method: "GET".into(),
-            path: format!("/dht/key?kind=prekey&value={}", identity.user_id()),
+            path: format!("/api/dht/key?kind=prekey&value={}", identity.user_id()),
             body: String::new(),
             headers: Vec::new(),
         });
@@ -1913,7 +1913,10 @@ mod tests {
 
         let mailbox = node.handle_control_request(ControlRequest {
             method: "GET".into(),
-            path: format!("/dht/key?kind=mailbox-hint&value={}", identity.user_id()),
+            path: format!(
+                "/api/dht/key?kind=mailbox-hint&value={}",
+                identity.user_id()
+            ),
             body: String::new(),
             headers: Vec::new(),
         });
@@ -1927,7 +1930,10 @@ mod tests {
 
         let contact_card = node.handle_control_request(ControlRequest {
             method: "GET".into(),
-            path: format!("/dht/key?kind=contact-card&value={}", identity.user_id()),
+            path: format!(
+                "/api/dht/key?kind=contact-card&value={}",
+                identity.user_id()
+            ),
             body: String::new(),
             headers: Vec::new(),
         });
@@ -1941,7 +1947,7 @@ mod tests {
 
         let peer = node.handle_control_request(ControlRequest {
             method: "GET".into(),
-            path: "/dht/key?kind=public-peer&value=peer-a".into(),
+            path: "/api/dht/key?kind=public-peer&value=peer-a".into(),
             body: String::new(),
             headers: Vec::new(),
         });
@@ -1983,7 +1989,7 @@ mod tests {
 
         let response = node.handle_control_request(ControlRequest {
             method: "GET".into(),
-            path: "/dht/replication-plan?factor=1".into(),
+            path: "/api/dht/replication-plan?factor=1".into(),
             body: String::new(),
             headers: Vec::new(),
         });
@@ -1998,7 +2004,7 @@ mod tests {
 
         let response = node.handle_control_request(ControlRequest {
             method: "GET".into(),
-            path: "/dht/routing-refresh-plan".into(),
+            path: "/api/dht/routing-refresh-plan".into(),
             body: String::new(),
             headers: Vec::new(),
         });
@@ -2015,7 +2021,7 @@ mod tests {
         let mut node = NativeNode::new(NodeConfig::default());
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/dht/find-value?key=00".into(),
+            path: "/api/dht/find-value?key=00".into(),
             body: String::new(),
             headers: Vec::new(),
         });
@@ -2044,7 +2050,7 @@ mod tests {
 
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/dht/rpc".into(),
+            path: "/api/dht/rpc".into(),
             body: serde_json::json!({
                 "request": {
                     "StoreRecord": {
@@ -2063,7 +2069,7 @@ mod tests {
 
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/dht/rpc".into(),
+            path: "/api/dht/rpc".into(),
             body: serde_json::json!({
                 "request": {
                     "FindValue": {
@@ -2082,7 +2088,7 @@ mod tests {
 
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/dht/rpc".into(),
+            path: "/api/dht/rpc".into(),
             body: serde_json::json!({
                 "request": {
                     "FindNode": {
@@ -2108,7 +2114,7 @@ mod tests {
         let mut node = NativeNode::new(NodeConfig::default());
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/dht/record".into(),
+            path: "/api/dht/record".into(),
             body: "{not-json".into(),
             headers: Vec::new(),
         });
@@ -2131,7 +2137,7 @@ mod tests {
         let mut node = NativeNode::new(NodeConfig::default());
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/dht/record".into(),
+            path: "/api/dht/record".into(),
             body: serde_json::json!({ "record": record }).to_string(),
             headers: Vec::new(),
         });
@@ -2155,7 +2161,7 @@ mod tests {
         };
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/dht/record".into(),
+            path: "/api/dht/record".into(),
             body: serde_json::json!({ "record": record }).to_string(),
             headers: Vec::new(),
         });
@@ -2179,7 +2185,7 @@ mod tests {
         };
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/dht/record".into(),
+            path: "/api/dht/record".into(),
             body: serde_json::json!({ "record": record }).to_string(),
             headers: Vec::new(),
         });
@@ -2203,7 +2209,7 @@ mod tests {
         let mut node = NativeNode::new(NodeConfig::default());
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/dht/record".into(),
+            path: "/api/dht/record".into(),
             body: serde_json::json!({ "record": record }).to_string(),
             headers: Vec::new(),
         });
@@ -2214,7 +2220,7 @@ mod tests {
 
         let response = node.handle_control_request(ControlRequest {
             method: "GET".into(),
-            path: format!("/dht/record?key={key}"),
+            path: format!("/api/dht/record?key={key}"),
             body: String::new(),
             headers: Vec::new(),
         });
@@ -2225,7 +2231,7 @@ mod tests {
 
         let response = node.handle_control_request(ControlRequest {
             method: "GET".into(),
-            path: format!("/dht/closest?target={key}&limit=1"),
+            path: format!("/api/dht/closest?target={key}&limit=1"),
             body: String::new(),
             headers: Vec::new(),
         });
@@ -2264,7 +2270,7 @@ mod tests {
         }
         let response = node.handle_control_request(ControlRequest {
             method: "GET".into(),
-            path: format!("/mailbox/take?user_id={}&limit=2", bob.user_id()),
+            path: format!("/api/mailbox/take?user_id={}&limit=2", bob.user_id()),
             body: String::new(),
             headers: Vec::new(),
         });
@@ -2297,7 +2303,7 @@ mod tests {
         .to_string();
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/mailbox/push".into(),
+            path: "/api/mailbox/push".into(),
             body,
             headers: Vec::new(),
         });
@@ -2308,7 +2314,7 @@ mod tests {
         let response = node.handle_control_request(ControlRequest {
             method: "GET".into(),
             path: format!(
-                "/mailbox/status?user_id={}&delivery_id={}",
+                "/api/mailbox/status?user_id={}&delivery_id={}",
                 bob.user_id(),
                 pushed_delivery_id
             ),
@@ -2328,7 +2334,7 @@ mod tests {
         assert_eq!(status_body["delivery"]["status"], "pending");
         let response = node.handle_control_request(ControlRequest {
             method: "GET".into(),
-            path: format!("/mailbox/take?user_id={}", bob.user_id()),
+            path: format!("/api/mailbox/take?user_id={}", bob.user_id()),
             body: String::new(),
             headers: Vec::new(),
         });
@@ -2349,7 +2355,7 @@ mod tests {
         let response = node.handle_control_request(ControlRequest {
             method: "GET".into(),
             path: format!(
-                "/mailbox/status?user_id={}&delivery_id={}",
+                "/api/mailbox/status?user_id={}&delivery_id={}",
                 bob.user_id(),
                 delivery_id
             ),
@@ -2365,7 +2371,7 @@ mod tests {
         assert_eq!(status_body["delivery"]["status"], "delivered_unacked");
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/mailbox/ack".into(),
+            path: "/api/mailbox/ack".into(),
             body: serde_json::json!({
                 "user_id": bob.user_id().to_string(),
                 "delivery_ids": [delivery_id],
@@ -2384,7 +2390,7 @@ mod tests {
         let response = node.handle_control_request(ControlRequest {
             method: "GET".into(),
             path: format!(
-                "/mailbox/status?user_id={}&delivery_id={}",
+                "/api/mailbox/status?user_id={}&delivery_id={}",
                 bob.user_id(),
                 pushed_delivery_id
             ),
@@ -2405,7 +2411,7 @@ mod tests {
         let mut node = NativeNode::new(NodeConfig::default());
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/mailbox/ack".into(),
+            path: "/api/mailbox/ack".into(),
             body: serde_json::json!({
                 "user_id": bob.user_id().to_string(),
                 "delivery_ids": vec!["x"; DEFAULT_MAX_MAILBOX_ACK_IDS + 1],
@@ -2423,7 +2429,7 @@ mod tests {
         let mut node = NativeNode::new(NodeConfig::default());
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/mailbox/ack".into(),
+            path: "/api/mailbox/ack".into(),
             body: serde_json::json!({
                 "user_id": bob.user_id().to_string(),
                 "delivery_ids": [""],
@@ -2441,7 +2447,7 @@ mod tests {
         let mut node = NativeNode::new(NodeConfig::default());
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/mailbox/ack".into(),
+            path: "/api/mailbox/ack".into(),
             body: serde_json::json!({
                 "user_id": bob.user_id().to_string(),
                 "delivery_ids": ["x".repeat(DEFAULT_MAX_MAILBOX_ACK_ID_BYTES + 1)],
@@ -2458,14 +2464,14 @@ mod tests {
         let mut node = NativeNode::new(NodeConfig::default());
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/mailbox/ack".into(),
+            path: "/api/mailbox/ack".into(),
             body: "{bad-json".into(),
             headers: Vec::new(),
         });
         assert_eq!(response.status, 400);
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/mailbox/ack".into(),
+            path: "/api/mailbox/ack".into(),
             body: serde_json::json!({ "user_id": "not-a-user", "delivery_ids": [] }).to_string(),
             headers: Vec::new(),
         });
@@ -2493,7 +2499,7 @@ mod tests {
         .unwrap();
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/mailbox/push".into(),
+            path: "/api/mailbox/push".into(),
             body: serde_json::json!({
                 "message_text": message.to_export_text().unwrap(),
                 "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
@@ -2527,7 +2533,7 @@ mod tests {
             .unwrap();
             let response = node.handle_control_request(ControlRequest {
                 method: "POST".into(),
-                path: "/mailbox/push".into(),
+                path: "/api/mailbox/push".into(),
                 body: serde_json::json!({
                     "message_text": message.to_export_text().unwrap(),
                     "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
@@ -2562,7 +2568,7 @@ mod tests {
             .unwrap();
             let response = node.handle_control_request(ControlRequest {
                 method: "POST".into(),
-                path: "/mailbox/push".into(),
+                path: "/api/mailbox/push".into(),
                 body: serde_json::json!({
                     "message_text": message.to_export_text().unwrap(),
                     "from_identity_public_key": BASE64.encode(sender.identity_public_key()),
@@ -2581,7 +2587,7 @@ mod tests {
         let mut node = NativeNode::new(NodeConfig::default());
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/mailbox/push".into(),
+            path: "/api/mailbox/push".into(),
             body: "{not-json".into(),
             headers: Vec::new(),
         });
@@ -2590,7 +2596,7 @@ mod tests {
 
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/mailbox/push".into(),
+            path: "/api/mailbox/push".into(),
             body: serde_json::json!({
                 "message_text": "not-a-mailbox-message",
                 "from_identity_public_key": "not-base64"
@@ -2689,7 +2695,7 @@ mod tests {
         let (bundle, _) = PreKeyBundle::new(&alice, 1, 2, 3600).unwrap();
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/prekey/publish".into(),
+            path: "/api/prekey/publish".into(),
             body: serde_json::json!({
                 "prekey_bundle_text": bundle.to_export_text().unwrap(),
             })
@@ -2700,7 +2706,7 @@ mod tests {
         assert_eq!(node.prekeys.len(), 1);
         let response = node.handle_control_request(ControlRequest {
             method: "GET".into(),
-            path: format!("/prekey/get?user_id={}", alice.user_id()),
+            path: format!("/api/prekey/get?user_id={}", alice.user_id()),
             body: String::new(),
             headers: Vec::new(),
         });
@@ -2756,7 +2762,7 @@ mod tests {
 
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/sync/peer/reset".into(),
+            path: "/api/sync/peer/reset".into(),
             body: serde_json::json!({ "url": url }).to_string(),
             headers: Vec::new(),
         });
@@ -2769,7 +2775,7 @@ mod tests {
 
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/sync/peer/reset".into(),
+            path: "/api/sync/peer/reset".into(),
             body: serde_json::json!({ "url": "http://missing-peer.example" }).to_string(),
             headers: Vec::new(),
         });
@@ -2803,7 +2809,7 @@ mod tests {
             .unwrap();
         let snapshot_response = source.handle_control_request(ControlRequest {
             method: "GET".into(),
-            path: "/sync/snapshot".into(),
+            path: "/api/sync/snapshot".into(),
             body: String::new(),
             headers: Vec::new(),
         });
@@ -2816,7 +2822,7 @@ mod tests {
         let snapshot: NodeStateSnapshot = serde_json::from_str(&snapshot_response.body).unwrap();
         let import_response = target.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/sync/import".into(),
+            path: "/api/sync/import".into(),
             body: serde_json::json!({ "snapshot": snapshot }).to_string(),
             headers: Vec::new(),
         });
@@ -3012,7 +3018,7 @@ mod tests {
         let (bundle, _) = PreKeyBundle::new(&alice, 1, 2, 3600).unwrap();
         let publish_response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/prekey/publish".into(),
+            path: "/api/prekey/publish".into(),
             body: serde_json::json!({
                 "prekey_bundle_text": bundle.to_export_text().unwrap(),
             })
@@ -3030,7 +3036,7 @@ mod tests {
 
         let response = node.handle_control_request(ControlRequest {
             method: "GET".into(),
-            path: format!("/prekey/get?user_id={}&consume=true", alice.user_id()),
+            path: format!("/api/prekey/get?user_id={}&consume=true", alice.user_id()),
             body: String::new(),
             headers: Vec::new(),
         });
@@ -3045,7 +3051,7 @@ mod tests {
 
         let status = node.handle_control_request(ControlRequest {
             method: "GET".into(),
-            path: format!("/prekey/status?user_id={}", alice.user_id()),
+            path: format!("/api/prekey/status?user_id={}", alice.user_id()),
             body: String::new(),
             headers: Vec::new(),
         });
@@ -3061,7 +3067,7 @@ mod tests {
         let (missing, _) = Identity::create_with_passphrase("missing prekey status").unwrap();
         let missing_status = node.handle_control_request(ControlRequest {
             method: "GET".into(),
-            path: format!("/prekey/status?user_id={}", missing.user_id()),
+            path: format!("/api/prekey/status?user_id={}", missing.user_id()),
             body: String::new(),
             headers: Vec::new(),
         });
@@ -3089,7 +3095,7 @@ mod tests {
         let mut node = NativeNode::new(NodeConfig::default());
         let response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/prekey/publish".into(),
+            path: "/api/prekey/publish".into(),
             body: serde_json::json!({
                 "prekey_bundle_text": bundle.to_export_text().unwrap(),
                 "signed_one_time_prekey_record_texts": too_many,
@@ -3115,7 +3121,7 @@ mod tests {
 
         let publish_response = node.handle_control_request(ControlRequest {
             method: "POST".into(),
-            path: "/prekey/publish".into(),
+            path: "/api/prekey/publish".into(),
             body: serde_json::json!({
                 "prekey_bundle_text": bundle.to_export_text().unwrap(),
                 "signed_one_time_prekey_record_texts": record_texts,
@@ -3131,7 +3137,7 @@ mod tests {
 
         let get_response = node.handle_control_request(ControlRequest {
             method: "GET".into(),
-            path: format!("/prekey/get?user_id={}&consume=true", alice.user_id()),
+            path: format!("/api/prekey/get?user_id={}&consume=true", alice.user_id()),
             body: String::new(),
             headers: Vec::new(),
         });

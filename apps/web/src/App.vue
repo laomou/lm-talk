@@ -2524,7 +2524,7 @@ async function pushFullDataBackupToOwnMailbox() {
       dataBackupText.value,
       BigInt(7 * 24 * 3600),
     )
-    const body = await nodeFetchJson('/mailbox/push', {
+    const body = await nodeFetchJson('/api/mailbox/push', {
       method: 'POST',
       body: JSON.stringify({
         message_text: msg,
@@ -2733,7 +2733,7 @@ async function pushSelfSyncPayloadToOwnMailbox(payload: string, label: string, k
     payload,
     BigInt(7 * 24 * 3600),
   )
-  const body = await nodeFetchJson('/mailbox/push', {
+  const body = await nodeFetchJson('/api/mailbox/push', {
     method: 'POST',
     body: JSON.stringify({
       message_text: msg,
@@ -3257,7 +3257,7 @@ async function refreshOutgoingMailboxDeliveryStatusesFromNode() {
   let failed = 0
   for (const message of candidates) {
     try {
-      const body = await nodeFetchJson(`/mailbox/status?user_id=${encodeURIComponent(message.peer_user_id)}&delivery_id=${encodeURIComponent(message.mailbox_delivery_id || '')}`)
+      const body = await nodeFetchJson(`/api/mailbox/status?user_id=${encodeURIComponent(message.peer_user_id)}&delivery_id=${encodeURIComponent(message.mailbox_delivery_id || '')}`)
       updateMailboxQuotaStatus(body)
       const status = String(body?.delivery?.status ?? '')
       if ((status === 'delivered_unacked' || status === 'acked') && message.status !== 'read') {
@@ -3498,7 +3498,7 @@ async function discoverMailboxHintForContact(contact: ContactItem): Promise<stri
   try {
     nodeDhtKeyKind.value = 'mailbox-hint'
     nodeDhtKeyValue.value = contact.user_id
-    const body = await nodeFetchJson(`/dht/find-value?kind=mailbox-hint&value=${encodeURIComponent(contact.user_id)}&limit=8&max_peers=8&alpha=3`)
+    const body = await nodeFetchJson(`/api/dht/find-value?kind=mailbox-hint&value=${encodeURIComponent(contact.user_id)}&limit=8&max_peers=8&alpha=3`)
     applyDhtFindValueRecord(body)
     if (contact.mailbox_hint_url?.trim()) {
       markContactDhtDiscoverySuccess(contact, 'mailbox-hint')
@@ -3554,12 +3554,12 @@ async function pushMailboxPayload(to: ContactItem, kind: string, payload: string
   let body: any
   if (preferredMailboxUrl && /^https?:\/\//i.test(preferredMailboxUrl)) {
     try {
-      body = await fetchNodeOnce(preferredMailboxUrl, '/mailbox/push', init)
+      body = await fetchNodeOnce(preferredMailboxUrl, '/api/mailbox/push', init)
     } catch (error) {
       appendLog(`⚠️ 联系人 MailboxHint 投递失败，回退同步服务：${userFacingError(error)}`)
     }
   }
-  if (!body) body = await nodeFetchJson('/mailbox/push', init)
+  if (!body) body = await nodeFetchJson('/api/mailbox/push', init)
   nodeControlStatus.value = JSON.stringify(body, null, 2)
   updateMailboxQuotaStatus(body)
   return String(body.delivery_id ?? '')
@@ -3849,7 +3849,7 @@ async function tryMailboxDeliveryForMessage(contact: ContactItem, envelope: stri
 async function ensureRatchetSessionFromNode(contact: ContactItem): Promise<boolean> {
   requireContactHasActiveDevice(contact)
   if (!nodeEnabled.value || ratchetSessionFor(contact.user_id)) return Boolean(ratchetSessionFor(contact.user_id))
-  let body = await nodeFetchJson(`/prekey/get?user_id=${encodeURIComponent(contact.user_id)}&consume=true`)
+  let body = await nodeFetchJson(`/api/prekey/get?user_id=${encodeURIComponent(contact.user_id)}&consume=true`)
   nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
   if (!body.found || !body.prekey_bundle_text) {
     try {
@@ -3857,7 +3857,7 @@ async function ensureRatchetSessionFromNode(contact: ContactItem): Promise<boole
       markContactDhtDiscoveryAttempt(contact)
       nodeDhtKeyKind.value = 'prekey'
       nodeDhtKeyValue.value = contact.user_id
-      const dht = await nodeFetchJson(`/dht/find-value?kind=prekey&value=${encodeURIComponent(contact.user_id)}&limit=8&max_peers=8&alpha=3`)
+      const dht = await nodeFetchJson(`/api/dht/find-value?kind=prekey&value=${encodeURIComponent(contact.user_id)}&limit=8&max_peers=8&alpha=3`)
       if (applyDhtFindValueRecord(dht) && dht?.record?.kind === 'PreKey' && typeof dht.record.value === 'string') {
         body = { found: true, prekey_bundle_text: dht.record.value }
         markContactDhtDiscoverySuccess(contact, 'prekey')
@@ -7080,7 +7080,7 @@ function nodeHealthSummaryFromResponse(health: any): string {
 
 async function checkNodeHealth() {
   await runAsync('检查 lm_node 控制面', async () => {
-    const health = await nodeFetchJson('/health')
+    const health = await nodeFetchJson('/api/health')
     nodeHealthSummaryText.value = nodeHealthSummaryFromResponse(health)
     const stateDb = nodeStateDbSecurityFromHealth(health)
     nodeStateDbSecurityText.value = stateDb.text
@@ -7091,7 +7091,7 @@ async function checkNodeHealth() {
     })
     // /health 免鉴权，会掩盖令牌问题。再探测一个需要鉴权的接口，避免误报"已连接"。
     try {
-      const syncStatus = await nodeFetchJson('/sync/status')
+      const syncStatus = await nodeFetchJson('/api/sync/status')
       nodePeerHealthPeers.value = normalizeNodePeerHealth(syncStatus)
       const peerHealth = nodePeerHealthSummaryFromPeers(nodePeerHealthPeers.value)
       nodePeerHealthStatusText.value = peerHealth.text
@@ -7112,7 +7112,7 @@ async function checkNodeHealth() {
       }
     }
     try {
-      const stats = await nodeFetchJson('/control/stats')
+      const stats = await nodeFetchJson('/api/control/stats')
       if (stats?.state_db) {
         const stateDbFromStats = nodeStateDbSecurityFromHealth({ state_db: stats.state_db })
         nodeStateDbSecurityText.value = stateDbFromStats.text
@@ -7130,7 +7130,7 @@ async function checkNodeHealth() {
 
 async function resetDhtPeerHealth(url: string) {
   await runAsync('重置 DHT peer 健康', async () => {
-    const body = await nodeFetchJson('/sync/peer/reset', {
+    const body = await nodeFetchJson('/api/sync/peer/reset', {
       method: 'POST',
       body: JSON.stringify({ url }),
     })
@@ -7144,7 +7144,7 @@ async function submitPublicPeerToNode() {
     if (!publicPeerAnnounceText.value.trim()) throw new Error('请先生成或粘贴 PublicPeerAnnounce')
     const key = publicPeerAnnounceInspectPublicKey.value.trim() || identity.value?.identity_public_key
     if (!key) throw new Error('需要发布者 identity_public_key')
-    const body = await nodeFetchJson('/announce', {
+    const body = await nodeFetchJson('/api/announce', {
       method: 'POST',
       body: JSON.stringify({
         announce_text: publicPeerAnnounceText.value,
@@ -7556,7 +7556,7 @@ function fillCurrentPublicPeerDhtKeyInput() {
 async function deriveDhtKeyPayload(): Promise<any> {
   const value = nodeDhtKeyValue.value.trim()
   if (!value) throw new Error('请输入 peer_id 或 UserID')
-  const body = await nodeFetchJson(`/dht/key?kind=${encodeURIComponent(nodeDhtKeyKind.value)}&value=${encodeURIComponent(value)}`)
+  const body = await nodeFetchJson(`/api/dht/key?kind=${encodeURIComponent(nodeDhtKeyKind.value)}&value=${encodeURIComponent(value)}`)
   nodeDhtFindValueKey.value = String(body.key || '')
   nodeDhtFindValueStatusText.value = `DHT key：${dhtKeyKindLabel(nodeDhtKeyKind.value)} ${value} → ${nodeDhtFindValueKey.value}`
   recordDhtOperation(nodeDhtFindValueStatusText.value)
@@ -7674,7 +7674,7 @@ function dhtFindValueSummary(body: any): string {
 
 async function runDhtFindValueForKey(key: string) {
   if (!/^[0-9a-fA-F]{64}$/.test(key)) throw new Error('请输入 64 位十六进制 DHT key')
-  const body = await nodeFetchJson(`/dht/find-value?key=${encodeURIComponent(key)}&limit=8&max_peers=8&alpha=3`)
+  const body = await nodeFetchJson(`/api/dht/find-value?key=${encodeURIComponent(key)}&limit=8&max_peers=8&alpha=3`)
   if (applyDhtFindValueRecord(body)) {
     if (!body?.found) {
       const contact = nodeDhtKeyKind.value === 'prekey'
@@ -7703,7 +7703,7 @@ async function deriveAndFindDhtValueNow() {
   await runAsync('派生并查找 DHT 记录', async () => {
     const value = nodeDhtKeyValue.value.trim()
     if (!value) throw new Error('请输入 peer_id 或 UserID')
-    const body = await nodeFetchJson(`/dht/find-value?kind=${encodeURIComponent(nodeDhtKeyKind.value)}&value=${encodeURIComponent(value)}&limit=8&max_peers=8&alpha=3`)
+    const body = await nodeFetchJson(`/api/dht/find-value?kind=${encodeURIComponent(nodeDhtKeyKind.value)}&value=${encodeURIComponent(value)}&limit=8&max_peers=8&alpha=3`)
     nodeDhtFindValueKey.value = String(body.key || '')
     applyDhtFindValueRecord(body)
     if (!body?.found) {
@@ -7732,7 +7732,7 @@ function dhtMaintenanceSummary(body: any): string {
 
 async function runDhtMaintenanceNow() {
   await runAsync('手动运行 DHT 维护', async () => {
-    const body = await nodeFetchJson('/dht/maintenance?factor=3&limit=8&max_targets=8')
+    const body = await nodeFetchJson('/api/dht/maintenance?factor=3&limit=8&max_targets=8')
     nodeDhtMaintenanceStatusText.value = dhtMaintenanceSummary(body)
     recordDhtOperation(nodeDhtMaintenanceStatusText.value)
     nodeClosestInfoText.value = JSON.stringify(body, null, 2)
@@ -7747,7 +7747,7 @@ function dhtReplicationSummary(body: any): string {
 
 async function runDhtReplicationNow() {
   await runAsync('手动复制 DHT 记录', async () => {
-    const body = await nodeFetchJson('/dht/replicate?factor=3')
+    const body = await nodeFetchJson('/api/dht/replicate?factor=3')
     nodeDhtReplicationStatusText.value = dhtReplicationSummary(body)
     recordDhtOperation(nodeDhtReplicationStatusText.value)
     nodeClosestInfoText.value = JSON.stringify(body, null, 2)
@@ -7762,7 +7762,7 @@ function dhtRoutingRefreshSummary(body: any): string {
 
 async function runDhtRoutingRefreshNow() {
   await runAsync('手动刷新 DHT 路由', async () => {
-    const body = await nodeFetchJson('/dht/routing-refresh?limit=8&max_targets=8')
+    const body = await nodeFetchJson('/api/dht/routing-refresh?limit=8&max_targets=8')
     nodeRoutingRefreshStatusText.value = dhtRoutingRefreshSummary(body)
     recordDhtOperation(nodeRoutingRefreshStatusText.value)
     nodeClosestInfoText.value = JSON.stringify(body, null, 2)
@@ -7773,7 +7773,7 @@ async function runDhtRoutingRefreshNow() {
 async function queryNodeClosestPeers() {
   await runAsync('查询 lm_node 最近节点', async () => {
     const target = encodeURIComponent(nodeClosestTarget.value.trim() || publicPeerId.value.trim() || 'public-peer-1')
-    const body = await nodeFetchJson(`/peers/closest?target=${target}&limit=8`)
+    const body = await nodeFetchJson(`/api/peers/closest?target=${target}&limit=8`)
     nodeClosestInfoText.value = JSON.stringify(body, null, 2)
   })
 }
@@ -7783,7 +7783,7 @@ async function pushMailboxToNode() {
     if (!mailboxMessageText.value.trim()) throw new Error('请先生成或粘贴 MailboxMessage')
     const key = mailboxMessageInspectPublicKey.value.trim() || identity.value?.identity_public_key
     if (!key) throw new Error('需要发送者 identity_public_key')
-    const body = await nodeFetchJson('/mailbox/push', {
+    const body = await nodeFetchJson('/api/mailbox/push', {
       method: 'POST',
       body: JSON.stringify({
         message_text: mailboxMessageText.value,
@@ -7796,7 +7796,7 @@ async function pushMailboxToNode() {
 
 async function ackMailboxToNode(userId: string, deliveryIds: string[]) {
   if (deliveryIds.length === 0) return
-  const body = await nodeFetchJson('/mailbox/ack', {
+  const body = await nodeFetchJson('/api/mailbox/ack', {
     method: 'POST',
     body: JSON.stringify({
       user_id: userId,
@@ -7843,7 +7843,7 @@ async function publishAndCheckAllMyDht() {
       expires_at: now + 24 * 3600,
       republish_at: now,
     }
-    await nodeFetchJson('/dht/record', {
+    await nodeFetchJson('/api/dht/record', {
       method: 'POST',
       body: JSON.stringify({ record: mailboxRecord }),
     })
@@ -7866,7 +7866,7 @@ async function publishAndCheckAllMyDht() {
       expires_at: now + 24 * 3600,
       republish_at: now,
     }
-    const store = await nodeFetchJson('/dht/record', {
+    const store = await nodeFetchJson('/api/dht/record', {
       method: 'POST',
       body: JSON.stringify({ record: publicPeerRecord }),
     })
@@ -7896,7 +7896,7 @@ async function publishPublicPeerDhtRecord(options: { recordHistory?: boolean } =
     expires_at: now + 24 * 3600,
     republish_at: now,
   }
-  const store = await nodeFetchJson('/dht/record', {
+  const store = await nodeFetchJson('/api/dht/record', {
     method: 'POST',
     body: JSON.stringify({ record }),
   })
@@ -7947,7 +7947,7 @@ async function publishMailboxHintDhtRecordFor(url: string, options: { recordHist
     expires_at: now + 24 * 3600,
     republish_at: now,
   }
-  const store = await nodeFetchJson('/dht/record', {
+  const store = await nodeFetchJson('/api/dht/record', {
     method: 'POST',
     body: JSON.stringify({ record }),
   })
@@ -7985,7 +7985,7 @@ async function publishContactCardDhtRecord(options: { recordHistory?: boolean } 
     expires_at: now + 24 * 3600,
     republish_at: now,
   }
-  const store = await nodeFetchJson('/dht/record', {
+  const store = await nodeFetchJson('/api/dht/record', {
     method: 'POST',
     body: JSON.stringify({ record }),
   })
@@ -8042,7 +8042,7 @@ async function publishAndCheckMyPreKeyDht() {
 }
 
 async function publishPreKeyBundlePayload(): Promise<any> {
-  return nodeFetchJson('/prekey/publish', {
+  return nodeFetchJson('/api/prekey/publish', {
     method: 'POST',
     body: JSON.stringify({
       prekey_bundle_text: prekeyBundleText.value,
@@ -8054,7 +8054,7 @@ async function publishPreKeyBundlePayload(): Promise<any> {
 async function fetchOwnPreKeyStatus(): Promise<any> {
   const userId = identity.value?.user_id
   if (!userId) throw new Error('需要当前身份')
-  return nodeFetchJson(`/prekey/status?user_id=${encodeURIComponent(userId)}`)
+  return nodeFetchJson(`/api/prekey/status?user_id=${encodeURIComponent(userId)}`)
 }
 
 async function ensurePreKeyInventory() {
@@ -8150,7 +8150,7 @@ function applyPreKeyNodeResponse(body: any, sourceLabel: string): boolean {
 }
 
 async function fetchPreKeyViaDht(userId: string): Promise<boolean> {
-  const dht = await nodeFetchJson(`/dht/find-value?kind=prekey&value=${encodeURIComponent(userId)}&limit=8&max_peers=8&alpha=3`)
+  const dht = await nodeFetchJson(`/api/dht/find-value?kind=prekey&value=${encodeURIComponent(userId)}&limit=8&max_peers=8&alpha=3`)
   const ok = applyDhtFindValueRecord(dht)
   nodeDhtFindValueStatusText.value = ok ? dhtFindValueSummary(dht) : nodeDhtFindValueStatusText.value
   nodeClosestInfoText.value = JSON.stringify(dht, null, 2)
@@ -8161,7 +8161,7 @@ async function fetchPreKeyFromNode() {
   await runAsync('从 lm_node 拉取 PreKey Bundle', async () => {
     const userId = nodePreKeyUserId.value.trim() || activeContact.value?.user_id
     if (!userId) throw new Error('请输入 UserID 或选择联系人')
-    const body = await nodeFetchJson(`/prekey/get?user_id=${encodeURIComponent(userId)}&consume=false`)
+    const body = await nodeFetchJson(`/api/prekey/get?user_id=${encodeURIComponent(userId)}&consume=false`)
     if (!applyPreKeyNodeResponse(body, '从节点拉取')) {
       await fetchPreKeyViaDht(userId)
     }
@@ -8172,7 +8172,7 @@ async function consumePreKeyFromNode() {
   await runAsync('从 lm_node 领取并消费 PreKey Bundle', async () => {
     const userId = nodePreKeyUserId.value.trim() || activeContact.value?.user_id
     if (!userId) throw new Error('请输入 UserID 或选择联系人')
-    const body = await nodeFetchJson(`/prekey/get?user_id=${encodeURIComponent(userId)}&consume=true`)
+    const body = await nodeFetchJson(`/api/prekey/get?user_id=${encodeURIComponent(userId)}&consume=true`)
     if (!applyPreKeyNodeResponse(body, '领取')) {
       await fetchPreKeyViaDht(userId)
     }
@@ -8182,7 +8182,7 @@ async function consumePreKeyFromNode() {
 
 async function exportNodeSnapshot() {
   await runAsync('导出 lm_node 同步快照', async () => {
-    const body = await nodeFetchJson('/sync/snapshot')
+    const body = await nodeFetchJson('/api/sync/snapshot')
     nodeSyncSnapshotText.value = JSON.stringify(body, null, 2)
     nodeSyncStatusText.value = `snapshot peers=${body.public_peers?.length ?? 0}, mailbox=${body.mailbox_deliveries?.length ?? 0}, prekeys=${body.prekey_bundles?.length ?? 0}, signed_otpk=${body.signed_one_time_prekey_records?.length ?? 0}`
   })
@@ -8192,7 +8192,7 @@ async function importNodeSnapshot() {
   await runAsync('导入 lm_node 同步快照', async () => {
     if (!nodeSyncSnapshotText.value.trim()) throw new Error('请先粘贴或导出 snapshot')
     const snapshot = JSON.parse(nodeSyncSnapshotText.value)
-    const body = await nodeFetchJson('/sync/import', {
+    const body = await nodeFetchJson('/api/sync/import', {
       method: 'POST',
       body: JSON.stringify({ snapshot }),
     })
@@ -8209,7 +8209,7 @@ async function pullSnapshotFromPeerNode() {
     if (!res.ok) throw new Error(await res.text())
     const snapshot = await res.json()
     nodeSyncSnapshotText.value = JSON.stringify(snapshot, null, 2)
-    const body = await nodeFetchJson('/sync/import', {
+    const body = await nodeFetchJson('/api/sync/import', {
       method: 'POST',
       body: JSON.stringify({ snapshot }),
     })
@@ -8226,7 +8226,7 @@ async function autoPullSnapshotFromPeerNode() {
     const res = await fetch(`${url}/sync/snapshot`)
     if (!res.ok) throw new Error(await res.text())
     const snapshot = await res.json()
-    const body = await nodeFetchJson('/sync/import', { method: 'POST', body: JSON.stringify({ snapshot }) })
+    const body = await nodeFetchJson('/api/sync/import', { method: 'POST', body: JSON.stringify({ snapshot }) })
     lastNodeSnapshotSyncAt.value = Date.now()
     nodeSyncStatusText.value = `auto sync ok: ${JSON.stringify(body)}`
     persist()
@@ -8760,7 +8760,7 @@ async function takeMailboxFromNode() {
     const maxPages = 20
     let hasMoreAfterMaxPages = false
     for (let page = 0; page < maxPages; page += 1) {
-      const body = await nodeFetchJson(`/mailbox/take?user_id=${encodeURIComponent(userId)}&limit=${pageLimit}`)
+      const body = await nodeFetchJson(`/api/mailbox/take?user_id=${encodeURIComponent(userId)}&limit=${pageLimit}`)
       pages.push(body)
       updateMailboxQuotaStatus(body)
       const messages = Array.isArray(body.messages) ? body.messages : []

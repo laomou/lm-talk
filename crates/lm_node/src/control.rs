@@ -307,7 +307,7 @@ impl NativeNode {
         self.prune_expired_records();
         match (request.method.as_str(), path_without_query(&request.path)) {
             ("OPTIONS", _) => ControlResponse::text(200, ""),
-            ("GET", "/health") => ControlResponse::json(
+            ("GET", "/api/health") => ControlResponse::json(
                 200,
                 &HealthResponse {
                     status: "ok",
@@ -349,53 +349,55 @@ impl NativeNode {
                     sync: self.sync_status.clone(),
                 },
             ),
-            ("POST", "/announce") => self.handle_control_announce(&request.body),
-            ("GET", "/peers/closest") => self.handle_control_closest(&request.path),
-            ("POST", "/mailbox/push") => self.handle_control_mailbox_push(&request.body),
-            ("GET", "/mailbox/take") => self.handle_control_mailbox_take(&request.path),
-            ("GET", "/mailbox/status") => self.handle_control_mailbox_status(&request.path),
-            ("POST", "/mailbox/ack") => self.handle_control_mailbox_ack(&request.body),
-            ("POST", "/prekey/publish") => self.handle_control_prekey_publish(&request.body),
-            ("GET", "/prekey/get") => self.handle_control_prekey_get(&request.path),
-            ("GET", "/prekey/status") => self.handle_control_prekey_status(&request.path),
-            ("POST", "/dht/record") => self.handle_control_dht_record_store(&request.body),
-            ("GET", "/dht/key") => self.handle_control_dht_key(&request.path),
-            ("GET", "/dht/record") => self.handle_control_dht_record_get(&request.path),
-            ("GET", "/dht/closest") => self.handle_control_dht_closest(&request.path),
-            ("POST", "/dht/rpc") => self.handle_control_dht_rpc(&request.body),
-            ("GET", "/dht/replication-plan") => {
+            ("POST", "/api/announce") => self.handle_control_announce(&request.body),
+            ("GET", "/api/peers/closest") => self.handle_control_closest(&request.path),
+            ("POST", "/api/mailbox/push") => self.handle_control_mailbox_push(&request.body),
+            ("GET", "/api/mailbox/take") => self.handle_control_mailbox_take(&request.path),
+            ("GET", "/api/mailbox/status") => self.handle_control_mailbox_status(&request.path),
+            ("POST", "/api/mailbox/ack") => self.handle_control_mailbox_ack(&request.body),
+            ("POST", "/api/prekey/publish") => self.handle_control_prekey_publish(&request.body),
+            ("GET", "/api/prekey/get") => self.handle_control_prekey_get(&request.path),
+            ("GET", "/api/prekey/status") => self.handle_control_prekey_status(&request.path),
+            ("POST", "/api/dht/record") => self.handle_control_dht_record_store(&request.body),
+            ("GET", "/api/dht/key") => self.handle_control_dht_key(&request.path),
+            ("GET", "/api/dht/record") => self.handle_control_dht_record_get(&request.path),
+            ("GET", "/api/dht/closest") => self.handle_control_dht_closest(&request.path),
+            ("POST", "/api/dht/rpc") => self.handle_control_dht_rpc(&request.body),
+            ("GET", "/api/dht/replication-plan") => {
                 self.handle_control_dht_replication_plan(&request.path)
             }
-            ("GET", "/dht/routing-refresh-plan") => self.handle_control_dht_routing_refresh_plan(),
-            ("GET", "/sync/snapshot") => ControlResponse::json(200, &self.to_state_snapshot()),
-            ("GET", "/sync/status") => ControlResponse::json(200, &self.sync_status),
-            ("POST", "/sync/peer/reset") => self.handle_control_sync_peer_reset(&request.body),
-            ("POST", "/sync/import") => self.handle_control_sync_import(&request.body),
+            ("GET", "/api/dht/routing-refresh-plan") => {
+                self.handle_control_dht_routing_refresh_plan()
+            }
+            ("GET", "/api/sync/snapshot") => ControlResponse::json(200, &self.to_state_snapshot()),
+            ("GET", "/api/sync/status") => ControlResponse::json(200, &self.sync_status),
+            ("POST", "/api/sync/peer/reset") => self.handle_control_sync_peer_reset(&request.body),
+            ("POST", "/api/sync/import") => self.handle_control_sync_import(&request.body),
             (
                 _,
-                "/health"
-                | "/announce"
-                | "/peers/closest"
-                | "/mailbox/push"
-                | "/mailbox/take"
-                | "/mailbox/status"
-                | "/mailbox/ack"
-                | "/prekey/publish"
-                | "/prekey/get"
-                | "/prekey/status"
-                | "/dht/key"
-                | "/dht/record"
-                | "/dht/closest"
-                | "/dht/rpc"
-                | "/dht/find-value"
-                | "/dht/maintenance"
-                | "/dht/replicate"
-                | "/dht/replication-plan"
-                | "/dht/routing-refresh-plan"
-                | "/sync/snapshot"
-                | "/sync/status"
-                | "/sync/peer/reset"
-                | "/sync/import",
+                "/api/health"
+                | "/api/announce"
+                | "/api/peers/closest"
+                | "/api/mailbox/push"
+                | "/api/mailbox/take"
+                | "/api/mailbox/status"
+                | "/api/mailbox/ack"
+                | "/api/prekey/publish"
+                | "/api/prekey/get"
+                | "/api/prekey/status"
+                | "/api/dht/key"
+                | "/api/dht/record"
+                | "/api/dht/closest"
+                | "/api/dht/rpc"
+                | "/api/dht/find-value"
+                | "/api/dht/maintenance"
+                | "/api/dht/replicate"
+                | "/api/dht/replication-plan"
+                | "/api/dht/routing-refresh-plan"
+                | "/api/sync/snapshot"
+                | "/api/sync/status"
+                | "/api/sync/peer/reset"
+                | "/api/sync/import",
             ) => ControlResponse::text(405, "method not allowed"),
             _ => ControlResponse::text(404, "not found"),
         }
