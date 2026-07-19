@@ -19,6 +19,5 @@ lm-node-state.prd.json
 /deploy/lm-node-federation/.docker-run/
 /deploy/lm-node-federation/secrets/
 /deploy/lm-node-federation/federation-report.json
-/tests/deploy/lm-node-federation/federation-report.json
 /node_admin.zip
 __pycache__/

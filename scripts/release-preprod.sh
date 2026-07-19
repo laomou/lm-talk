@@ -43,7 +43,7 @@ fi
 
 if [[ "$RUN_FEDERATION" == "1" ]]; then
   echo "== federation validation =="
-  tests/deploy/lm-node-federation/run-all.sh
+  deploy/lm-node-federation/run-all.sh
 else
   echo "== federation validation skipped =="
 fi

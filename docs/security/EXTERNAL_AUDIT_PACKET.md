@@ -59,9 +59,9 @@ RUN_RELEASE_ASSET_VERIFY=1 RELEASE_TAG_VERIFY=<tag> RELEASE_VERSION=<tag> ./scri
 对于联邦证据：
 
 ```bash
-tests/deploy/lm-node-federation/run-all.sh
-tests/deploy/lm-node-federation/chaos-smoke.sh
-MESSAGE_COUNT=100 tests/deploy/lm-node-federation/load-smoke.sh
+deploy/lm-node-federation/run-all.sh
+deploy/lm-node-federation/chaos-smoke.sh
+MESSAGE_COUNT=100 deploy/lm-node-federation/load-smoke.sh
 ```
 
 生产就绪的长期活动应将 fuzz、混沌和负载持续时间提高到超出 smoke 默认值，并归档语料/崩溃目录和 JSON 报告。

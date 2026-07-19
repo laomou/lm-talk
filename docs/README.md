@@ -76,16 +76,10 @@ test-vectors/
 
 ## Docker / federation 测试入口
 
-三节点 federation 模板位于：
+三节点 federation 模板与测试脚本(smoke/chaos/load/run-all)同处一个目录：
 
 ```text
 deploy/lm-node-federation/
-```
-
-测试脚本位于：
-
-```text
-tests/deploy/lm-node-federation/
 ```
 
 常用命令：
@@ -93,7 +87,7 @@ tests/deploy/lm-node-federation/
 ```bash
 # 使用 deploy/lm-node-federation/docker-compose.yml 启动并运行完整 smoke/chaos/load
 LM_NODE_FEDERATION_REPORT=/tmp/lm-federation-report.json \
-  tests/deploy/lm-node-federation/run-all.sh
+  deploy/lm-node-federation/run-all.sh
 ```
 
 ## 文档维护约定

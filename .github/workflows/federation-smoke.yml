@@ -33,7 +33,7 @@ jobs:
           done
           chmod 600 secrets/*
           cd ../..
-          tests/deploy/lm-node-federation/run-all.sh
+          deploy/lm-node-federation/run-all.sh
 
       - name: Upload federation report
         if: always()

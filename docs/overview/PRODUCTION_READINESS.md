@@ -12,7 +12,7 @@
 | 多设备 E2EE | 已完成，继续增强互操作 | 设备证书、设备撤销、自同步、sealed slot、设备证书 fanout 与 ACK 均已实现。 |
 | Strict E2EE 默认策略 | 已完成 | 新身份默认启用 verified-contact + sealed-slot 收发策略；核心风险 fail-closed。 |
 | 本地数据保护 | 已完成，继续增强平台覆盖 | Web IndexedDB 应用层加密、重加密、身份级删除、完整数据备份可用；Native state_db 使用明文 SQLite，磁盘保护依赖整盘加密（LUKS/dm-crypt）。 |
-| Native node / Docker 部署模板 | 已完成，测试中 | 公共节点与三节点 federation 模板存在；Docker smoke 脚本已迁移到 `tests/deploy/lm-node-federation/`。 |
+| Native node / Docker 部署模板 | 已完成，测试中 | 公共节点与三节点 federation 模板存在；Docker smoke 脚本已迁移到 `deploy/lm-node-federation/`。 |
 | 证据/诊断导出 | 已完成，持续补充 | 诊断报告、strict E2EE readiness 报告、release evidence helpers 已具备。 |
 
 ## 功能完成度估计
@@ -82,7 +82,7 @@
 这些不是当前目标的完成阻塞项，但适合继续迭代：
 
 1. **Docker federation 测试稳定化**
-   - 让 `tests/deploy/lm-node-federation/run-all.sh` 在无 compose plugin 或本地 direct docker 模式下更稳定。
+   - 让 `deploy/lm-node-federation/run-all.sh` 在无 compose plugin 或本地 direct docker 模式下更稳定。
    - 统一 `/mailbox/status` 与 `/mailbox/take` 的测试断言字段。
 
 2. **Strict E2EE 体验细化**

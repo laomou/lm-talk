@@ -2,7 +2,7 @@
 set -euo pipefail
 
 TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEPLOY_ROOT="${LM_NODE_FEDERATION_DEPLOY_DIR:-$(cd "$TEST_ROOT/../../../deploy/lm-node-federation" && pwd)}"
+DEPLOY_ROOT="${LM_NODE_FEDERATION_DEPLOY_DIR:-$TEST_ROOT}"
 REPORT_FILE="${LM_NODE_FEDERATION_REPORT:-$TEST_ROOT/federation-report.json}"
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 RESULTS=()

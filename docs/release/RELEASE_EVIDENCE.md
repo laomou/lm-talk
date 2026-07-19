@@ -17,7 +17,7 @@
 | 完整发布检查 | `./scripts/release-check.sh full` 输出 |  |  |
 | 依赖审计 | `./scripts/check-audit.sh` / CI `dependency-audit` 日志 |  |  |
 | 依赖风险复核 | 已审查 `docs/DEPENDENCY_RISK_REVIEW.md`；活动审计例外已说明 |  |  |
-| 联邦验证 | `tests/deploy/lm-node-federation/run-all.sh` 生成的 `federation-report.json` 或工作流产物 |  |  |
+| 联邦验证 | `deploy/lm-node-federation/run-all.sh` 生成的 `federation-report.json` 或工作流产物 |  |  |
 | 测试向量覆盖 | `cargo test -p lm_core --test test_vectors` 并审查 `docs/TEST_VECTOR_COVERAGE.md` 中的高优先级缺口 |  |  |
 | Fuzz smoke | `FUZZ_SMOKE_REPORT=fuzz-smoke-report.json ./scripts/fuzz-smoke.sh` 输出/报告或 `./scripts/release-check.sh fuzz-smoke` 日志 |  |  |
 | 长时 fuzz 活动 | `FUZZ_CAMPAIGN_DURATION=<seconds> FUZZ_CAMPAIGN_REPORT=fuzz-campaign-report.json ./scripts/fuzz-campaign.sh` 报告、日志、语料、产物和分类笔记 |  |  |
