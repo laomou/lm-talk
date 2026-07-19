@@ -13,7 +13,7 @@ lm_node serve-control --bind 0.0.0.0:8787 --control-token "$(cat /etc/lm-node/co
 lm_node serve-control --config-file node.json
 ```
 
-`serve-control` 有约 19 个选项，但绝大多数有合理默认值——日常只需 `--bind` / `--control-token` / `--state-db` 三个。完整选项见 `lm_node help` 或下方字段表。
+日常只需 `--bind` / `--control-token` / `--state-db`。完整选项见 `lm_node help` 或下方字段表。
 
 ## 配置文件
 
