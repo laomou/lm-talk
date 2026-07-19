@@ -141,8 +141,9 @@ Friend Request -> Friend Response
 |---|---|---|
 | `lm_core` | 已实现身份、备份、Contact Card、好友请求/响应、DirectEnvelope、X3DH PreKey、Double Ratchet 状态与 envelope、群 Sender Key、群权限状态、文件分片加密包、本地安全策略、Outbox、MemoryStore、大小限制、属性测试、跨平台测试向量 | 核心协议层已具备 MVP 主干，约 75-85% MVP 完整；仍需生产级审计、持久化接口、模糊测试、多设备完整流程 |
 | `lm_wasm` | 已暴露大部分 core API，覆盖身份、联系人、好友、消息、PreKey/X3DH、Ratchet、群、文件、Public Peer、Mailbox、Signaling | 绑定层覆盖较全，约 70-80% MVP 完整；仍需随 core API 稳定后整理命名、错误码和兼容策略 |
-| `lm_node` | 已实现控制面 HTTP scaffold、Public Peer announce、Kademlia ID/XOR distance/closest peers、DHT record key/value scaffold 与控制面 store/find/closest、DHT record 本地容量上限、DHT RPC 消息/本地处理 scaffold 与 `POST /dht/rpc` 入口、closest-k replication/routing refresh runner、libp2p request-response DHT RPC scaffold、libp2p TCP/noise/yamux swarm、bootstrap discovery、`Libp2pDhtTransport`、`serve-dht-libp2p` 常驻入口、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、独立 signed one-time prekey records 发布/同步/消费、PreKey 过期清理/轮换重置/低水位提示、snapshot sync/import、控制面 token/CORS/限流、运行指标、状态文件原子保存、SQLite state_db 持久化 | 可支撑节点辅助 PreKey + Mailbox + 粗粒度同步和实验性 libp2p DHT RPC demo，约 74-78% MVP 完整；仍不是生产 DHT/relay 节点 |
-| CLI / 运维 | 已有 `announce`、`inspect-public`、`distance`、`run`、`serve-control`、`serve-dht-libp2p`、`--config-file`、`--control-token`、`--control-token-file`、`--cors-allow-origin`、`--rate-limit-*`、DHT runner/libp2p transport 配置项，以及 `docs/NODE_CONFIG.md` / `docs/examples/lm-node.config.example.json` | 调试和基础部署可用；TLS、结构化日志、systemd/container、备份恢复和升级策略已有文档，仍缺生产级监控告警与数据库运维细化 |
+| `lm_node` | 已实现控制面 HTTP scaffold、Public Peer announce、Kademlia ID/XOR distance/closest peers、DHT record key/value scaffold 与控制面 store/find/closest、DHT record 本地容量上限、DHT RPC 消息/本地处理 scaffold 与 `POST /api/dht/rpc` 入口、closest-k replication/routing refresh runner、libp2p request-response DHT RPC scaffold、libp2p TCP/noise/yamux swarm、bootstrap discovery、`Libp2pDhtTransport`、`serve-dht-libp2p` 常驻入口、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、独立 signed one-time prekey records 发布/同步/消费、PreKey 过期清理/轮换重置/低水位提示、snapshot sync/import、控制面 token/CORS/限流、运行指标、`/admin/` 静态文件服务（loopback only）、SQLite state_db 持久化（明文，整盘加密保护） | 可支撑节点辅助 PreKey + Mailbox + 粗粒度同步和实验性 libp2p DHT RPC demo，约 74-78% MVP 完整；仍不是生产 DHT/relay 节点 |
+| CLI / 运维 | 已有 `announce`、`inspect-public`、`distance`、`run`、`serve-control`、`serve-dht-libp2p`、`--config-file`、`--control-token`、`--control-token-file`、`--cors-allow-origin`、`--rate-limit-*`、`--web-admin`、DHT runner/libp2p transport 配置项，以及 `docs/NODE_CONFIG.md` / `docs/examples/lm-node.config.example.json` | 调试和基础部署可用；TLS、结构化日志、systemd/container、备份恢复和升级策略已有文档，仍缺生产级监控告警与数据库运维细化 |
+| `node-admin` | 独立 Vue 前端（`apps/node-admin`），纯调用节点 `/api/*` REST，不加载身份、不用 WASM；提供健康、运行统计、sync peer、DHT 维护/复制/路由/查找、快照导入导出面板。可由节点 `--web-admin` 在 `/admin/`（仅 loopback）内嵌 serve | 满足运维者本机监控和 DHT 调试；需身份签名的写操作（PublicPeer/PreKey 发布）不在其范围 |
 | 测试 | `scripts/dev-test.sh all` 覆盖 Rust fmt/test、core e2e、node e2e、HTTP control flow、WASM smoke、Web build/e2e；测试计划已补齐单元、属性、WASM Web RNG/IndexedDB 和跨平台向量覆盖 | 基础回归较好；仍需 fuzz、真实网络故障/压力测试和外部安全审计 |
 
 重要边界：
@@ -683,7 +684,7 @@ lm-x3dh-initial-message-v1:
 - optional one_time_prekey_id
 ```
 
-Rust/WASM/Web 调试区已能生成公开 PreKey Bundle、独立 signed one-time-prekey records、保存 private prekey bundle、验签、发起方派生 shared secret、响应方派生同一个 shared secret。Shared secret 现在可以初始化 `RatchetSessionState`，并已新增实验性 `x3dh-double-ratchet-v1` envelope 加解密路径。Web IndexedDB 已增加 per-contact ratchet session 保存；正式聊天发送/接收会在存在会话时自动走 ratchet，不存在时回退 MVP。Web 已新增复制粘贴版“安全会话建立”UX：Offer 携带 PreKey Bundle 和 Ratchet DH public key，Response 携带 X3DH initial message 和响应方 Ratchet DH public key。Native node 控制面已支持 `/prekey/publish`、`/prekey/get`、`/prekey/status`、`/sync/snapshot`、`/sync/import`，Web 可发布/拉取 PreKey Bundle 与 signed one-time-prekey records，并可在两个节点之间粗粒度同步 peers/mailbox/prekeys 快照。下一步是真正的 DHT 路由复制、开放传输层查询和多设备补货协调。
+Rust/WASM/Web 调试区已能生成公开 PreKey Bundle、独立 signed one-time-prekey records、保存 private prekey bundle、验签、发起方派生 shared secret、响应方派生同一个 shared secret。Shared secret 现在可以初始化 `RatchetSessionState`，并已新增实验性 `x3dh-double-ratchet-v1` envelope 加解密路径。Web IndexedDB 已增加 per-contact ratchet session 保存；正式聊天发送/接收会在存在会话时自动走 ratchet，不存在时回退 MVP。Web 已新增复制粘贴版“安全会话建立”UX：Offer 携带 PreKey Bundle 和 Ratchet DH public key，Response 携带 X3DH initial message 和响应方 Ratchet DH public key。Native node 控制面已支持 `/api/prekey/publish`、`/api/prekey/get`、`/api/prekey/status`、`/api/sync/snapshot`、`/api/sync/import`，Web 可发布/拉取 PreKey Bundle 与 signed one-time-prekey records，并可在两个节点之间粗粒度同步 peers/mailbox/prekeys 快照。下一步是真正的 DHT 路由复制、开放传输层查询和多设备补货协调。
 
 当前新增 Double Ratchet 状态脚手架：
 
@@ -1660,12 +1661,12 @@ MVP 不做：
 - `lm_node` 控制面 scaffold。
 - Public Peer announce 生成、验签、导入、closest 查询。
 - Kademlia NodeId、XOR distance、bucket、closest peer 排序；DHT record key/value scaffold 已覆盖 Public Peer、PreKey、Mailbox hint 三类记录 key，带 TTL、republish_at、closest record 查询、过期清理和本地容量上限；控制面提供 `POST /dht/record`、`GET /dht/record`、`GET /dht/closest`，snapshot 可保存/合并 DHT records；已定义 `DhtRpcRequest` / `DhtRpcResponse` 并提供本地 `FindNode` / `FindValue` / `StoreRecord` handler，控制面 `POST /dht/rpc` 可作为传输层接入前的 RPC 兼容入口；已提供 due-for-republish 的 closest-k replication plan 和 256 个 bucket refresh target plan，并通过 `GET /dht/replication-plan` / `GET /dht/routing-refresh-plan` 暴露给控制面；`serve-control` 同步周期后会对已配置 control peers 执行 `StoreRecord` replication scaffold，并执行 bounded `FindNode` routing refresh scaffold；replication factor、FindNode limit 和每轮 refresh target 上限可由 config/CLI/env 配置；refresh runner 会合并从已配置 control peers 返回的非过期、node_id 与 peer_id 匹配且非本机的 `RoutingPeer`，用于 bootstrap/control-peer 信任边界内的 routing table 扩展。
-- Mailbox：`/mailbox/push`、`/mailbox/take`、`/mailbox/ack`。
-- PreKey：`/prekey/publish` 接收 bundle 与 `signed_one_time_prekey_record_texts[]`，`/prekey/get` 可返回 `selected_signed_one_time_prekey_record_text` 并在 `consume=true` 时精确记录 one-time prekey 消费；`/prekey/status` 返回 remaining/low watermark 与 `replenishment_required`；低水位补货由客户端持有 private prekey 后重新发布，节点返回 `replenishment_actor="client"` / `node_generates_user_keys=false` 并且不生成用户密钥；bundle 过期会清理，signed prekey 轮换会重置消费记录与旧 signed OTK records。
-- Snapshot：`/sync/snapshot`、`/sync/import`，可粗粒度同步 peers/mailbox/prekeys/signed one-time-prekey records。
-- 自动 snapshot sync：`serve-control --config-file node.json` 可加载 JSON 配置，`docs/NODE_CONFIG.md` 记录 schema，`docs/examples/lm-node.config.example.json` 提供样例；control/sync token 支持 CLI、环境变量或 secret 文件；`--sync-peer http://host:port --sync-interval-seconds N` 定时拉取并 merge peer snapshot；`--sync-peer-token`/`--sync-peer-token-file` 可拉取受 token 保护的 peer；`--sync-max-backoff-seconds` 控制失败指数退避；`/sync/status` 暴露 attempts/successes/failures/last_success_at/last_error/next_attempt_at。
+- Mailbox：`/api/mailbox/push`、`/api/mailbox/take`、`/api/mailbox/ack`。
+- PreKey：`/api/prekey/publish` 接收 bundle 与 `signed_one_time_prekey_record_texts[]`，`/api/prekey/get` 可返回 `selected_signed_one_time_prekey_record_text` 并在 `consume=true` 时精确记录 one-time prekey 消费；`/api/prekey/status` 返回 remaining/low watermark 与 `replenishment_required`；低水位补货由客户端持有 private prekey 后重新发布，节点返回 `replenishment_actor="client"` / `node_generates_user_keys=false` 并且不生成用户密钥；bundle 过期会清理，signed prekey 轮换会重置消费记录与旧 signed OTK records。
+- Snapshot：`/api/sync/snapshot`、`/api/sync/import`，可粗粒度同步 peers/mailbox/prekeys/signed one-time-prekey records。
+- 自动 snapshot sync：`serve-control --config-file node.json` 可加载 JSON 配置，`docs/NODE_CONFIG.md` 记录 schema，`docs/examples/lm-node.config.example.json` 提供样例；control/sync token 支持 CLI、环境变量或 secret 文件；`--sync-peer http://host:port --sync-interval-seconds N` 定时拉取并 merge peer snapshot；`--sync-peer-token`/`--sync-peer-token-file` 可拉取受 token 保护的 peer；`--sync-max-backoff-seconds` 控制失败指数退避；`/api/sync/status` 暴露 attempts/successes/failures/last_success_at/last_error/next_attempt_at。
 - 控制面基础安全与观测：未配置 token 时非 health API 仅允许 loopback；`--control-token` 要求 `Authorization: Bearer ...`；`--cors-allow-origin` 限制浏览器 Origin；`--rate-limit-window-seconds` / `--rate-limit-max-requests` 对非 health API 做 per-client IP 基础限流，超限返回 `429 Too Many Requests`；`GET /control/stats` 暴露 JSON 格式 started_at、请求总数、2xx/4xx/5xx、unauthorized、CORS 拒绝、限流命中、snapshot import/export 次数与字节数、DHT replication runner 运行/records/attempts/successes/failures/last run、routing refresh runner 运行/targets/attempts/successes/failures/nodes_returned/nodes_merged/last run、过期清理运行次数/移除记录数，以及 endpoint 维度请求数、状态码分布、累计/最大耗时等运行指标；`GET /control/metrics` 导出 OpenMetrics 文本，便于 Prometheus 类系统采集。
-- `serve-control --state-file` 可保存/恢复节点状态；保存时写入同目录临时文件、fsync 后 rename，降低进程崩溃导致状态文件截断的风险；HTTP e2e 已覆盖 mailbox push 后崩溃、take 未 ack 后崩溃、ack 后崩溃三种恢复语义。
+- `serve-control --state-db` 可将节点状态持久化到明文 SQLite（WAL、synchronous=FULL、Unix 下 0600 权限）；HTTP e2e 已覆盖 mailbox push 后崩溃、take 未 ack 后崩溃、ack 后崩溃三种恢复语义。磁盘静态保护由整盘加密（LUKS/dm-crypt）承担，节点不做数据库级加密（state_db 存的是中继运营状态：离线消息已是端到端密文，prekey/public-peer/DHT 记录本就公开）。
 - 节点 e2e：PreKey 同步 + Mailbox 携带 ratchet envelope + 接收方解密。
 
 仍需补齐：
@@ -1938,7 +1939,7 @@ Public Peer：
 - core e2e：两用户好友流程、X3DH shared secret、Double Ratchet 双向消息。
 - `lm_node`：Public Peer announce、Kademlia closest、Mailbox push/take/ack、PreKey bundle + signed one-time-prekey records publish/get、snapshot roundtrip/import、serve-control 自动 snapshot sync。
 - node e2e：节点 PreKey/signed OTK 同步 + Mailbox 携带 ratchet envelope + 接收方解密。
-- HTTP control flow：真实 `serve-control` 进程之间同步 PreKey/Mailbox，并覆盖 config-file、token/CORS 基础安全、控制面基础限流、`/control/stats` JSON 指标和 `/control/metrics` OpenMetrics 导出。
+- HTTP control flow：真实 `serve-control` 进程之间同步 PreKey/Mailbox，并覆盖 config-file、token/CORS 基础安全、控制面基础限流、`/api/control/stats` JSON 指标和 `/api/control/metrics` OpenMetrics 导出。
 - `lm_wasm` smoke：身份、联系人、好友、消息、PreKey/X3DH、Ratchet、群、文件、Public Peer、Mailbox、Signaling。
 - Web E2E：产品化登录注册、同步好友请求和消息收发、IndexedDB 加密消息持久化、Web RNG 生成不同身份、独立导入页恢复身份。
 
@@ -2000,8 +2001,8 @@ Web 现已支持 Sender Key Distribution fanout：
 
 - `PreKeyBundle::new_with_signed_one_time_prekey_records` 可生成不把 OTK 列表签进 bundle 的公开 bundle，并为每个 OTK 生成独立 `SignedOneTimePreKeyRecord`。
 - `x3dh_initiator_secret_with_one_time_prekey_record` 可用选中的 signed OTK record 派生 shared secret；旧的 `x3dh_initiator_secret_with_one_time_prekey_id` 仍用于兼容 bundle 内 OTK。
-- `lm_node /prekey/publish` 接收 `signed_one_time_prekey_record_texts[]`；`/prekey/get?consume=true` 不删除整个 bundle，而是记录已消费的 one-time key id，并优先返回未消费的 `selected_signed_one_time_prekey_record_text`。
-- 响应返回 `selected_one_time_prekey_id`、`selected_signed_one_time_prekey_record_text`、`consumed_one_time_prekey_ids`、`remaining_one_time_prekeys`、`signed_one_time_prekey_records`、`low_one_time_prekeys`、`replenishment_required`、`replenishment_actor` 和 `node_generates_user_keys`；`/prekey/status` 可不拉取 bundle 只查询补货状态。
+- `lm_node /prekey/publish` 接收 `signed_one_time_prekey_record_texts[]`；`/api/prekey/get?consume=true` 不删除整个 bundle，而是记录已消费的 one-time key id，并优先返回未消费的 `selected_signed_one_time_prekey_record_text`。
+- 响应返回 `selected_one_time_prekey_id`、`selected_signed_one_time_prekey_record_text`、`consumed_one_time_prekey_ids`、`remaining_one_time_prekeys`、`signed_one_time_prekey_records`、`low_one_time_prekeys`、`replenishment_required`、`replenishment_actor` 和 `node_generates_user_keys`；`/api/prekey/status` 可不拉取 bundle 只查询补货状态。
 - Web 拉取/领取 PreKey 后会优先保存 selected signed OTK record，并在创建 X3DH initial message 时使用该 record；没有 signed record 时回退旧 selected id。
 
 限制：节点只提示低水位/补货需求，不代替客户端生成私钥补货；多设备补货同步、signed prekey 轮换广播和真正 DHT 复制仍需完善。
