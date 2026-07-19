@@ -62,6 +62,11 @@ def main() -> int:
     parser.add_argument("--cargo-features", default="", help="Comma/space separated Cargo features used for this build")
     parser.add_argument("--repo-root", default=".", help="Repository root")
     parser.add_argument(
+        "--web-admin-zip",
+        default="",
+        help="Optional path to node_admin.zip to bundle into the archive",
+    )
+    parser.add_argument(
         "--archive-format",
         choices=("auto", "tar.gz", "zip"),
         default="auto",
@@ -117,6 +122,15 @@ def main() -> int:
                 destination = staging / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, destination)
+
+        if args.web_admin_zip:
+            admin_zip = Path(args.web_admin_zip)
+            if not admin_zip.is_absolute():
+                admin_zip = (repo / admin_zip).resolve()
+            if admin_zip.is_file():
+                shutil.copy2(admin_zip, staging / "node_admin.zip")
+            else:
+                raise SystemExit(f"--web-admin-zip not found: {admin_zip}")
 
         release_info = staging / "RELEASE_INFO.txt"
         release_info.write_text(

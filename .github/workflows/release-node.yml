@@ -66,6 +66,13 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/node-admin/package-lock.json
+
       - name: Build native node
         shell: bash
         run: |
@@ -88,12 +95,27 @@ jobs:
           "$BIN" > lm_node_help.txt 2>&1
           grep -q "LM Talk" lm_node_help.txt
 
+      - name: Build node-admin bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd apps/node-admin
+          npm ci
+          npm run build
+          cd dist
+          if command -v zip >/dev/null 2>&1; then
+            zip -r -q "$GITHUB_WORKSPACE/node_admin.zip" .
+          else
+            python -c "import shutil; shutil.make_archive('$GITHUB_WORKSPACE/node_admin', 'zip', '.')"
+          fi
+
       - name: Package native node
         run: >-
           python scripts/release-package.py
           --target ${{ matrix.target }}
           --package-name ${{ matrix.package_name }}
           --cargo-features "${{ matrix.cargo_features }}"
+          --web-admin-zip node_admin.zip
           --out-dir dist
 
       - name: Create signing evidence report
@@ -144,6 +166,8 @@ jobs:
           - Windows x86_64: `lm_node-windows-x86_64.zip`
 
           Verify downloads with `SHA256SUMS.txt` or the per-artifact `.sha256` files. Each archive also includes `RELEASE_INFO.txt` with the source commit, build timestamp, Rust toolchain details, and binary SHA256.
+
+          Web admin: each archive bundles `node_admin.zip` (the node operator dashboard). Serve it with `lm_node serve-control --web-admin node_admin.zip` and open `http://127.0.0.1:8787/admin/` (loopback only).
 
           Storage note: the node's `state_db` holds relay/mailbox operating state — offline message deliveries are already end-to-end ciphertext, and prekey/public-peer/DHT records are public by design. State is stored as plaintext; for disk-at-rest protection use full-disk encryption (LUKS/dm-crypt).
 
