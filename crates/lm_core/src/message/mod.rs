@@ -275,7 +275,6 @@ impl RatchetEnvelope {
         if self.crypto != RATCHET_CRYPTO_V1 {
             return Err(LmError::InvalidFormat);
         }
-        validate_timestamp(self.created_at)?;
         Ok(())
     }
 
@@ -392,7 +391,6 @@ impl DirectEnvelope {
         if self.crypto != MVP_CRYPTO_V1 {
             return Err(LmError::InvalidFormat);
         }
-        validate_timestamp(self.created_at)?;
         Ok(())
     }
 
@@ -410,7 +408,7 @@ impl DirectEnvelope {
     }
 }
 
-fn validate_timestamp(created_at: u64) -> Result<()> {
+pub fn validate_timestamp(created_at: u64) -> Result<()> {
     let now = current_unix_timestamp();
     if created_at > now.saturating_add(MAX_MESSAGE_FUTURE_SECONDS) {
         return Err(LmError::ExpiredObject);
