@@ -144,7 +144,7 @@ pub(super) fn serve_control(
     dht_runner: DhtRunnerConfig,
     security: ControlSecurityConfig,
     rate_limit: RateLimitConfig,
-    admin_dir: Option<&str>,
+    web_admin: Option<&str>,
     logger: ControlLogger,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(bind)?;
@@ -419,7 +419,7 @@ pub(super) fn serve_control(
                     state_db,
                     &dht_configured_peers,
                     dht_runner,
-                    admin_dir,
+                    web_admin,
                     &logger,
                 ) {
                     let status = status_for_request_error(&err.to_string());
@@ -475,7 +475,7 @@ pub(super) fn handle_stream(
     state_db: Option<&str>,
     dht_configured_peers: &[SyncPeerConfig],
     dht_runner: DhtRunnerConfig,
-    admin_dir: Option<&str>,
+    web_admin: Option<&str>,
     logger: &ControlLogger,
 ) -> Result<(), Box<dyn std::error::Error>> {
     configure_control_client_stream(stream)?;
@@ -507,7 +507,7 @@ pub(super) fn handle_stream(
             )?;
             return Ok(());
         }
-        let response = serve_admin_file(admin_dir, &request.path);
+        let response = serve_admin_file(web_admin, &request.path);
         write_response(
             stream,
             &response,
@@ -1125,34 +1125,45 @@ pub(super) fn find_header_end(buffer: &[u8]) -> Option<usize> {
     buffer.windows(4).position(|window| window == b"\r\n\r\n")
 }
 
-fn serve_admin_file(admin_dir: Option<&str>, request_path: &str) -> ControlHttpResponse {
-    let Some(dir) = admin_dir else {
-        return ControlHttpResponse::text(404, "admin panel not configured (use --admin-dir)");
+fn serve_admin_file(admin_path: Option<&str>, request_path: &str) -> ControlHttpResponse {
+    let Some(base) = admin_path else {
+        return ControlHttpResponse::text(404, "web admin not configured (use --web-admin)");
     };
     let rel_path = request_path
         .strip_prefix("/admin")
         .unwrap_or("")
         .trim_start_matches('/');
-    let file_path = if rel_path.is_empty() || rel_path == "/" {
-        format!("{}/index.html", dir)
-    } else {
-        let clean = rel_path.split('?').next().unwrap_or(rel_path);
-        if clean.contains("..") {
-            return ControlHttpResponse::text(400, "invalid path");
-        }
-        format!("{}/{}", dir, clean)
-    };
-    match std::fs::read(&file_path) {
-        Ok(content) => {
-            let content_type = mime_for_path(&file_path);
-            ControlHttpResponse {
-                status: 200,
-                content_type: content_type.to_string(),
-                body: String::from_utf8_lossy(&content).into_owned(),
-            }
-        }
-        Err(_) => ControlHttpResponse::text(404, "not found"),
+    let clean = rel_path.split('?').next().unwrap_or(rel_path);
+    if clean.contains("..") {
+        return ControlHttpResponse::text(400, "invalid path");
     }
+    let inner = if clean.is_empty() {
+        "index.html".to_string()
+    } else {
+        clean.to_string()
+    };
+    let content = if base.ends_with(".zip") {
+        read_from_zip(base, &inner)
+    } else {
+        std::fs::read(format!("{}/{}", base, inner)).ok()
+    };
+    match content {
+        Some(bytes) => ControlHttpResponse {
+            status: 200,
+            content_type: mime_for_path(&inner).to_string(),
+            body: String::from_utf8_lossy(&bytes).into_owned(),
+        },
+        None => ControlHttpResponse::text(404, "not found"),
+    }
+}
+
+fn read_from_zip(zip_path: &str, inner_path: &str) -> Option<Vec<u8>> {
+    let file = std::fs::File::open(zip_path).ok()?;
+    let mut archive = zip::ZipArchive::new(file).ok()?;
+    let mut entry = archive.by_name(inner_path).ok()?;
+    let mut buf = Vec::new();
+    std::io::Read::read_to_end(&mut entry, &mut buf).ok()?;
+    Some(buf)
 }
 
 fn mime_for_path(path: &str) -> &'static str {
@@ -1186,10 +1197,17 @@ fn write_response(
     _started_at: Instant,
     _request_body_bytes: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let reason = match response.status {
+        200 => "OK",
+        400 => "Bad Request",
+        403 => "Forbidden",
+        404 => "Not Found",
+        _ => "OK",
+    };
     let raw = format!(
         "HTTP/1.1 {} {}\r\ncontent-type: {}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
         response.status,
-        status_reason(response.status),
+        reason,
         response.content_type,
         response.body.len(),
         response.body

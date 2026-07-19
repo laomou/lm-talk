@@ -463,8 +463,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|value| parse_csv(&value))
                 .or(file_config.cors_allow_origins)
                 .unwrap_or_default();
-            let admin_dir =
-                optional_arg(&args, "--admin-dir")?.or_else(|| env::var("LM_NODE_ADMIN_DIR").ok());
+            let web_admin =
+                optional_arg(&args, "--web-admin")?.or_else(|| env::var("LM_NODE_WEB_ADMIN").ok());
             let security = ControlSecurityConfig {
                 token,
                 previous_tokens: control_previous_tokens,
@@ -549,7 +549,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     window_seconds: rate_limit_window_seconds,
                     max_requests: rate_limit_max_requests,
                 },
-                admin_dir.as_deref(),
+                web_admin.as_deref(),
                 ControlLogger::new(log_format),
             )?;
         }
@@ -1268,7 +1268,7 @@ announce --backup-file <file> --passphrase <text> [--peer-id <id>] [--addr <mult
 inspect-public --text-file <file> --identity-public-key <base64>\n  \
 run [--peer-id <id>] [--addr <multiaddr>]\n  \
 serve-dht-libp2p [--listen <multiaddr>] [--bootstrap-peer <libp2p://multiaddr|peer_id,csv>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>] [--state-db-encryption-mode <plain|external>] [--state-db-passphrase-file <file>] [--state-db-require-encryption <true|false>]\n  \
-serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>] [--state-db-encryption-mode <plain|external>] [--state-db-passphrase-file <file>] [--state-db-require-encryption <true|false>] [--control-token <token>] [--control-previous-token <old-token,csv>] [--sync-peer <url,csv>] [--sync-interval-seconds <n>] [--dht-transport <http-control|libp2p>] [--dht-peer-quarantine-consecutive-failures <n>] [--rate-limit-window-seconds <n>] [--rate-limit-max-requests <n>] [--log-format <text|json>] [--mailbox-global-rate-limit-window-seconds <n>] [--mailbox-global-rate-limit-max-messages <n>] [--mailbox-sender-rate-limit-window-seconds <n>] [--mailbox-sender-rate-limit-max-messages <n>]\n"
+serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>] [--state-db-encryption-mode <plain|external>] [--state-db-passphrase-file <file>] [--state-db-require-encryption <true|false>] [--control-token <token>] [--control-previous-token <old-token,csv>] [--web-admin <dir-or-zip>] [--sync-peer <url,csv>] [--sync-interval-seconds <n>] [--dht-transport <http-control|libp2p>] [--dht-peer-quarantine-consecutive-failures <n>] [--rate-limit-window-seconds <n>] [--rate-limit-max-requests <n>] [--log-format <text|json>] [--mailbox-global-rate-limit-window-seconds <n>] [--mailbox-global-rate-limit-max-messages <n>] [--mailbox-sender-rate-limit-window-seconds <n>] [--mailbox-sender-rate-limit-max-messages <n>]\n"
     );
 }
 

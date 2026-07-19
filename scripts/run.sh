@@ -298,8 +298,13 @@ fi
 if [[ -z "$config_file" || "$log_format_set" == "1" ]]; then
   args+=(--log-format "$log_format")
 fi
-admin_dist="$ROOT/apps/node-admin/dist"
-if [[ -d "$admin_dist" ]]; then
-  args+=(--admin-dir "$admin_dist")
+# Web admin panel: prefer a packaged node_admin.zip next to the binary,
+# otherwise fall back to the built dist directory during development.
+if [[ -f "$ROOT/node_admin.zip" ]]; then
+  args+=(--web-admin "$ROOT/node_admin.zip")
+elif [[ -f "$ROOT/target/release/node_admin.zip" ]]; then
+  args+=(--web-admin "$ROOT/target/release/node_admin.zip")
+elif [[ -d "$ROOT/apps/node-admin/dist" ]]; then
+  args+=(--web-admin "$ROOT/apps/node-admin/dist")
 fi
 exec "$ROOT/target/release/lm_node" "${args[@]}"
