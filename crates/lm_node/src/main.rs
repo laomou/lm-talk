@@ -1017,13 +1017,48 @@ fn parse_mailbox_message_kind(
 
 fn print_help() {
     eprintln!(
-        "LM Talk node scaffold\n\n\
-Commands:\n  \
-announce --backup-file <file> --passphrase <text> [--peer-id <id>] [--addr <multiaddr,csv>] [--cap <bootstrap,dht,relay,mailbox>]\n  \
-inspect-public --text-file <file> --identity-public-key <base64>\n  \
-run [--peer-id <id>] [--addr <multiaddr>]\n  \
-serve-dht-libp2p [--listen <multiaddr>] [--bootstrap-peer <libp2p://multiaddr|peer_id,csv>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>]\n  \
-serve-control [--config-file <json>] [--bind <host:port>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>] [--control-token <token>] [--control-previous-token <old-token,csv>] [--web-admin <dir-or-zip>] [--sync-peer <url,csv>] [--sync-interval-seconds <n>] [--dht-transport <http-control|libp2p>] [--dht-peer-quarantine-consecutive-failures <n>] [--rate-limit-window-seconds <n>] [--rate-limit-max-requests <n>] [--log-format <text|json>] [--mailbox-global-rate-limit-window-seconds <n>] [--mailbox-global-rate-limit-max-messages <n>] [--mailbox-sender-rate-limit-window-seconds <n>] [--mailbox-sender-rate-limit-max-messages <n>]\n"
+        "LM Talk node
+
+QUICKSTART
+  lm_node serve-control
+      本机运行, 监听 127.0.0.1:8787, 仅 loopback 可访问, 全部默认值.
+  lm_node serve-control --bind 0.0.0.0:8787 --control-token SECRET --state-db node.sqlite3
+      对外提供服务: 绑定所有网卡, 要求 Bearer token, 状态持久化到 SQLite.
+  lm_node serve-control --config-file node.json
+      从 JSON 配置文件读取全部选项 (推荐用于生产, 见 docs/deploy/NODE_CONFIG.md).
+
+COMMANDS
+  serve-control      运行控制面 HTTP 服务 (最常用)
+  serve-dht-libp2p   运行 libp2p DHT 监听节点
+  announce           生成 public peer 公告
+  inspect-public     验证 public peer 公告
+  run                最小 scaffold 运行
+
+serve-control 常用选项
+  --config-file <json>     从 JSON 配置读取所有选项 (命令行选项会覆盖它)
+  --bind <host:port>       监听地址 (默认 127.0.0.1:8787)
+  --control-token <token>  非 loopback 访问需要的 Bearer token (不设则仅本机可用)
+  --state-db <sqlite>      状态持久化到 SQLite 文件 (不设则纯内存, 重启丢失)
+  --web-admin <dir-or-zip> serve 管理面板到 /admin/ (仅 loopback)
+  --peer-id <id>           节点 ID (默认自动生成)
+
+serve-control 高级选项 (均有默认值, 通常无需设置)
+  --state-file <file>                            JSON 格式状态文件 (state-db 的替代)
+  --control-previous-token <old-token,csv>       token 轮换时的旧 token
+  --sync-peer <url,csv> --sync-interval-seconds <n>    定时从对端节点同步快照
+  --dht-transport <http-control|libp2p>          DHT 传输方式
+  --dht-peer-quarantine-consecutive-failures <n> DHT peer 隔离阈值
+  --rate-limit-window-seconds <n> --rate-limit-max-requests <n>    控制面限流
+  --mailbox-global-rate-limit-window-seconds <n> --mailbox-global-rate-limit-max-messages <n>
+  --mailbox-sender-rate-limit-window-seconds <n> --mailbox-sender-rate-limit-max-messages <n>
+  --log-format <text|json>                       日志格式
+
+其他命令
+  announce --backup-file <file> --passphrase <text> [--peer-id <id>] [--addr <multiaddr,csv>] [--cap <bootstrap,dht,relay,mailbox>]
+  inspect-public --text-file <file> --identity-public-key <base64>
+  serve-dht-libp2p [--listen <multiaddr>] [--bootstrap-peer <libp2p://multiaddr|peer_id,csv>] [--peer-id <id>] [--state-file <file>] [--state-db <sqlite>]
+  run [--peer-id <id>] [--addr <multiaddr>]
+"
     );
 }
 

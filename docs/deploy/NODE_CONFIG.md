@@ -1,5 +1,22 @@
 # LM Node 配置文件
 
+## 快速上手
+
+```bash
+# 1. 本机试用（全默认，监听 127.0.0.1:8787，仅本机可访问）
+lm_node serve-control
+
+# 2. 对外提供服务（绑定所有网卡 + Bearer token + SQLite 持久化）
+lm_node serve-control --bind 0.0.0.0:8787 --control-token "$(cat /etc/lm-node/control.token)" --state-db /var/lib/lm-node/state.sqlite3
+
+# 3. 生产推荐：把所有选项写进 JSON 配置文件，命令行只需一个参数
+lm_node serve-control --config-file node.json
+```
+
+`serve-control` 有约 19 个选项，但绝大多数有合理默认值——日常只需 `--bind` / `--control-token` / `--state-db` 三个。完整选项见 `lm_node help` 或下方字段表。
+
+## 配置文件
+
 `lm_node serve-control` 支持 JSON 配置文件：
 
 ```bash
