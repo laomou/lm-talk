@@ -88,25 +88,6 @@ jobs:
           "$BIN" > lm_node_help.txt 2>&1
           grep -q "LM Talk" lm_node_help.txt
 
-      - name: Smoke test SQLCipher release binary
-        if: ${{ matrix.package_name == 'lm_node-linux-x86_64' }}
-        shell: bash
-        env:
-          LM_NODE_SQLCIPHER_BIN: target/${{ matrix.target }}/release/lm_node
-          LM_NODE_SQLCIPHER_SMOKE_LOG: sqlcipher-release-smoke.log
-          LM_NODE_SQLCIPHER_SMOKE_REPORT: sqlcipher-release-smoke-report.json
-        run: ./scripts/check-sqlcipher-deploy.sh
-
-      - name: Upload SQLCipher release smoke report
-        if: ${{ matrix.package_name == 'lm_node-linux-x86_64' && always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ matrix.package_name }}-smoke
-          path: |
-            sqlcipher-release-smoke.log
-            sqlcipher-release-smoke-report.json
-          if-no-files-found: warn
-
       - name: Package native node
         run: >-
           python scripts/release-package.py
@@ -164,7 +145,7 @@ jobs:
 
           Verify downloads with `SHA256SUMS.txt` or the per-artifact `.sha256` files. Each archive also includes `RELEASE_INFO.txt` with the source commit, build timestamp, Rust toolchain details, and binary SHA256.
 
-          SQLCipher note: all artifacts are built with the `sqlcipher` feature (default) for database-level `state_db` encryption. Verify deployment with `./scripts/check-sqlcipher-deploy.sh` or archived `/control/stats` + `/control/metrics` evidence showing `state_db_encrypted=true`.
+          Storage note: the node's `state_db` holds relay/mailbox operating state — offline message deliveries are already end-to-end ciphertext, and prekey/public-peer/DHT records are public by design. For disk-at-rest protection prefer full-disk encryption (LUKS/dm-crypt). A `sqlcipher` build feature is available for database-level encryption of the metadata if a deployment requires it (`cargo build -p lm_node --features sqlcipher`).
 
           Security note: these artifacts are automated CI builds. macOS notarization and Windows code signing are scaffolded as evidence reports but not yet implemented; keep unsigned / non-notarized artifacts as a release blocker for a production-trust distribution channel. Review `*-signing-evidence.json` for each artifact.
           EOF
