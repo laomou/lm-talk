@@ -130,7 +130,7 @@ Web 将更高级别的本地发件箱类型（如 `contact-update`、`device-rev
 在将协议稳定性标记为生产发布前：
 
 - [ ] 外部审计审查了上述 Stable 和 Transitional 对象。
-- [x] 稳定签名/加密对象的测试向量已存在（见 `docs/TEST_VECTOR_COVERAGE.md`）。
+- [x] 稳定签名/加密对象的测试向量已存在（见 `docs/testing/TEST_VECTOR_COVERAGE.md`）。
 - [x] DHT 记录类型列表和键派生命名空间已冻结。
 - [x] Mailbox 类型映射和 `Other` 回退行为已记录。
 - [x] ContactCard/DeviceCert 合并和撤销策略已有互操作测试。

@@ -17,9 +17,9 @@
 
 - [x] 三节点 federation smoke/chaos/load 脚本迁移到 `deploy/lm-node-federation/`。
 - [x] Docker federation 已能跑通 basic / chaos / load。
-- [ ] 在没有 `docker compose` plugin 的环境中给出更明确提示。
-- [ ] 清理 direct docker fallback 过程中的临时目录和本地测试产物说明。
-- [ ] README 中补充 `rust:1-bookworm` 拉取失败/限流时的处理方式。
+- [x] 在没有 `docker compose` plugin 的环境中支持 direct docker fallback，并在文档中说明。
+- [x] `compose.sh clean` 可清理 direct docker fallback 的临时目录和本地测试产物。
+- [ ] README 中补充基础镜像拉取失败/限流时的处理方式。
 
 ### 2. strict E2EE 体验打磨
 
@@ -35,19 +35,19 @@
 
 ### 3. Web 聊天体验
 
-- [ ] 消息投递状态统一展示：queued / mailbox / sent / delivered / read / failed。
-- [ ] 失败消息提供更明确的重试/取消入口。
-- [ ] 文件附件卡片进一步优化：发送中、已入队、已接收、已下载。
-- [ ] 搜索结果高亮。
+- [x] 消息投递状态统一展示：queued / mailbox / sent / delivered / read / failed。
+- [x] 失败/待发送消息提供单条重试/取消入口。
+- [x] 文件附件卡片展示发送中、已入队、已接收、已下载等状态。
+- [ ] 消息搜索高亮暂不做，后续如需要再排期。
 - [ ] 窄屏下优化聊天、通讯录和设置页布局。
 
 ## P1：继续增强
 
 ### 4. Native node 运维体验
 
-- [ ] node-admin 增强 federation 总览。
+- [x] node-admin 已增加 federation peer health 总览。
 - [ ] `/control/stats` 中聚合更清晰的 Mailbox/DHT 摘要。
-- [ ] Docker federation 报告更易读，包含失败原因摘要。
+- [x] Docker federation 失败时自动打印报告、容器状态和日志尾部。
 - [ ] 部署文档继续减少过时参数和重复内容。
 
 ### 5. 文档中文化和去重
@@ -58,8 +58,8 @@
 - [x] `docs/deploy/NODE_CONFIG.md` 简化为中文配置说明。
 - [x] `docs/protocol/` 主要规格中文扩写。
 - [x] `docs/README.md` 中文索引更新。
-- [ ] `docs/overview/DESIGN.md` 精简为当前实现状态版。
-- [ ] 继续检查文档中的旧脚本名、旧路径和旧 state_file 描述。
+- [x] `docs/overview/DESIGN.md` 已作为当前实现状态版维护。
+- [x] 已修正旧 docs 根路径引用；继续发现过时路径时随改动处理。
 
 ## P2：长期增强
 

@@ -1,6 +1,6 @@
 # 密码学审计说明
 
-本文档是 LM Talk 密码学设计和实现审查者的简明指南。它总结了关键生命周期、信任边界和已知限制。应与 `docs/SECURITY_AUDIT_SCOPE.md`、`docs/PROTOCOL_STABILITY.md` 和 `docs/TEST_VECTOR_COVERAGE.md` 一起阅读。
+本文档是 LM Talk 密码学设计和实现审查者的简明指南。它总结了关键生命周期、信任边界和已知限制。应与 `docs/security/SECURITY_AUDIT_SCOPE.md`、`docs/testing/PROTOCOL_STABILITY.md` 和 `docs/testing/TEST_VECTOR_COVERAGE.md` 一起阅读。
 
 ## 身份和根密钥
 

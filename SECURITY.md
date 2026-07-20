@@ -42,7 +42,7 @@ The following are known blockers and do not need to be reported as new vulnerabi
 
 ## Security design references
 
-- `docs/SECURITY_MODEL.md` — goals, non-goals, and threat boundaries.
-- `docs/RELEASE_CHECKLIST.md` — release candidate gate and remaining manual blockers.
-- `docs/FUZZING.md` — fuzz harnesses and campaign requirements.
-- `docs/NODE_CONFIG.md` — node deployment and operational hardening guidance.
+- `docs/security/SECURITY_MODEL.md` — goals, non-goals, and threat boundaries.
+- `docs/release/RELEASE_CHECKLIST.md` — release candidate gate and remaining manual blockers.
+- `docs/testing/FUZZING.md` — fuzz harnesses and campaign requirements.
+- `docs/deploy/NODE_CONFIG.md` — node deployment and operational hardening guidance.

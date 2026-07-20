@@ -155,7 +155,7 @@
 
 在一周内：
 
-1. 填写 `docs/AUDIT_REMEDIATION_TRACKER.md` 条目或链接 issue。
+1. 填写 `docs/security/AUDIT_REMEDIATION_TRACKER.md` 条目或链接 issue。
 2. 记录根因和未检测原因。
 3. 添加回归测试或 smoke 检查。
 4. 如果需要，更新运行手册/配置默认值。

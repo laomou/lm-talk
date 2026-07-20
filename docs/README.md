@@ -66,6 +66,29 @@
 | [RELEASE_SIGNING.md](release/RELEASE_SIGNING.md) | 产物校验和可选平台签名说明。 |
 | [RELEASE_SIGNOFF.md](release/RELEASE_SIGNOFF.md) | 可选发布签核模板。 |
 
+
+## 分类边界与去重规则
+
+为避免同一内容在多个文档里反复维护，后续新增或移动文档时按下面规则归类：
+
+| 类别 | 放置位置 | 只记录什么 | 不重复记录什么 |
+| --- | --- | --- | --- |
+| 总览/路线 | `docs/overview/` | 项目目标、当前状态、待办优先级 | 具体 wire 字段、发布证据表 |
+| 协议规格 | `docs/protocol/` | 稳定对象格式、字段、验证规则 | 运维步骤、UI 操作教程 |
+| 安全 | `docs/security/` | 威胁模型、密码学说明、审计范围、事件响应 | 发布签核、部署执行记录 |
+| 部署 | `docs/deploy/` | 节点配置、公网运行手册、部署报告模板 | 协议字段完整定义、发布决策 |
+| 测试 | `docs/testing/` | 测试向量、fuzz、协议稳定性检查 | 长篇设计背景、发布签核 |
+| 发布 | `docs/release/` | release check、证据索引、风险登记、签名/签核模板 | 公网部署细节和协议字段定义 |
+
+模板类文档的边界：
+
+- `docs/release/RELEASE_EVIDENCE.md`：记录一次 release candidate 的检查证据索引。
+- `docs/release/RELEASE_SIGNOFF.md`：记录一次发布是否放行的人工签核结论。
+- `docs/deploy/PUBLIC_DEPLOYMENT_REPORT_TEMPLATE.md`：记录一次公网或准公网部署现场报告。
+- `docs/security/AUDIT_REMEDIATION_TRACKER.md`：记录安全审计发现和修复跟踪。
+
+若某段内容同时适合多个文档，优先保留在最细分类文档中，其他位置只放 1 行链接。
+
 ## 测试向量
 
 固定测试向量位于仓库根目录：

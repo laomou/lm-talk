@@ -26,7 +26,7 @@ For detailed design, specifications, and deployment instructions, see the [docum
 - [Design Overview](docs/overview/DESIGN.md)
 - [Security Model](docs/security/SECURITY_MODEL.md)
 - [Network & Deployment](docs/protocol/NETWORK_SPEC.md)
-- [Protocol Specifications](docs/README.md#核心协议规格)
+- [Protocol Specifications](docs/README.md#协议规格)
 
 ## License
 

@@ -26,7 +26,7 @@
 - [设计总览](docs/overview/DESIGN.md)
 - [安全模型](docs/security/SECURITY_MODEL.md)
 - [网络与部署](docs/protocol/NETWORK_SPEC.md)
-- [协议规格](docs/README.md#核心协议规格)
+- [协议规格](docs/README.md#协议规格)
 
 ## 许可证
 

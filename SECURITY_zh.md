@@ -42,7 +42,7 @@ LM Talk 是一个端到端加密、本地优先的即时通讯项目。欢迎安
 
 ## 安全设计参考
 
-- `docs/SECURITY_MODEL.md` — 目标、非目标和威胁边界。
-- `docs/RELEASE_CHECKLIST.md` — 发布候选门控和剩余手动阻塞项。
-- `docs/FUZZING.md` — 模糊测试平台和活动要求。
-- `docs/NODE_CONFIG.md` — 节点部署和运行时加固指南。
+- `docs/security/SECURITY_MODEL.md` — 目标、非目标和威胁边界。
+- `docs/release/RELEASE_CHECKLIST.md` — 发布候选门控和剩余手动阻塞项。
+- `docs/testing/FUZZING.md` — 模糊测试平台和活动要求。
+- `docs/deploy/NODE_CONFIG.md` — 节点部署和运行时加固指南。
