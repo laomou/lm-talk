@@ -34,6 +34,8 @@ Node options:
   --rate-limit-window-seconds N per-client control API rate window (default: 60; 0 disables)
   --rate-limit-max-requests N max non-health requests per client/window (default: 600; 0 disables)
   --log-format text|json  stdout log format (default: text; env: LM_NODE_LOG_FORMAT)
+  --web-admin-build-base BASE  build node-admin with this base before mounting /admin (default: /admin/)
+  --skip-web-admin-build       do not auto-build node-admin even when dist is missing or stale
   --check-config          validate script options and exit before building/running
 USAGE
 }
@@ -103,6 +105,8 @@ rate_limit_max_requests="${LM_NODE_RATE_LIMIT_MAX_REQUESTS:-600}"
 rate_limit_max_requests_set=$([[ -n "${LM_NODE_RATE_LIMIT_MAX_REQUESTS:-}" ]] && echo 1 || echo 0)
 log_format="${LM_NODE_LOG_FORMAT:-text}"
 log_format_set=$([[ -n "${LM_NODE_LOG_FORMAT:-}" ]] && echo 1 || echo 0)
+web_admin_build_base="${LM_NODE_ADMIN_BASE:-${VITE_BASE:-/admin/}}"
+skip_web_admin_build=0
 check_config=0
 
 while [[ $# -gt 0 ]]; do
@@ -130,6 +134,8 @@ while [[ $# -gt 0 ]]; do
     --rate-limit-window-seconds) rate_limit_window_seconds="${2:?--rate-limit-window-seconds requires N}"; rate_limit_window_seconds_set=1; shift 2 ;;
     --rate-limit-max-requests) rate_limit_max_requests="${2:?--rate-limit-max-requests requires N}"; rate_limit_max_requests_set=1; shift 2 ;;
     --log-format) log_format="${2:?--log-format requires text|json}"; log_format_set=1; shift 2 ;;
+    --web-admin-build-base) web_admin_build_base="${2:?--web-admin-build-base requires BASE}"; shift 2 ;;
+    --skip-web-admin-build) skip_web_admin_build=1; shift ;;
     --check-config) check_config=1; shift ;;
     --debug|--release)
       echo "run.sh 是 PRD runtime，不接受 $1；固定 build --release 并执行 target/release/lm_node" >&2
@@ -166,6 +172,20 @@ ERR
 }
 
 validate_prd_run_security
+
+admin_dist="$ROOT/apps/node-admin/dist"
+need_web_admin_build=0
+if [[ "$skip_web_admin_build" != "1" && ! -f "$ROOT/node_admin.zip" && ! -f "$ROOT/target/release/node_admin.zip" ]]; then
+  if [[ ! -f "$admin_dist/index.html" ]]; then
+    need_web_admin_build=1
+  elif ! grep -q "/admin/assets/" "$admin_dist/index.html"; then
+    need_web_admin_build=1
+  fi
+fi
+if [[ "$need_web_admin_build" == "1" ]]; then
+  echo "构建 node-admin：base=$web_admin_build_base"
+  (cd "$ROOT/apps/node-admin" && NODE_ADMIN_BASE="$web_admin_build_base" PATH="$ROOT/.tools/node/bin:$PATH" npm run build)
+fi
 
 mkdir -p "$(dirname "$state_db")"
 echo "启动 LM Talk 同步服务（PRD）"
