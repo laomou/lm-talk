@@ -141,6 +141,28 @@ function openGroupDetail(groupId: string) {
             </div>
           </section>
 
+          <section v-if="ctx.mailboxFailedRecoveryItems.value.length" class="home-card">
+            <div class="section-title-row">
+              <h3>Mailbox 失败恢复</h3>
+              <div class="row compact">
+                <button class="secondary" @click="ctx.retryFailedMailboxItems">全部重试</button>
+                <button class="secondary danger" @click="ctx.clearFailedMailboxItems">清空失败</button>
+              </div>
+            </div>
+            <div class="outbox-list">
+              <div v-for="item in ctx.mailboxFailedRecoveryItems.value" :key="item.id" class="outbox-row">
+                <b>{{ item.kind }} · {{ item.from_user_id || '未知发送者' }}</b>
+                <small class="danger-text">{{ item.reason }}</small>
+                <small>{{ item.hint }}</small>
+                <small>重试 {{ item.retry_count }} 次<span v-if="item.last_failed_at"> · 最近 {{ ctx.formatDateTime(item.last_failed_at) }}</span><span v-if="item.delivery_id"> · delivery {{ item.delivery_id.slice(0, 8) }}…</span></small>
+                <div class="row compact">
+                  <button class="secondary" @click="ctx.retryMailboxFailedItem(item.id)">重试此项</button>
+                  <button v-if="item.from_user_id" class="secondary" @click="ctx.selectContact(item.from_user_id)">打开联系人</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
           <section class="home-card">
             <div class="section-title-row">
               <h3>好友请求</h3>
