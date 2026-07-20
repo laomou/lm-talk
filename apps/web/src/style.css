@@ -476,6 +476,9 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 .status-pill.warning { border-color: var(--c-warn-line); background: var(--c-warn-bg); color: var(--c-warn-ink); }
 .status-pill.danger { border-color: var(--c-danger); background: var(--c-danger-soft); color: var(--c-danger); }
 .bubble.out .status-pill { color: var(--c-ink-2); }
+.bubble-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-top: var(--sp-2); flex-wrap: wrap; font-size: 11px; color: var(--c-ink-3); }
+.bubble-actions .outbox-error { max-width: 240px; margin: 0; }
+.bubble-actions button { padding: 3px 8px; font-size: 11px; }
 
 .composer {
   background: var(--c-surface);

@@ -72,6 +72,24 @@ function selectedFileLabel(file: File) {
   return `${filePreviewLabel(file.name, file.type)} · ${file.type || 'application/octet-stream'} · ${props.ctx.formatBytes(file.size)}`
 }
 
+
+function messageOutboxItems(message: any) {
+  if (!message?.id || message.direction !== 'out') return []
+  return props.ctx.outbox.value.filter((item: any) => item.message_id === message.id && item.status !== 'sent')
+}
+function messageOutboxCount(message: any) {
+  return messageOutboxItems(message).length
+}
+function messageOutboxError(message: any) {
+  const failed = messageOutboxItems(message)
+    .filter((item: any) => item.status === 'failed' && item.last_error)
+    .sort((a: any, b: any) => (b.created_at ?? 0) - (a.created_at ?? 0))[0]
+  return failed?.last_error ?? ''
+}
+function canManageMessageOutbox(message: any) {
+  return messageOutboxCount(message) > 0
+}
+
 function messageStatusDetailText(message: any) {
   const parts = [props.ctx.statusLabel(message.status)]
   const wait = mailboxWaitText(message)
@@ -318,6 +336,12 @@ function onComposerKeydown(e: KeyboardEvent) {
               <span v-if="item.m.direction === 'out' && ctx.perDeviceEnvelopeTargetCount(item.m)"> · 分设备 {{ ctx.perDeviceEnvelopeTargetCount(item.m) }}</span>
               <span v-if="item.m.file_downloaded_at"> · 已下载 {{ ctx.formatDateTime(item.m.file_downloaded_at) }}</span>
             </small>
+            <div v-if="canManageMessageOutbox(item.m)" class="bubble-actions">
+              <small v-if="messageOutboxError(item.m)" class="outbox-error">{{ messageOutboxError(item.m) }}</small>
+              <span>{{ messageOutboxCount(item.m) }} 个投递项待处理</span>
+              <button class="secondary" @click="ctx.retryOutboxForMessage(item.m.id)">重试</button>
+              <button class="secondary danger" @click="ctx.cancelOutboxForMessage(item.m.id)">取消</button>
+            </div>
           </div>
         </template>
         <div v-if="ctx.activeMessages.value.length === 0" class="empty center">还没有消息</div>

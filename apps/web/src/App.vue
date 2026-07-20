@@ -6314,6 +6314,37 @@ function flushOutboxForActive() {
   })
 }
 
+
+function retryOutboxForMessage(messageId: string) {
+  run('重试单条消息 outbox', () => {
+    const pending = outbox.value.filter((item) => item.message_id === messageId && item.status !== 'sent')
+    if (pending.length === 0) throw new Error('该消息没有待发送 outbox 项')
+    for (const item of pending) {
+      item.status = 'queued'
+      item.next_retry_at = Date.now()
+      item.last_error = undefined
+      if (item.retry_count >= MAX_OUTBOX_RETRY_COUNT) item.retry_count = Math.max(0, MAX_OUTBOX_RETRY_COUNT - 1)
+    }
+    const msg = messages.value.find((m) => m.id === messageId && m.direction === 'out')
+    if (msg && msg.status === 'failed') msg.status = 'queued'
+    void retryDueOutbox()
+    appendLog(`已触发单条消息重试：${pending.length} 个投递项`)
+    persist()
+  })
+}
+
+function cancelOutboxForMessage(messageId: string) {
+  run('取消单条消息 outbox', () => {
+    const pending = outbox.value.filter((item) => item.message_id === messageId && item.status !== 'sent')
+    if (pending.length === 0) throw new Error('该消息没有待发送 outbox 项')
+    outbox.value = outbox.value.filter((item) => item.message_id !== messageId || item.status === 'sent')
+    const msg = messages.value.find((m) => m.id === messageId && m.direction === 'out')
+    if (msg) msg.status = 'failed'
+    appendLog(`已取消单条消息发送：${pending.length} 个投递项`)
+    persist()
+  })
+}
+
 function retryAllOutbox() {
   run('重发全部待发送队列', () => {
     let count = 0
@@ -9273,7 +9304,7 @@ const appContext = {
   removeActiveGroup, leaveActiveGroupWithNotice, messages, activeMessages, formatTime, formatDateTime, statusLabel, copyMessageEnvelope, perDeviceEnvelopeTargetCount, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
-  flushOutboxForActive, retryAllOutbox, cancelOutboxForActive, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
+  flushOutboxForActive, retryOutboxForMessage, retryAllOutbox, cancelOutboxForActive, cancelOutboxForMessage, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
   receiveEnvelope, onFileSelected, cancelSelectedFile, selectedFile, formatBytes, isDangerousFileName, createFilePackageForActive, sendFilePackageOverRtc, sendSelectedFile, filePackageText, rtcFileStatus, fileTransferPhase, fileProgressText,
   incomingFilePackageText, pendingFilePackageText, pendingFileMeta, inspectIncomingFilePackage, decryptIncomingFilePackage, markReceivedFileDownloaded, receivedFileUrl, receivedFileName, receivedFileMeta, receivedFileMime, receivedFilePreviewKind, filePackageInfoText,
   createGroupSenderKeyForActiveGroup, groupSenderDistributionText, importGroupSenderKeyForActiveContact, groupSenderEncryptDebug, groupSenderDecryptDebug, createGroupSenderDistributionFanoutForActiveGroup,
