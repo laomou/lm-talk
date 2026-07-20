@@ -507,6 +507,37 @@ test('同步服务请求超时会失败并提示切换服务', async ({ page }) 
   await expect(page.getByText(/同步服务请求超时.*切换同步服务/)).toBeVisible()
 })
 
+
+test('同步节点常见错误会显示分类恢复建议', async ({ page }) => {
+  await clearBrowserState(page)
+  await page.route('http://sync.test/**', async (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname === '/api/health') return route.fulfill({ json: { status: 'ok' } })
+    return route.fulfill({ status: 401, body: 'unauthorized' })
+  })
+  await createIdentity(page, 'AuthErr', 'auth err sync 2026')
+  await enableSync(page)
+  await page.getByRole('button', { name: '立即同步' }).click({ force: true })
+  await expect(page.getByText(/同步节点鉴权失败.*\|令牌/)).toBeVisible()
+
+  await page.unroute('http://sync.test/**')
+  await page.route('http://sync.test/**', async (route) => route.fulfill({ status: 429, body: 'rate limit exceeded' }))
+  await page.getByRole('button', { name: '立即同步' }).click({ force: true })
+  await expect(page.getByText(/同步节点限流.*稍后重试/)).toBeVisible()
+})
+
+test('窄屏下聊天、通讯录和设置页不会横向溢出', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await clearBrowserState(page)
+  await createIdentity(page, 'Mobile', 'mobile layout 2026')
+
+  for (const path of ['/#/chat', '/#/contacts', '/#/me', '/#/diagnostics']) {
+    await page.goto(path)
+    await expect(page.locator('.app-shell, .me-page, .debug-page').first()).toBeVisible()
+    await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 2), { timeout: 5_000 }).toBe(true)
+  }
+})
+
 test('浏览器注册使用 Web RNG 生成不同身份', async ({ page }) => {
   await clearBrowserState(page)
   await createIdentity(page, 'RngA', 'same rng passphrase 2026')

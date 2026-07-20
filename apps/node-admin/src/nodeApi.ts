@@ -20,6 +20,17 @@ export class NodeError extends Error {
   }
 }
 
+function classifyNodeError(status: number | undefined, raw: string, endpoint: string): string {
+  const suffix = endpoint ? `（${endpoint}）` : ''
+  if (status === 401 || /unauthorized/i.test(raw)) return `节点鉴权失败${suffix}：请检查控制面令牌是否与 lm_node --control-token 一致。`
+  if (status === 403 || /cors origin not allowed|forbidden/i.test(raw)) return `节点拒绝访问${suffix}：请检查 CORS 白名单、访问来源或 /admin/ loopback 限制。`
+  if (status === 429 || /rate limit|too many requests/i.test(raw)) return `节点限流${suffix}：请求过于频繁，请稍后重试。`
+  if (status === 413 || /too large|payload too large/i.test(raw)) return `节点拒绝大载荷${suffix}：请求内容超过限制，请缩小快照或检查节点配额。`
+  if (status === 404 || /not found/i.test(raw)) return `节点接口不存在${suffix}：请确认 lm_node 版本、/admin/ 挂载和 API 路径。`
+  if (typeof status === 'number' && status >= 500) return `节点内部错误${suffix}：请稍后重试或查看 lm_node 日志。`
+  return raw || (status ? `HTTP ${status}` : '节点请求失败')
+}
+
 export function createNodeApi(getConfig: () => NodeConfig, timeoutMs = 10_000) {
   async function request(path: string, init?: RequestInit): Promise<any> {
     const { url, token } = getConfig()
@@ -40,7 +51,9 @@ export function createNodeApi(getConfig: () => NodeConfig, timeoutMs = 10_000) {
       })
     } catch (err) {
       throw new NodeError(
-        controller.signal.aborted ? '请求超时' : `无法连接节点：${String(err)}`,
+        controller.signal.aborted
+          ? `节点请求超时（${endpoint}）：请稍后重试或检查节点是否忙碌。`
+          : `无法连接节点（${endpoint}）：请确认 lm_node 已启动、地址可访问，HTTPS 页面不要直连未代理的 HTTP 节点。${String(err)}`,
       )
     } finally {
       clearTimeout(timer)
@@ -54,7 +67,7 @@ export function createNodeApi(getConfig: () => NodeConfig, timeoutMs = 10_000) {
     }
     if (!res.ok) {
       const message = typeof body === 'string' ? body : JSON.stringify(body)
-      throw new NodeError(message || `HTTP ${res.status}`, res.status)
+      throw new NodeError(classifyNodeError(res.status, message, endpoint), res.status)
     }
     return body
   }
