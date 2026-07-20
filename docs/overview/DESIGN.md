@@ -1,2008 +1,286 @@
-# LM Talk 去中心化聊天软件设计文档
+# LM Talk 设计文档
 
-版本：v0.1  
-日期：2026-07-14  
-状态：实现同步草案
-
----
+本文是 LM Talk 当前实现的总设计说明。目标是说明系统如何成为一个**去中心化、端到端加密的即时通讯应用**。更细的字段格式见 `docs/protocol/`，节点部署见 `docs/deploy/`。
 
 ## 1. 项目定位
 
-LM Talk 是一个无中心服务器、P2P 直连、端到端加密、本地加密存储的聊天系统。
+LM Talk 是一个本地身份自持、好友双向确认、内容端到端加密、节点只转发密文的即时通讯系统。
 
-核心目标：
+核心原则：
 
-- 不依赖手机号、邮箱、中心账号服务器。
-- 用户身份由本地随机密钥决定。
-- 恢复身份需要 **身份备份包 + 提示词**。
+- 不依赖手机号、邮箱或中心账号服务器。
+- 身份由本地随机种子生成。
+- 恢复身份依赖身份备份和提示词。
 - 好友关系必须双方确认。
-- 消息只在用户设备之间加密传输。
-- 聊天记录只存本地。
-- 安全策略由用户本地客户端执行。
+- 消息、文件和群聊内容在发送端加密、接收端解密。
+- 节点只保存密文、签名控制对象和公开 DHT 记录。
+- 本地安全策略由客户端执行。
 
-一句话定义：
+## 2. 总体架构
 
-> LM Talk 是一个以身份备份包和提示词为身份恢复机制，以好友双向确认为社交边界，以本地自治为安全模型的无服务器 P2P 端到端加密聊天系统。
+```text
+Web UI / node-admin
+        │
+        ▼
+lm_wasm / TypeScript bindings
+        │
+        ▼
+lm_core：身份、联系人、消息、文件、群聊、设备、PreKey、Ratchet
+        │
+        ├── Web IndexedDB 本地加密存储
+        └── lm_node：Mailbox / DHT / PreKey / snapshot / metrics
+```
 
----
+## 3. 当前模块状态
 
-## 2. 核心原则
+| 模块 | 当前状态 |
+| --- | --- |
+| `lm_core` | 已实现身份、备份、ContactCard、好友请求、DirectEnvelope、X3DH、Double Ratchet、文件包、设备证书/撤销、群 Sender Key、回执、大小限制和测试向量。 |
+| `lm_wasm` | 已暴露 Web 需要的大部分协议和密码学接口。 |
+| Web app | 已具备注册、登录、联系人、聊天、文件、群聊、同步、备份、诊断和 strict E2EE 修复流程。 |
+| `lm_node` | 已提供 HTTP 控制面、Mailbox、PreKey、DHT、snapshot sync、state_db、metrics 和 Docker federation 模板。 |
+| node-admin | 已提供独立运维面板，用于查看节点健康、DHT、snapshot 和运行统计。 |
+| 测试 | Rust 单测/端到端、Web E2E、测试向量、fuzz smoke、Docker federation smoke/chaos/load 均有入口。 |
 
-### 2.1 无中心服务器
+## 4. 身份模型
 
-系统不依赖中心服务器提供以下能力：
-
-- 账号注册
-- 身份认证
-- 好友关系存储
-- 消息存储
-- 消息转发
-
-后续可以允许用户自建或选择公共节点，但公共节点不应成为可信中心。
-
----
-
-### 2.2 端到端加密
-
-所有聊天消息在发送端加密，在接收端解密。
-
-中间节点只能看到密文，不能读取消息内容。
-
----
-
-### 2.3 本地优先
-
-以下数据均保存在本地：
-
-- 身份密钥
-- 设备密钥
-- 好友列表
-- 好友请求
-- 消息记录
-- 群聊状态
-- 本地拉黑列表
-- 本地安全策略
-- 待发送队列
-
-本地数据库需要加密。
-
----
-
-### 2.4 身份自持
-
-用户身份不由服务器签发，而由本地随机生成的 `identity_seed` 决定。
+每个用户身份由本地随机 `identity_seed` 生成：
 
 ```text
 identity_seed -> identity keypair -> identity_public_key -> UserID
 ```
 
----
+身份能力：
 
-### 2.5 好友双向确认
+- Ed25519 身份签名。
+- X25519 静态公钥。
+- User ID 稳定派生。
+- 身份备份包由提示词保护。
+- Web 本地状态由身份派生密钥加密。
 
-导入对方身份不等于好友成立。
+节点不签发、不托管、不恢复用户身份。
 
-好友关系必须经过：
+## 5. 联系人与信任
 
-```text
-Friend Request -> Friend Response
-```
-
-双方确认后才进入 `Friend` 状态。
-
----
-
-### 2.6 本地自治安全
-
-安全策略由用户本地客户端执行：
-
-- 好友白名单
-- 陌生人请求箱
-- 本地过滤
-- 本地拉黑
-- 附件风险提示
-- 本地手动屏蔽规则
-
----
-
-## 3. 总体架构
-
-```text
-┌──────────────────────────────┐
-│ Web UI / Mobile UI / Desktop │
-└───────────────▲──────────────┘
-                │
-┌───────────────┴──────────────┐
-│ lm_wasm / FFI Binding        │
-└───────────────▲──────────────┘
-                │
-┌───────────────┴──────────────┐
-│ lm_core                      │
-│ identity / contact / message │
-│ crypto / group / policy      │
-└───────────────▲──────────────┘
-                │
-┌───────────────┴──────────────┐
-│ storage adapter              │
-│ IndexedDB / SQLite/SQLCipher │
-└───────────────▲──────────────┘
-                │
-┌───────────────┴──────────────┐
-│ network adapter              │
-│ WebRTC / DHT / Public Peer   │
-└──────────────────────────────┘
-```
-
-### 3.1 当前实现状态快照（2026-07-14）
-
-当前仓库已经从纯设计推进到可测试 MVP scaffold。非 Web 部分状态如下：
-
-| 模块 | 当前状态 | 完整性判断 |
-|---|---|---|
-| `lm_core` | 已实现身份、备份、Contact Card、好友请求/响应、DirectEnvelope、X3DH PreKey、Double Ratchet 状态与 envelope、群 Sender Key、群权限状态、文件分片加密包、本地安全策略、Outbox、MemoryStore、大小限制、属性测试、跨平台测试向量 | 核心协议层已具备 MVP 主干，约 75-85% MVP 完整；仍需生产级审计、持久化接口、模糊测试、多设备完整流程 |
-| `lm_wasm` | 已暴露大部分 core API，覆盖身份、联系人、好友、消息、PreKey/X3DH、Ratchet、群、文件、Public Peer、Mailbox、Signaling | 绑定层覆盖较全，约 70-80% MVP 完整；仍需随 core API 稳定后整理命名、错误码和兼容策略 |
-| `lm_node` | 已实现控制面 HTTP scaffold、Public Peer announce、Kademlia ID/XOR distance/closest peers、DHT record key/value scaffold 与控制面 store/find/closest、DHT record 本地容量上限、DHT RPC 消息/本地处理 scaffold 与 `POST /api/dht/rpc` 入口、closest-k replication/routing refresh runner、libp2p request-response DHT RPC scaffold、libp2p TCP/noise/yamux swarm、bootstrap discovery、`Libp2pDhtTransport`、`serve-dht-libp2p` 常驻入口、Mailbox push/take/ack、Mailbox TTL/配额/message_id 去重、PreKey publish/get、独立 signed one-time prekey records 发布/同步/消费、PreKey 过期清理/轮换重置/低水位提示、snapshot sync/import、控制面 token/CORS/限流、运行指标、`/admin/` 静态文件服务（loopback only）、SQLite state_db 持久化（明文，整盘加密保护） | 可支撑节点辅助 PreKey + Mailbox + 粗粒度同步和实验性 libp2p DHT RPC demo，约 74-78% MVP 完整；仍不是生产 DHT/relay 节点 |
-| CLI / 运维 | 已有 `announce`、`inspect-public`、`distance`、`run`、`serve-control`、`serve-dht-libp2p`、`--config-file`、`--control-token`、`--control-token-file`、`--cors-allow-origin`、`--rate-limit-*`、`--web-admin`、DHT runner/libp2p transport 配置项，以及 `docs/NODE_CONFIG.md` / `docs/examples/lm-node.config.example.json` | 调试和基础部署可用；TLS、结构化日志、systemd/container、备份恢复和升级策略已有文档，仍缺生产级监控告警与数据库运维细化 |
-| `node-admin` | 独立 Vue 前端（`apps/node-admin`），纯调用节点 `/api/*` REST，不加载身份、不用 WASM；提供健康、运行统计、sync peer、DHT 维护/复制/路由/查找、快照导入导出面板。可由节点 `--web-admin` 在 `/admin/`（仅 loopback）内嵌 serve | 满足运维者本机监控和 DHT 调试；需身份签名的写操作（PublicPeer/PreKey 发布）不在其范围 |
-| 测试 | `scripts/dev-test.sh all` 覆盖 Rust fmt/test、core e2e、node e2e、HTTP control flow、WASM smoke、Web build/e2e；测试计划已补齐单元、属性、WASM Web RNG/IndexedDB 和跨平台向量覆盖 | 基础回归较好；仍需 fuzz、真实网络故障/压力测试和外部安全审计 |
-
-重要边界：
-
-- 当前 `lm_node` 的 Kademlia 部分已有 ID、距离、bucket、closest 查询、record key/value scaffold、本地 record 容量上限、HTTP control-plane DHT RPC、libp2p request-response DHT RPC、bootstrap discovery、closest-k replication 和 routing refresh runner；这些仍是实验性 DHT scaffold，尚未达到生产 Kademlia 的查询鲁棒性、抗滥用和公网运维要求。
-- Mailbox 当前是控制面队列语义：节点可保存密文并等待接收方 ack；已有基础 TTL、配额、message_id 去重、控制面 per-client IP 限流、按 sender/全局限流和 SQLite state_db 持久化，尚未包含端到端投递回执、更强反滥用和元数据保护。
-- PreKey 当前支持 bundle 发布/拉取、独立 signed one-time-prekey records 和 one-time key 精确消费记录；后续还需把 DHT 查询/复制接入正式产品路径、多设备补货协调和审计。
-- Core 中的加密协议对象和状态机已经可测试，但仍不能等同于经过第三方审计的生产安全协议。
-
----
-
-## 4. 技术选型
-
-### 4.1 核心语言
-
-使用 Rust。
-
-原因：
-
-- 适合实现长期可复用核心库。
-- 内存安全。
-- 适合加密协议和状态机。
-- 可编译到 WebAssembly。
-- 后续可通过 FFI 支持移动端。
-
----
-
-### 4.2 Web 端
-
-建议：
-
-- React / Vue / Svelte + TypeScript + Vite
-- Rust WASM
-- Browser WebRTC
-- IndexedDB
-
-Web 端职责：
-
-- UI
-- WebRTC 调用
-- 本地浏览器存储
-- 调用 WASM 完成身份、签名、加密、解密
-
----
-
-### 4.3 Native 后续版本
-
-后续 Native 节点可使用：
-
-- Rust
-- SQLite / SQLCipher
-- rust-libp2p
-- Kademlia DHT
-- mDNS
-- WebRTC / QUIC
-- 可选 relay / mailbox
-
----
-
-### 4.4 Rust 依赖建议
-
-核心 crate 可考虑：
-
-```text
-argon2
-hkdf
-blake3
-ed25519-dalek
-x25519-dalek
-chacha20poly1305
-serde
-postcard
-wasm-bindgen
-zeroize
-secrecy
-uuid
-base64
-bs58
-```
-
----
-
-## 5. 仓库结构建议
-
-```text
-lm-talk/
-  Cargo.toml
-
-  crates/
-    lm_core/
-      src/
-        lib.rs
-        error.rs
-        identity/
-        contact/
-        friend/
-        message/
-        group/
-        crypto/
-        policy/
-        protocol/
-
-    lm_wasm/
-      src/
-        lib.rs
-
-    lm_storage/
-      src/
-        lib.rs
-        traits.rs
-        memory.rs
-        indexeddb.rs
-        sqlite.rs
-
-    lm_network/
-      src/
-        lib.rs
-        traits.rs
-        webrtc.rs
-        dht.rs
-        relay.rs
-        mailbox.rs
-
-    lm_node/
-      src/
-        lib.rs
-        kademlia.rs
-        mailbox.rs
-        prekey_store.rs
-        config.rs
-        control.rs
-        main.rs
-        metrics.rs
-        dht_runner.rs
-        state_db.rs
-        control_server.rs
-
-  apps/
-    web/
-      package.json
-      src/
-        main.ts
-        App.tsx
-
-    cli/
-      src/
-        main.rs
-```
-
----
-
-## 6. 身份系统设计
-
-### 6.1 最终身份模型
-
-身份不由提示词单独决定。
-
-采用：
-
-```text
-identity_seed = 本地随机生成
-passphrase = 用户提示词
-identity_backup = 用 passphrase 加密 identity_seed
-UserID = hash(identity_public_key)
-```
-
-恢复身份必须同时拥有：
-
-```text
-身份备份包 + 提示词
-```
-
-提示词只是解锁身份备份包的密码，不直接决定 UserID。
-
----
-
-### 6.2 创建身份流程
-
-```text
-1. 用户输入提示词
-2. 客户端随机生成 identity_seed
-3. 从 identity_seed 派生身份密钥对
-4. 生成 identity_public_key
-5. 根据 identity_public_key 生成 UserID
-6. Native/core 路径用提示词通过 Argon2id 派生 backup_key
-7. 用 backup_key 加密 identity_seed
-8. 导出身份备份包
-9. 创建本地加密数据库
-```
-
----
-
-### 6.3 恢复身份流程
-
-```text
-1. 用户导入身份备份包
-2. 用户输入提示词
-3. 客户端按备份格式派生 backup_key
-4. 解密 identity_seed
-5. 重新派生身份密钥对
-6. 重新计算 UserID
-7. 校验 UserID 是否与备份包一致
-8. 恢复成功
-```
-
-浏览器 WASM 当前为可用性保留一个 `lm-identity-backup-v1:wasm-local:` 备份子格式：身份种子仍由 Web RNG 生成，备份加密使用归一化提示词参与的 wasm-local key derivation（PBKDF2-HMAC-SHA256，600k 迭代）和 AEAD；native/core 的标准导出备份继续使用 Argon2id。浏览器路径暂不把 Argon2id 作为上线阻塞项，后续生产级 Web 备份方案需要单独评估性能、兼容性和参数。
-
----
-
-### 6.4 身份备份包
-
-技术名：
-
-```text
-lm-identity-backup-v1
-```
-
-示例：
-
-```json
-{
-  "type": "lm-identity-backup-v1",
-  "version": 1,
-  "user_id": "lm1_x7k2p9af3m6qz0n4b8r1",
-  "kdf": {
-    "name": "argon2id",
-    "salt": "base64...",
-    "memory_kib": 65536,
-    "iterations": 3,
-    "parallelism": 1
-  },
-  "cipher": {
-    "name": "xchacha20poly1305",
-    "nonce": "base64...",
-    "ciphertext": "base64..."
-  },
-  "created_at": 1783670400
-}
-```
-
-`ciphertext` 解密后：
-
-```json
-{
-  "identity_seed": "base64...",
-  "created_at": 1783670400
-}
-```
-
-兼容说明：标准 `lm-identity-backup-v1:<base64url-json>` 包使用 Argon2id + XChaCha20-Poly1305；浏览器 WASM 当前还接受 `lm-identity-backup-v1:wasm-local:<base64url-json>` 本地备份包，用于避开部分浏览器/wasm 优化组合下的 Argon2id trap。`restore_identity` 必须同时识别这两种前缀，并校验恢复出的 UserID 与包内 UserID 一致。
-
----
-
-### 6.5 UserID 生成
-
-```text
-identity_seed
-  ↓ HKDF("lm-talk.identity.ed25519.v1")
-identity_private_key
-  ↓
-identity_public_key
-  ↓
-UserID = "lm1_" + base32(blake3(identity_public_key))[0:40]
-```
-
----
-
-### 6.6 提示词角色
-
-提示词不是身份本身。
-
-提示词只用于：
-
-```text
-加密/解密 identity_seed
-```
-
-因此：
-
-```text
-同一句提示词不会生成同一个 UserID，除非 identity_seed 也相同。
-```
-
----
-
-### 6.7 安全提醒
-
-必须向用户说明：
-
-```text
-身份备份包 + 提示词 = 完整身份控制权。
-丢失备份包且本机丢失 = 无法恢复身份。
-泄露备份包但未泄露提示词 = 仍需破解提示词。
-泄露备份包和提示词 = 身份被接管。
-```
-
----
-
-## 7. 设备系统设计
-
-### 7.1 UserID 与 DeviceID
-
-系统区分：
-
-```text
-UserID   = 用户身份
-DeviceID = 设备身份
-```
-
-一个 UserID 可以有多个 DeviceID。
-
----
-
-### 7.2 设备密钥
-
-每台设备首次登录时本地随机生成：
-
-```text
-device_seed = random(32 bytes)
-device_keypair = Ed25519(device_seed)
-DeviceID = "dev1_" + base32(blake3(device_public_key))[0:40]
-```
-
----
-
-### 7.3 设备证书
-
-设备由用户身份私钥签名。
-
-```json
-{
-  "type": "lm-device-cert-v1",
-  "version": 1,
-  "user_id": "lm1_xxx",
-  "device_id": "dev1_xxx",
-  "device_public_key": "base64...",
-  "device_name": "Alice Phone",
-  "created_at": 1783670400,
-  "signature_by_identity_key": "base64..."
-}
-```
-
-验证逻辑：
-
-```text
-1. 根据 user_id 找到 identity_public_key。
-2. 验证 signature_by_identity_key。
-3. 确认 device_id == hash(device_public_key)。
-```
-
----
-
-### 7.4 MVP 设备策略
-
-MVP 可以先支持单设备，但协议字段必须预留：
-
-- device_id
-- device_public_key
-- device_cert
-
----
-
-## 8. 好友系统设计
-
-### 8.1 好友不是服务器关系
-
-好友关系只保存在本地。
-
-加好友的本质是：
-
-```text
-导入对方 Contact Card -> 校验身份 -> 发送好友请求 -> 等待对方确认
-```
-
----
-
-### 8.2 Contact Card
-
-技术名：
-
-```text
-lm-contact-card-v1
-```
-
-示例：
-
-```json
-{
-  "type": "lm-contact-card-v1",
-  "version": 1,
-  "user_id": "lm1_alice_xxx",
-  "display_name": "Alice",
-  "identity_public_key": "base64...",
-  "x25519_public_key": "base64...",
-  "device_certs": [
-    {
-      "device_id": "dev1_phone_xxx",
-      "device_public_key": "base64...",
-      "signature_by_identity_key": "base64..."
-    }
-  ],
-  "created_at": 1783670400,
-  "expires_at": 1786262400,
-  "signature": "base64..."
-}
-```
-
----
-
-### 8.3 Contact Card 校验
-
-导入时必须校验：
-
-```text
-1. UserID == hash(identity_public_key)
-2. card signature 有效
-3. device cert signature 有效
-4. 字段版本支持
-5. created_at / expires_at 合理
-```
-
----
-
-### 8.4 好友状态
-
-```rust
-pub enum ContactState {
-    LocalOnly,
-    RequestSent,
-    RequestReceived,
-    Friend,
-    Rejected,
-    Blocked,
-}
-```
-
-含义：
-
-| 状态 | 含义 |
-|---|---|
-| LocalOnly | 我导入了对方身份，但未发送请求 |
-| RequestSent | 我已发送好友请求 |
-| RequestReceived | 对方请求添加我 |
-| Friend | 双方已确认 |
-| Rejected | 已拒绝 |
-| Blocked | 本地拉黑 |
-
----
-
-### 8.5 好友请求
-
-```json
-{
-  "type": "lm-friend-request-v1",
-  "version": 1,
-  "request_id": "uuid",
-  "from_user_id": "lm1_bob_xxx",
-  "to_user_id": "lm1_alice_xxx",
-  "from_contact_card": {},
-  "note": "我是 Bob",
-  "created_at": 1783670400,
-  "expires_at": 1784275200,
-  "signature": "base64..."
-}
-```
-
-好友请求必须签名。
-
----
-
-### 8.6 好友响应
-
-```json
-{
-  "type": "lm-friend-response-v1",
-  "version": 1,
-  "request_id": "uuid",
-  "from_user_id": "lm1_alice_xxx",
-  "to_user_id": "lm1_bob_xxx",
-  "accepted": true,
-  "created_at": 1783670500,
-  "signature": "base64..."
-}
-```
-
----
-
-### 8.7 完整好友流程
-
-```text
-Bob 获取 Alice Contact Card
-Bob 校验 Alice 身份
-Bob 本地保存 Alice = LocalOnly
-Bob 发送 Friend Request
-Bob 本地状态 = RequestSent
-
-Alice 收到请求
-Alice 校验 Bob Contact Card
-Alice 显示请求箱
-Alice 点击接受
-Alice 本地保存 Bob = Friend
-Alice 返回 Friend Response
-
-Bob 收到响应
-Bob 状态变为 Friend
-```
-
----
-
-## 9. 消息系统设计
-
-### 9.1 消息加密路线
-
-MVP 阶段：
-
-```text
-X25519 + HKDF + XChaCha20-Poly1305
-```
-
-当前新增 X3DH / PreKey 脚手架：
-
-```text
-lm-prekey-bundle-v1:
-- identity public key / identity X25519 public key
-- signed_prekey_id / signed_prekey_public_key
-- identity signature
-
-lm-signed-one-time-prekey-v1:
-- user_id / identity_public_key
-- signed_prekey_id / key_id / public_key
-- created_at / expires_at
-- identity signature
-
-lm-x3dh-initial-message-v1:
-- initiator identity X25519 public key
-- initiator ephemeral public key
-- selected signed_prekey_id
-- optional one_time_prekey_id
-```
-
-Rust/WASM/Web 调试区已能生成公开 PreKey Bundle、独立 signed one-time-prekey records、保存 private prekey bundle、验签、发起方派生 shared secret、响应方派生同一个 shared secret。Shared secret 现在可以初始化 `RatchetSessionState`，并已新增实验性 `x3dh-double-ratchet-v1` envelope 加解密路径。Web IndexedDB 已增加 per-contact ratchet session 保存；正式聊天发送/接收会在存在会话时自动走 ratchet，不存在时回退 MVP。Web 已新增复制粘贴版“安全会话建立”UX：Offer 携带 PreKey Bundle 和 Ratchet DH public key，Response 携带 X3DH initial message 和响应方 Ratchet DH public key。Native node 控制面已支持 `/api/prekey/publish`、`/api/prekey/get`、`/api/prekey/status`、`/api/sync/snapshot`、`/api/sync/import`，Web 可发布/拉取 PreKey Bundle 与 signed one-time-prekey records，并可在两个节点之间粗粒度同步 peers/mailbox/prekeys 快照。下一步是真正的 DHT 路由复制、开放传输层查询和多设备补货协调。
-
-当前新增 Double Ratchet 状态脚手架：
-
-```text
-lm-ratchet-state-v1:
-- session_id
-- root_key
-- local/remote DH public key
-- local DH private key（只允许本地加密保存）
-- send_chain_key / recv_chain_key
-- send_count / recv_count / previous_send_count
-- skipped_message_keys
-```
-
-实验性消息 Envelope：
-
-```text
-crypto = x3dh-double-ratchet-v1
-ratchet_header = { session_id, dh_public_key, previous_send_count, message_number }
-message_key = ratchet send/recv chain 派生
-payload = PlainMessage，经 XChaCha20-Poly1305 加密
-```
-
-
-它已经可在 Rust/WASM/Web 调试区创建、导入导出、推进发送链/接收链、保存乱序 skipped keys，并执行 DH ratchet step。正式消息路径已在存在 ratchet session 时优先使用，建链仍需更多自动化；还需要会话重建和重放窗口策略。
-
-正式阶段：
-
-```text
-X3DH + Signal Double Ratchet
-```
-
-群聊正式阶段可考虑：
-
-```text
-Sender Key 或 MLS
-```
-
----
-
-### 9.2 消息 Envelope
-
-外层：
-
-```json
-{
-  "type": "lm-direct-envelope-v1",
-  "version": 1,
-  "message_id": "uuid",
-  "from_user_id": "lm1_alice_xxx",
-  "from_device_id": "dev1_phone_xxx",
-  "to_user_id": "lm1_bob_xxx",
-  "to_device_id": "dev1_laptop_xxx",
-  "created_at": 1783670400,
-  "ciphertext": "base64..."
-}
-```
-
-消息 Envelope（`DirectEnvelope` / `RatchetEnvelope`）现在会校验 `created_at`：拒绝早于 7 天或超过未来 5 分钟的消息，降低重放和时钟异常风险。
-
----
-
-### 9.3 明文 Payload
-
-解密后：
-
-```json
-{
-  "type": "lm-message-v1",
-  "version": 1,
-  "message_id": "uuid",
-  "conversation_id": "conv_xxx",
-  "sender_user_id": "lm1_alice_xxx",
-  "body": {
-    "kind": "text",
-    "text": "你好"
-  },
-  "created_at": 1783670400
-}
-```
-
----
-
-### 9.4 消息状态
-
-```rust
-pub enum MessageStatus {
-    Draft,
-    Queued,
-    Sending,
-    Sent,
-    Delivered,
-    Read,
-    Failed,
-    Expired,
-}
-```
-
----
-
-### 9.5 ACK
-
-```json
-{
-  "type": "lm-ack-v1",
-  "version": 1,
-  "message_id": "uuid",
-  "from_user_id": "lm1_bob_xxx",
-  "received_at": 1783670450,
-  "signature": "base64..."
-}
-```
-
-默认建议：
-
-- 送达回执：可开启。
-- 已读回执：默认关闭。
-- 正在输入：默认关闭。
-- 在线状态：默认隐藏或仅好友可见。
-
----
-
-## 10. 群聊设计
-
-### 10.1 MVP 群聊模型
-
-MVP 使用：
-
-```text
-小群 + 好友邀请 + 对方确认 + 逐个加密发送
-```
-
-即 Pairwise Fanout。
-
-Alice 给群发消息时：
-
-```text
-Encrypt(Alice -> Bob, group_message)
-Encrypt(Alice -> Carol, group_message)
-Encrypt(Alice -> Dave, group_message)
-```
-
----
-
-### 10.2 群聊限制
-
-MVP 规则：
-
-```text
-1. 只能邀请已确认好友
-2. 被邀请人必须手动接受
-3. 群人数默认上限 20
-4. 不支持公开群搜索
-5. 不支持群链接任意加入
-6. 不做自动 gossip 转发
-```
-
----
-
-### 10.3 GroupID
-
-```text
-group_id = "grp1_" + base32(random 32 bytes)
-```
-
----
-
-### 10.4 群成员状态
-
-```rust
-pub enum GroupMemberStatus {
-    Invited,
-    Joined,
-    Left,
-    Removed,
-}
-```
-
----
-
-### 10.5 群邀请
-
-```json
-{
-  "type": "lm-group-invite-v1",
-  "version": 1,
-  "invite_id": "uuid",
-  "group_id": "grp1_xxx",
-  "group_name": "测试群",
-  "inviter_user_id": "lm1_alice_xxx",
-  "members": [
-    "lm1_alice_xxx",
-    "lm1_bob_xxx",
-    "lm1_carol_xxx"
-  ],
-  "created_at": 1783670400,
-  "signature": "base64..."
-}
-```
-
----
-
-### 10.6 群消息
-
-解密后的群消息：
-
-```json
-{
-  "type": "lm-group-message-v1",
-  "version": 1,
-  "group_id": "grp1_xxx",
-  "epoch": 1,
-  "message_id": "uuid",
-  "sender_user_id": "lm1_alice_xxx",
-  "sender_seq": 12,
-  "body": {
-    "kind": "text",
-    "text": "大家好"
-  },
-  "created_at": 1783670600,
-  "signature": "base64..."
-}
-```
-
----
-
-### 10.7 群状态一致性
-
-无服务器、无管理员情况下：
-
-```text
-群状态不是强一致的。
-每个用户拥有自己的本地群视图。
-```
-
-用户可以本地屏蔽某个成员，但不会全局踢出该成员。
-
----
-
-## 11. 本地自治安全模型
-
-### 11.1 默认安全策略
-
-默认采用好友白名单模式。
-
-规则：
-
-```text
-1. 只有 Friend 状态联系人可直接聊天
-2. 陌生人只能发好友请求
-3. 陌生人不能发附件
-4. 陌生人不能邀请入群
-5. 群聊只能邀请好友
-6. 附件默认不自动下载
-7. 外部链接默认警告
-8. 可执行文件默认警告
-```
-
----
-
-### 11.2 本地安全策略结构
-
-```rust
-pub struct LocalSafetyPolicy {
-    pub stranger_messages: StrangerMessagePolicy,
-    pub allow_stranger_attachments: bool,
-    pub allow_stranger_group_invites: bool,
-    pub auto_download_media: bool,
-    pub warn_external_links: bool,
-    pub warn_executable_files: bool,
-    pub enable_text_filter: bool,
-    pub text_filter_level: FilterLevel,
-}
-```
-
-默认值：
-
-```rust
-LocalSafetyPolicy {
-    stranger_messages: StrangerMessagePolicy::FriendRequestOnly,
-    allow_stranger_attachments: false,
-    allow_stranger_group_invites: false,
-    auto_download_media: false,
-    warn_external_links: true,
-    warn_executable_files: true,
-    enable_text_filter: true,
-    text_filter_level: FilterLevel::Standard,
-}
-```
-
----
-
-### 11.3 本地拉黑
-
-```rust
-pub struct BlockEntry {
-    pub user_id: UserId,
-    pub reason: Option<String>,
-    pub created_at: u64,
-}
-```
-
-拉黑后：
-
-```text
-1. 丢弃该用户私聊消息
-2. 隐藏该用户群消息
-3. 拒绝该用户好友请求
-4. 拒绝该用户群邀请
-5. 不下载该用户附件
-6. 不向该用户转发群消息
-```
-
----
-
-### 12.1 Web MVP
-
-Web 第一版不强行做完整 DHT。
-
-采用：
-
-```text
-手动 signaling + Browser WebRTC DataChannel
-```
+联系人名片 `lm-contact-card-v1:` 是签名身份声明，包含：
 
-流程：
+- User ID；
+- 身份公钥；
+- X25519 公钥；
+- 显示名；
+- 设备证书列表；
+- 签名和时间字段。
 
-```text
-Alice 生成 offer
-Bob 粘贴 offer
-Bob 生成 answer
-Alice 粘贴 answer
-WebRTC DataChannel 建立
-双方发送加密消息
-```
-
----
-
-### 12.2 Native 后续版本
-
-后续 Rust native node 可加入：
-
-- rust-libp2p
-- Kademlia DHT
-- DHT peer announce
-- DHT mailbox
-- WebRTC signaling
-- mDNS 局域网发现
-- 用户自建 relay
-
----
-
-### 12.3 WebRTC 限制
-
-WebRTC 需要信令通道。
-
-无服务器条件下，可选：
-
-- 手动复制
-- 二维码
-- DHT mailbox
-- 好友中继
-- 自建中继
-
----
-
-### 12.4 NAT 限制
-
-无 TURN 中继时，连接可能失败。
-
-产品必须明确：
-
-```text
-LM Talk 默认尽力直连。
-在严格 NAT、防火墙、移动网络环境下，可能无法连接。
-```
-
----
-
-## 13. Public Peer 设计
-
-### 13.1 定义
-
-有公网 IP 或可稳定被连接的节点可以充当 Public Peer。
-
-它不是传统服务器，而是可选的 P2P 增强节点。
-
-Public Peer 可以提供以下能力：
-
-```text
-bootstrap
-DHT routing
-signaling
-relay
-mailbox
-```
-
----
-
-### 13.2 Public Peer 能力等级
-
-#### Level 0：普通节点
-
-```text
-无公网 IP。
-只能主动连接别人。
-不能稳定被连接。
-```
-
-#### Level 1：Bootstrap / DHT Node
-
-```text
-有公网 IP。
-长期在线。
-参与 DHT。
-帮助新节点加入网络。
-```
-
-#### Level 2：Signaling Node
-
-```text
-提供 WebRTC 信令邮箱。
-暂存 offer / answer / ICE。
-TTL 很短。
-```
-
-#### Level 3：Relay Node
-
-```text
-帮 NAT 失败的节点转发密文流量。
-不解密，不存储。
-```
-
-#### Level 4：Mailbox Node
-
-```text
-短期暂存离线密文消息。
-需要配额、TTL、防垃圾策略。
-```
-
----
-
-### 13.3 Public Peer 公告格式
-
-```json
-{
-  "type": "lm-public-peer-announce-v1",
-  "version": 1,
-  "peer_id": "peer1_xxx",
-  "device_id": "dev1_xxx",
-  "user_id": "lm1_xxx",
-  "addresses": [
-    "/ip4/1.2.3.4/tcp/4001",
-    "/ip4/1.2.3.4/udp/4001/quic"
-  ],
-  "capabilities": [
-    "bootstrap",
-    "dht",
-    "signaling",
-    "relay"
-  ],
-  "limits": {
-    "max_mailbox_bytes": 10485760,
-    "max_message_ttl_seconds": 86400,
-    "max_relay_bandwidth_kbps": 1024
-  },
-  "created_at": 1783670400,
-  "expires_at": 1783674000,
-  "signature": "base64..."
-}
-```
-
----
-
-### 13.4 Public Peer 信任模型
-
-Public Peer 默认不可信。
-
-必须假设它可能：
-
-- 丢消息
-- 延迟消息
-- 返回假数据
-- 记录元数据
-- 拒绝服务
-- 审查某些用户
-- 注入垃圾记录
-
-客户端必须：
-
-- 验签
-- 端到端加密
-- 使用短 TTL
-- 使用多节点冗余
-- 失败切换
-- 不把私钥交给 Public Peer
-- 不信任 Public Peer 返回的身份数据
-
----
-
-### 13.5 网络连接策略
-
-```text
-1. 优先直连
-2. 直连失败尝试 NAT hole punching
-3. hole punching 失败尝试 relay
-4. 对方离线时使用 mailbox，如果用户启用
-5. 所有传输内容保持端到端加密
-```
-
----
-
-## 14. 离线消息设计
-
-### 14.1 无服务器现实
-
-如果对方离线：
-
-```text
-无法立即投递消息
-```
-
----
-
-### 14.2 Outbox
-
-本地保存待发送消息。
-
-```rust
-pub struct OutboxItem {
-    pub id: String,
-    pub target_user_id: UserId,
-    pub target_device_id: Option<DeviceId>,
-    pub encrypted_packet: Vec<u8>,
-    pub retry_count: u32,
-    pub next_retry_at: u64,
-    pub created_at: u64,
-    pub expires_at: Option<u64>,
-}
-```
-
----
-
-### 14.3 发送策略
-
-```text
-1. 对方在线则立即发送
-2. 对方离线则进入 outbox
-3. 定期尝试连接
-4. 超过 expires_at 后标记 Expired
-```
-
-`Outbox::purge_completed()` 可对终态（已发送/过期等）条目做垃圾回收，避免 outbox 无界增长。
-
----
-
-## 15. 本地存储设计
-
-### 15.1 Web
-
-Web 端使用：
-
-```text
-IndexedDB
-```
-
-敏感数据需在写入前加密。
-
----
-
-### 15.2 Native
-
-Native 端使用：
-
-```text
-SQLite + SQLCipher
-```
-
-数据库密钥：
-
-```text
-db_key = HKDF(identity_seed, "lm-talk.storage-key.v1")
-```
-
----
-
-### 15.3 核心表
-
-#### identity
-
-```sql
-CREATE TABLE identity (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
-  user_id TEXT NOT NULL,
-  encrypted_identity_seed BLOB NOT NULL,
-  kdf_params TEXT NOT NULL,
-  created_at INTEGER NOT NULL
-);
-```
-
-#### devices
-
-```sql
-CREATE TABLE devices (
-  device_id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  device_public_key BLOB NOT NULL,
-  device_cert BLOB NOT NULL,
-  is_self INTEGER NOT NULL,
-  created_at INTEGER NOT NULL
-);
-```
-
-#### contacts
-
-```sql
-CREATE TABLE contacts (
-  user_id TEXT PRIMARY KEY,
-  display_name TEXT,
-  identity_public_key BLOB NOT NULL,
-  contact_card BLOB NOT NULL,
-  state TEXT NOT NULL,
-  trust_level TEXT NOT NULL,
-  added_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-```
-
-#### friend_requests
-
-```sql
-CREATE TABLE friend_requests (
-  request_id TEXT PRIMARY KEY,
-  peer_user_id TEXT NOT NULL,
-  direction TEXT NOT NULL,
-  status TEXT NOT NULL,
-  request_payload BLOB NOT NULL,
-  response_payload BLOB,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-```
-
-#### messages
-
-```sql
-CREATE TABLE messages (
-  message_id TEXT PRIMARY KEY,
-  conversation_id TEXT NOT NULL,
-  sender_user_id TEXT NOT NULL,
-  receiver_user_id TEXT,
-  group_id TEXT,
-  direction TEXT NOT NULL,
-  kind TEXT NOT NULL,
-  ciphertext BLOB,
-  plaintext_encrypted BLOB,
-  status TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  received_at INTEGER,
-  sent_at INTEGER,
-  delivered_at INTEGER,
-  read_at INTEGER
-);
-```
-
-#### groups
-
-```sql
-CREATE TABLE groups (
-  group_id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  epoch INTEGER NOT NULL,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-```
-
-#### group_members
-
-```sql
-CREATE TABLE group_members (
-  group_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
-  status TEXT NOT NULL,
-  local_relation TEXT NOT NULL,
-  joined_at INTEGER,
-  updated_at INTEGER NOT NULL,
-  PRIMARY KEY (group_id, user_id)
-);
-```
-
-#### local_blocks
-
-```sql
-CREATE TABLE local_blocks (
-  user_id TEXT PRIMARY KEY,
-  reason TEXT,
-  created_at INTEGER NOT NULL
-);
-```
-
-#### outbox
-
-```sql
-CREATE TABLE outbox (
-  id TEXT PRIMARY KEY,
-  target_user_id TEXT NOT NULL,
-  target_device_id TEXT,
-  encrypted_packet BLOB NOT NULL,
-  retry_count INTEGER NOT NULL,
-  next_retry_at INTEGER NOT NULL,
-  created_at INTEGER NOT NULL,
-  expires_at INTEGER
-);
-```
-
----
-
-## 16. 协议编码与签名
-
-### 16.1 所有协议对象必须有版本
-
-每个协议对象包含：
-
-```text
-type
-version
-created_at
-expires_at 可选
-```
-
----
-
-### 16.2 不对普通 JSON 直接签名
-
-JSON 字段顺序不稳定，不适合作为签名输入。
-
-签名必须基于确定性编码：
+本地信任状态不会被远端覆盖：
 
-```text
-canonical binary encoding
-```
-
-建议使用：
-
-- postcard
-- canonical CBOR
-
-二维码、调试、人类可读导出可以使用 JSON，但签名输入必须使用确定性编码。
-
----
-
-## 17. 安全设计
-
-### 17.1 KDF
-
-标准 native/core 身份备份包加密使用：
-
-```text
-Argon2id
-```
-
-建议参数：
-
-```text
-memory_kib = 65536
-iterations = 3
-parallelism = 1
-salt = random 32 bytes
-```
-
-浏览器 WASM 的 `wasm-local` 备份子格式 KDF 已从单次 SHA-256 升级为 PBKDF2-HMAC-SHA256（600k 迭代）；生产级 Web 备份是否恢复 Argon2id 仍需单独评估。
-
----
-
-### 17.2 AEAD
-
-推荐：
-
-```text
-XChaCha20-Poly1305
-```
-
----
-
-### 17.3 密钥派生
-
-```text
-identity_seed
-  ↓ HKDF
-identity_signing_seed
-identity_dh_seed
-storage_key
-profile_key
-```
-
----
-
-### 17.4 随机数
-
-Native：
-
-```text
-OS RNG
-```
-
-Web：
-
-```text
-crypto.getRandomValues
-```
-
-Rust WASM 需要正确配置 `getrandom` 的 JS 支持。
-
-当前浏览器注册 E2E 已验证连续注册会生成不同 UserID，并能产生可恢复的身份备份文本。浏览器 WASM 身份备份暂走 `wasm-local` 子格式，不要求 Argon2id 参数在所有浏览器中可接受；生产级 Web 备份若恢复 Argon2id，需要重新做浏览器性能和兼容测试。
-
----
-
-### 17.5 敏感数据处理
-
-要求：
-
-- 使用 `zeroize`
-- 使用 `secrecy`
-- 不在日志中打印私钥
-- 不在 Debug 输出敏感字段
-- release 模式关闭敏感日志
-
-当前进展：Identity 的 SigningKey 和 X25519Secret 已在 drop 时清零（已在 ed25519-dalek / x25519-dalek 上启用 zeroize feature）；Double Ratchet 的 `RatchetSessionState` / `RatchetMessageKey` / `RatchetSkippedKey` / `RatchetDhKeyPair` 也通过 Zeroize/ZeroizeOnDrop 在 drop 时清零密钥材料。
-
----
-
-## 18. 隐私边界
-
-LM Talk 保护：
+- 指纹已核验状态；
+- 拉黑状态；
+- 设备撤销状态；
+- 已读回执策略；
+- 本地安全策略。
 
-- 消息内容
-- 本地数据库
-- 好友公钥真实性
-- 网络监听下的明文内容
+好友关系通过请求/响应建立：
 
-LM Talk 不完全保护：
-
-- IP 地址
-- 在线时间
-- 通信频率
-- 消息大小
-- 谁和谁连接
-- DHT 查询痕迹
-- 设备被入侵后的数据
-- 用户截图和转发
-
-产品文案必须明确：
-
-```text
-端到端加密保护内容，但不等于完全匿名。
-```
-
----
-
-## 19. Web 端安全边界
-
-纯 Web 版存在代码供应链风险：
-
-```text
-如果网页从远程服务器加载，服务器可以更新恶意 JS/WASM。
-```
-
-因此：
-
 ```text
-Web 版适合 MVP 和轻量使用。
-高安全版本建议提供 Tauri 桌面端或移动端本地应用。
+Friend Request -> Friend Response -> Friend
 ```
-
-Web 正式版建议：
-
-- PWA 离线缓存
-- 构建产物 hash 校验
-- 可下载固定版本
-- 开源可复现构建
-
----
 
-## 20. 不做的功能
+## 6. Strict E2EE 默认策略
 
-MVP 不做：
+新身份默认启用 strict E2EE：
 
-- 公开社区
-- 公开群搜索
-- 热门群推荐
-- 全局账号注册
-- 服务器消息存储
-- 大群 MLS
-- 完整 Signal Double Ratchet
-- 自动 DHT 发现
-- TURN 中继
-- 多设备同步
-- 文件传输
+- 发送前要求联系人指纹已核验。
+- 发送前要求目标活跃设备支持 sealed slot。
+- 接收时要求联系人已核验。
+- 接收时要求 sealed slot 入站。
 
----
+核心阻断项：
 
-## 21. MVP 范围
+- 未核验指纹；
+- 所有已知设备已撤销；
+- 缺少活跃设备；
+- 活跃设备缺少 `device_box_public_key`；
+- 收到非 sealed slot 入站内容。
 
-### 21.1 MVP 0：Rust Core
+非阻断提醒：
 
-当前已实现：
+- ContactCard DHT 未刷新；
+- 设备证书更新 ACK 待确认。
 
-- Identity create / restore、Identity backup package、UserID 生成、提示词 normalize。
-- DeviceID / DeviceCert / DeviceRevoke 基础对象。
-- Contact Card 导入导出、Friend Request / Response。
-- DirectEnvelope MVP 消息加解密。
-- X3DH PreKey Bundle、Signed PreKey、One-time PreKey、Initial Message、shared secret 派生。
-- Double Ratchet session state、message key、skipped key、DH step、`x3dh-double-ratchet-v1` envelope。
-- GroupInvite、GroupEvent、GroupPolicyState、Sender Key Distribution、Sender Envelope。
-- FileManifest、FileChunkEnvelope、文件 hash 校验。
-- LocalSafetyPolicy、本地拉黑/过滤、Outbox、MemoryStore、协议对象大小限制。
-- 固定测试向量和 core e2e secure flow。
+修复控制消息例外：
 
-仍需补齐：
+- ContactCard / device cert 更新；
+- device revoke。
 
-- 生产级 Store trait + SQLite/SQLCipher 实现。
-- Ratchet replay/window/skipped-key 上限策略最终化。
-- 多设备同步、设备撤销事件自动分发。
-- 属性测试、模糊测试、外部安全审计。
+这些控制消息不携带聊天明文，用于修复或撤销信任状态，因此允许在 strict 状态未完全收敛时发送。
 
----
+## 7. 多设备与 sealed slot
 
-### 21.2 MVP 1：Web Demo
+每个设备拥有设备证书，证书由身份签名，并包含：
 
-实现：
+- 设备签名公钥；
+- `device_box_public_key`；
+- Device ID。
 
-- 创建身份
-- 导出身份备份包
-- 导入身份备份包
-- 显示 UserID
-- 导出 Contact Card
-- 导入 Contact Card
-- 发送好友请求文本
-- 接受好友请求文本
-- 加密/解密文本消息
-- IndexedDB 本地存储
+发送时会为目标设备创建 per-device sealed slot。strict 模式下，若目标设备缺少 sealed slot 能力，则阻止内容发送。
 
----
+设备丢失或废弃时，用户生成 `lm-device-revoke-v1:`，对方收到后停止信任对应设备。
 
-### 21.3 MVP 2：WebRTC 手动连接
+旧身份或导入身份如果缺少本设备证书，登录或同步前会自动补齐，并向好友 fanout 新 ContactCard。
 
-实现：
+## 8. 消息与回执
 
-- 手动 offer/answer
-- WebRTC DataChannel
-- 好友之间在线发送消息
-- ACK
-- 本地 outbox
+单聊消息路径：
 
----
+1. 好友建立。
+2. PreKey / X3DH / Ratchet 建链。
+3. 内容加密。
+4. per-device envelope 封装。
+5. WebRTC 或 Mailbox 投递。
+6. 接收方解密并发送 Delivered / Read receipt。
 
-### 21.4 MVP 3：小群
+Mailbox delivery id 和 signed MessageReceipt 用于恢复送达/已读状态。
 
-实现：
+## 9. 文件传输
 
-- 创建小群
-- 邀请好友
-- 对方确认入群
-- 群消息逐个加密发送
-- 本地屏蔽群成员
+文件以 `lm-file-package-v1:` 加密包传输。
 
----
+特点：
 
-### 21.5 MVP 4：Native Node
+- 文件内容加密后再发送。
+- 接收后不自动下载。
+- 危险文件名会提示。
+- strict 模式下，文件发送、Mailbox 接收和手动解密均检查联系人信任。
 
-当前已实现：
+## 10. 群聊
 
-- `lm_node` 控制面 scaffold。
-- Public Peer announce 生成、验签、导入、closest 查询。
-- Kademlia NodeId、XOR distance、bucket、closest peer 排序；DHT record key/value scaffold 已覆盖 Public Peer、PreKey、Mailbox hint 三类记录 key，带 TTL、republish_at、closest record 查询、过期清理和本地容量上限；控制面提供 `POST /dht/record`、`GET /dht/record`、`GET /dht/closest`，snapshot 可保存/合并 DHT records；已定义 `DhtRpcRequest` / `DhtRpcResponse` 并提供本地 `FindNode` / `FindValue` / `StoreRecord` handler，控制面 `POST /dht/rpc` 可作为传输层接入前的 RPC 兼容入口；已提供 due-for-republish 的 closest-k replication plan 和 256 个 bucket refresh target plan，并通过 `GET /dht/replication-plan` / `GET /dht/routing-refresh-plan` 暴露给控制面；`serve-control` 同步周期后会对已配置 control peers 执行 `StoreRecord` replication scaffold，并执行 bounded `FindNode` routing refresh scaffold；replication factor、FindNode limit 和每轮 refresh target 上限可由 config/CLI/env 配置；refresh runner 会合并从已配置 control peers 返回的非过期、node_id 与 peer_id 匹配且非本机的 `RoutingPeer`，用于 bootstrap/control-peer 信任边界内的 routing table 扩展。
-- Mailbox：`/api/mailbox/push`、`/api/mailbox/take`、`/api/mailbox/ack`。
-- PreKey：`/api/prekey/publish` 接收 bundle 与 `signed_one_time_prekey_record_texts[]`，`/api/prekey/get` 可返回 `selected_signed_one_time_prekey_record_text` 并在 `consume=true` 时精确记录 one-time prekey 消费；`/api/prekey/status` 返回 remaining/low watermark 与 `replenishment_required`；低水位补货由客户端持有 private prekey 后重新发布，节点返回 `replenishment_actor="client"` / `node_generates_user_keys=false` 并且不生成用户密钥；bundle 过期会清理，signed prekey 轮换会重置消费记录与旧 signed OTK records。
-- Snapshot：`/api/sync/snapshot`、`/api/sync/import`，可粗粒度同步 peers/mailbox/prekeys/signed one-time-prekey records。
-- 自动 snapshot sync：`serve-control --config-file node.json` 可加载 JSON 配置，`docs/NODE_CONFIG.md` 记录 schema，`docs/examples/lm-node.config.example.json` 提供样例；control/sync token 支持 CLI、环境变量或 secret 文件；`--sync-peer http://host:port --sync-interval-seconds N` 定时拉取并 merge peer snapshot；`--sync-peer-token`/`--sync-peer-token-file` 可拉取受 token 保护的 peer；`--sync-max-backoff-seconds` 控制失败指数退避；`/api/sync/status` 暴露 attempts/successes/failures/last_success_at/last_error/next_attempt_at。
-- 控制面基础安全与观测：未配置 token 时非 health API 仅允许 loopback；`--control-token` 要求 `Authorization: Bearer ...`；`--cors-allow-origin` 限制浏览器 Origin；`--rate-limit-window-seconds` / `--rate-limit-max-requests` 对非 health API 做 per-client IP 基础限流，超限返回 `429 Too Many Requests`；`GET /control/stats` 暴露 JSON 格式 started_at、请求总数、2xx/4xx/5xx、unauthorized、CORS 拒绝、限流命中、snapshot import/export 次数与字节数、DHT replication runner 运行/records/attempts/successes/failures/last run、routing refresh runner 运行/targets/attempts/successes/failures/nodes_returned/nodes_merged/last run、过期清理运行次数/移除记录数，以及 endpoint 维度请求数、状态码分布、累计/最大耗时等运行指标；`GET /control/metrics` 导出 OpenMetrics 文本，便于 Prometheus 类系统采集。
-- `serve-control --state-db` 可将节点状态持久化到明文 SQLite（WAL、synchronous=FULL、Unix 下 0600 权限）；HTTP e2e 已覆盖 mailbox push 后崩溃、take 未 ack 后崩溃、ack 后崩溃三种恢复语义。磁盘静态保护由整盘加密（LUKS/dm-crypt）承担，节点不做数据库级加密（state_db 存的是中继运营状态：离线消息已是端到端密文，prekey/public-peer/DHT 记录本就公开）。
-- 节点 e2e：PreKey 同步 + Mailbox 携带 ratchet envelope + 接收方解密。
+群聊采用成员 fanout：
 
-仍需补齐：
+- 无 Sender Key 时，为每个成员分别加密。
+- 有 Sender Key 时，生成 group sender envelope 后 fanout。
+- 群事件用于改名、加人、移除、管理员变更等。
 
-- 节点 state_db 按设计使用明文 SQLite；数据库级加密被评估为 security theater，因为离线消息已是端到端密文、prekey/public-peer/DHT 记录本就公开，磁盘保护依赖整盘加密（LUKS/dm-crypt）。
-- 真正 DHT 节点发现、传输层 RPC 执行、远端记录复制和定时 routing table refresh。
-- 后续将 control-peer DHT replication scaffold 升级为按 closest-k target 选择远端，并为开放传输层返回节点补充可携带 identity public key 的端到端签名校验。
-- WebRTC signaling、relay/TURN 替代能力。
-- 更细粒度反滥用策略、真正 DHT 网络安全边界、Relay/TURN 替代能力。
+strict 模式覆盖：
 
----
+- 创建群聊前预检。
+- 接受群邀请前预检。
+- 发送群消息前检查。
+- 生成群事件 fanout 前检查。
+- 群详情页显示修复向导。
 
-## 22. Rust 核心 API 草案
+新成员不会自动收到历史消息。历史转移必须显式重新加密。
 
-### 22.1 Identity
+## 11. 去中心化网络
 
-```rust
-impl Identity {
-    pub fn create_with_passphrase(
-        passphrase: &str,
-    ) -> Result<(Identity, IdentityBackupPackage)>;
+LM Talk 使用多种 best-effort 路径：
 
-    pub fn restore_from_backup(
-        backup: &IdentityBackupPackage,
-        passphrase: &str,
-    ) -> Result<Identity>;
+| 路径 | 说明 |
+| --- | --- |
+| WebRTC | 在线直连。 |
+| Mailbox | 离线密文投递。 |
+| DHT | 发现 ContactCard、PreKey、MailboxHint、PublicPeer。 |
+| Snapshot sync | 节点之间同步运营状态。 |
+| Outbox | 客户端本地重试队列。 |
 
-    pub fn user_id(&self) -> &UserId;
+节点只保存：
 
-    pub fn export_contact_card(
-        &self,
-        display_name: Option<String>,
-        device_cert: DeviceCert,
-    ) -> Result<ContactCard>;
-}
-```
-
----
-
-### 22.2 Contact
-
-```rust
-impl ContactCard {
-    pub fn verify(&self) -> Result<()>;
-
-    pub fn fingerprint(&self) -> String;
-}
-
-pub fn import_contact_card(card: ContactCard) -> Result<Contact>;
-```
-
----
-
-### 22.3 Friend
-
-```rust
-impl FriendService {
-    pub fn create_request(
-        &self,
-        from: &Identity,
-        to: &Contact,
-        note: Option<String>,
-    ) -> Result<FriendRequest>;
-
-    pub fn accept_request(
-        &self,
-        identity: &Identity,
-        request: FriendRequest,
-    ) -> Result<FriendResponse>;
-
-    pub fn apply_response(
-        &self,
-        response: FriendResponse,
-    ) -> Result<()>;
-}
-```
-
----
-
-### 22.4 Message
-
-```rust
-pub trait SessionCrypto {
-    fn encrypt(
-        &mut self,
-        plaintext: &[u8],
-    ) -> Result<EncryptedEnvelope>;
-
-    fn decrypt(
-        &mut self,
-        envelope: &EncryptedEnvelope,
-    ) -> Result<Vec<u8>>;
-}
-```
-
----
-
-### 22.5 Group
-
-```rust
-impl GroupService {
-    pub fn create_group(
-        &mut self,
-        name: String,
-        members: Vec<Contact>,
-    ) -> Result<CreateGroupResult>;
-
-    pub fn create_invite(
-        &mut self,
-        group_id: &GroupId,
-        member: Contact,
-    ) -> Result<GroupInvite>;
-
-    pub fn encrypt_group_message_fanout(
-        &mut self,
-        group_id: &GroupId,
-        body: MessageBody,
-    ) -> Result<Vec<OutgoingDirectPacket>>;
-}
-```
-
----
-
-## 23. 关键风险
-
-### 23.1 身份备份包丢失
-
-如果用户设备丢失且没有身份备份包：
-
-```text
-无法恢复身份。
-```
-
----
-
-### 23.2 提示词泄露
-
-如果攻击者同时拿到：
-
-```text
-身份备份包 + 提示词
-```
-
-则可以接管身份。
-
----
-
-### 23.3 无服务器可达性
-
-对方离线或 NAT 穿透失败时：
-
-```text
-消息无法即时到达。
-```
+- 签名 Mailbox 密文对象；
+- DHT 公开记录；
+- PreKey 公开对象；
+- snapshot 运营状态。
 
----
+节点不保存消息明文和用户私钥。
 
-### 23.4 Web 代码供应链风险
+## 12. Native node
 
-远程 Web App 更新可能破坏端到端安全。
+`lm_node serve-control` 提供：
 
----
+- `/health`
+- `/control/stats`
+- `/control/metrics`
+- Mailbox push/take/ack/status
+- PreKey publish/get/status
+- DHT record store/find/closest
+- DHT replication / routing refresh
+- snapshot export/import
 
-## 24. 用户文案建议
+节点配置见 `docs/deploy/NODE_CONFIG.md`。
 
-### 24.1 创建身份
+Docker federation 模板见：
 
 ```text
-你的身份由一个随机身份密钥决定。
-
-请设置提示词，并保存身份备份包。
-以后换设备时，需要同时拥有：
-1. 身份备份包
-2. 提示词
-
-丢失任一项，可能无法恢复身份。
+deploy/lm-node-federation/
 ```
-
----
 
-### 24.2 好友请求
+## 13. 本地存储
 
-```text
-对方请求添加你为好友。
+Web 使用 IndexedDB 分表保存状态。敏感字段加密，包括：
 
-请确认对方 UserID 和安全码。
-接受后，对方可以与你直接通信。
-```
+- 消息文本和 envelope；
+- 联系人名片和显示名；
+- 群状态；
+- outbox 载荷；
+- Ratchet 状态；
+- 好友请求和群邀请原文；
+- 同步服务地址和令牌。
 
----
+为了索引和 UI，User ID、message id、group id、状态、时间戳等最小字段保持明文。
 
-### 24.3 陌生人请求
+删除本地身份时，会删除该身份作用域的数据。
 
-```text
-这是陌生人请求。
-在你接受前，对方不能直接向你发送附件或群邀请。
-```
+## 14. 诊断与报告
 
----
+Web 提供：
 
-### 24.4 P2P 连接失败
+- 诊断报告；
+- strict E2EE readiness 完整报告；
+- strict E2EE 脱敏摘要；
+- DHT 操作历史导出；
+- 同步恢复历史导出。
 
-```text
-无法连接到对方设备。
-可能原因：
-1. 对方离线
-2. 网络限制
-3. NAT 穿透失败
-
-消息已加入待发送队列。
-```
+诊断报告不得包含提示词、私钥、身份备份全文、消息明文或控制面 token。
 
----
+## 15. 测试
 
-## 25. 最终设计总结
+常用检查：
 
-```text
-身份：
-  随机 identity_seed 决定 UserID。
-  提示词只用于加密 identity_seed。
-  恢复身份必须导入身份备份包并输入提示词。
-
-设备：
-  UserID 代表人。
-  DeviceID 代表设备。
-  每台设备有独立设备密钥。
-
-好友：
-  Contact Card 导入身份。
-  Friend Request / Friend Response 双向确认。
-  默认只有 Friend 可以直接通信。
-
-消息：
-  端到端加密。
-  MVP 使用 X25519 + HKDF + XChaCha20-Poly1305。
-  后续升级 X3DH + Double Ratchet。
-
-网络：
-  Web MVP 使用手动 WebRTC signaling。
-  Native 后续加入 DHT、mDNS、自动发现和 Public Peer。
-
-Public Peer：
-  有公网 IP 的节点可作为 bootstrap / DHT / signaling / relay / mailbox。
-  Public Peer 不注册账号，不决定好友，不保存明文，不掌握密钥。
-
-群聊：
-  MVP 小群逐个加密发送。
-  群状态是本地视图。
-
-安全：
-  默认好友白名单。
-  陌生人请求箱。
-  本地拉黑。
-  本地过滤。
-
-存储：
-  Web 使用 IndexedDB。
-  Native node 使用明文 SQLite state_db；磁盘保护依赖整盘加密。
-  数据只存本地。
+```bash
+./scripts/release-check.sh quick
+PATH="$PWD/.tools/node/bin:$PATH" npm --prefix apps/web run test:e2e
+LM_NODE_FEDERATION_REPORT=/tmp/lm-federation-report.json deploy/lm-node-federation/run-all.sh
 ```
-
-
-
-## 附录：当前端到端测试覆盖
-
-当前 `scripts/dev-test.sh all` / `scripts/dev-test.sh e2e` 覆盖：
-
-- `cargo fmt --check`、workspace Rust 单元测试和 doc-test。
-- `lm_core` 身份、Contact Card、好友请求/确认、大小限制、属性测试、跨平台测试向量、DirectEnvelope、X3DH、Double Ratchet、群 Sender Key、文件包、Outbox、MemoryStore。
-- core e2e：两用户好友流程、X3DH shared secret、Double Ratchet 双向消息。
-- `lm_node`：Public Peer announce、Kademlia closest、Mailbox push/take/ack、PreKey bundle + signed one-time-prekey records publish/get、snapshot roundtrip/import、serve-control 自动 snapshot sync。
-- node e2e：节点 PreKey/signed OTK 同步 + Mailbox 携带 ratchet envelope + 接收方解密。
-- HTTP control flow：真实 `serve-control` 进程之间同步 PreKey/Mailbox，并覆盖 config-file、token/CORS 基础安全、控制面基础限流、`/api/control/stats` JSON 指标和 `/api/control/metrics` OpenMetrics 导出。
-- `lm_wasm` smoke：身份、联系人、好友、消息、PreKey/X3DH、Ratchet、群、文件、Public Peer、Mailbox、Signaling。
-- Web E2E：产品化登录注册、同步好友请求和消息收发、IndexedDB 加密消息持久化、Web RNG 生成不同身份、独立导入页恢复身份。
-
-仍需补齐：fuzz、真实网络延迟/丢包/重连/压力测试、持久化崩溃恢复测试、外部安全审计。
-
-
-## 附录：群聊 Sender Key 实验路径
-
-已新增 `lm-group-sender-key-v1` 与 `lm-group-sender-envelope-v1`：
-
-- 每个群成员可以为某个群生成自己的 Sender Key chain。
-- Sender Key Distribution 由发送者身份签名。
-- 群消息使用 Sender Key chain 派生 message key，经 XChaCha20-Poly1305 加密。
-- `GroupSenderKeyState` 会缓存乱序到达的 skipped message keys（上限 256），支持乱序投递，不再破坏性地快进链条。
-- Web 群聊在本群存在自己的 Sender Key 时优先生成 Sender Envelope，否则回退 pairwise fanout。
-
-限制：当前 Sender Key 仍需手动分发 distribution；成员变更后的 key rotation、管理员权限、MLS 树更新还未实现。
-
-
-## 附录：群权限状态机
-
-已新增 `GroupPolicyState`：
-
-- 创建者默认为 admin。
-- Rename/AddMember/PromoteAdmin/DemoteAdmin 需要 admin。
-- RemoveMember 只允许成员自己退出，不提供管理员移除其他成员。
-- 防止只剩一个 admin 时把唯一 admin 移除。
-- Web 应用群事件时优先通过 WASM policy state 校验并更新成员/admin/sequence。
-
-后续仍需：更细粒度邀请策略、审计 UI、成员变更触发 Sender Key rotation。
-
-
-## 附录：Sender Key 轮换策略
-
-当前实现新增基础轮换：
-
-- `GroupPolicyState::event_requires_sender_key_rotation` 标记 AddMember/RemoveMember 需要轮换。
-- Web 应用成员变更群事件后，会移除该群已保存的其他成员 Sender Key。
-- 如果当前用户仍在群内，会自动为自己生成新的 Sender Key Distribution，并提示分发。
-- 如果当前用户被移出群，则清除本群 Sender Key。
-
-限制：新的 Sender Key Distribution 仍需手动发给现有成员；尚未实现自动按成员 fanout 分发，也未实现 MLS 树更新。
-
 
-## 附录：Sender Key Distribution 自动 fanout
+覆盖范围：
 
-Web 现已支持 Sender Key Distribution fanout：
+- core 单元测试和属性测试；
+- 测试向量；
+- WASM smoke；
+- Web E2E；
+- node 控制面 E2E；
+- Docker federation smoke/chaos/load。
 
-- 创建或轮换本群 Sender Key 后，自动为当前群成员生成 pairwise 加密分发包。
-- 分发包载荷前缀为 `lm-group-sender-key-message-v1:`，收到后会自动导入对应 sender 的 Sender Key。
-- 成员变更触发本端 Sender Key rotation 后，也会自动生成新的 distribution fanout。
+## 16. 当前完成度
 
-限制：fanout 仍需要通过复制/WebRTC/Mailbox 发送；尚未在协议层做 MLS 风格树分发。
+| 目标 | 估计 |
+| --- | --- |
+| 可用 Demo / MVP | 约 98% |
+| 功能目标整体 | 约 98% |
 
+仍可继续打磨：
 
-## 附录：one-time prekey 精确消费
+- Docker federation 易用性；
+- strict E2EE 修复体验；
+- 消息状态展示；
+- node-admin 运维体验；
+- 文档去重和中文化。
 
-已新增基础精确消费：
+## 17. 当前不作为阻塞项
 
-- `PreKeyBundle::new_with_signed_one_time_prekey_records` 可生成不把 OTK 列表签进 bundle 的公开 bundle，并为每个 OTK 生成独立 `SignedOneTimePreKeyRecord`。
-- `x3dh_initiator_secret_with_one_time_prekey_record` 可用选中的 signed OTK record 派生 shared secret；旧的 `x3dh_initiator_secret_with_one_time_prekey_id` 仍用于兼容 bundle 内 OTK。
-- `lm_node /prekey/publish` 接收 `signed_one_time_prekey_record_texts[]`；`/api/prekey/get?consume=true` 不删除整个 bundle，而是记录已消费的 one-time key id，并优先返回未消费的 `selected_signed_one_time_prekey_record_text`。
-- 响应返回 `selected_one_time_prekey_id`、`selected_signed_one_time_prekey_record_text`、`consumed_one_time_prekey_ids`、`remaining_one_time_prekeys`、`signed_one_time_prekey_records`、`low_one_time_prekeys`、`replenishment_required`、`replenishment_actor` 和 `node_generates_user_keys`；`/api/prekey/status` 可不拉取 bundle 只查询补货状态。
-- Web 拉取/领取 PreKey 后会优先保存 selected signed OTK record，并在创建 X3DH initial message 时使用该 record；没有 signed record 时回退旧 selected id。
+以下事项可作为未来生产发行增强，但不再阻塞当前功能目标：
 
-限制：节点只提示低水位/补货需求，不代替客户端生成私钥补货；多设备补货同步、signed prekey 轮换广播和真正 DHT 复制仍需完善。
+- 第三方安全审计报告。
+- 长时间 fuzz campaign 与 crash triage。
+- 长时间公网 federation chaos/load 证据。
+- 真实公网部署报告。
+- macOS notarization / Windows code signing。
+- 风险登记 owner / release decision / evidence 完整签核。
