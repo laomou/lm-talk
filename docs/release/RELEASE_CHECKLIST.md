@@ -79,6 +79,7 @@ LM_NODE_FEDERATION_REPORT=/tmp/lm-federation-report.json \
 - `lm_node` 二进制
 - 关键部署文档
 - `RELEASE_INFO.txt`
+- `node_admin.zip`（本机 `/admin/` 管理页）
 - `.sha256`
 
 本地打包示例：
@@ -90,6 +91,8 @@ python3 scripts/release-package.py \
   --package-name lm_node-linux-x86_64 \
   --out-dir dist
 ```
+
+`release-package.py` 默认会自动构建并打包 `node_admin.zip`，用于 `lm_node serve-control --web-admin node_admin.zip` 的本机 `/admin/` 管理页。如需跳过管理页，可显式传 `--no-web-admin`。
 
 验证已发布 tag：
 

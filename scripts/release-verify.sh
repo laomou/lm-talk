@@ -93,6 +93,41 @@ for archive in lm_node-linux-x86_64.tar.gz \
   sha256_check "$archive.sha256"
 done
 
+
+printf '== Verifying archive contents ==\n'
+python3 - <<'PYCHECK'
+import pathlib, tarfile, zipfile
+archives = [
+    pathlib.Path('lm_node-linux-x86_64.tar.gz'),
+    pathlib.Path('lm_node-macos-x86_64.tar.gz'),
+    pathlib.Path('lm_node-macos-arm64.tar.gz'),
+    pathlib.Path('lm_node-windows-x86_64.zip'),
+]
+for archive in archives:
+    if archive.suffix == '.zip':
+        with zipfile.ZipFile(archive) as zf:
+            names = zf.namelist()
+            info = next((name for name in names if name.endswith('/RELEASE_INFO.txt')), None)
+            if not any(name.endswith('/node_admin.zip') for name in names):
+                raise SystemExit(f'{archive}: missing node_admin.zip')
+            if info is None:
+                raise SystemExit(f'{archive}: missing RELEASE_INFO.txt')
+            release_info = zf.read(info).decode('utf-8', 'replace')
+    else:
+        with tarfile.open(archive, 'r:gz') as tf:
+            names = tf.getnames()
+            info = next((name for name in names if name.endswith('/RELEASE_INFO.txt')), None)
+            if not any(name.endswith('/node_admin.zip') for name in names):
+                raise SystemExit(f'{archive}: missing node_admin.zip')
+            if info is None:
+                raise SystemExit(f'{archive}: missing RELEASE_INFO.txt')
+            member = tf.extractfile(info)
+            release_info = member.read().decode('utf-8', 'replace') if member else ''
+    if 'web_admin_bundled=true' not in release_info:
+        raise SystemExit(f'{archive}: RELEASE_INFO.txt does not record web_admin_bundled=true')
+print('archive contents ok')
+PYCHECK
+
 if [[ -n "$REPORT_FILE" ]]; then
   printf '== Writing release verification report: %s ==\n' "$REPORT_FILE"
   python3 - <<'PY' "$REPORT_FILE" "$TAG" "$DOWNLOAD_DIR"
@@ -122,6 +157,7 @@ report = {
         "expected_assets_present": True,
         "combined_sha256sums_verified": True,
         "per_artifact_sha256_verified": True,
+        "node_admin_zip_present": True,
     },
     "assets": assets,
 }

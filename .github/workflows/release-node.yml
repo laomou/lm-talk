@@ -95,19 +95,9 @@ jobs:
           "$BIN" > lm_node_help.txt 2>&1
           grep -q "LM Talk" lm_node_help.txt
 
-      - name: Build node-admin bundle
+      - name: Install node-admin dependencies
         shell: bash
-        run: |
-          set -euo pipefail
-          cd apps/node-admin
-          npm ci
-          npm run build
-          cd dist
-          if command -v zip >/dev/null 2>&1; then
-            zip -r -q "$GITHUB_WORKSPACE/node_admin.zip" .
-          else
-            python -c "import shutil; shutil.make_archive('$GITHUB_WORKSPACE/node_admin', 'zip', '.')"
-          fi
+        run: npm ci --prefix apps/node-admin
 
       - name: Package native node
         run: >-
@@ -115,7 +105,6 @@ jobs:
           --target ${{ matrix.target }}
           --package-name ${{ matrix.package_name }}
           --cargo-features "${{ matrix.cargo_features }}"
-          --web-admin-zip node_admin.zip
           --out-dir dist
 
       - name: Create signing evidence report

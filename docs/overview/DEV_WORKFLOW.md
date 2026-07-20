@@ -192,7 +192,7 @@ NODE_ADMIN_BASE=/admin/ \
 | `deploy/lm-node-federation/.docker-data/` | federation 测试数据 | 否 |
 | `deploy/lm-node-federation/.docker-run/` | direct docker 运行配置 | 否 |
 | `deploy/lm-node-federation/secrets/` | federation 测试 token | 否 |
-| `node_admin.zip` | 可选发布打包输入 | 一般不提交，release artifact 生成 |
+| `node_admin.zip` | release 包内嵌 `/admin/` 管理页 | 不提交；`release-package.py` 自动生成或打包 |
 
 提交前建议：
 

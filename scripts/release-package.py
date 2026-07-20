@@ -54,6 +54,30 @@ def add_tree_to_zip(zipf: zipfile.ZipFile, root: Path, arc_root: str) -> None:
         zipf.write(path, arcname=arcname)
 
 
+def build_node_admin_zip(repo: Path, destination: Path, base: str) -> None:
+    admin_root = repo / "apps" / "node-admin"
+    package_json = admin_root / "package.json"
+    if not package_json.is_file():
+        raise SystemExit(f"node-admin package not found: {package_json}")
+    env = os.environ.copy()
+    tools_node = repo / ".tools" / "node" / "bin"
+    if tools_node.is_dir():
+        env["PATH"] = f"{tools_node}{os.pathsep}{env.get('PATH', '')}"
+    env["NODE_ADMIN_BASE"] = base
+    try:
+        subprocess.run(["npm", "run", "build"], cwd=admin_root, check=True, env=env)
+    except (OSError, subprocess.CalledProcessError) as err:
+        raise SystemExit(f"failed to build node-admin bundle: {err}") from err
+    dist = admin_root / "dist"
+    index = dist / "index.html"
+    if not index.is_file():
+        raise SystemExit(f"node-admin build did not produce {index}")
+    if f'{base.rstrip("/")}/assets/' not in index.read_text(encoding="utf-8") and base != "/":
+        raise SystemExit(f"node-admin build base mismatch: expected assets under {base} in {index}")
+    with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zipf:
+        add_tree_to_zip(zipf, dist, "")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", required=True, help="Rust target triple used for cargo build")
@@ -64,7 +88,17 @@ def main() -> int:
     parser.add_argument(
         "--web-admin-zip",
         default="",
-        help="Optional path to node_admin.zip to bundle into the archive",
+        help="Optional path to node_admin.zip to bundle into the archive; if omitted, the script builds one automatically",
+    )
+    parser.add_argument(
+        "--web-admin-base",
+        default="/admin/",
+        help="Vite base used when auto-building node_admin.zip (default: /admin/)",
+    )
+    parser.add_argument(
+        "--no-web-admin",
+        action="store_true",
+        help="Do not bundle node_admin.zip",
     )
     parser.add_argument(
         "--archive-format",
@@ -132,14 +166,19 @@ def main() -> int:
         if example_config.is_file():
             shutil.copy2(example_config, staging / "node.config.example.json")
 
-        if args.web_admin_zip:
-            admin_zip = Path(args.web_admin_zip)
-            if not admin_zip.is_absolute():
-                admin_zip = (repo / admin_zip).resolve()
-            if admin_zip.is_file():
+        bundled_admin = False
+        if not args.no_web_admin:
+            admin_zip: Path | None = None
+            if args.web_admin_zip:
+                admin_zip = Path(args.web_admin_zip)
+                if not admin_zip.is_absolute():
+                    admin_zip = (repo / admin_zip).resolve()
+                if not admin_zip.is_file():
+                    raise SystemExit(f"--web-admin-zip not found: {admin_zip}")
                 shutil.copy2(admin_zip, staging / "node_admin.zip")
             else:
-                raise SystemExit(f"--web-admin-zip not found: {admin_zip}")
+                build_node_admin_zip(repo, staging / "node_admin.zip", args.web_admin_base)
+            bundled_admin = (staging / "node_admin.zip").is_file()
 
         release_info = staging / "RELEASE_INFO.txt"
         release_info.write_text(
@@ -152,6 +191,8 @@ def main() -> int:
             f"source_commit={commit}\n"
             f"source_dirty={dirty}\n"
             f"build_time_utc={build_time}\n"
+            f"web_admin_bundled={str(bundled_admin).lower()}\n"
+            f"web_admin_mount=/admin/\n"
             "\n[rustc -Vv]\n"
             f"{rustc}\n"
             "\n[cargo -V]\n"
