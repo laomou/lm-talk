@@ -51,6 +51,27 @@ function messageStatusShortText(message: any) {
     default: return props.ctx.statusLabel(message.status)
   }
 }
+function filePhaseClass(phase: string) {
+  if (phase === '失败') return 'danger'
+  if (phase === '已入队' || phase === '待发送' || phase === '待解密') return 'warning'
+  if (phase === '已发送' || phase === '已接收' || phase === '已下载') return 'ok'
+  if (phase === '投递中' || phase === '读取文件' || phase === '加密封装' || phase === '检查空间' || phase === '读取中') return 'info'
+  return 'info'
+}
+function filePreviewLabel(name?: string, mime?: string) {
+  const value = `${name || ''} ${mime || ''}`.toLowerCase()
+  if (/image\//.test(value)) return '图片'
+  if (/pdf/.test(value)) return 'PDF'
+  if (/zip|tar|gzip|7z|rar/.test(value)) return '压缩包'
+  if (/text|markdown|json|csv|log/.test(value)) return '文本'
+  if (/audio\//.test(value)) return '音频'
+  if (/video\//.test(value)) return '视频'
+  return '附件'
+}
+function selectedFileLabel(file: File) {
+  return `${filePreviewLabel(file.name, file.type)} · ${file.type || 'application/octet-stream'} · ${props.ctx.formatBytes(file.size)}`
+}
+
 function messageStatusDetailText(message: any) {
   const parts = [props.ctx.statusLabel(message.status)]
   const wait = mailboxWaitText(message)
@@ -315,24 +336,35 @@ function onComposerKeydown(e: KeyboardEvent) {
         <input type="file" aria-label="选择附件" @change="ctx.onFileSelected" />
         <button class="secondary" :disabled="!ctx.selectedFile.value" @click="ctx.sendSelectedFile">发送文件</button>
         <button class="secondary danger" :disabled="!ctx.selectedFile.value && !ctx.filePackageText.value" @click="ctx.cancelSelectedFile">取消文件</button>
-        <span class="file-transfer-phase">{{ ctx.fileTransferPhase.value }}</span>
-        <small v-if="ctx.selectedFile.value">
-          {{ ctx.selectedFile.value.name }} · {{ ctx.formatBytes(ctx.selectedFile.value.size) }}
-          <b v-if="ctx.isDangerousFileName(ctx.selectedFile.value.name)">危险类型</b>
-        </small>
+        <span class="file-transfer-phase" :class="filePhaseClass(ctx.fileTransferPhase.value)">{{ ctx.fileTransferPhase.value }}</span>
+        <div v-if="ctx.selectedFile.value" class="selected-file-card">
+          <div class="file-icon">{{ filePreviewLabel(ctx.selectedFile.value.name, ctx.selectedFile.value.type).slice(0, 1) }}</div>
+          <div class="file-card-main">
+            <b>{{ ctx.selectedFile.value.name }}</b>
+            <small>{{ selectedFileLabel(ctx.selectedFile.value) }}</small>
+            <small v-if="ctx.isDangerousFileName(ctx.selectedFile.value.name)" class="danger-text">危险类型：接收方下载后请谨慎打开</small>
+          </div>
+        </div>
         <small v-else>{{ ctx.rtcFileStatus.value }}</small>
-        <small v-if="ctx.fileProgressText.value">{{ ctx.fileProgressText.value }}</small>
+        <small v-if="ctx.fileProgressText.value" class="file-progress-line">{{ ctx.fileProgressText.value }}</small>
         <small v-if="activeFileOutboxError" class="outbox-error">文件发送失败：{{ activeFileOutboxError }}</small>
         <button v-if="activeFileOutboxError" class="secondary" @click="ctx.flushOutboxForActive">重试文件</button>
-        <div v-if="ctx.pendingFilePackageText.value && !ctx.receivedFileUrl.value" class="received-file-card">
-          <b>收到文件包</b>
-          <small v-if="ctx.pendingFileMeta.value">{{ ctx.pendingFileMeta.value }}</small>
-          <small>文件尚未解密，确认来源可信后再打开。</small>
+        <div v-if="ctx.pendingFilePackageText.value && !ctx.receivedFileUrl.value" class="received-file-card pending">
+          <div class="file-icon">密</div>
+          <div class="file-card-main">
+            <b>收到加密文件包</b>
+            <small v-if="ctx.pendingFileMeta.value">{{ ctx.pendingFileMeta.value }}</small>
+            <small>文件尚未解密，确认来源可信后再打开。</small>
+          </div>
           <button class="secondary" @click="ctx.decryptIncomingFilePackage">解密文件</button>
         </div>
-        <div v-if="ctx.receivedFileUrl.value" class="received-file-card">
-          <b>{{ ctx.receivedFileName.value }}</b>
-          <small>{{ ctx.receivedFileMeta.value }}</small>
+        <div v-if="ctx.receivedFileUrl.value" class="received-file-card ready">
+          <div class="file-icon">{{ filePreviewLabel(ctx.receivedFileName.value, ctx.receivedFileMime.value).slice(0, 1) }}</div>
+          <div class="file-card-main">
+            <b>{{ ctx.receivedFileName.value }}</b>
+            <small>{{ filePreviewLabel(ctx.receivedFileName.value, ctx.receivedFileMime.value) }} · {{ ctx.receivedFileMeta.value }}</small>
+            <small>已解密，下载动作只在你点击后发生。</small>
+          </div>
           <a :href="ctx.receivedFileUrl.value" :download="ctx.receivedFileName.value" @click="ctx.markReceivedFileDownloaded">下载</a>
           <img
             v-if="ctx.receivedFileMime.value.startsWith('image/')"
