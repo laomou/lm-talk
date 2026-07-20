@@ -16,6 +16,19 @@ record_result() {
   RESULTS+=("{\"name\":$(json_escape "$name"),\"status\":$(json_escape "$status"),\"duration_ms\":$duration_ms}")
 }
 
+print_failure_diagnostics() {
+  echo
+  echo "===== federation failure diagnostics =====" >&2
+  echo "report=$REPORT_FILE" >&2
+  if [[ -f "$REPORT_FILE" ]]; then
+    cat "$REPORT_FILE" >&2 || true
+  fi
+  echo
+  "$DEPLOY_ROOT/compose.sh" ps >&2 || true
+  echo
+  "$DEPLOY_ROOT/compose.sh" logs --tail=120 >&2 || true
+}
+
 write_report() {
   local status="$1"
   local finished_at
@@ -53,6 +66,7 @@ run_step() {
     duration=$((end - start))
     record_result "$name" failed "$duration"
     write_report failed
+    print_failure_diagnostics
     return 1
   fi
 }

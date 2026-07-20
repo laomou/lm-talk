@@ -120,6 +120,28 @@ direct_down() {
   docker network rm "$NETWORK" >/dev/null 2>&1 || true
 }
 
+clean_local_files() {
+  rm -rf "$ROOT/.docker-data" "$ROOT/.docker-run"
+  rm -f "$ROOT/federation-report.json"
+  if [[ "${LM_NODE_FEDERATION_CLEAN_SECRETS:-0}" == "1" ]]; then
+    rm -rf "$ROOT/secrets"
+  fi
+}
+
+clean_stack() {
+  if use_native_compose; then
+    docker compose -f "$ROOT/docker-compose.yml" down -v --remove-orphans
+  else
+    direct_down
+  fi
+  clean_local_files
+}
+
+if [[ "${1:-}" == "clean" ]]; then
+  clean_stack
+  exit 0
+fi
+
 if use_native_compose; then
   exec docker compose -f "$ROOT/docker-compose.yml" "$@"
 fi
@@ -146,8 +168,24 @@ case "${1:-}" in
     ;;
   logs)
     shift || true
+    log_args=()
+    while [[ "$#" -gt 0 ]]; do
+      case "$1" in
+        --tail)
+          if [[ "$#" -lt 2 ]]; then echo "missing value for --tail" >&2; exit 2; fi
+          log_args+=("--tail" "$2"); shift 2
+          ;;
+        --tail=*) log_args+=("$1"); shift ;;
+        --timestamps|-t) log_args+=("$1"); shift ;;
+        --follow|-f) log_args+=("$1"); shift ;;
+        *) break ;;
+      esac
+    done
     if [[ "$#" -eq 0 ]]; then set -- node-a node-b node-c; fi
-    for svc in "$@"; do docker logs "$svc"; done
+    for svc in "$@"; do
+      echo "===== logs: $svc =====" >&2
+      docker logs "${log_args[@]}" "$svc"
+    done
     ;;
   *)
     echo "docker compose plugin not found and direct fallback does not support: $*" >&2
