@@ -531,7 +531,7 @@ test('同步节点常见错误会显示分类恢复建议', async ({ page }) => 
   await expect(page.getByText(/同步节点限流.*稍后重试/)).toBeVisible()
 
   await page.unroute('http://sync.test/**')
-  await page.route('http://sync.test/**', async (route) => route.fulfill({ status: 413, body: 'PayloadTooLarge' }))
+  await page.route('http://sync.test/**', async (route) => route.fulfill({ status: 413, json: { error_code: 'MAILBOX_QUOTA_EXCEEDED', message: 'PayloadTooLarge', recovery_hint: '请缩小内容或检查节点配额。' } }))
   await page.getByRole('button', { name: '立即同步' }).click({ force: true })
   await expect(page.getByText(/同步节点拒绝大载荷.*检查节点配额/)).toBeVisible()
 })

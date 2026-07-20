@@ -13,15 +13,24 @@ import type {
 
 export class NodeError extends Error {
   status?: number
-  constructor(message: string, status?: number) {
+  errorCode?: string
+  recoveryHint?: string
+  constructor(message: string, status?: number, errorCode?: string, recoveryHint?: string) {
     super(message)
     this.name = 'NodeError'
     this.status = status
+    this.errorCode = errorCode
+    this.recoveryHint = recoveryHint
   }
 }
 
-function classifyNodeError(status: number | undefined, raw: string, endpoint: string): string {
+function classifyNodeError(status: number | undefined, raw: string, endpoint: string, code?: string, hint?: string): string {
   const suffix = endpoint ? `（${endpoint}）` : ''
+  if (code === 'UNAUTHORIZED') return `节点鉴权失败${suffix}：${hint || '请检查控制面令牌是否与 lm_node --control-token 一致。'}`
+  if (code === 'CORS_ORIGIN_NOT_ALLOWED' || code === 'ADMIN_LOOPBACK_ONLY') return `节点拒绝访问${suffix}：${hint || '请检查 CORS 白名单、访问来源或 /admin/ loopback 限制。'}`
+  if (code === 'CONTROL_RATE_LIMITED' || code === 'MAILBOX_RATE_LIMITED') return `节点限流${suffix}：${hint || '请求过于频繁，请稍后重试。'}`
+  if (code === 'MAILBOX_QUOTA_EXCEEDED' || code === 'DHT_RECORD_TOO_LARGE') return `节点拒绝大载荷${suffix}：${hint || '请求内容超过限制，请缩小快照或检查节点配额。'}`
+  if (code === 'API_NOT_FOUND' || code === 'WEB_ADMIN_NOT_CONFIGURED' || code === 'STATIC_FILE_NOT_FOUND') return `节点接口不存在${suffix}：${hint || '请确认 lm_node 版本、/admin/ 挂载和 API 路径。'}`
   if (status === 401 || /unauthorized/i.test(raw)) return `节点鉴权失败${suffix}：请检查控制面令牌是否与 lm_node --control-token 一致。`
   if (status === 403 || /cors origin not allowed|forbidden/i.test(raw)) return `节点拒绝访问${suffix}：请检查 CORS 白名单、访问来源或 /admin/ loopback 限制。`
   if (status === 429 || /rate limit|too many requests/i.test(raw)) return `节点限流${suffix}：请求过于频繁，请稍后重试。`
@@ -66,8 +75,12 @@ export function createNodeApi(getConfig: () => NodeConfig, timeoutMs = 10_000) {
       // keep raw text
     }
     if (!res.ok) {
-      const message = typeof body === 'string' ? body : JSON.stringify(body)
-      throw new NodeError(classifyNodeError(res.status, message, endpoint), res.status)
+      const code = body && typeof body === 'object' && !Array.isArray(body) && typeof body.error_code === 'string' ? body.error_code : undefined
+      const hint = body && typeof body === 'object' && !Array.isArray(body) && typeof body.recovery_hint === 'string' ? body.recovery_hint : undefined
+      const message = body && typeof body === 'object' && !Array.isArray(body) && typeof body.message === 'string'
+        ? body.message
+        : typeof body === 'string' ? body : JSON.stringify(body)
+      throw new NodeError(classifyNodeError(res.status, message, endpoint, code, hint), res.status, code, hint)
     }
     return body
   }

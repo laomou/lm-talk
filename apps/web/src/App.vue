@@ -1628,7 +1628,15 @@ function normalizeErrorText(e: unknown): string {
 function userFacingError(e: unknown): string {
   const raw = normalizeErrorText(e)
   const status = e instanceof NodeRequestError ? e.status : undefined
+  const code = e instanceof NodeRequestError ? e.errorCode : undefined
+  const hint = e instanceof NodeRequestError ? e.recoveryHint : undefined
   const urlHint = e instanceof NodeRequestError && e.url ? `（${e.url}）` : ''
+  if (code === 'UNAUTHORIZED') return `同步节点鉴权失败${urlHint}：${hint || '请检查地址后的 |令牌 是否与 lm_node --control-token 一致。'}`
+  if (code === 'CORS_ORIGIN_NOT_ALLOWED' || code === 'ADMIN_LOOPBACK_ONLY') return `同步节点拒绝访问${urlHint}：${hint || '请检查 CORS 白名单、访问来源或 /admin/ loopback 限制。'}`
+  if (code === 'CONTROL_RATE_LIMITED' || code === 'MAILBOX_RATE_LIMITED') return `同步节点限流${urlHint}：${hint || '请求过于频繁，请稍后重试。'}`
+  if (code === 'MAILBOX_QUOTA_EXCEEDED' || code === 'DHT_RECORD_TOO_LARGE') return `同步节点拒绝大载荷${urlHint}：${hint || '请缩小内容或检查节点配额。'}`
+  if (code === 'API_NOT_FOUND' || code === 'WEB_ADMIN_NOT_CONFIGURED' || code === 'STATIC_FILE_NOT_FOUND') return `同步节点接口不存在${urlHint}：${hint || '请确认 lm_node 版本和 API 路径。'}`
+  if (code?.startsWith('DHT_RECORD_')) return `DHT 记录错误：${hint || raw}`
   if (raw.includes('WrongPassphrase')) return '提示词不正确，请重新输入。'
   if (raw.includes('invalid wasm backup')) return '身份文本格式不正确。'
   if (raw.includes('backup user_id mismatch')) return '身份文本校验失败。'
@@ -3392,12 +3400,16 @@ type NodeEntrySummary = { url: string; token_configured: boolean; missing_remote
 class NodeRequestError extends Error {
   status?: number
   url?: string
+  errorCode?: string
+  recoveryHint?: string
 
-  constructor(message: string, status?: number, url?: string) {
+  constructor(message: string, status?: number, url?: string, errorCode?: string, recoveryHint?: string) {
     super(message)
     this.name = 'NodeRequestError'
     this.status = status
     this.url = url
+    this.errorCode = errorCode
+    this.recoveryHint = recoveryHint
   }
 }
 
@@ -7116,7 +7128,18 @@ async function fetchNodeOnce(baseUrl: string, path: string, init?: RequestInit):
   const text = await res.text()
   let body: any = text
   try { body = text ? JSON.parse(text) : {} } catch {}
-  if (!res.ok) throw new NodeRequestError(typeof body === 'string' ? body : JSON.stringify(body), res.status, baseUrl)
+  if (!res.ok) {
+    if (body && typeof body === 'object' && !Array.isArray(body)) {
+      throw new NodeRequestError(
+        String(body.message ?? JSON.stringify(body)),
+        res.status,
+        baseUrl,
+        typeof body.error_code === 'string' ? body.error_code : undefined,
+        typeof body.recovery_hint === 'string' ? body.recovery_hint : undefined,
+      )
+    }
+    throw new NodeRequestError(typeof body === 'string' ? body : JSON.stringify(body), res.status, baseUrl)
+  }
   return body
 }
 

@@ -35,6 +35,36 @@ http://[fd00::1234]:8787|s3cr3t-token
 
 若使用 `--cors-allow-origin` 收紧来源，必须把 Web 或 node-admin 的 Origin 加入白名单。
 
+
+## 控制面错误响应
+
+新的节点控制面错误优先返回结构化 JSON：
+
+```json
+{
+  "error_code": "UNAUTHORIZED",
+  "message": "unauthorized",
+  "recovery_hint": "请检查 Bearer token 或同步服务地址后的 |令牌。"
+}
+```
+
+客户端应优先使用 `error_code` 分类，再回退到 HTTP 状态码和旧文本。常见错误码：
+
+| 错误码 | HTTP | 含义 | 建议处理 |
+| --- | --- | --- | --- |
+| `UNAUTHORIZED` | 401 | token 缺失或错误 | 检查 `--control-token` 和地址后的 `|令牌`。 |
+| `CORS_ORIGIN_NOT_ALLOWED` | 403 | Origin 不在白名单 | 更新 `--cors-allow-origin`。 |
+| `ADMIN_LOOPBACK_ONLY` | 403 | `/admin/` 非本机访问 | 使用本机浏览器或 SSH 隧道。 |
+| `CONTROL_RATE_LIMITED` | 429 | 控制面限流 | 稍后重试或调整限流配置。 |
+| `MAILBOX_RATE_LIMITED` | 429 | Mailbox push 限流 | 稍后重试或调整 Mailbox 限流。 |
+| `MAILBOX_QUOTA_EXCEEDED` | 413 | Mailbox 内容超过大小/配额 | 缩小内容、清理收件箱或调整配额。 |
+| `DHT_RECORD_TOO_LARGE` | 413 | DHT record 超过大小限制 | 缩小 DHT record。 |
+| `DHT_RECORD_EXPIRED` | 400 | DHT record 已过期 | 重新生成并发布。 |
+| `DHT_RECORD_TTL_TOO_LONG` | 400 | DHT TTL 超限 | 降低 TTL。 |
+| `API_NOT_FOUND` | 404 | API 路径不存在 | 检查节点版本和路径。 |
+| `WEB_ADMIN_NOT_CONFIGURED` | 404 | 未配置 `--web-admin` | 指向 `node_admin.zip` 或 `apps/node-admin/dist`。 |
+| `STATIC_FILE_NOT_FOUND` | 404 | `/admin/` 静态资源缺失 | 用 `NODE_ADMIN_BASE=/admin/` 重新构建。 |
+
 ## 跨设备部署
 
 ### 仅本机

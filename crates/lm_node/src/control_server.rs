@@ -475,7 +475,12 @@ pub(super) fn handle_stream(
             .map(|addr| addr.ip().is_loopback())
             .unwrap_or(false);
         if !is_loopback {
-            let response = ControlHttpResponse::text(403, "admin panel is loopback only");
+            let response = ControlHttpResponse::error(
+                403,
+                "ADMIN_LOOPBACK_ONLY",
+                "admin panel is loopback only",
+                "内嵌 /admin/ 只允许本机访问；远程运维请使用 SSH 隧道。",
+            );
             write_response(
                 stream,
                 &response,
@@ -502,14 +507,29 @@ pub(super) fn handle_stream(
 
     let origin = request.header("origin").map(str::to_string);
     let response = if !security.allows_origin(origin.as_deref()) {
-        ControlHttpResponse::text(403, "cors origin not allowed")
+        ControlHttpResponse::error(
+            403,
+            "CORS_ORIGIN_NOT_ALLOWED",
+            "cors origin not allowed",
+            "请把当前 Web/node-admin 来源加入 lm_node --cors-allow-origin。",
+        )
     } else if !request_is_within_rate_limit(&request, peer_addr.as_ref(), rate_limiter, rate_limit)
     {
-        ControlHttpResponse::text(429, "rate limit exceeded")
+        ControlHttpResponse::error(
+            429,
+            "CONTROL_RATE_LIMITED",
+            "rate limit exceeded",
+            "控制面请求过于频繁，请稍后重试或调整节点限流。",
+        )
     } else if request.method == "OPTIONS" {
         ControlHttpResponse::from_control(node.handle_control_request(request))
     } else if !request_is_authorized(&request, security, peer_addr.as_ref()) {
-        ControlHttpResponse::text(401, "unauthorized")
+        ControlHttpResponse::error(
+            401,
+            "UNAUTHORIZED",
+            "unauthorized",
+            "请检查 Bearer token 或同步服务地址后的 |令牌。",
+        )
     } else if request.method == "GET" && request.path.starts_with("/api/control/stats") {
         node.prune_expired_records();
         ControlHttpResponse::json(
@@ -1032,6 +1052,13 @@ pub(super) fn parse_content_length_and_validate_headers(
     Ok(content_length.unwrap_or(0))
 }
 
+#[derive(Debug, Serialize)]
+struct ControlHttpErrorBody<'a> {
+    error_code: &'a str,
+    message: String,
+    recovery_hint: &'a str,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ControlHttpResponse {
     pub(crate) status: u16,
@@ -1075,6 +1102,22 @@ impl ControlHttpResponse {
         }
     }
 
+    pub(super) fn error(
+        status: u16,
+        error_code: &'static str,
+        message: impl Into<String>,
+        recovery_hint: &'static str,
+    ) -> Self {
+        Self::json(
+            status,
+            &ControlHttpErrorBody {
+                error_code,
+                message: message.into(),
+                recovery_hint,
+            },
+        )
+    }
+
     pub(super) fn to_http_string(&self, access_control_origin: &str) -> String {
         let reason = match self.status {
             200 => "OK",
@@ -1106,7 +1149,12 @@ pub(super) fn find_header_end(buffer: &[u8]) -> Option<usize> {
 
 fn serve_admin_file(admin_path: Option<&str>, request_path: &str) -> ControlHttpResponse {
     let Some(base) = admin_path else {
-        return ControlHttpResponse::text(404, "web admin not configured (use --web-admin)");
+        return ControlHttpResponse::error(
+            404,
+            "WEB_ADMIN_NOT_CONFIGURED",
+            "web admin not configured (use --web-admin)",
+            "请用 --web-admin 指向 node_admin.zip 或 apps/node-admin/dist。",
+        );
     };
     let rel_path = request_path
         .strip_prefix("/admin")
@@ -1114,7 +1162,12 @@ fn serve_admin_file(admin_path: Option<&str>, request_path: &str) -> ControlHttp
         .trim_start_matches('/');
     let clean = rel_path.split('?').next().unwrap_or(rel_path);
     if clean.contains("..") {
-        return ControlHttpResponse::text(400, "invalid path");
+        return ControlHttpResponse::error(
+            400,
+            "INVALID_PATH",
+            "invalid path",
+            "请求路径非法，请不要包含 ..。",
+        );
     }
     let inner = if clean.is_empty() {
         "index.html".to_string()
@@ -1132,7 +1185,12 @@ fn serve_admin_file(admin_path: Option<&str>, request_path: &str) -> ControlHttp
             content_type: mime_for_path(&inner).to_string(),
             body: String::from_utf8_lossy(&bytes).into_owned(),
         },
-        None => ControlHttpResponse::text(404, "not found"),
+        None => ControlHttpResponse::error(
+            404,
+            "STATIC_FILE_NOT_FOUND",
+            "not found",
+            "请确认 node-admin 是用 NODE_ADMIN_BASE=/admin/ 构建，并访问 /admin/。",
+        ),
     }
 }
 

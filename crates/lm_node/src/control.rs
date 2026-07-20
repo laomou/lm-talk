@@ -8,7 +8,7 @@ use crate::{
     current_unix_timestamp, decode_identity_public_key_base64, dht_record_reject_reason, from_hex,
     prekey_low_one_time_prekeys, prekey_replenishment_required,
 };
-use lm_core::{MailboxMessage, PreKeyBundle, SignedOneTimePreKeyRecord, UserId};
+use lm_core::{LmError, MailboxMessage, PreKeyBundle, SignedOneTimePreKeyRecord, UserId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -28,6 +28,13 @@ impl ControlRequest {
             .find(|(header_name, _)| header_name.eq_ignore_ascii_case(&name))
             .map(|(_, value)| value.as_str())
     }
+}
+
+#[derive(Debug, Serialize)]
+struct ControlErrorBody<'a> {
+    error_code: &'a str,
+    message: String,
+    recovery_hint: &'a str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,13 +64,33 @@ impl ControlResponse {
         }
     }
 
+    pub fn error(
+        status: u16,
+        error_code: &'static str,
+        message: impl Into<String>,
+        recovery_hint: &'static str,
+    ) -> Self {
+        Self::json(
+            status,
+            &ControlErrorBody {
+                error_code,
+                message: message.into(),
+                recovery_hint,
+            },
+        )
+    }
+
     pub fn to_http_string(&self) -> String {
         let reason = match self.status {
             200 => "OK",
             201 => "Created",
             400 => "Bad Request",
+            401 => "Unauthorized",
+            403 => "Forbidden",
             404 => "Not Found",
             405 => "Method Not Allowed",
+            413 => "Payload Too Large",
+            429 => "Too Many Requests",
             500 => "Internal Server Error",
             _ => "OK",
         };
@@ -396,8 +423,18 @@ impl NativeNode {
                 | "/api/sync/status"
                 | "/api/sync/peer/reset"
                 | "/api/sync/import",
-            ) => ControlResponse::text(405, "method not allowed"),
-            _ => ControlResponse::text(404, "not found"),
+            ) => ControlResponse::error(
+                405,
+                "METHOD_NOT_ALLOWED",
+                "method not allowed",
+                "请检查 HTTP 方法是否匹配该 API。",
+            ),
+            _ => ControlResponse::error(
+                404,
+                "API_NOT_FOUND",
+                "not found",
+                "请确认 lm_node 版本和 API 路径。",
+            ),
         }
     }
 
@@ -493,14 +530,24 @@ impl NativeNode {
             .allows(now, global_rate_limit)
         {
             self.record_mailbox_push_reject(MailboxPushRejectReason::GlobalRateLimited);
-            return ControlResponse::text(429, "mailbox global rate limit exceeded");
+            return ControlResponse::error(
+                429,
+                "MAILBOX_RATE_LIMITED",
+                "mailbox global rate limit exceeded",
+                "请求过于频繁，请稍后重试；必要时调整节点 mailbox 全局限流。",
+            );
         }
         if !self
             .mailbox_sender_rate_limiter
             .allows(&message.from_user_id, now, sender_rate_limit)
         {
             self.record_mailbox_push_reject(MailboxPushRejectReason::SenderRateLimited);
-            return ControlResponse::text(429, "mailbox sender rate limit exceeded");
+            return ControlResponse::error(
+                429,
+                "MAILBOX_RATE_LIMITED",
+                "mailbox sender rate limit exceeded",
+                "该发送者请求过于频繁，请稍后重试；必要时调整节点按发送者限流。",
+            );
         }
         let delivery_id = match self.mailbox.push_verified_with_limits(
             message.clone(),
@@ -513,6 +560,14 @@ impl NativeNode {
             Ok(delivery_id) => delivery_id,
             Err(e) => {
                 self.record_mailbox_push_reject(MailboxPushRejectReason::from(e.clone()));
+                if e == LmError::PayloadTooLarge {
+                    return ControlResponse::error(
+                        413,
+                        "MAILBOX_QUOTA_EXCEEDED",
+                        e.to_string(),
+                        "Mailbox 内容超过节点大小或配额限制，请缩小内容、清理收件箱或调整节点配额。",
+                    );
+                }
                 return ControlResponse::text(400, e.to_string());
             }
         };
@@ -822,14 +877,30 @@ impl NativeNode {
         if let Some(reason) = dht_record_reject_reason(&req.record, now) {
             self.record_dht_record_reject(reason);
             return match reason {
-                DhtRecordRejectReason::PayloadTooLarge => {
-                    ControlResponse::text(413, "dht record value too large")
-                }
-                DhtRecordRejectReason::Expired => ControlResponse::text(400, "dht record expired"),
-                DhtRecordRejectReason::TtlTooLong => {
-                    ControlResponse::text(400, "dht record ttl too long")
-                }
-                _ => ControlResponse::text(400, "invalid dht record"),
+                DhtRecordRejectReason::PayloadTooLarge => ControlResponse::error(
+                    413,
+                    "DHT_RECORD_TOO_LARGE",
+                    "dht record value too large",
+                    "DHT record 超过节点大小限制，请缩小记录内容。",
+                ),
+                DhtRecordRejectReason::Expired => ControlResponse::error(
+                    400,
+                    "DHT_RECORD_EXPIRED",
+                    "dht record expired",
+                    "请重新生成并发布未过期的 DHT record。",
+                ),
+                DhtRecordRejectReason::TtlTooLong => ControlResponse::error(
+                    400,
+                    "DHT_RECORD_TTL_TOO_LONG",
+                    "dht record ttl too long",
+                    "请降低 DHT record TTL 后重试。",
+                ),
+                _ => ControlResponse::error(
+                    400,
+                    "DHT_RECORD_INVALID",
+                    "invalid dht record",
+                    "请检查 DHT record 的 kind、key、签名和 value。",
+                ),
             };
         }
         let key = req.record.key.to_hex();

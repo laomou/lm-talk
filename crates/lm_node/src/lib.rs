@@ -2506,8 +2506,9 @@ mod tests {
             .to_string(),
             headers: Vec::new(),
         });
-        assert_eq!(response.status, 400);
-        assert!(response.body.contains("payload too large"));
+        assert_eq!(response.status, 413);
+        assert!(response.body.contains("MAILBOX_QUOTA_EXCEEDED"));
+        assert!(response.body.contains("recovery_hint"));
         assert_eq!(node.mailbox.pending_for(bob.user_id()), 0);
         assert_eq!(node.maintenance.mailbox_push_rejects.payload_too_large, 1);
     }
@@ -2541,6 +2542,12 @@ mod tests {
                 headers: Vec::new(),
             });
             assert_eq!(response.status, expected_status, "{}", response.body);
+            if expected_status == 429 {
+                assert!(response.body.contains("MAILBOX_RATE_LIMITED"));
+            }
+            if expected_status == 429 {
+                assert!(response.body.contains("MAILBOX_RATE_LIMITED"));
+            }
         }
         assert_eq!(node.mailbox.pending_for(bob.user_id()), 1);
         assert_eq!(node.maintenance.mailbox_push_rejects.sender_rate_limited, 1);
@@ -3103,7 +3110,12 @@ mod tests {
             headers: Vec::new(),
         });
         assert_eq!(response.status, 400);
-        assert!(response.body.contains("payload too large"));
+        assert!(
+            response
+                .body
+                .to_ascii_lowercase()
+                .contains("payload too large")
+        );
         assert!(node.prekeys.get_for_unchecked(alice.user_id()).is_none());
     }
 
