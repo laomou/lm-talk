@@ -48,6 +48,7 @@
 - [x] node-admin 已增加 federation peer health 总览。
 - [ ] `/control/stats` 中聚合更清晰的 Mailbox/DHT 摘要。
 - [x] Docker federation 失败时自动打印报告、容器状态和日志尾部。
+- [x] 补充开发/运维工作流文档，收敛常用命令入口。
 - [ ] 部署文档继续减少过时参数和重复内容。
 
 ### 5. 文档中文化和去重

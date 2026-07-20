@@ -10,6 +10,7 @@
 | [MVP_PLAN.md](overview/MVP_PLAN.md) | MVP 能力轨道、阶段目标和长期增强方向。 |
 | [PRODUCTION_READINESS.md](overview/PRODUCTION_READINESS.md) | 当前功能就绪看板和剩余打磨项。 |
 | [TODO.md](overview/TODO.md) | 当前仍需继续设计或实现的事项。 |
+| [DEV_WORKFLOW.md](overview/DEV_WORKFLOW.md) | 本地开发、验证、节点运行和常用脚本。 |
 
 ## 协议规格
 
