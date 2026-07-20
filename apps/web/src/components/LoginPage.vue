@@ -170,9 +170,14 @@ function resetRegister() {
       <section v-else-if="props.mode === 'register'" class="auth-panel register-page">
         <div v-if="registeredIdentity" class="registered-result">
           <h2>注册成功</h2>
-          <p>身份已保存在本机，也建议下载一份身份文件。</p>
+          <p>身份已保存在本机。请先完成备份，再返回登录。</p>
           <small>{{ registeredIdentity.display_name }} · {{ registeredIdentity.user_id }}</small>
-          <p class="backup-warning">请同时保存身份文件和提示词；任意一项丢失都无法恢复这个身份。</p>
+          <ol class="onboarding-list">
+            <li>下载或复制身份文件。</li>
+            <li>把提示词保存在密码管理器或离线安全位置。</li>
+            <li>可选：点击“验证导入”确认备份可恢复。</li>
+          </ol>
+          <p class="backup-warning">身份文件和提示词缺一不可；任意一项丢失都无法恢复这个身份。</p>
           <div v-if="registeredBackupChecksum" class="backup-checksum">
             <span>备份校验码</span>
             <b>{{ registeredBackupChecksum }}</b>
