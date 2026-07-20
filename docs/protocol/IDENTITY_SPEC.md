@@ -1,18 +1,32 @@
-# LM Talk 身份规格 v1
+# 身份规格 v1
 
-身份由 32 字节的 `identity_seed` 派生。
+LM Talk 身份由 32 字节 `identity_seed` 派生。身份是用户长期信任根，不能由节点托管或恢复。
 
-- Ed25519 身份签名密钥：HKDF(identity_seed, `lm-talk.identity.ed25519.v1`)。
-- X25519 静态密钥：HKDF(identity_seed, `lm-talk.identity.x25519.v1`)。
-- UserID：`lm1_` 加 Ed25519 公钥的稳定 base32/blake3 摘要。
-- 本地存储密钥：HKDF(identity_seed, storage context)，只用于本地加密状态。
+## 派生内容
 
-提示词在任何备份密钥派生前都必须归一化，包括标准 native/core Argon2id 备份格式和浏览器 WASM `wasm-local` 兼容备份格式：
+| 项目 | 说明 |
+| --- | --- |
+| Ed25519 身份签名密钥 | 用于签名 ContactCard、好友请求、设备证书、PreKey、回执等对象。 |
+| X25519 静态公钥 | 兼容 DirectEnvelope / X3DH 相关路径。 |
+| User ID | 以 `lm1_` 开头，由身份公钥稳定派生。 |
+| 本地存储密钥 | 仅用于 Web 本地数据加密，不作为网络协议对象。 |
 
-1. Unicode NFKC.
+## 提示词归一化
+
+任何备份密钥派生前都必须归一化提示词：
+
+1. Unicode NFKC。
 2. 去除首尾空白。
-3. 将全角空格转换为 ASCII 空格。
-4. 将连续空白折叠为一个 ASCII 空格。
+3. 全角空格转 ASCII 空格。
+4. 连续空白折叠为一个 ASCII 空格。
 5. 不静默删除正常用户字符。
 
-测试向量见 `test-vectors/identity_v1.json`。
+该规则同时适用于标准 native/core 备份格式和浏览器 WASM 兼容备份格式。
+
+## 验证要求
+
+- 恢复身份后必须重新计算 User ID，并与备份内记录一致。
+- 任何签名对象都必须拒绝 User ID 与身份公钥不匹配的情况。
+- UI 不应上传提示词、identity seed 或身份私钥。
+
+测试向量：`test-vectors/identity_v1.json`。

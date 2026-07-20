@@ -1,14 +1,37 @@
-# LM Talk 联系人规格 v1
+# 联系人规格 v1
 
-联系人名片是带签名的身份声明：
+联系人名片是签名身份声明：
 
 ```text
 lm-contact-card-v1:<base64url-json>
 ```
 
-签名字段包括 UserID、显示名、身份公钥、X25519 公钥、设备证书、创建时间和可选过期时间。只有当 `user_id` 和 `identity_public_key` 与现有联系人一致时，客户端才可以更新显示名和设备证书。禁止静默替换身份密钥。
+## 字段边界
 
-信任等级：Imported、LinkImported、QrScanned、FingerprintVerified。
-指纹展示使用由 BLAKE3 派生的短十六进制码。
+签名字段包含：
 
-测试向量见 `test-vectors/contact_card_v1.json`。
+- User ID
+- 显示名
+- 身份公钥
+- X25519 公钥
+- 设备证书列表
+- 创建时间
+- 可选过期时间
+
+客户端只能在 `user_id` 和 `identity_public_key` 与现有联系人一致时合并更新。不得静默替换身份公钥。
+
+## 本地信任状态
+
+以下状态属于本地信任决策，远端 ContactCard 更新不能覆盖：
+
+- 指纹已核验时间和备注；
+- 拉黑状态；
+- 已读回执策略；
+- 设备撤销列表；
+- 本地 strict E2EE 安全策略。
+
+## 指纹
+
+联系人指纹用于人工核验。展示格式由身份公钥派生，UI 可以显示短码、二维码或复制文本。只有用户通过可信渠道确认后，才应标记为已核验。
+
+测试向量：`test-vectors/contact_card_v1.json`。

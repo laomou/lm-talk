@@ -1,57 +1,75 @@
-# LM Talk 网络规格 v1
+# 网络规格 v1
 
-网络能力是可选的，并采用 best-effort 语义。
+LM Talk 网络能力是可选的，采用 best-effort 语义。节点不接触消息或文件明文。
 
-- 在线直连优先使用 WebRTC DataChannel。
-- 离线投递通过已配置的 `lm_node` 控制面使用 Mailbox。
-- Outbox 重试使用指数退避：30s、2m、10m、1h、6h；默认过期时间为 7 天。
-- Snapshot sync 可以从对端节点拉取 `/sync/snapshot` 并导入本地。
-- DHT RPC 当前有 HTTP control-plane 和 libp2p request-response 两条实验性传输路径。
+## 投递路径
 
-当前节点网络可支撑控制面同步、Mailbox、PreKey 和实验性 libp2p DHT RPC；它仍不是生产级 DHT/relay 网络。
+| 路径 | 说明 |
+| --- | --- |
+| WebRTC DataChannel | 在线直连优先路径。 |
+| Mailbox | 离线投递路径，载荷为端到端密文或签名控制对象。 |
+| Outbox | 本地重试队列，使用指数退避。 |
+| DHT | 发现 ContactCard、PreKey、MailboxHint、PublicPeer。 |
+| Snapshot sync | 节点之间同步 Mailbox/DHT/PreKey 等运营状态。 |
 
-## 控制面鉴权模型
+Outbox 默认退避：30 秒、2 分钟、10 分钟、1 小时、6 小时，默认 7 天过期。
 
-节点对除 `GET /health` 外的所有接口做鉴权（`main.rs: request_is_authorized`）：
+## 控制面鉴权
 
-- **未配置 `--control-token`** → 仅允许 **loopback（127.0.0.1）** 客户端调用，其余来源一律 `401`。
-- **配置了 `--control-token`** → 必须携带 `Authorization: Bearer <token>`（常量时间比较）。
+除 `/health` 外，节点控制面都需要安全边界：
 
-网页端在「我 → 消息同步 → 同步服务」里，每行填 `URL` 或 `URL|令牌`：
+- 未配置 control token：只允许 loopback 客户端访问。
+- 配置 control token：必须携带 `Authorization: Bearer <token>`。
 
-```
+Web 同步服务输入格式：
+
+```text
 http://127.0.0.1:8787
 http://192.168.1.23:8787|s3cr3t-token
 http://[fd00::1234]:8787|s3cr3t-token
 ```
 
-> `/health` 免鉴权，会掩盖令牌问题；网页的"同步状态"会额外探测 `GET /sync/status`，鉴权失败时明确提示 `401`，不再误报"已连接"。
+`/health` 免鉴权，因此 Web 还会探测需要鉴权的接口，以便明确提示 401。
 
-CORS：默认允许所有来源（返回 `*`）。若用 `--cors-allow-origin` 收紧，必须把网页来源（如 `http://192.168.1.23:5173`）列入，否则浏览器会拦截。
+## CORS
 
-## 跨设备最小部署
+若使用 `--cors-allow-origin` 收紧来源，必须把 Web 或 node-admin 的 Origin 加入白名单。
 
-### A. 仅本机
+## 跨设备部署
+
+### 仅本机
+
+```bash
+lm_node serve-control
 ```
-./scripts/dev-run.sh node --local        # 绑定 127.0.0.1:8787，无需令牌
-```
-网页填 `http://127.0.0.1:8787`。
 
-### B. 同一局域网、多设备
+Web 填：
+
+```text
+http://127.0.0.1:8787
 ```
-# 生成一个令牌
+
+### 局域网
+
+```bash
 openssl rand -hex 16 > node.token
-./scripts/dev-run.sh node --lan --control-token-file node.token
+lm_node serve-control --bind 0.0.0.0:8787 --control-token-file node.token
 ```
-其它设备网页填 `http://<局域网IP>:8787|<令牌>`。
-（`--lan` 不带令牌时，别的设备只有 `/health` 能通，收发消息会 `401`。）
 
-### C. 无公网 IP、异地 → Tailscale/ZeroTier
-1. 各设备装 Tailscale，登录同一账号；
-2. 任一台跑 `./scripts/dev-run.sh node --lan --control-token-file node.token`；
-3. 双方网页填 `http://<该设备的100.x.x.x>:8787|<令牌>`。
+其他设备填：
 
-### D. 有公网可达地址 → VPS
-在 VPS 上跑 B 的命令，双方填 `http://<vps-ip>:8787|<令牌>`。可用 `--sync-peer` 让多个节点互相拉取 `/sync/snapshot` 联邦同步。
+```text
+http://<局域网IP>:8787|<令牌>
+```
 
-> 以上均为文字/离线消息路径（mailbox）。音视频/文件直连另走 WebRTC，需要 STUN/TURN（见 `RTCPeerConnection` 的 `iceServers`）。
+### 异地无公网 IP
+
+可使用 Tailscale / ZeroTier，将节点地址填为虚拟网 IP。
+
+### VPS / 公网
+
+建议使用反向代理提供 HTTPS，并配置 control token 与 CORS 白名单。多个节点可通过 `sync_peers` 互相同步。
+
+## 当前边界
+
+节点网络可支撑 demo 和本地 federation 测试；当前目标不要求长期公网运行报告。
