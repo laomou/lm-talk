@@ -504,7 +504,7 @@ test('同步服务请求超时会失败并提示切换服务', async ({ page }) 
   await page.evaluate(() => { (window as any).nodeFetchTimeoutMsForTests = 100 })
   await enableSync(page)
   await page.getByRole('button', { name: '立即同步' }).click({ force: true })
-  await expect(page.getByText('同步服务请求超时，请稍后重试或切换同步服务。')).toBeVisible()
+  await expect(page.getByText(/同步服务请求超时.*切换同步服务/)).toBeVisible()
 })
 
 test('浏览器注册使用 Web RNG 生成不同身份', async ({ page }) => {

@@ -1621,16 +1621,28 @@ function selectedLocalIdentity(): LocalIdentityRecord | undefined {
   return localIdentities.value.find((x) => x.id === selectedLocalIdentityId.value) ?? localIdentities.value[0]
 }
 
+function normalizeErrorText(e: unknown): string {
+  return String(e).replace(/^Error:\s*/, '').replace(/^NodeRequestError:\s*/, '')
+}
+
 function userFacingError(e: unknown): string {
-  const raw = String(e)
+  const raw = normalizeErrorText(e)
+  const status = e instanceof NodeRequestError ? e.status : undefined
+  const urlHint = e instanceof NodeRequestError && e.url ? `（${e.url}）` : ''
   if (raw.includes('WrongPassphrase')) return '提示词不正确，请重新输入。'
   if (raw.includes('invalid wasm backup')) return '身份文本格式不正确。'
   if (raw.includes('backup user_id mismatch')) return '身份文本校验失败。'
   if (raw.includes('请粘贴身份文本')) return '请粘贴身份文本。'
   if (raw.includes('请输入提示词')) return '请输入提示词。'
-  if (raw.includes('AbortError') || raw.includes('同步服务请求超时')) return '同步服务请求超时，请稍后重试或切换同步服务。'
-  if (raw.includes('Failed to fetch')) return '无法连接同步服务。请确认 lm_node 已启动；如果在 GitHub Pages 上连接 127.0.0.1 或局域网 IP，请确认 lm_node 已启动、地址可访问，并使用最新 lm_node（已支持浏览器 HTTPS 访问本机/局域网服务所需的权限头）。IPv6 地址请写成 http://[fd00::1234]:8787 这种带方括号的形式。'
-  return raw.replace(/^Error:\s*/, '')
+  if (status === 401 || /unauthorized/i.test(raw)) return `同步节点鉴权失败${urlHint}：请检查地址后的 |令牌 是否与 lm_node --control-token 一致。`
+  if (status === 403 || /cors origin not allowed|forbidden/i.test(raw)) return `同步节点拒绝访问${urlHint}：请检查 CORS 白名单、访问来源或 /admin/ loopback 限制。`
+  if (status === 429 || /rate limit|too many requests|请求过于频繁/i.test(raw)) return `同步节点限流${urlHint}：请求过于频繁，请稍后重试；必要时调整节点限流配置。`
+  if (status === 413 || /too large|payload too large|载荷过大|配额/i.test(raw)) return `同步节点拒绝大载荷${urlHint}：消息、附件或 Mailbox 数据超过限制，请缩小内容或检查节点配额。`
+  if (status === 404 || /not found|DHT 未找到记录/i.test(raw)) return /DHT|record/i.test(raw) ? 'DHT 未找到记录：请确认对方已发布对应 ContactCard/PreKey/MailboxHint，并稍后重试。' : `同步节点接口不存在${urlHint}：请确认 lm_node 版本和 API 路径。`
+  if (typeof status === 'number' && status >= 500) return `同步节点内部错误${urlHint}：请稍后重试或查看 lm_node 日志。`
+  if (raw.includes('AbortError') || raw.includes('同步服务请求超时')) return `同步服务请求超时${urlHint}：请稍后重试或切换同步服务。`
+  if (raw.includes('Failed to fetch') || raw.includes('无法连接节点') || raw.includes('无法连接同步服务')) return `无法连接同步服务${urlHint}：请确认 lm_node 已启动、地址可访问，HTTPS 页面不要直接连接未代理的 HTTP 节点；IPv6 地址请写成 http://[fd00::1234]:8787。`
+  return raw
 }
 
 function run(label: string, fn: () => void) {

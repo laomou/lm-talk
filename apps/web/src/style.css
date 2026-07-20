@@ -777,3 +777,72 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .bubble { max-width: 86%; }
   .me-page { padding: var(--sp-5) var(--sp-4); }
 }
+
+@media (max-width: 640px) {
+  .app-shell { grid-template-rows: minmax(0, 1fr) 56px; }
+  .rail-item span { font-size: 10px; }
+  .rail-item svg { width: 20px; height: 20px; }
+
+  .chat-shell,
+  .contacts-shell { grid-template-rows: minmax(0, 34vh) minmax(0, 1fr); }
+  .list-col-header { min-height: 48px; padding: var(--sp-3); }
+  .list-col-search { padding: var(--sp-2); display: grid; gap: var(--sp-2); }
+  .list-col-search select,
+  .list-col-search button { width: 100%; }
+  .conversation-list { padding: var(--sp-1) 0; }
+  .contact { grid-template-columns: 34px minmax(0, 1fr); gap: var(--sp-2); padding: 8px var(--sp-3); }
+  .contact .avatar { width: 34px; height: 34px; font-size: 14px; }
+  .contact-main small { max-width: 100%; }
+
+  .chat-header { align-items: flex-start; flex-direction: column; padding: var(--sp-2) var(--sp-3); gap: var(--sp-2); }
+  .chat-title-block { width: 100%; }
+  .chat-title-block small { display: none; }
+  .chat-title-block small:nth-of-type(-n+2),
+  .chat-title-block small.danger-text,
+  .chat-title-block small.outbox-error { display: block; }
+  .chat-header-actions { width: 100%; overflow-x: auto; padding-bottom: 2px; align-items: center; }
+  .chat-header-actions input { min-width: 150px; max-width: none; flex: 1 0 150px; }
+  .chat-header-actions button,
+  .chat-header-actions .identity-select { flex: 0 0 auto; }
+  .outbox-error { max-width: 100%; white-space: normal; }
+  .chat-notice-panel { padding: var(--sp-2) var(--sp-3); align-items: flex-start; }
+  .messages { padding: var(--sp-3); }
+  .bubble { max-width: 94%; padding: 8px 10px; margin-bottom: var(--sp-3); }
+  .bubble-meta { line-height: 1.45; }
+
+  .composer { grid-template-columns: 1fr; padding: var(--sp-2) var(--sp-3); gap: var(--sp-2); }
+  .composer textarea { min-height: 56px; }
+  .composer > button { width: 100%; min-width: 0; }
+  .attachment-row { grid-template-columns: 1fr; }
+  .attachment-row button,
+  .attachment-row input,
+  .file-transfer-phase { width: 100%; justify-self: stretch; }
+  .selected-file-card,
+  .received-file-card { grid-template-columns: auto minmax(0, 1fr); }
+  .received-file-card a,
+  .received-file-card button { grid-column: 1 / -1; grid-row: auto; justify-self: stretch; text-align: center; }
+
+  .detail-bar { min-height: 48px; padding: var(--sp-3); }
+  .detail-hero { padding: var(--sp-4); align-items: flex-start; }
+  .detail-body { padding: var(--sp-3); gap: var(--sp-3); max-width: none; }
+  .home-card { padding: var(--sp-4); }
+  .section-title-row { align-items: flex-start; flex-direction: column; }
+  .section-title-row .row { width: 100%; }
+  .row.compact button { flex: 1 1 auto; }
+  .inline-field { grid-template-columns: 1fr; }
+
+  .me-page,
+  .debug-page { padding: var(--sp-3); }
+  .me-inner,
+  .debug-inner { max-width: none; gap: var(--sp-3); }
+  .me-hero { grid-template-columns: auto minmax(0, 1fr); padding: var(--sp-4); }
+  .me-hero-actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+  .me-hero-actions button { min-width: 0; }
+  .debug-header { flex-direction: column; padding: var(--sp-4); }
+  .debug-header button { width: 100%; }
+  .diagnostic-overview { grid-template-columns: 1fr; gap: var(--sp-2); }
+  .dialog-mask,
+  .qr-mask { padding: var(--sp-3); }
+  .dialog-card,
+  .qr-modal { padding: var(--sp-4); }
+}
