@@ -1,85 +1,87 @@
 # 发布检查清单
 
-本检查清单是 LM Talk 发布候选版本的当前门禁。通过它是进入生产发布的必要条件，但不是充分条件：项目仍需完成生产级 DHT/relay 验证、长时 fuzz 活动、网络混沌/负载测试和外部安全审计，方可声称已达到生产就绪。
+本文记录 LM Talk 当前功能目标下的发布检查步骤。当前目标不再把第三方审计、长时间 fuzz、公网长期报告、macOS 公证、Windows 签名和风险登记签核作为阻塞项；这些内容保留为可选的生产发行增强。
 
-## 自动门禁
+## 必跑检查
 
-从仓库根目录运行发布检查。GitHub Actions `CI` 工作流会在推送和拉取请求时运行 `./scripts/release-check.sh quick`，因此该门禁也在远程环境中强制执行：
+从仓库根目录运行：
 
 ```bash
 ./scripts/release-check.sh quick
 ```
 
-依赖漏洞检查应单独运行（GitHub Actions 中的 `dependency-audit` 任务在推送和拉取请求时执行；`dependency-review` 也会检查拉取请求中的依赖差异）：
+该命令覆盖：
 
-```bash
-./scripts/check-audit.sh
-```
+- `cargo fmt --check`
+- `lm_core` 单元测试、端到端测试、属性测试和测试向量
+- `lm_node` 库测试和二进制测试
+- 节点 HTTP 控制面端到端测试
+- fuzz harness 编译检查
+- Web 类型检查、生产构建和 Playwright 端到端测试
 
-在生产签核前，运行风险登记门禁。该门禁故意不包含在快速 CI 中，因为开发阶段允许存在未决风险，但它对生产发布来说是一个否决门禁：
-
-```bash
-./scripts/release-risk-gate.sh
-```
-
-`./scripts/check-audit.sh` 中当前的审计例外范围很窄：`hickory-proto` 的 advisory 被忽略，是因为它来自未启用的可选 `libp2p` DNS/mDNS 依赖元数据，而 LM Talk 仅启用 TCP/noise/yamux/request-response；`paste` 被忽略，是因为它是通过 `libp2p-tcp` 间接引入的 Linux netlink proc-macro 警告。每当 `libp2p` 升级或启用 DNS/mDNS 功能时，必须重新评估这些例外。
-
-对于一个更慢但包含完整 Cargo 工作区测试套件的本地门禁：
+如需更完整的本地检查：
 
 ```bash
 ./scripts/release-check.sh full
 ```
 
-要额外执行每个 fuzz harness 的短时 smoke 运行：
+如需短时 fuzz smoke：
 
 ```bash
 ./scripts/release-check.sh fuzz-smoke
 ```
 
-该脚本当前覆盖：
+## 依赖检查
 
-- Rust 格式检查（`cargo fmt --check`）。
-- `lm_core` 的单元测试/端到端测试/属性测试/测试向量覆盖。
-- `lm_node` 库和二进制测试。
-- 节点端到端流程，包括 HTTP 控制面和 Mailbox 压力/故障恢复。
-- fuzz harness 编译检查：`core_imports`、`node_dht_rpc`、`node_control_request`；`fuzz-smoke` 模式还会短暂启动每个目标。
-- Web 类型检查、生产构建和 Playwright 端到端测试。
+依赖审计命令：
 
-## 基于标签的原生节点产物
+```bash
+./scripts/check-audit.sh
+```
 
-当推送匹配 `v*` 的 Git 标签，或手动触发具有标签名的工作流时，`.github/workflows/release-node.yml` 会构建发布原生 `lm_node` 二进制包。工作流会构建并发布：
+当前审计例外仅用于已知不可达或低相关的传递依赖路径。升级 `libp2p`、启用新特性或新增网络解析路径时，应重新检查这些例外。
+
+## Docker / federation 功能测试
+
+三节点 federation 模板位于：
+
+```text
+deploy/lm-node-federation/
+```
+
+完整 smoke / chaos / load：
+
+```bash
+LM_NODE_FEDERATION_REPORT=/tmp/lm-federation-report.json \
+  deploy/lm-node-federation/run-all.sh
+```
+
+该测试会验证：
+
+- 三个节点 `/health` 与 `/control/stats`
+- ContactCard DHT 发布与查找
+- Mailbox push/take
+- snapshot export/import
+- node outage 后恢复
+- 短 burst Mailbox 负载
+
+## 原生节点产物
+
+推送 `v*` 标签时，`.github/workflows/release-node.yml` 会构建：
 
 - `lm_node-linux-x86_64.tar.gz`
 - `lm_node-macos-x86_64.tar.gz`
 - `lm_node-macos-arm64.tar.gz`
 - `lm_node-windows-x86_64.zip`
 
-每个归档都包含 `lm_node` 二进制、关键部署/安全文档和 `RELEASE_INFO.txt`，其中记录源码提交、构建时间、Rust 工具链详情和二进制 SHA256。GitHub Release 还包括每个产物的 `.sha256` 文件和合并的 `SHA256SUMS.txt`。
+每个包应包含：
 
-发布工作流完成后，在分享标签前验证已发布产物：
+- `lm_node` 二进制
+- 关键部署文档
+- `RELEASE_INFO.txt`
+- `.sha256`
 
-```bash
-./scripts/release-verify.sh v0.1.0
-```
-
-该命令会下载发布产物，验证 `SHA256SUMS.txt`，并验证每个平台的 `.sha256` 文件。
-
-若要将已发布产物验证纳入自动化证据包：
-
-```bash
-RUN_RELEASE_ASSET_VERIFY=1 RELEASE_TAG_VERIFY=v0.1.0 RELEASE_VERSION=v0.1.0 ./scripts/release-preprod.sh
-```
-
-证据采集器会将 `release-asset-verify-report.json` 与常规的 release-check、fuzz、联邦和风险登记门禁报告一起归档。
-
-从当前提交剪切发布候选版本：
-
-```bash
-git tag -a v0.1.0 -m "LM Talk node v0.1.0"
-git push origin v0.1.0
-```
-
-在 Linux 上构建目标后进行本地 artifact smoke 检查：
+本地打包示例：
 
 ```bash
 cargo build --locked --release -p lm_node --target x86_64-unknown-linux-gnu
@@ -89,39 +91,54 @@ python3 scripts/release-package.py \
   --out-dir dist
 ```
 
-当前信任告警：自动化产物尚未获得 macOS notarization 或 Windows 代码签名。在生产信任发布渠道之前，应视签名/公证为必需。
+验证已发布 tag：
 
-## 仍未完成的人工发布阻塞项
+```bash
+./scripts/release-verify.sh v0.1.0
+```
 
-在这些项未明确完成并提供证据前，不应将项目标记为生产就绪：
+## 可选生产发行增强
 
-- 生产级 DHT/Kademlia 路由/查询稳健性和公开部署模型。
-- Relay/TURN 替代方案不可成为硬性中心依赖的策略。
-- 具有已保存语料库和崩溃分类的长时 fuzz 活动，超出 harness 编译检查。
-- 真实网络混沌/负载测试：延迟、丢包、重连、畸形/恶意节点、持续 Mailbox/DHT 负载。
-- 对核心密码学、Web/WASM 绑定、节点控制面和部署指南的外部安全审计。
-- 原生节点 `state_db` 为明文 SQLite，磁盘静态保护由整盘加密（LUKS/dm-crypt）承担；JSON `state_file` 仅作为兼容/快照路径。
-- 超出备份合并启发式的多设备同步与回执状态协调。
+以下项目不再作为当前功能目标阻塞项，但如果要做公开生产发行，仍建议保留证据：
 
-## 发布候选证据保留
+- 外部安全审计报告
+- 长时间 fuzz campaign 与 crash triage
+- 长时间公网 federation chaos/load 报告
+- 真实公网部署报告
+- macOS notarization
+- Windows code signing
+- 风险登记 owner / release decision / evidence
 
-每个发布候选应使用 `docs/RELEASE_EVIDENCE.md` 作为结构化证据索引。
+## 建议发布步骤
 
-在称某个节点构建为生产就绪前，还应为任何配置的状态持久化路径归档证据：
+1. 确认工作区干净：
 
-- `state_db`：明文 SQLite；归档 `/control/stats` 和 `/control/metrics` 检查结果，确认 `state_db_permissions_hardened=true` / `lm_node_state_db_permissions_hardened 1`，并记录磁盘静态保护由整盘加密（LUKS/dm-crypt）承担。
-- `state_file`：`/control/stats` 和 `/control/metrics` 显示 `state_file.permissions_hardened=true` / `lm_node_state_file_permissions_hardened 1`；同时保留文件权限检查证据。
+```bash
+git status --short
+```
 
-每个发布候选还应归档：
+2. 运行快速检查：
 
-- `./scripts/release-check.sh full` 的输出。
-- fuzz 活动命令、持续时间、语料/崩溃产物和分类笔记。使用 `./scripts/fuzz-campaign.sh` 生成 JSON 活动报告以及每个目标的日志/语料/产物目录。
-- 网络/负载测试报告和拓扑。
-- 安全审计包（`docs/EXTERNAL_AUDIT_PACKET.md`）、审计报告和修复说明。
-- 确认 RELEASE.md 联系/流程在发布分支中是最新的。
-- 验证使用的构建产物哈希和部署配置。
-- 每个原生产物的签名/公证证据（`*-signing-evidence.json`）以及 `docs/RELEASE_SIGNING.md` 的审查；如果 macOS/Windows 生产发行报告不完整，则仍视为否决。
-- `./scripts/check-audit.sh` / CI `dependency-audit` 的输出。
-- `./scripts/release-risk-gate.sh` 的输出，证明每个非低残余风险都有负责人、证据要求、证据链接和发布决策；`./scripts/release-preprod.sh` 会归档 `risk-register-gate.log` 和 `risk-register-gate-report.json`，并在 `release-evidence-index.json` 中记录机器可读的 `production_gate.risk_register_gate_status` / 计数。
-- 对于拉取请求，CI `dependency-review` 对新增易受攻击依赖的状态。
-- 对 Dependabot 生成的依赖更新 PR 的审查状态（`cargo`、Web npm 和 GitHub Actions）。
+```bash
+./scripts/release-check.sh quick
+```
+
+3. 运行 Docker federation：
+
+```bash
+LM_NODE_FEDERATION_REPORT=/tmp/lm-federation-report.json \
+  deploy/lm-node-federation/run-all.sh
+```
+
+4. 如需发布原生节点产物，打 tag：
+
+```bash
+git tag -a v0.1.0 -m "LM Talk node v0.1.0"
+git push origin v0.1.0
+```
+
+5. 验证 release assets：
+
+```bash
+./scripts/release-verify.sh v0.1.0
+```

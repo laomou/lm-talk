@@ -1,106 +1,74 @@
 # 发布证据索引
 
-使用本文件作为每个发布候选的证据模板。将其复制到发布专用文件或 issue 中，填写产物链接，并将完成后的副本与发布说明一起保存。
+本文是可选的发布证据记录模板。当前功能目标不要求填写完整生产证据；需要归档某个可演示版本、Docker 部署测试或原生节点包时，可复制本模板到 issue / release notes 中填写。
 
 ## 发布候选
 
-- 版本/标签：
-- 提交 SHA：
-- UTC 日期/时间：
-- 负责人/审核人：
+| 项目 | 内容 |
+| --- | --- |
+| 版本 / tag |  |
+| commit |  |
+| UTC 时间 |  |
+| 负责人 |  |
 
-## 必要自动门禁
+## 功能检查
 
-| 门禁 | 所需证据 | 产物/链接 | 状态 |
-| --- | --- | --- | --- |
-| 快速发布检查 | `./scripts/release-check.sh quick` 或 CI `release-check` 日志 |  |  |
-| 完整发布检查 | `./scripts/release-check.sh full` 输出 |  |  |
-| 依赖审计 | `./scripts/check-audit.sh` / CI `dependency-audit` 日志 |  |  |
-| 依赖风险复核 | 已审查 `docs/DEPENDENCY_RISK_REVIEW.md`；活动审计例外已说明 |  |  |
-| 联邦验证 | `deploy/lm-node-federation/run-all.sh` 生成的 `federation-report.json` 或工作流产物 |  |  |
-| 测试向量覆盖 | `cargo test -p lm_core --test test_vectors` 并审查 `docs/TEST_VECTOR_COVERAGE.md` 中的高优先级缺口 |  |  |
-| Fuzz smoke | `FUZZ_SMOKE_REPORT=fuzz-smoke-report.json ./scripts/fuzz-smoke.sh` 输出/报告或 `./scripts/release-check.sh fuzz-smoke` 日志 |  |  |
-| 长时 fuzz 活动 | `FUZZ_CAMPAIGN_DURATION=<seconds> FUZZ_CAMPAIGN_REPORT=fuzz-campaign-report.json ./scripts/fuzz-campaign.sh` 报告、日志、语料、产物和分类笔记 |  |  |
+| 检查 | 命令 / 证据 | 状态 |
+| --- | --- | --- |
+| 快速发布检查 | `./scripts/release-check.sh quick` |  |
+| 完整发布检查 | `./scripts/release-check.sh full` |  |
+| Web E2E | `npm --prefix apps/web run test:e2e` |  |
+| 测试向量 | `cargo test -p lm_core --test test_vectors` |  |
+| 依赖审计 | `./scripts/check-audit.sh` |  |
 
-## 原生节点发布产物
+## Docker / federation 证据
 
-| 产物 | 预期证据 | SHA256 / 链接 | 状态 |
-| --- | --- | --- | --- |
-| `lm_node-linux-x86_64.tar.gz` | `RELEASE_INFO.txt`、`.sha256` |  |  |
-| `lm_node-macos-x86_64.tar.gz` | `RELEASE_INFO.txt`、`.sha256` |  |  |
-| `lm_node-macos-arm64.tar.gz` | `RELEASE_INFO.txt`、`.sha256` |  |  |
-| `lm_node-windows-x86_64.zip` | `RELEASE_INFO.txt`、`.sha256` |  |  |
-| `SHA256SUMS.txt` | 合并校验和文件 |  |  |
+| 检查 | 证据 | 状态 |
+| --- | --- | --- |
+| 三节点启动 | `deploy/lm-node-federation/run-all.sh` |  |
+| basic smoke | `federation-report.json` |  |
+| chaos smoke | `federation-report.json` |  |
+| load smoke | `federation-report.json` |  |
+| Mailbox push/take | 日志或报告 |  |
+| DHT ContactCard publish/find | 日志或报告 |  |
 
-## 持久化证据
+## 原生节点产物
 
-| 模式 | 所需证明 | 产物/链接 | 状态 |
-| --- | --- | --- | --- |
-| 明文 `state_db` | `/control/stats` 与 `/control/metrics` 显示 `state_db_permissions_hardened=true` / `lm_node_state_db_permissions_hardened 1`；磁盘静态保护由整盘加密（LUKS/dm-crypt）承担 |  |  |
-| `state_file`（如使用） | stats/metrics 显示 `state_file_permissions_hardened=true` / `lm_node_state_file_permissions_hardened 1`，并保留文件权限检查证据 |  |  |
+| 产物 | SHA256 / 链接 | 状态 |
+| --- | --- | --- |
+| Linux x86_64 |  |  |
+| macOS x86_64 |  |  |
+| macOS arm64 |  |  |
+| Windows x86_64 |  |  |
+| `SHA256SUMS.txt` |  |  |
 
-## 网络 / 联邦证据
+## strict E2EE 证据
 
-| 场景 | 所需证明 | 产物/链接 | 状态 |
-| --- | --- | --- | --- |
-| DHT ContactCard 发布/查找 | 联邦 smoke 报告/日志 |  |  |
-| Mailbox 跨节点推送/取回 | 联邦 smoke 报告/日志 |  |  |
-| 节点故障恢复 | chaos smoke 报告/日志 |  |  |
-| 短时 Mailbox 负载 | 带 `MESSAGE_COUNT` 的 load smoke 报告/日志 |  |  |
-| 公网部署配置 | 已脱敏的 `config.json`、Caddy/反向代理配置、节点 URL |  |  |
+| 场景 | 证据 | 状态 |
+| --- | --- | --- |
+| 新身份默认 strict E2EE | Web smoke / 手动截图 |  |
+| 联系人指纹核验 | Web smoke / 手动截图 |  |
+| sealed slot 发送 | Web smoke / 向量 |  |
+| 文件发送/接收 strict 策略 | Web smoke / 手动截图 |  |
+| 群聊 strict 风险提示与阻断 | Web smoke / 手动截图 |  |
+| strict E2EE 预检报告 | 下载的 JSON |  |
 
-## 安全 / 审计证据
+## 可选生产增强证据
 
-| 项目 | 所需证明 | 产物/链接 | 状态 |
-| --- | --- | --- | --- |
-| 外部安全审计 | 审计报告和修复说明 |  |  |
-| 密码学审查 | 核心/WASM/节点控制面审查说明 |  |  |
-| 依赖复核 | Dependabot / dependency-review 状态 |  |  |
-| 签名 / 公证 | 若为生产发行则需 macOS 公证和 Windows 签名证据 |  |  |
-| SECURITY.md 审查 | 发布分支的联系方式/流程已验证 |  |  |
-| 风险登记 | 已审查 `docs/RELEASE_RISK_REGISTER.md`；Critical/High 风险已修复或明确接受 |  |  |
+这些不是当前目标阻塞项，仅在公开生产发行时填写：
 
-## 风险登记摘要
+| 项目 | 证据 | 状态 |
+| --- | --- | --- |
+| 外部安全审计 |  |  |
+| 长时间 fuzz |  |  |
+| 公网长期 chaos/load |  |  |
+| 公网部署报告 |  |  |
+| macOS notarization |  |  |
+| Windows signing |  |  |
+| 风险登记签核 |  |  |
 
-- 风险登记副本/链接：
-- 未决 Critical 风险：
-- 未决 High 风险：
-- 已接受的 Medium/High 风险及批准人：
+## 结论
 
-## 本次发布已接受的已知限制
-
-- 
-
-## 最终决定
-
-- 发布批准人：
-- UTC 日期/时间：
-- 备注：
-
-## 本地证据采集辅助工具
-
-运行发布门禁后，将本地报告汇总到一个目录：
-
-```bash
-RELEASE_VERSION=vX.Y.Z RELEASE_EVIDENCE_DIR=release-evidence ./scripts/release-evidence.sh
-```
-
-该辅助工具会在存在时复制已知报告文件，并写入 `release-evidence-index.json`，标记为 `complete` / `incomplete`。这不替代人工审查；请在上表中填写 CI 产物、发布产物、审计和批准链接。
-
-## 预生产证据运行器
-
-要获取本地预生产证据包，请运行：
-
-```bash
-RELEASE_VERSION=preprod-local ./scripts/release-preprod.sh
-```
-
-可选参数：
-
-```bash
-RUN_FULL=0 RUN_FUZZ_SMOKE=1 ./scripts/release-preprod.sh
-RUN_FUZZ_CAMPAIGN=1 FUZZ_CAMPAIGN_DURATION=3600 ./scripts/release-preprod.sh
-RUN_FEDERATION=1 ./scripts/release-preprod.sh
-```
-
-该脚本会写入已知日志/报告，然后调用 `scripts/release-evidence.sh`。它是证据采集辅助工具，不替代发布负责人或安全审核人的签核。
+- 结论：`可演示` / `需修复` / `仅内部测试`
+- 已知限制：
+- 后续事项：
