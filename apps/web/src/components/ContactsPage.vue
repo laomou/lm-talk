@@ -272,7 +272,10 @@ function openGroupDetail(groupId: string) {
           <section v-if="ctx.activeContact.value.state === 'Friend'" class="home-card">
             <div class="section-title-row">
               <h3>严格 E2EE 修复向导</h3>
-              <span :class="{ 'danger-text': ctx.contactStrictE2eeRiskLevel(ctx.activeContact.value) === 'high' }">{{ ctx.contactStrictE2eeStatusText(ctx.activeContact.value) }}</span>
+              <div class="row compact">
+                <span :class="{ 'danger-text': ctx.contactStrictE2eeRiskLevel(ctx.activeContact.value) === 'high' }">{{ ctx.contactStrictE2eeStatusText(ctx.activeContact.value) }}</span>
+                <button class="secondary" @click="ctx.repairStrictE2eeForActiveContact">一键修复当前联系人</button>
+              </div>
             </div>
             <div class="outbox-list">
               <div class="outbox-row">
