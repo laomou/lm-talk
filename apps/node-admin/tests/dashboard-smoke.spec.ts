@@ -32,7 +32,11 @@ async function installMockNode(page: Page) {
           rate_limited: 0,
           cors_rejected: 0,
           bad_requests: 0,
-          endpoints: { '/api/health': { requests: 30, responses_2xx: 30 } },
+          endpoints: {
+            '/api/health': { requests: 30, responses_2xx: 30 },
+            '/api/mailbox/push': { requests: 8, responses_2xx: 7, responses_4xx: 1 },
+            '/api/dht/find-value': { requests: 4, responses_2xx: 4 },
+          },
         },
       })
     }
@@ -67,12 +71,21 @@ test('节点管理面板可连接并展示健康与运行 DHT 维护', async ({ 
   await page.getByRole('button', { name: '连接', exact: true }).click()
   await expect(page.locator('.sync-pill').filter({ hasText: '已连接' })).toBeVisible()
 
+  // Overview panel renders the mocked aggregate status without exposing the token.
+  await expect(page.getByRole('heading', { name: '节点总览' })).toBeVisible()
+  await expect(page.getByText('Mailbox 压力')).toBeVisible()
+  await expect(page.getByText('联邦同步')).toBeVisible()
+  await expect(page.getByLabel('诊断报告 JSON')).toHaveValue(/\"peer_id\": \"peer-abc\"/)
+  await expect(page.getByLabel('诊断报告 JSON')).not.toHaveValue(/secret-token/)
+
   // Health panel renders the mocked status.
   await expect(page.getByText('ok', { exact: true })).toBeVisible()
   await expect(page.getByText('peers 2', { exact: true })).toBeVisible()
 
   // Stats and federation peer summary panels load.
   await expect(page.getByText('请求总数 42', { exact: true })).toBeVisible()
+  await expect(page.getByText('Mailbox 8', { exact: true })).toBeVisible()
+  await expect(page.getByText('DHT 4', { exact: true })).toBeVisible()
   await expect(page.getByText('联邦 peer')).toBeVisible()
   await expect(page.getByText('健康 1', { exact: true })).toBeVisible()
   await expect(page.getByText('异常 1', { exact: true })).toBeVisible()

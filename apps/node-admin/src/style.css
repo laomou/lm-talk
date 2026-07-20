@@ -755,3 +755,11 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .bubble { max-width: 86%; }
   .me-page { padding: var(--sp-5) var(--sp-4); }
 }
+
+.node-overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--sp-3); margin-bottom: var(--sp-3); }
+.overview-card { display: grid; gap: 4px; padding: var(--sp-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface-2); }
+.overview-card span { color: var(--c-ink-3); font-size: 12px; }
+.overview-card b { font-size: 18px; color: var(--c-ink); }
+.overview-card small { color: var(--c-ink-3); overflow-wrap: anywhere; }
+.compact-summary { flex-wrap: wrap; gap: var(--sp-2); }
+.compact-summary span { background: var(--c-surface-2); border: 1px solid var(--c-line); border-radius: var(--r-pill); padding: 3px 10px; }

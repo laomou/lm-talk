@@ -7,6 +7,7 @@ import StatsPanel from './components/StatsPanel.vue'
 import SyncPeersPanel from './components/SyncPeersPanel.vue'
 import DhtPanel from './components/DhtPanel.vue'
 import SnapshotPanel from './components/SnapshotPanel.vue'
+import NodeOverviewPanel from './components/NodeOverviewPanel.vue'
 
 const STORAGE_KEY = 'lm-node-admin'
 
@@ -96,6 +97,7 @@ onMounted(() => {
         </div>
       </section>
 
+      <NodeOverviewPanel :api="api" :connected="connected" />
       <HealthPanel :api="api" :connected="connected" />
       <StatsPanel :api="api" :connected="connected" />
       <SyncPeersPanel :api="api" :connected="connected" />
