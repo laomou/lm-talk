@@ -25,7 +25,7 @@ function classifyNodeError(status: number | undefined, raw: string, endpoint: st
   if (status === 401 || /unauthorized/i.test(raw)) return `节点鉴权失败${suffix}：请检查控制面令牌是否与 lm_node --control-token 一致。`
   if (status === 403 || /cors origin not allowed|forbidden/i.test(raw)) return `节点拒绝访问${suffix}：请检查 CORS 白名单、访问来源或 /admin/ loopback 限制。`
   if (status === 429 || /rate limit|too many requests/i.test(raw)) return `节点限流${suffix}：请求过于频繁，请稍后重试。`
-  if (status === 413 || /too large|payload too large/i.test(raw)) return `节点拒绝大载荷${suffix}：请求内容超过限制，请缩小快照或检查节点配额。`
+  if (status === 413 || /too large|payload too large|payloadtoolarge/i.test(raw)) return `节点拒绝大载荷${suffix}：请求内容超过限制，请缩小快照或检查节点配额。`
   if (status === 404 || /not found/i.test(raw)) return `节点接口不存在${suffix}：请确认 lm_node 版本、/admin/ 挂载和 API 路径。`
   if (typeof status === 'number' && status >= 500) return `节点内部错误${suffix}：请稍后重试或查看 lm_node 日志。`
   return raw || (status ? `HTTP ${status}` : '节点请求失败')

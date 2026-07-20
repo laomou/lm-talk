@@ -524,6 +524,11 @@ test('同步节点常见错误会显示分类恢复建议', async ({ page }) => 
   await page.route('http://sync.test/**', async (route) => route.fulfill({ status: 429, body: 'rate limit exceeded' }))
   await page.getByRole('button', { name: '立即同步' }).click({ force: true })
   await expect(page.getByText(/同步节点限流.*稍后重试/)).toBeVisible()
+
+  await page.unroute('http://sync.test/**')
+  await page.route('http://sync.test/**', async (route) => route.fulfill({ status: 413, body: 'PayloadTooLarge' }))
+  await page.getByRole('button', { name: '立即同步' }).click({ force: true })
+  await expect(page.getByText(/同步节点拒绝大载荷.*检查节点配额/)).toBeVisible()
 })
 
 test('窄屏下聊天、通讯录和设置页不会横向溢出', async ({ page }) => {
