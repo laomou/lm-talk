@@ -64,8 +64,11 @@ def build_node_admin_zip(repo: Path, destination: Path, base: str) -> None:
     if tools_node.is_dir():
         env["PATH"] = f"{tools_node}{os.pathsep}{env.get('PATH', '')}"
     env["NODE_ADMIN_BASE"] = base
+    npm_bin = shutil.which("npm.cmd", path=env.get("PATH")) or shutil.which("npm", path=env.get("PATH"))
+    if not npm_bin:
+        raise SystemExit("failed to build node-admin bundle: npm not found in PATH")
     try:
-        subprocess.run(["npm", "run", "build"], cwd=admin_root, check=True, env=env)
+        subprocess.run([npm_bin, "run", "build"], cwd=admin_root, check=True, env=env)
     except (OSError, subprocess.CalledProcessError) as err:
         raise SystemExit(f"failed to build node-admin bundle: {err}") from err
     dist = admin_root / "dist"
