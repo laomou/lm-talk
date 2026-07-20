@@ -29,7 +29,7 @@ def run_text(args: list[str], cwd: Path, required: bool = False) -> str:
         )
         if completed.returncode != 0:
             return "unknown"
-        return completed.stdout.strip() or "unknown"
+        return completed.stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
 
