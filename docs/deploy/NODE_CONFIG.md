@@ -157,27 +157,12 @@ lm_node serve-control \
 
 ### 本地 `/admin/` 管理页
 
-如果你希望把管理页直接挂到 `lm_node` 上，可以先构建 `apps/node-admin`，然后启动：
+如果你想把 node-admin 直接挂到 `lm_node` 上，请看 `docs/overview/DEV_WORKFLOW.md` 的“本机节点 + 内嵌 `/admin/`”小节。那里说明了：
 
-```bash
-./scripts/dev-run.sh node --local
-```
-
-这个脚本会自动检查 `apps/node-admin/dist`，并在需要时用 `NODE_ADMIN_BASE=/admin/` 重新构建前端，再把静态文件挂到 `http://127.0.0.1:8787/admin/`。
-
-如果你要手工挂载，也可以显式传：
-
-```bash
-lm_node serve-control \
-  --bind 127.0.0.1:8787 \
-  --web-admin apps/node-admin/dist
-```
-
-然后访问：
-
-```text
-http://127.0.0.1:8787/admin/
-```
+- `./scripts/dev-run.sh node --local` 会自动检查或构建 `apps/node-admin/dist`；
+- 需要时会用 `NODE_ADMIN_BASE=/admin/` 重新构建前端；
+- 静态文件最终挂到 `http://127.0.0.1:8787/admin/`；
+- `--web-admin` 仅适合作为本机 loopback 运维入口。
 
 如果 node-admin 使用 HTTPS，而节点仍是 HTTP，浏览器会阻止混合内容。此时应为节点配置 TLS 反向代理，或在本机用 HTTP 方式打开 node-admin。
 

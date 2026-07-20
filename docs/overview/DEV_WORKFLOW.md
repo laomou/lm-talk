@@ -145,13 +145,31 @@ LM_NODE_FEDERATION_CLEAN_SECRETS=1 deploy/lm-node-federation/compose.sh clean
 ./scripts/dev-build.sh node
 ```
 
+如果后续要构建 `deploy/lm-node-public/Dockerfile` 或发布容器包，仓库会从 Docker Hub 拉取 `rust:1-bookworm` 作为 builder 基础镜像。若本机遇到拉取失败或 429 限流，通常可先重试、登录 Docker、换成已缓存的本地镜像，或在联网更稳定时重新构建。
+
 ### Web 生产包
 
 ```bash
 ./scripts/dev-build.sh web
 ```
 
+### 全量本地产物
+
+```bash
+./scripts/dev-build.sh all
+```
+
+该命令会构建 release `lm_node`、Web 生产包和用于 `/admin/` 的 node-admin 静态包。
+
 ### node-admin `/admin/` 静态包
+
+推荐使用脚本：
+
+```bash
+./scripts/dev-build.sh node-admin
+```
+
+等价手工命令：
 
 ```bash
 PATH="$PWD/.tools/node/bin:$PATH" \

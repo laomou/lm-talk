@@ -111,10 +111,15 @@ def main() -> int:
 
         docs_to_include = [
             "README.md",
+            "README_zh.md",
             "LICENSE",
             "SECURITY.md",
-            "docs/NODE_CONFIG.md",
-            "docs/RELEASE_CHECKLIST.md",
+            "SECURITY_zh.md",
+            "docs/README.md",
+            "docs/deploy/NODE_CONFIG.md",
+            "docs/overview/DEV_WORKFLOW.md",
+            "docs/release/RELEASE_CHECKLIST.md",
+            "docs/release/RELEASE_SIGNING.md",
         ]
         for relative in docs_to_include:
             source = repo / relative

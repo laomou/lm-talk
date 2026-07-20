@@ -19,7 +19,7 @@
 - [x] Docker federation 已能跑通 basic / chaos / load。
 - [x] 在没有 `docker compose` plugin 的环境中支持 direct docker fallback，并在文档中说明。
 - [x] `compose.sh clean` 可清理 direct docker fallback 的临时目录和本地测试产物。
-- [ ] README 中补充基础镜像拉取失败/限流时的处理方式。
+- [x] README/工作流文档中补充基础镜像拉取失败/限流时的处理方式。
 
 ### 2. strict E2EE 体验打磨
 
@@ -49,7 +49,7 @@
 - [ ] `/control/stats` 中聚合更清晰的 Mailbox/DHT 摘要。
 - [x] Docker federation 失败时自动打印报告、容器状态和日志尾部。
 - [x] 补充开发/运维工作流文档，收敛常用命令入口。
-- [ ] 部署文档继续减少过时参数和重复内容。
+- [x] 部署文档继续减少过时参数和重复内容；`/admin/` 细节收敛到工作流文档。
 
 ### 5. 文档中文化和去重
 
