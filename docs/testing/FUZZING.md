@@ -1,47 +1,70 @@
 # 模糊测试
 
-LM Talk 提供 `cargo-fuzz` / libFuzzer 脚手架，用于不信任的协议和节点输入。这些 harness 不替代外部安全审计，但应作为生产发布门禁的一部分。
+LM Talk 提供 `cargo-fuzz` / libFuzzer 脚手架，用于验证不可信协议输入和节点控制面输入不会导致 panic、越界或未受控资源消耗。当前目标以功能可用为主；本文件作为开发测试说明，不再作为当前目标阻塞项。
 
-## 前提条件
+## 安装前置工具
 
 ```bash
 cargo install cargo-fuzz
 ```
 
-## Smoke 检查
+## 快速 smoke
 
-在发布候选前，验证所有 fuzz harness 都能启动并执行至少少量输入：
+发布候选或改动解析器后，先确认所有 fuzz harness 能启动：
 
 ```bash
 ./scripts/fuzz-smoke.sh
 ```
 
-这仅是 harness 启动 smoke 测试。它不替代长期 fuzz 活动。
+该命令只证明 harness 可运行，不等价于长时间 fuzz。
 
-## 目标
+## Harness 目标
+
+### `core_imports`
+
+覆盖核心导入解析器：
+
+- 联系人名片
+- 好友请求/响应
+- 身份备份
+- PreKey bundle / signed one-time prekey
+- Signal / secure session 文本
+- Mailbox message
+- Message receipt
+- 群邀请 / 群事件 / Sender Key
+- Ratchet state / envelope
+- 文件包
+- 设备证书 / 设备撤销
+
+运行示例：
 
 ```bash
-# Core 文本导入解析：contact/friend/backup/prekey/signal/mailbox/message receipt/group/ratchet/file/device revoke
 ./scripts/fuzz-run.sh core_imports -- -max_total_time=60
+```
 
-# 原生节点 DHT RPC JSON 和快照合并输入
+### `node_dht_rpc`
+
+覆盖原生节点 DHT RPC JSON、`NativeNode::handle_dht_rpc`、响应序列化和 snapshot merge 输入。
+
+```bash
 ./scripts/fuzz-run.sh node_dht_rpc -- -max_total_time=60
+```
 
-# 原生节点控制请求调度，测试任意 method/path/body 分割
+### `node_control_request`
+
+覆盖原生节点控制请求调度，包括任意 method/path/body 组合。
+
+```bash
 ./scripts/fuzz-run.sh node_control_request -- -max_total_time=60
 ```
 
-对于更长的发布候选，请让每个目标运行数小时，并保存语料库，只提交小且有意义的回归种子。任何崩溃或超时都必须在发布前进行分类。
+## 结果处理
 
-## 当前范围
+- 任何 crash、timeout 或 OOM 都应保存输入样本。
+- 先最小化样本，再转成单元测试或回归向量。
+- 不提交包含真实身份、token、消息明文或私钥的语料。
+- 若样本来自诊断报告，必须先脱敏。
 
-- `core_imports` 检查所有公共文本导入解析器，包括签名的送达/已读回执、是否接受/拒绝、好友请求、备份、PreKey、Signal、Mailbox、Message、Group、Ratchet、文件、设备撤销等，确保它们不会 panic，并依然依赖大小/签名/格式验证。
-- `node_dht_rpc` 练习 `DhtRpcRequest` 反序列化、`NativeNode::handle_dht_rpc`、`DhtRpcResponse` 序列化和 `NodeStateSnapshot` 合并路径。
-- `node_control_request` 练习 `NativeNode::handle_control_request`，使用任意 method/path/body 字符串。
+## 当前建议
 
-## 仍待完成的发布工作
-
-- 从类似生产的捕获中添加持久语料库，剥离机密信息。
-- 添加带时间预算和崩溃产物上传的 CI/夜间 fuzz 任务。
-- 随着协议格式稳定，添加更底层的解析器/密码学信封 fuzz 目标。
-- 在声称生产就绪前运行独立 AFL/libFuzzer 活动和外部安全审计。
+日常开发至少运行 `./scripts/fuzz-smoke.sh`。长时间 fuzz 可作为未来质量增强项，但不再作为当前功能目标的完成条件。
