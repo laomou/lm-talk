@@ -48,35 +48,42 @@ ensure_image() {
 }
 
 wait_direct_health() {
-  local port
+  local node port token
   for _ in $(seq 1 80); do
     local ok=1
-    for port in 8081 8082 8083; do
-      curl -fsS "http://127.0.0.1:$port/health" >/dev/null 2>&1 || ok=0
+    for node in a b c; do
+      case "$node" in a) port=8081 ;; b) port=8082 ;; c) port=8083 ;; esac
+      token="$(tr -d '\n' < "$ROOT/secrets/node-$node-token")"
+      curl -fsS -H "authorization: Bearer $token" "http://127.0.0.1:$port/api/health" >/dev/null 2>&1 || ok=0
     done
     [[ "$ok" == "1" ]] && return 0
     sleep 0.25
   done
-  docker ps -a --filter name=node- --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' >&2 || true
+  docker ps -a --filter name=node- --format 'table {{.Names}}	{{.Status}}	{{.Ports}}' >&2 || true
   for n in a b c; do docker logs --tail=80 "node-$n" >&2 || true; done
   return 1
 }
 
 direct_up() {
-  local force_build=0
-  for arg in "$@"; do [[ "$arg" == "--build" ]] && force_build=1; done
+  # Native compose rebuilds on --build. Direct fallback defaults to reusing the
+  # local image to keep offline/local smoke tests fast; set
+  # LM_NODE_FEDERATION_FORCE_BUILD=1 to rebuild explicitly.
+  local force_build="${LM_NODE_FEDERATION_FORCE_BUILD:-0}"
   ensure_secrets
   write_direct_configs
   ensure_image "$force_build"
   docker network inspect "$NETWORK" >/dev/null 2>&1 || docker network create "$NETWORK" >/dev/null
   mkdir -p "$ROOT/.docker-data/node-a" "$ROOT/.docker-data/node-b" "$ROOT/.docker-data/node-c"
+  local run_user="$(id -u):$(id -g)"
+  docker run --rm --user root --entrypoint /bin/chown \
+    -v "$ROOT/.docker-data:/work" "$IMAGE" -R "$run_user" /work >/dev/null 2>&1 || true
   local n port
   for n in a b c; do
     case "$n" in a) port=8081 ;; b) port=8082 ;; c) port=8083 ;; esac
     # Recreate containers on every direct `up` so generated configs and newly
     # built binaries are always applied; persistent data remains in .docker-data.
     docker rm -f "node-$n" >/dev/null 2>&1 || true
-    docker run -d --name "node-$n" --network "$NETWORK" -p "$port:8787" \
+    docker run -d --name "node-$n" --network "$NETWORK" --user "$run_user" -p "$port:8787" \
       -v "$ROOT/.docker-run/node-$n.json:/app/config.json:ro" \
       -v "$ROOT/secrets:/run/secrets:ro" \
       -v "$ROOT/.docker-data/node-$n:/data" \

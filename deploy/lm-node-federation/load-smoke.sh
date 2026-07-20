@@ -19,7 +19,7 @@ token_for() { tr -d '\n' < "$DEPLOY_ROOT/secrets/node-$1-token"; }
 
 request() {
   local node="$1" path="$2"
-  curl -fsS -H "authorization: Bearer $(token_for "$node")" "$(node_url "$node")$path"
+  curl -fsS -H "authorization: Bearer $(token_for "$node")" "$(node_url "$node")/api$path"
 }
 
 post_json() {
@@ -28,7 +28,7 @@ post_json() {
     -H "authorization: Bearer $(token_for "$node")" \
     -H 'content-type: application/json' \
     -d "$body" \
-    "$(node_url "$node")$path"
+    "$(node_url "$node")/api$path"
 }
 
 json_field() {
