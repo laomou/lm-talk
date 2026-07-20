@@ -1,99 +1,82 @@
 # 外部安全审计交付包
 
-本交付包是面向审计方的入口，用于审查 LM Talk 作为去中心化端到端加密即时消息系统。它本身不声称生产就绪；它索引了外部审计必须验证的确切领域、证据和未决阻塞项。
+本文是未来外部安全审计的入口包。当前功能目标不要求第三方审计报告；本文保留为可选生产增强资料。
 
 ## 审计目标
 
-- 产品目标：具有 Web/WASM 客户端和原生公共/联邦节点的去中心化 E2EE 即时消息。
-- 主要安全目标：消息/文件/群组内容机密性、签名身份/联系人名片/设备、严格 E2EE 降级控制、加密本地持久化和恶意节点弹性。
-- 当前分发目标：基于标签的 Linux、macOS、Windows `lm_node` 原生产物，以及 Web 静态构建证据。
+LM Talk 是一个去中心化端到端加密即时通讯系统，包含：
 
-## 必填提交和发布标识
+- Web/WASM 客户端；
+- Rust 核心协议库；
+- 原生 `lm_node` 节点；
+- Mailbox / DHT / federation 部署模板；
+- strict E2EE 默认策略、设备证书、设备撤销和 sealed slot。
 
-在发送审计包前填写：
+## 审计标识
+
+需要实际审计时再填写：
 
 | 字段 | 值 |
 | --- | --- |
-| 审计提交 SHA | `TODO` |
-| 发布候选标签 | `TODO` |
-| 证据目录或 CI 运行 | `TODO` |
-| 审计员 / 审计公司 | `TODO` |
-| 审计启动日期 | `TODO` |
-| 审计负责人 | `TODO` |
+| 审计 commit |  |
+| 审计 tag |  |
+| 审计方 |  |
+| 证据目录 |  |
+| 审计时间 |  |
+| 负责人 |  |
 
-## 从这里开始
+## 推荐阅读顺序
 
-1. `docs/SECURITY_AUDIT_SCOPE.md` — 证明范围和所需审计交付物的权威索引。
-2. `docs/SECURITY_MODEL.md` — 简明安全目标、非目标和产品边界。
-3. `docs/CRYPTO_REVIEW_NOTES.md` — 协议/密码学设计说明和已知元数据限制。
-4. `docs/PROTOCOL_STABILITY.md` — 协议冻结状态和兼容性规则。
-5. `docs/TEST_VECTOR_COVERAGE.md` — 已签名/加密线对象的规范向量覆盖。
-6. `docs/RELEASE_RISK_REGISTER.md` — 需要缓解、接受或标记为否决的残余风险。
-7. `docs/AUDIT_REMEDIATION_TRACKER.md` — 审计过程中更新的发现/修复跟踪。
-8. `docs/RELEASE_EVIDENCE.md` 和 `docs/RELEASE_SIGNOFF.md` — 审计发布的证据/签核模板。
+1. `docs/overview/DESIGN.md`：总体架构和实现状态。
+2. `docs/security/SECURITY_MODEL.md`：安全目标和非目标。
+3. `docs/security/CRYPTO_REVIEW_NOTES.md`：密码学边界和 strict E2EE 控制消息例外。
+4. `docs/security/SECURITY_AUDIT_SCOPE.md`：建议审查范围。
+5. `docs/testing/PROTOCOL_STABILITY.md`：协议对象稳定性。
+6. `docs/testing/TEST_VECTOR_COVERAGE.md`：测试向量覆盖。
+7. `docs/deploy/NODE_CONFIG.md`：节点配置和运维。
+8. `docs/deploy/PUBLIC_FEDERATION_RUNBOOK.md`：联邦部署运行说明。
 
-## 代码审查地图
+## 代码地图
 
 | 领域 | 路径 | 审查重点 |
 | --- | --- | --- |
-| 核心密码/协议 | `crates/lm_core/src`, `test-vectors/`, `crates/lm_core/tests` | 身份、ContactCard、设备证书/撤销、X3DH、Double Ratchet、群组发送密钥、文件包、回执、过期/版本/大小检查。 |
-| WASM 桥接 | `crates/lm_wasm/src` | JS/WASM 边界验证、错误映射、密码学辅助暴露、每设备槽封装/打开。 |
-| Web 客户端 | `apps/web/src`, `apps/web/tests` | 严格 E2EE 预检、指纹/设备 UX、IndexedDB 加密、备份/导入、自同步、封闭槽降级阻断、本地删除/重新加密。 |
-| 原生节点 | `crates/lm_node/src` | 控制面解析/认证/限流、Mailbox/PreKey/DHT 行为、对等隔离、指标、持久化恢复。 |
-| 联邦部署 | `deploy/lm-node-public`, `deploy/lm-node-federation` | TLS/Caddy 模板、密钥挂载、CORS 源、暴露端口、整盘加密卷假设。 |
-| 发布供应链 | `.github/workflows`, `scripts/release-package.py`, `scripts/release-verify.sh`, `scripts/release-preprod.sh` | 跨平台构建、校验和、证据采集、依赖审计门禁。 |
+| 核心协议 | `crates/lm_core/src` | 身份、ContactCard、好友、消息、文件、群聊、Ratchet、PreKey、设备。 |
+| WASM | `crates/lm_wasm/src` | JS/WASM 边界、错误映射、sealed slot API。 |
+| Web 客户端 | `apps/web/src` | strict E2EE、IndexedDB、备份、自同步、UI 风险提示。 |
+| 原生节点 | `crates/lm_node/src` | 控制面、Mailbox、DHT、PreKey、snapshot、metrics。 |
+| 部署 | `deploy/` | Docker、Caddy、secret、CORS、节点拓扑。 |
+| 测试 | `tests/`, `test-vectors/` | Web E2E、节点 E2E、协议向量、fuzz harness。 |
 
-## 测试和证据命令
-
-审计员应运行或审查审核提交/标签的归档输出：
+## 建议命令
 
 ```bash
-./scripts/release-check.sh full
+./scripts/release-check.sh quick
 ./scripts/check-audit.sh
-./scripts/release-risk-gate.sh
-FUZZ_SMOKE_REPORT=fuzz-smoke-report.json ./scripts/fuzz-smoke.sh
-FUZZ_CAMPAIGN_DURATION=3600 ./scripts/fuzz-campaign.sh
-RUN_RELEASE_ASSET_VERIFY=1 RELEASE_TAG_VERIFY=<tag> RELEASE_VERSION=<tag> ./scripts/release-preprod.sh
+./scripts/fuzz-smoke.sh
+LM_NODE_FEDERATION_REPORT=/tmp/lm-federation-report.json deploy/lm-node-federation/run-all.sh
 ```
 
-对于联邦证据：
+## 高优先级问题
 
-```bash
-deploy/lm-node-federation/run-all.sh
-deploy/lm-node-federation/chaos-smoke.sh
-MESSAGE_COUNT=100 deploy/lm-node-federation/load-smoke.sh
-```
+- 节点是否能看到消息或文件明文？
+- 未核验联系人是否能绕过 strict 入站/出站策略？
+- sealed slot 是否可能静默降级到 fallback？
+- 设备撤销是否优先于旧 ContactCard？
+- ContactCard / PreKey / PublicPeer / DHT 记录是否绑定正确 key namespace？
+- Mailbox 是否只保存签名密文对象？
+- Web 本地数据是否避免明文长期落盘？
+- 控制面 token、CORS、限流和大小限制是否足够防滥用？
 
-生产就绪的长期活动应将 fuzz、混沌和负载持续时间提高到超出 smoke 默认值，并归档语料/崩溃目录和 JSON 报告。
+## 审计输出建议
 
-## 高优先级审计问题
+每个发现建议包含：
 
-- 是否任何不可信节点、DHT 对等节点、Mailbox 运营商或中继能观察或修改消息明文？
-- 严格封闭每设备槽是否在启用时强制执行且不会静默回退？
-- ContactCards、设备证书、撤销、PreKeys、回执和 DHT 记录是否绑定到预期的身份/密钥/版本/过期？
-- 是否重放、重排、重复、延迟、超大、畸形和过期对象被拒绝或安全处理？
-- 自同步是否保留信任/设备/撤销状态，而不复活陈旧或撤销设备？
-- 原生节点限额/限流是否防止实际未授权或令牌认证的资源耗尽？
-- 发布产物和依赖审计例外是否避免可达的供应链风险？
+- 严重性；
+- 受影响组件；
+- 利用条件；
+- 复现步骤；
+- 建议修复；
+- 验证命令；
+- 残余风险说明。
 
-## 已知发布阻塞项待验证
-
-以下项在没有外部证据前预计仍为否决：
-
-- 已完成的第三方审计报告和修复验证。
-- 长时 fuzz 活动产物和分类笔记。
-- 真实拓扑的长时公共联邦混沌/负载报告。
-- macOS 公证和 Windows 代码签名的生产信任证据。
-- 已完成的 `docs/RELEASE_SIGNOFF.md` 和 `docs/RELEASE_RISK_REGISTER.md` 中的已解决/已接受条目。
-
-## 审计输出要求
-
-审计员发现应包括：
-
-1. 严重性、受影响组件/路径和利用叙述。
-2. 重现步骤、载荷或测试向量（如适用）。
-3. 建议修复和验证方法。
-4. 审查提交 SHA 和发布标签。
-5. 对任何已接受限制的显式残余风险声明。
-
-在 `docs/AUDIT_REMEDIATION_TRACKER.md` 中跟踪发现，并在生产签核前链接修复提交、测试和发布证据。
+审计发现可记录在 `docs/security/AUDIT_REMEDIATION_TRACKER.md`。

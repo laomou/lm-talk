@@ -1,118 +1,80 @@
-# 安全审计范围
+# 安全审查范围
 
-本文档定义了在 LM Talk 可称为生产就绪前所需的安全审查范围。它是外部审计员和内部发布审查的准备检查表。
-
-要获取面向审计员的所有审查输入、命令和未决阻塞项索引，请从 `docs/EXTERNAL_AUDIT_PACKET.md` 开始。
+本文列出建议审查的安全范围。当前功能目标不要求第三方审计报告；本文用于内部自查或未来外部审计。
 
 ## 安全目标
 
-LM Talk 旨在提供：
+1. 单聊、文件和群聊内容端到端加密。
+2. 通过 DHT、Mailbox 和 federation 实现去中心化发现与投递。
+3. 使用联系人指纹、设备证书、设备撤销和 sealed slot 管理信任。
+4. Web 本地数据加密保存。
+5. strict E2EE 默认启用，核心内容路径 fail-closed。
 
-1. 端到端加密的直接消息、文件包和群消息。
-2. 通过 DHT、Mailbox 和公共节点联邦实现的去中心化发现与投递。
-3. 使用签名设备证书、撤销和每设备封闭槽的多设备投递。
-4. 针对 Web IndexedDB 和原生节点状态数据库/文件的本地状态保护。
-5. 对严格 E2EE 策略和已配置加密持久化的 fail-closed 行为。
+## 核心协议范围
 
-## 范围内
+- 身份创建、备份、恢复和提示词归一化。
+- ContactCard 签名、验签、指纹和设备证书。
+- 好友请求/响应。
+- DirectEnvelope 兼容路径。
+- X3DH PreKey 和 signed one-time prekey。
+- Double Ratchet 状态、重放、乱序和 skipped key。
+- Group Sender Key、群事件和群权限。
+- 文件包加密和 hash 校验。
+- MessageReceipt 与 delivery/read 状态。
+- 版本、前缀、过期和大小限制。
 
-### 核心密码学（`crates/lm_core`）
+## Web / WASM 范围
 
-审查：
+- WASM API 边界。
+- Web RNG 身份生成。
+- IndexedDB 加密、迁移、删除身份和重加密。
+- 完整数据备份导入/导出。
+- strict E2EE 默认策略和阻断路径。
+- sealed slot、多设备证书和撤销 UI。
+- ContactCard 更新、ACK、stale retry 和 DHT 刷新。
+- 修复控制消息例外：ContactCard/device-cert 更新和 device revoke。
 
-- 身份创建、备份导出/导入、口令规范化和存储密钥派生。
-- Contact Card 签名、验证、指纹和设备证书校验。
-- 好友请求/响应签名和过期处理。
-- 旧版 DirectEnvelope 静态 X25519 + HKDF + XChaCha20-Poly1305 路径。
-- X3DH PreKey bundle 和签名一次性 PreKey 处理。
-- Double Ratchet 状态转换、跳过消息键限制、重放/乱序处理和状态导入/导出。
-- 群组发送密钥分发、群组事件策略和发送密钥轮换触发。
-- 文件包加密、文件名安全策略、大小限制和篡改处理。
-- 消息回执签名及其与消息/会话/投递 ID 的绑定。
-- 序列化前缀、规范签名字段、对象版本检查、过期检查和最大大小强制。
+## 原生节点范围
 
-### WASM/Web 绑定（`crates/lm_wasm`、`apps/web`）
+- HTTP 控制面解析和鉴权。
+- CORS、token、previous token 和限流。
+- Mailbox push/take/ack、TTL、配额和去重。
+- PreKey 发布/获取/消费。
+- DHT record 校验和查询。
+- snapshot export/import。
+- state_db 持久化和权限。
+- metrics 不泄漏敏感载荷。
 
-审查：
+## 部署范围
 
-- WASM API 边界和所有密码学辅助的错误处理。
-- 浏览器身份备份路径和 Web RNG 使用。
-- IndexedDB 应用层加密、口令重新加密时的密钥轮换、身份范围表的删除和迁移失败行为。
-- 完整数据备份加密/导入合并/覆盖行为。
-- 本地安全策略执行：已验证联系人发送/接收、封闭槽发送/接收、文本/文件过滤。
-- 每设备信封 v1 格式、发送者签名、封闭槽加密/解密、回退/占位降级控制和诊断。
-- 自同步包/请求签名、序列/缺口修复、缓存包重放/去重、自有设备证书同步、回执状态同步和发件箱摘要同步。
-- Contact Card 更新 fanout/ACK/过期重试和 DHT 自动刷新行为，包括严格 E2EE 修复控制例外的 ContactCard/设备证书更新。
-- 指纹验证、QR 扫描、设备撤销、严格 E2EE 预检、fail-closed 内容路径和降级警告的 UI 流程。
-- Web 应用在 PWA 移除后后台行为：除非经过审查的未来实现，否则不应依赖 Service Worker/后台同步密钥访问。
+- Docker federation 模板。
+- Caddy / TLS / secret / CORS 配置。
+- 端口暴露。
+- 节点间 sync_peers。
+- federation smoke/chaos/load 脚本。
 
-### 原生节点（`crates/lm_node`）
+## 威胁模型
 
-审查：
+- 恶意 Mailbox / DHT / relay 节点。
+- 恶意或被攻陷联系人。
+- 丢失设备和撤销竞态。
+- replay、乱序、重复、过期、畸形和超大对象。
+- sealed slot 降级到 fallback。
+- DHT poisoning 和恶意 closer node。
+- 控制面 token 泄漏和资源耗尽。
 
-- HTTP 控制面请求解析、body/header 限制、CORS、Bearer token 检查、前 token 轮换和限流。
-- Mailbox 存储语义：push/take/ack、重复/tombstone 处理、TTL、配额、按发送者/全局限流、分页和崩溃恢复。
-- PreKey 发布/获取/消费行为和一次性 PreKey 消费状态持久化。
-- PublicPeer、PreKey、MailboxHint 和 ContactCard 的 DHT 记录验证。
-- Kademlia 距离/查询逻辑、更近节点过滤、对等节点健康/隔离、污染记录拒绝和复制/路由刷新计划。
-- 快照导入/导出合并语义和 sync_peer token 处理。
-- SQLite `state_db` 模式（明文）、WAL/同步/忙超时/FK pragmas 和权限。
-- JSON `state_file` 加密、口令文件权限、迁移/Fail-closed 行为和兼容性风险。
-- OpenMetrics 输出正确性以及无敏感载荷泄露。
-- 发布/联邦 smoke 测试使用的 CLI 辅助工具。
+## 非目标
 
-### 部署和发布产物
+- 不提供匿名性。
+- 不隐藏全部元数据。
+- 不防御完全控制用户运行时的恶意软件。
+- 用户丢失身份备份和提示词后无法恢复。
 
-审查：
+## 建议交付物
 
-- `deploy/lm-node-public` 和 `deploy/lm-node-federation` 模板、Caddy TLS 代理配置、secret 挂载、CORS 来源、暴露端口和加密卷假设。
-- `release-node.yml` 产物构建矩阵、发布说明、校验和生成和 `RELEASE_INFO.txt` 特性标记。
-- 联邦 smoke/混沌/负载报告产物。
-- macOS 公证和 Windows 代码签名缺口。
-
-## 威胁模型关注点
-
-审计员应至少考虑：
-
-- 恶意中继/Mailbox/DHT 节点。
-- 恶意或妥协的联系人。
-- 被盗/丢失设备和设备撤销竞态。
-- 重放、重排、重复、延迟和畸形网络对象。
-- 从封闭每设备槽到旧版/回退信封的降级。
-- 污染 DHT 记录和恶意更近节点响应。
-- 浏览器本地妥协（未达到实时密钥提取）。
-- 原生节点磁盘妥协（state_db 为明文，依赖整盘加密）。
-- 令牌泄露或薄弱的 CORS/控制面部署。
-- 通过 Mailbox/DHT/控制面请求的资源耗尽。
-
-## 范围外 / 尚未保证
-
-以下项在未提供单独证据前仍是发布阻塞或明确限制：
-
-- 外部安全审计完成和修复。
-- macOS 公证和 Windows 代码签名。
-- 长时 fuzz 活动，且已分类崩溃并持久化语料库。
-- 真实托管节点上的长时公共网络混沌/负载测试。
-- 完整元数据隐私；LM Talk 保护内容，但仍会暴露操作元数据，如用户 ID、时间、DHT 键和 Mailbox 投递模式。
-- 完全匿名或抵抗流量分析。
-
-## 生产声明所需证据
-
-在声称生产就绪前，需收集并链接：
-
-- 针对准确发布的已完成 `docs/RELEASE_EVIDENCE.md`。
-- `./scripts/release-check.sh full` 输出。
-- 联邦 `run-all.sh` 报告和公网部署拓扑。
-- 包含语料/崩溃产物和分类笔记的 fuzz 活动报告。
-- 外部审计报告和修复提交。
-- 依赖审计/依赖复核证据。
-- 分发桌面/原生产物的签名/公证证据。
-
-## 审计员交付物
-
-预期审计输出：
-
-1. 包含严重性、影响组件/路径和利用叙述的发现。
-2. 建议修复和验证方法。
-3. 审查提交 SHA 和配置假设的确认。
-4. 对任何未解决风险和已接受限制的显式说明。
+- 发现列表。
+- 严重性和影响路径。
+- 复现步骤。
+- 修复建议。
+- 验证命令。
+- 残余风险说明。

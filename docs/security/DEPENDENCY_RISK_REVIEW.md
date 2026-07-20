@@ -1,63 +1,48 @@
 # 依赖风险复核
 
-本文档跟踪依赖安全例外以及判定漏洞依赖在 LM Talk 中是否可达的过程。它补充 `scripts/check-audit.sh`、CI `dependency-audit`、GitHub `dependency-review` 和 `docs/RELEASE_RISK_REGISTER.md`。
+本文记录 LM Talk 的依赖审计方式和当前例外。当前功能目标不把依赖风险签核作为阻塞项，但日常开发仍应运行审计并避免引入可达高危依赖。
 
-## 当前审计门禁
+## 常用检查
 
-| 生态 | 命令 / CI | 发布证据 |
+| 生态 | 命令 / 检查 | 说明 |
 | --- | --- | --- |
-| Rust | `./scripts/check-audit.sh` 运行 `cargo audit --deny warnings` | CI `dependency-audit` 日志或本地输出 |
-| Web npm | `npm audit --audit-level high` 在 `apps/web` 中 | CI `dependency-audit` 日志或本地输出 |
-| PR 依赖差异 | GitHub `dependency-review` | PR 检查状态 |
+| Rust | `./scripts/check-audit.sh` | 运行 `cargo audit`，并应用仓库记录的窄范围例外。 |
+| Web npm | `npm audit --audit-level high` | 在 `apps/web` 中检查高危 npm advisory。 |
+| PR 依赖差异 | GitHub dependency review | 检查新增依赖是否带入已知风险。 |
 
-`SKIP_CARGO_AUDIT=1` 仅用于没有 `cargo-audit` 的环境；不得作为发布证据使用。
+`SKIP_CARGO_AUDIT=1` 只适合没有 `cargo-audit` 的开发环境，不应用作正式验证结果。
 
-## 当前忽略的 Rust advisory
+## 当前 Rust advisory 例外
 
-`scripts/check-audit.sh` 当前忽略以下 advisory。这些例外在依赖或启用特性更改时必须重新评估。
+`scripts/check-audit.sh` 中忽略的 advisory 必须保持窄范围。若依赖、特性或运行路径发生变化，应重新评估。
 
-| Advisory | 当前理由 | 可达性假设 | 何时重新评估 | 发布状态 |
-| --- | --- | --- | --- | --- |
-| `RUSTSEC-2026-0118` | 由未使用的可选 `libp2p` DNS/mDNS 依赖元数据拉入的传递 `hickory-proto` advisory。 | LM Talk 仅启用 libp2p TCP/noise/yamux/request-response；未启用 DNS/mDNS 功能。 | `libp2p` 升级、启用 DNS/mDNS 功能或 advisory 范围更改时。 | 仅在有文档化的 CI 审计输出时允许例外。 |
-| `RUSTSEC-2026-0119` | 同上 `hickory-proto` 依赖系列。 | 同上。 | 同上。 | 仅在有文档化的 CI 审计输出时允许例外。 |
-| `RUSTSEC-2024-0436` | 通过传递的 Linux netlink/proc-macro 路径引入的 `paste` 警告，目前与 LM Talk 运行时协议无直接安全相关性。 | LM Talk 的 Web/原生节点控制面、Mailbox/DHT 解析、密码学操作未直接依赖 `paste` 行为。 | netlink 栈或依赖 crate 进入暴露的节点控制/数据路径；依赖升级或 advisory 更改时。 | 仅在有文档化的 CI 审计输出时允许例外。 |
+| Advisory | 当前理由 | 可达性假设 | 重新评估条件 |
+| --- | --- | --- | --- |
+| `RUSTSEC-2026-0118` | 来自未启用的可选 `libp2p` DNS/mDNS 依赖元数据。 | LM Talk 当前只启用 libp2p TCP/noise/yamux/request-response。 | 升级 `libp2p`、启用 DNS/mDNS，或 advisory 范围变化。 |
+| `RUSTSEC-2026-0119` | 同上，属于 `hickory-proto` 相关传递依赖。 | 同上。 | 同上。 |
+| `RUSTSEC-2024-0436` | `paste` 由传递 Linux netlink/proc-macro 路径带入，与当前暴露协议路径无直接关系。 | Web/WASM、节点控制面、Mailbox/DHT 解析和密码学操作不直接依赖其运行时行为。 | netlink 栈进入暴露控制/数据路径，或 advisory 变化。 |
 
-## 新 advisory 的复核工作流
+## 新 advisory 复核流程
 
-1. 确定直接或传递依赖及启用的特性路径。
-2. 判定漏洞代码是否可从以下路径触达：
+1. 确认依赖是直接依赖还是传递依赖。
+2. 确认触发漏洞的 feature 是否启用。
+3. 判断是否能从以下路径触达：
    - Web/WASM 边界；
    - 原生节点控制面；
    - Mailbox/DHT 解析；
    - 密码学操作；
-   - 部署/构建/发布工具链。
-3. 如果可达且可利用，则在修复或缓解前视为发布阻塞。
-4. 如果不可达，则在本文件中记录特性/路径理由，并为最窄范围的 `cargo audit --ignore` 添加条目。
-5. 添加后续项以在依赖升级时重新评估该例外。
-6. 将决策链接到 `docs/RELEASE_RISK_REGISTER.md`，当严重性为 medium 或更高时。
+   - 构建/部署工具链。
+4. 若可达，优先升级或删除对应依赖/feature。
+5. 若不可达，记录原因，并将 ignore 控制到最小范围。
+6. 依赖升级后重新检查。
 
-## 依赖更新策略
+## 依赖更新原则
 
-- 优先删除未使用的依赖特性，而不是添加审计例外。
-- 保持 `libp2p` 特性最小：macros、noise、request-response、json、tcp、tokio、yamux。
-- 对于 Web 依赖，避免添加会执行不信任 HTML/markdown 或扩大浏览器权限面的运行时包，除非经过审查。
-- Dependabot PR 应包含 CI `dependency-review` 状态和安全相关发布说明影响。
+- 优先减少 feature，而不是扩大忽略列表。
+- 保持 `libp2p` feature 最小化。
+- Web 依赖避免引入执行不可信 HTML/Markdown 或扩大浏览器权限面的运行时包。
+- 新增依赖应说明用途和安全边界。
 
-## 发布证据要求
+## 当前目标下的使用方式
 
-每个发布候选都应归档：
-
-- CI `dependency-audit` 任务日志；
-- 如果本地运行，则归档 `./scripts/check-audit.sh` 输出；
-- 本文件中主动生效的 `cargo audit --ignore` 例外列表；
-- 依赖更改 PR 的 `dependency-review` 状态；
-- 任何 Accepted 的依赖风险已复制到 `docs/RELEASE_RISK_REGISTER.md`。
-
-## 否决标准
-
-如果满足以下任一条件，则生产发布为 **NO-GO**：
-
-- 可达的高/严重 advisory 未解决。
-- 审计例外缺少可达性理由。
-- `npm audit --audit-level high` 未通过且无文档化 Accepted 风险。
-- `cargo audit --deny warnings` 对未明确在此处审查的 advisory 失败。
+依赖审计用于提高质量和安全性，但不再作为当前功能目标的完成阻塞项。若要做公开发行，可在发布证据中附上审计日志和本文件复核结果。
