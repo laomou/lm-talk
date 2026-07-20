@@ -25,6 +25,14 @@ docker compose up -d --build
 ./run-all.sh
 ```
 
+If your Docker package does not include the `docker compose` plugin, the helper scripts can use a direct `docker run` fallback for local validation:
+
+```bash
+LM_NODE_FEDERATION_DIRECT_DOCKER=1 ./run-all.sh
+```
+
+The direct fallback maps nodes directly to ports 8081/8082/8083, generates missing secrets, stores local data under `.docker-data/`, and disables background sync runners because the smoke scripts perform explicit snapshot imports.
+
 Use a node URL plus the matching token from `secrets/node-*-token` in the Web app sync settings.
 
 ## Public deployment notes

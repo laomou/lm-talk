@@ -58,7 +58,7 @@ run_step() {
 }
 
 if [[ "${LM_NODE_FEDERATION_SKIP_UP:-0}" != "1" ]]; then
-  run_step "start federation stack" docker compose -f "$DEPLOY_ROOT/docker-compose.yml" up -d --build
+  run_step "start federation stack" "$DEPLOY_ROOT/compose.sh" up -d --build
 fi
 
 run_step "basic federation smoke" "$TEST_ROOT/smoke-test.sh"

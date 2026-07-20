@@ -44,12 +44,12 @@ for node in a b c; do
 done
 
 echo "== publish signed ContactCard DHT record on node-a =="
-IDENTITY_JSON="$(docker compose -f "$DEPLOY_ROOT/docker-compose.yml" exec -T node-a /usr/local/bin/lm_node identity --passphrase smoke-pass)"
+IDENTITY_JSON="$("$DEPLOY_ROOT/compose.sh" exec -T node-a /usr/local/bin/lm_node identity --passphrase smoke-pass)"
 USER_ID="$(json_field user_id "$IDENTITY_JSON")"
 BACKUP_TEXT="$(json_field backup_text "$IDENTITY_JSON")"
 TMP_BACKUP="$(mktemp)"
 printf '%s' "$BACKUP_TEXT" > "$TMP_BACKUP"
-CONTACT_CARD="$(docker compose -f "$DEPLOY_ROOT/docker-compose.yml" exec -T node-a /usr/local/bin/lm_node contact-card --backup-file "$TMP_BACKUP" --passphrase smoke-pass --display-name Smoke)"
+CONTACT_CARD="$("$DEPLOY_ROOT/compose.sh" exec -T node-a /usr/local/bin/lm_node contact-card --backup-file "$TMP_BACKUP" --passphrase smoke-pass --display-name Smoke)"
 KEY_JSON="$(request a "/dht/key?kind=contact-card&value=$USER_ID")"
 echo "$KEY_JSON" | python3 -m json.tool >/dev/null
 KEY="$(json_field key "$KEY_JSON")"
@@ -61,9 +61,9 @@ python3 -c 'import json,sys; body=json.loads(sys.argv[1]); assert body.get("foun
 
 
 echo "== mailbox push on node-a and take from node-b after snapshot =="
-RECIPIENT_JSON="$(docker compose -f "$DEPLOY_ROOT/docker-compose.yml" exec -T node-a /usr/local/bin/lm_node identity --passphrase recipient-pass)"
+RECIPIENT_JSON="$("$DEPLOY_ROOT/compose.sh" exec -T node-a /usr/local/bin/lm_node identity --passphrase recipient-pass)"
 RECIPIENT_USER_ID="$(json_field user_id "$RECIPIENT_JSON")"
-MESSAGE_TEXT="$(docker compose -f "$DEPLOY_ROOT/docker-compose.yml" exec -T node-a /usr/local/bin/lm_node mailbox-message --backup-file "$TMP_BACKUP" --passphrase smoke-pass --to-user-id "$RECIPIENT_USER_ID" --kind other --ciphertext federation-smoke)"
+MESSAGE_TEXT="$("$DEPLOY_ROOT/compose.sh" exec -T node-a /usr/local/bin/lm_node mailbox-message --backup-file "$TMP_BACKUP" --passphrase smoke-pass --to-user-id "$RECIPIENT_USER_ID" --kind other --ciphertext federation-smoke)"
 rm -f "$TMP_BACKUP"
 FROM_PUBLIC_KEY="$(json_field identity_public_key "$IDENTITY_JSON")"
 PUSH_JSON="$(python3 -c 'import json,sys; print(json.dumps({"message_text":sys.argv[1],"from_identity_public_key":sys.argv[2]}))' "$MESSAGE_TEXT" "$FROM_PUBLIC_KEY")"
