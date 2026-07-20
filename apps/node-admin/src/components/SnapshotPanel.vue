@@ -10,6 +10,41 @@ const status = ref('')
 const error = ref('')
 const busy = ref(false)
 
+function snapshotFileName() {
+  return `lm-node-snapshot-${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+}
+
+function downloadSnapshot() {
+  if (!text.value.trim()) return
+  const blob = new Blob([`${text.value}\n`], { type: 'application/json;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = snapshotFileName()
+  a.click()
+  URL.revokeObjectURL(url)
+  status.value = '已下载节点快照 JSON'
+}
+
+function fallbackCopyText(value: string) {
+  const textarea = document.createElement('textarea')
+  textarea.value = value
+  textarea.setAttribute('readonly', 'true')
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.select()
+  document.execCommand('copy')
+  document.body.removeChild(textarea)
+}
+
+async function copySnapshot() {
+  if (!text.value.trim()) return
+  if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text.value)
+  else fallbackCopyText(text.value)
+  status.value = '已复制节点快照 JSON'
+}
+
 async function exportSnapshot() {
   busy.value = true
   error.value = ''
@@ -53,10 +88,12 @@ async function importSnapshot() {
       <h3>节点快照</h3>
       <div class="row compact">
         <button class="secondary" :disabled="!connected || busy" @click="exportSnapshot">导出快照</button>
+        <button class="secondary" :disabled="!text.trim()" @click="copySnapshot">复制 JSON</button>
+        <button class="secondary" :disabled="!text.trim()" @click="downloadSnapshot">下载 JSON</button>
         <button class="secondary" :disabled="!connected || busy || !text.trim()" @click="importSnapshot">导入到本节点</button>
       </div>
     </div>
-    <small>快照包含 mailbox、PreKey、DHT records 和 routing peers，不含身份私钥。</small>
+    <small>快照包含 mailbox、PreKey、DHT records 和 routing peers，不含身份私钥；导入前请确认来源可信。</small>
     <div v-if="error" class="outbox-error danger-text">{{ error }}</div>
     <small v-else-if="status">{{ status }}</small>
     <textarea

@@ -48,6 +48,32 @@ const now = () => Math.floor(Date.now() / 1000)
 const isQuarantined = (peer: SyncPeerStatus) =>
   typeof peer.next_attempt_at === 'number' && peer.next_attempt_at > now()
 
+function formatUnixTime(ts?: number | null) {
+  if (!ts) return '无'
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(new Date(ts * 1000))
+}
+
+function relativeUnixTime(ts?: number | null) {
+  if (!ts) return '无'
+  const delta = ts - now()
+  const abs = Math.abs(delta)
+  const unit = abs < 60 ? `${abs} 秒` : abs < 3600 ? `${Math.round(abs / 60)} 分钟` : `${Math.round(abs / 3600)} 小时`
+  return delta >= 0 ? `${unit} 后` : `${unit} 前`
+}
+
+function peerStateText(peer: SyncPeerStatus) {
+  if (isQuarantined(peer)) return '隔离中'
+  if (Number(peer.consecutive_failures ?? 0) > 0 || peer.last_error) return '异常'
+  return '健康'
+}
+
 const peers = computed(() => Object.values(data.value?.peers ?? {}))
 const federationSummary = computed(() => {
   const items = peers.value
@@ -85,11 +111,13 @@ const federationSummary = computed(() => {
       <div v-else class="outbox-list">
       <div v-for="peer in peers" :key="peer.url" class="outbox-row">
         <b>{{ peer.url }}</b>
-        <small :class="{ 'danger-text': isQuarantined(peer) }">
-          尝试 {{ peer.attempts ?? 0 }} · 成功 {{ peer.successes ?? 0 }} · 失败 {{ peer.failures ?? 0 }}
-          · 连续失败 {{ peer.consecutive_failures ?? 0 }}{{ isQuarantined(peer) ? ' · 已隔离' : '' }}
+        <small :class="{ 'danger-text': peerStateText(peer) !== '健康' }">
+          状态 {{ peerStateText(peer) }} · 尝试 {{ peer.attempts ?? 0 }} · 成功 {{ peer.successes ?? 0 }} · 失败 {{ peer.failures ?? 0 }}
+          · 连续失败 {{ peer.consecutive_failures ?? 0 }}
         </small>
-        <small v-if="peer.last_error" class="danger-text">{{ peer.last_error }}</small>
+        <small>最近尝试 {{ formatUnixTime(peer.last_attempt_at) }}（{{ relativeUnixTime(peer.last_attempt_at) }}） · 最近成功 {{ formatUnixTime(peer.last_success_at) }}（{{ relativeUnixTime(peer.last_success_at) }}）</small>
+        <small v-if="isQuarantined(peer)" class="danger-text">下次重试 {{ formatUnixTime(peer.next_attempt_at) }}（{{ relativeUnixTime(peer.next_attempt_at) }}）</small>
+        <small v-if="peer.last_error" class="danger-text">最近错误 {{ formatUnixTime(peer.last_error_at) }}：{{ peer.last_error }}</small>
         <button class="secondary" :disabled="resetting === peer.url" @click="resetPeer(peer.url)">
           {{ resetting === peer.url ? '重置中…' : `重置 ${peer.url}` }}
         </button>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { NodeApi } from '../nodeApi'
 import { NodeError } from '../nodeApi'
 
@@ -9,19 +9,31 @@ const result = ref('')
 const error = ref('')
 const busy = ref('')
 const findKey = ref('')
+const lastResult = ref<any>(null)
 
 async function run(label: string, fn: () => Promise<any>) {
   busy.value = label
   error.value = ''
   try {
     const res = await fn()
+    lastResult.value = res
     result.value = JSON.stringify(res, null, 2)
   } catch (err) {
+    lastResult.value = null
     error.value = err instanceof NodeError ? err.message : String(err)
   } finally {
     busy.value = ''
   }
 }
+
+const resultSummary = computed(() => {
+  const value = lastResult.value
+  if (!value || typeof value !== 'object') return []
+  const keys = ['records', 'peers', 'routing_peers', 'replicated', 'refreshed', 'stored', 'found', 'closest_peers']
+  return keys
+    .filter((key) => value[key] !== undefined)
+    .map((key) => ({ key, value: Array.isArray(value[key]) ? value[key].length : value[key] }))
+})
 
 function findValue() {
   const key = findKey.value.trim()
@@ -57,6 +69,9 @@ function findValue() {
       </button>
     </div>
     <div v-if="error" class="outbox-error danger-text">{{ error }}</div>
+    <div v-if="resultSummary.length" class="outbox-summary compact-summary">
+      <span v-for="item in resultSummary" :key="item.key">{{ item.key }} {{ item.value }}</span>
+    </div>
     <pre v-if="result" class="mono" aria-label="DHT 运维结果">{{ result }}</pre>
   </section>
 </template>
