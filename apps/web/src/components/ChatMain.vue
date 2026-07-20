@@ -31,6 +31,38 @@ function mailboxWaitText(message: any) {
   const hours = Math.floor(minutes / 60)
   return `等待收取 ${hours} 小时`
 }
+function messageStatusClass(message: any) {
+  if (message.status === 'failed') return 'danger'
+  if (message.status === 'queued' || message.status === 'copied') return 'warning'
+  if (message.status === 'mailbox' || message.status === 'delivered') return 'info'
+  if (message.status === 'read' || message.status === 'sent' || message.status === 'received') return 'ok'
+  return 'info'
+}
+function messageStatusShortText(message: any) {
+  if (message.direction === 'in') return message.status === 'received' ? '已接收' : props.ctx.statusLabel(message.status)
+  switch (message.status) {
+    case 'queued': return '待发送'
+    case 'copied': return '待发送'
+    case 'mailbox': return 'Mailbox'
+    case 'sent': return '已发送'
+    case 'delivered': return '已送达'
+    case 'read': return '已读'
+    case 'failed': return '失败'
+    default: return props.ctx.statusLabel(message.status)
+  }
+}
+function messageStatusDetailText(message: any) {
+  const parts = [props.ctx.statusLabel(message.status)]
+  const wait = mailboxWaitText(message)
+  if (wait) parts.push(wait)
+  if (message.mailbox_delivery_id) parts.push(`delivery ${shortMessageId(message.mailbox_delivery_id)}`)
+  if (message.read_at) parts.push(`已读 ${props.ctx.formatDateTime(message.read_at)}`)
+  else if (message.delivered_at) parts.push(`送达 ${props.ctx.formatDateTime(message.delivered_at)}`)
+  if (message.direction === 'out' && message.protocol_message_id) parts.push(`消息 ${shortMessageId(message.protocol_message_id)}`)
+  if (message.direction === 'out' && props.ctx.perDeviceEnvelopeTargetCount(message)) parts.push(`分设备 ${props.ctx.perDeviceEnvelopeTargetCount(message)}`)
+  if (message.file_downloaded_at) parts.push(`已下载 ${props.ctx.formatDateTime(message.file_downloaded_at)}`)
+  return parts.filter(Boolean).join(' · ')
+}
 
 // 把消息序列展开成「日期分割线 + 气泡」的渲染项
 const thread = computed(() => {
@@ -255,12 +287,14 @@ function onComposerKeydown(e: KeyboardEvent) {
             <small v-if="ctx.activeGroup.value && item.m.direction !== 'out'" class="bubble-sender">{{ contactName(item.m.peer_user_id) }}</small>
             <div class="text">{{ item.m.text }}</div>
             <small class="bubble-meta">
-              {{ hmTime(item.m.created_at) }} · {{ ctx.statusLabel(item.m.status) }}
+              <span class="status-pill" :class="messageStatusClass(item.m)" :title="messageStatusDetailText(item.m)">{{ messageStatusShortText(item.m) }}</span>
+              <span>{{ hmTime(item.m.created_at) }}</span>
               <span v-if="mailboxWaitText(item.m)"> · {{ mailboxWaitText(item.m) }}</span>
+              <span v-if="item.m.mailbox_delivery_id"> · delivery {{ shortMessageId(item.m.mailbox_delivery_id) }}</span>
               <span v-if="item.m.read_at"> · 已读 {{ ctx.formatDateTime(item.m.read_at) }}</span>
               <span v-else-if="item.m.delivered_at"> · 送达 {{ ctx.formatDateTime(item.m.delivered_at) }}</span>
               <span v-if="item.m.direction === 'out' && item.m.protocol_message_id"> · {{ shortMessageId(item.m.protocol_message_id) }}</span>
-              <span v-if="item.m.direction === 'out' && ctx.perDeviceEnvelopeTargetCount(item.m)"> · 分设备草稿 {{ ctx.perDeviceEnvelopeTargetCount(item.m) }}</span>
+              <span v-if="item.m.direction === 'out' && ctx.perDeviceEnvelopeTargetCount(item.m)"> · 分设备 {{ ctx.perDeviceEnvelopeTargetCount(item.m) }}</span>
               <span v-if="item.m.file_downloaded_at"> · 已下载 {{ ctx.formatDateTime(item.m.file_downloaded_at) }}</span>
             </small>
           </div>

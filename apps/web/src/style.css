@@ -470,6 +470,12 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 .bubble small { display: block; margin-top: var(--sp-1); color: var(--c-ink-3); font-size: 11px; }
 .bubble small.bubble-sender { margin-top: 0; }
 .bubble.out small { color: rgba(0, 0, 0, .45); }
+.status-pill { display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; padding: 1px 6px; border-radius: var(--r-pill); border: 1px solid var(--c-line); background: var(--c-surface-2); color: var(--c-ink-2); font-size: 11px; font-weight: 600; }
+.status-pill.ok { border-color: var(--c-success-line); background: var(--c-success-bg); color: var(--c-success-ink); }
+.status-pill.info { border-color: var(--c-primary-soft); background: var(--c-primary-soft); color: var(--c-primary-ink); }
+.status-pill.warning { border-color: var(--c-warn-line); background: var(--c-warn-bg); color: var(--c-warn-ink); }
+.status-pill.danger { border-color: var(--c-danger); background: var(--c-danger-soft); color: var(--c-danger); }
+.bubble.out .status-pill { color: var(--c-ink-2); }
 
 .composer {
   background: var(--c-surface);
