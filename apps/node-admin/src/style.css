@@ -763,3 +763,15 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 .overview-card small { color: var(--c-ink-3); overflow-wrap: anywhere; }
 .compact-summary { flex-wrap: wrap; gap: var(--sp-2); }
 .compact-summary span { background: var(--c-surface-2); border: 1px solid var(--c-line); border-radius: var(--r-pill); padding: 3px 10px; }
+
+.overview-shell { padding-bottom: var(--sp-4); }
+.overview-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--sp-2); }
+.overview-mini-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-2); }
+.overview-mini-row span { padding: 3px 8px; border: 1px solid var(--c-line); border-radius: var(--r-pill); background: var(--c-surface-2); color: var(--c-ink-3); font-size: 12px; }
+.overview-notes { margin-top: var(--sp-2); }
+.overview-notes small { display: block; }
+.overview-card.compact { padding: var(--sp-2); }
+.compact-endpoint { padding: var(--sp-2) var(--sp-3); }
+.report-toggle { margin-top: var(--sp-2); }
+.report-toggle summary { cursor: pointer; color: var(--c-primary-ink); font-weight: 600; }
+.report-toggle textarea { margin-top: var(--sp-2); }

@@ -73,8 +73,8 @@ test('节点管理面板可连接并展示健康与运行 DHT 维护', async ({ 
 
   // Overview panel renders the mocked aggregate status without exposing the token.
   await expect(page.getByRole('heading', { name: '节点总览' })).toBeVisible()
-  await expect(page.getByText('Mailbox 压力')).toBeVisible()
-  await expect(page.getByText('联邦同步')).toBeVisible()
+  await expect(page.getByText('Mailbox', { exact: true })).toBeVisible()
+  await expect(page.getByText('联邦', { exact: true })).toBeVisible()
   await expect(page.getByLabel('诊断报告 JSON')).toHaveValue(/\"peer_id\": \"peer-abc\"/)
   await expect(page.getByLabel('诊断报告 JSON')).not.toHaveValue(/secret-token/)
 

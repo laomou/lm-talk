@@ -165,7 +165,7 @@ async function exportReport() {
 </script>
 
 <template>
-  <section class="home-card">
+  <section class="home-card overview-shell">
     <div class="section-title-row">
       <h3>节点总览</h3>
       <div class="row compact">
@@ -179,58 +179,52 @@ async function exportReport() {
     <div v-if="error" class="outbox-error danger-text">{{ error }}</div>
     <div v-else-if="!health || !stats || !sync" class="empty">连接节点后显示总览</div>
     <template v-else>
-      <div class="node-overview-grid">
+      <div class="overview-strip">
         <div class="overview-card">
-          <span>节点状态</span>
+          <span>节点</span>
           <b :class="{ 'danger-text': nodeHealthText !== '正常' }">{{ nodeHealthText }}</b>
-          <small>{{ health.status ?? 'unknown' }} · peer {{ health.peer_id ?? 'n/a' }}</small>
+          <small>{{ health.status ?? 'unknown' }} · {{ health.peer_id ?? 'n/a' }}</small>
         </div>
         <div class="overview-card">
-          <span>Mailbox 压力</span>
+          <span>Mailbox</span>
           <b :class="{ 'danger-text': mailboxPressure.pct >= 80 }">{{ mailboxPressure.pct }}%</b>
-          <small>{{ mailboxPressure.used }} / {{ mailboxPressure.max }} bytes</small>
+          <small>{{ health.mailbox_deliveries ?? 0 }} 次投递 · {{ mailboxPressure.used }} / {{ mailboxPressure.max }}</small>
         </div>
         <div class="overview-card">
-          <span>控制面风险</span>
+          <span>控制面</span>
           <b :class="{ 'danger-text': controlSummary.responses_5xx > 0 || controlSummary.unauthorized > 0 }">{{ controlSummary.responses_5xx > 0 || controlSummary.unauthorized > 0 ? '需关注' : '正常' }}</b>
-          <small>5xx {{ controlSummary.responses_5xx }} · 未授权 {{ controlSummary.unauthorized }} · 限流 {{ controlSummary.rate_limited }}</small>
+          <small>请求 {{ controlSummary.requests }} · 5xx {{ controlSummary.responses_5xx }} · 401 {{ controlSummary.unauthorized }}</small>
         </div>
         <div class="overview-card">
-          <span>联邦同步</span>
+          <span>联邦</span>
           <b :class="{ 'danger-text': peerSummary.failing > 0 || peerSummary.quarantined > 0 }">{{ peerSummary.total }} peers</b>
           <small>健康 {{ peerSummary.healthy }} · 异常 {{ peerSummary.failing }} · 隔离 {{ peerSummary.quarantined }}</small>
         </div>
       </div>
-      <div class="outbox-summary compact-summary">
-        <span>Mailbox {{ health.mailbox_deliveries ?? 0 }}</span>
-        <span>请求 {{ controlSummary.requests }}</span>
+      <div class="overview-mini-row">
         <span>2xx {{ stats.responses_2xx ?? 0 }}</span>
         <span>4xx {{ stats.responses_4xx ?? 0 }}</span>
         <span>5xx {{ stats.responses_5xx ?? 0 }}</span>
+        <span v-if="health.state_db_encrypted !== undefined">state_db {{ health.state_db_encrypted ? '加密' : '明文' }}</span>
+        <span v-if="health.state_db_permissions_hardened !== undefined">权限 {{ health.state_db_permissions_hardened ? '已硬化' : '未硬化' }}</span>
       </div>
-      <div class="sync-status">
-        <small v-if="health.state_db_encrypted !== undefined" :class="{ 'danger-text': health.state_db_encrypted === false }">
-          state_db 加密：{{ health.state_db_encrypted ? '是' : '否' }}
-        </small>
-        <small v-if="health.state_db_permissions_hardened !== undefined">
-          state_db 权限硬化：{{ health.state_db_permissions_hardened ? '是' : '否' }}
-        </small>
-        <small v-if="peerSummary.quarantined > 0" class="danger-text">部分 sync peer 已隔离，请查看 Sync Peer 面板</small>
+      <div class="overview-notes">
+        <small v-if="peerSummary.quarantined > 0" class="danger-text">部分 sync peer 已隔离</small>
       </div>
       <div v-if="endpointRows.length" class="outbox-list">
         <div class="outbox-row">
           <b>控制面 Top endpoints</b>
-          <small>已按请求量排序，便于快速定位异常路径</small>
+          <small>已按请求量排序</small>
         </div>
-        <div v-for="row in endpointRows" :key="row.name" class="outbox-row">
+        <div v-for="row in endpointRows" :key="row.name" class="outbox-row compact-endpoint">
           <b>{{ row.name }}</b>
-          <small>
-            请求 {{ row.requests ?? 0 }} · 2xx {{ row.responses_2xx ?? 0 }} · 4xx {{ row.responses_4xx ?? 0 }} · 5xx {{ row.responses_5xx ?? 0 }}
-            <span v-if="row.last_status"> · 最近 {{ row.last_status }}</span>
-          </small>
+          <small>请求 {{ row.requests ?? 0 }} · 2xx {{ row.responses_2xx ?? 0 }} · 5xx {{ row.responses_5xx ?? 0 }}<span v-if="row.last_status"> · 最近 {{ row.last_status }}</span></small>
         </div>
       </div>
-      <textarea v-model="reportText" class="mono" rows="8" aria-label="诊断报告 JSON" placeholder="点击导出诊断报告后可直接复制/保存" />
+      <details class="report-toggle">
+        <summary>诊断报告 JSON</summary>
+        <textarea v-model="reportText" class="mono" rows="8" aria-label="诊断报告 JSON" placeholder="点击导出诊断报告后可直接复制/保存" />
+      </details>
     </template>
   </section>
 </template>
