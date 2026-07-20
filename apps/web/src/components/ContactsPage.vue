@@ -365,7 +365,10 @@ function openGroupDetail(groupId: string) {
           <section v-if="ctx.activeGroupStrictE2eeRiskText.value" class="home-card">
             <div class="section-title-row">
               <h3>群聊严格 E2EE 修复向导</h3>
-              <button class="secondary" @click="ctx.repairStrictE2eeBlockers">批量处理阻塞</button>
+              <div class="row compact">
+                <button class="secondary" @click="ctx.repairStrictE2eeForActiveGroup">一键修复本群</button>
+                <button class="secondary" @click="ctx.repairStrictE2eeBlockers">批量处理阻塞</button>
+              </div>
             </div>
             <div class="outbox-list">
               <div v-for="m in ctx.activeGroupMembers.value" :key="`strict-${m.user_id}`" class="outbox-row">
