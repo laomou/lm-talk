@@ -763,7 +763,12 @@ fn real_http_control_plane_requires_token_and_enforces_cors() {
     assert_eq!(unauthorized.status, 401);
     let unauthorized_body: serde_json::Value = serde_json::from_str(&unauthorized.body).unwrap();
     assert_eq!(unauthorized_body["error_code"], "UNAUTHORIZED");
-    assert!(unauthorized_body["recovery_hint"].as_str().unwrap().contains("令牌"));
+    assert!(
+        unauthorized_body["recovery_hint"]
+            .as_str()
+            .unwrap()
+            .contains("令牌")
+    );
 
     let forbidden_origin = http_request_with_headers(
         &base,
