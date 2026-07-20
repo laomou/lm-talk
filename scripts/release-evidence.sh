@@ -59,6 +59,7 @@ checks = {
 }
 missing = [name for name, ok in checks.items() if not ok]
 risk_gate_status = "missing"
+risk_gate_mode = "missing"
 risk_gate_issue_count = None
 risk_gate_counts = None
 risk_gate_report = pathlib.Path(out).with_name("risk-register-gate-report.json")
@@ -66,6 +67,7 @@ risk_gate_log = pathlib.Path(out).with_name("risk-register-gate.log")
 if risk_gate_report.exists():
     parsed = json.loads(risk_gate_report.read_text(encoding="utf-8"))
     risk_gate_status = parsed.get("status") or "unknown"
+    risk_gate_mode = parsed.get("mode") or "unknown"
     risk_gate_issue_count = len(parsed.get("issues") or [])
     risk_gate_counts = parsed.get("counts")
 elif risk_gate_log.exists():
@@ -74,6 +76,8 @@ elif risk_gate_log.exists():
         if line.startswith("status="):
             risk_gate_status = line.split("=", 1)[1].strip() or "unknown"
             break
+        if line.startswith("mode="):
+            risk_gate_mode = line.split("=", 1)[1].strip() or "unknown"
     if risk_gate_status == "missing":
         risk_gate_status = "unknown"
     risk_gate_issue_count = sum(1 for line in text.splitlines() if line.startswith("- RISK-"))
@@ -90,10 +94,11 @@ signing_summary = {
 }
 production_gate = {
     "risk_register_gate_status": risk_gate_status,
+    "risk_register_gate_mode": risk_gate_mode,
     "risk_register_gate_issue_count": risk_gate_issue_count,
     "risk_register_gate_counts": risk_gate_counts,
     "risk_register_gate_report_present": risk_register_gate_report == "true",
-    "risk_register_production_ready": risk_gate_status == "ok",
+    "risk_register_production_ready": risk_gate_status == "ok" and risk_gate_mode == "strict",
     "signing": signing_summary,
 }
 report = {
@@ -104,7 +109,7 @@ report = {
     "checks": checks,
     "missing": missing,
     "production_gate": production_gate,
-    "notes": "This index only records local artifacts found at collection time. Fill docs/RELEASE_EVIDENCE.md with links to CI artifacts, release assets, audits, and manual approvals before claiming production readiness.",
+    "notes": "This index only records local artifacts found at collection time. Fill docs/release/RELEASE_EVIDENCE.md with links to CI artifacts, release assets, audits, and manual approvals before claiming production readiness.",
 }
 with open(out, "w", encoding="utf-8") as f:
     json.dump(report, f, indent=2)

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REGISTER="${1:-$ROOT/docs/RELEASE_RISK_REGISTER.md}"
+REGISTER="${1:-$ROOT/docs/release/RELEASE_RISK_REGISTER.md}"
 MODE="${RISK_REGISTER_GATE_MODE:-strict}"
 REPORT="${RISK_REGISTER_GATE_REPORT:-}"
 
@@ -48,7 +48,18 @@ rows = []
 for line in lines:
     stripped = line.strip()
     if stripped.startswith("| ID |"):
-        header = [cell.strip() for cell in stripped.strip("|").split("|")]
+        raw_header = [cell.strip() for cell in stripped.strip("|").split("|")]
+        aliases = {
+            "风险 / 限制": "Risk",
+            "严重性": "Severity",
+            "状态": "Status",
+            "当前缓解": "Mitigation / evidence",
+            "负责人": "Owner",
+            "发布决策": "Release decision",
+            "所需证据": "Evidence required",
+            "证据链接": "Evidence link",
+        }
+        header = [aliases.get(cell, cell) for cell in raw_header]
         continue
     if not stripped.startswith("| RISK-"):
         continue
@@ -107,7 +118,7 @@ for row in rows:
     if severity == "Medium" and status == "Open": counts["open_medium"] += 1
     if severity == "Critical" and status == "Open": counts["open_critical"] += 1
 
-    if severity in blocking_severities:
+    if severity in blocking_severities and mode == "strict":
         if is_blank(owner):
             counts["missing_owner"] += 1
             issues.append(f"{rid}: {severity} risk is missing Owner")
@@ -121,13 +132,13 @@ for row in rows:
             counts["missing_evidence_link"] += 1
             issues.append(f"{rid}: {severity} risk is missing Evidence link")
 
-    if severity in blocking_severities and status in blocking_statuses:
+    if severity in blocking_severities and status in blocking_statuses and mode == "strict":
         issues.append(f"{rid}: {severity} risk is {status}; production release is no-go")
 
     if severity == "Critical" and status == "Accepted":
         issues.append(f"{rid}: Critical risk cannot be accepted")
 
-    if status in {"Accepted", "Mitigated"}:
+    if status in {"Accepted", "Mitigated"} and mode == "strict":
         if is_blank(mitigation):
             issues.append(f"{rid}: {status} risk must link mitigation/evidence")
         if is_blank(evidence_link):
