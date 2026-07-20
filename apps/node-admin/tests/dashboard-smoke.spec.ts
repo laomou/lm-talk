@@ -41,6 +41,7 @@ async function installMockNode(page: Page) {
         json: {
           peers: {
             'http://peer-ok': { url: 'http://peer-ok', attempts: 5, successes: 5, failures: 0, consecutive_failures: 0 },
+            'http://peer-bad': { url: 'http://peer-bad', attempts: 4, successes: 1, failures: 3, consecutive_failures: 2, last_error: 'timeout' },
           },
         },
       })
@@ -70,8 +71,12 @@ test('节点管理面板可连接并展示健康与运行 DHT 维护', async ({ 
   await expect(page.getByText('ok', { exact: true })).toBeVisible()
   await expect(page.getByText('peers 2', { exact: true })).toBeVisible()
 
-  // Stats panel loads.
+  // Stats and federation peer summary panels load.
   await expect(page.getByText('请求总数 42', { exact: true })).toBeVisible()
+  await expect(page.getByText('联邦 peer')).toBeVisible()
+  await expect(page.getByText('健康 1', { exact: true })).toBeVisible()
+  await expect(page.getByText('异常 1', { exact: true })).toBeVisible()
+  await expect(page.getByText('http://peer-bad', { exact: true })).toBeVisible()
 
   // Trigger DHT maintenance and confirm the request is issued + result rendered.
   const maintenanceRequest = page.waitForRequest(`${NODE_ORIGIN}/api/dht/maintenance*`)
