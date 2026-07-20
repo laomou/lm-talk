@@ -34,8 +34,14 @@ async function installMockNode(page: Page) {
           bad_requests: 0,
           endpoints: {
             '/api/health': { requests: 30, responses_2xx: 30 },
-            '/api/mailbox/push': { requests: 8, responses_2xx: 7, responses_4xx: 1 },
-            '/api/dht/find-value': { requests: 4, responses_2xx: 4 },
+            '/api/mailbox/push': { requests: 8, responses_2xx: 7, responses_4xx: 1, max_duration_micros: 1200 },
+            '/api/dht/find-value': { requests: 4, responses_2xx: 4, max_duration_micros: 900 },
+          },
+          endpoint_groups: {
+            mailbox: { endpoints: 1, requests: 8, responses_2xx: 7, responses_4xx: 1, responses_5xx: 0, max_duration_micros: 1200 },
+            dht: { endpoints: 1, requests: 4, responses_2xx: 4, responses_4xx: 0, responses_5xx: 0, max_duration_micros: 900 },
+            sync: { endpoints: 0, requests: 0, responses_2xx: 0, responses_4xx: 0, responses_5xx: 0, max_duration_micros: 0 },
+            other: { endpoints: 1, requests: 30, responses_2xx: 30, responses_4xx: 0, responses_5xx: 0, max_duration_micros: 0 },
           },
         },
       })
@@ -73,7 +79,7 @@ test('节点管理面板可连接并展示健康与运行 DHT 维护', async ({ 
 
   // Overview panel renders the mocked aggregate status without exposing the token.
   await expect(page.getByRole('heading', { name: '节点总览' })).toBeVisible()
-  await expect(page.getByText('Mailbox', { exact: true })).toBeVisible()
+  await expect(page.getByText('Mailbox', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('联邦', { exact: true })).toBeVisible()
   await expect(page.getByLabel('诊断报告 JSON')).toHaveValue(/\"peer_id\": \"peer-abc\"/)
   await expect(page.getByLabel('诊断报告 JSON')).not.toHaveValue(/secret-token/)
@@ -83,9 +89,10 @@ test('节点管理面板可连接并展示健康与运行 DHT 维护', async ({ 
   await expect(page.getByText('peers 2', { exact: true })).toBeVisible()
 
   // Stats and federation peer summary panels load.
-  await expect(page.getByText('请求总数 42', { exact: true })).toBeVisible()
-  await expect(page.getByText('Mailbox 8', { exact: true })).toBeVisible()
-  await expect(page.getByText('DHT 4', { exact: true })).toBeVisible()
+  await expect(page.getByText('请求总数', { exact: true })).toBeVisible()
+  await expect(page.locator('.stats-overview-card').filter({ hasText: 'Mailbox' })).toBeVisible()
+  await expect(page.locator('.stats-overview-card').filter({ hasText: 'DHT' })).toBeVisible()
+  await expect(page.getByText('Mailbox 慢 1200', { exact: true })).toBeVisible()
   await expect(page.getByText('联邦 peer')).toBeVisible()
   await expect(page.getByText('健康 1', { exact: true })).toBeVisible()
   await expect(page.getByText('异常 1', { exact: true })).toBeVisible()

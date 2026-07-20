@@ -38,22 +38,45 @@ const endpointRows = computed(() => {
 })
 
 const groupedRows = computed(() => {
-  const groups: Record<'mailbox' | 'dht' | 'sync' | 'other', { requests: number; responses_4xx: number; responses_5xx: number; count: number }> = {
-    mailbox: { requests: 0, responses_4xx: 0, responses_5xx: 0, count: 0 },
-    dht: { requests: 0, responses_4xx: 0, responses_5xx: 0, count: 0 },
-    sync: { requests: 0, responses_4xx: 0, responses_5xx: 0, count: 0 },
-    other: { requests: 0, responses_4xx: 0, responses_5xx: 0, count: 0 },
+  const fromApi = data.value?.endpoint_groups
+  if (fromApi) {
+    return {
+      mailbox: normalizeGroup(fromApi.mailbox),
+      dht: normalizeGroup(fromApi.dht),
+      sync: normalizeGroup(fromApi.sync),
+      other: normalizeGroup(fromApi.other),
+    }
+  }
+  const groups: Record<'mailbox' | 'dht' | 'sync' | 'other', ReturnType<typeof normalizeGroup>> = {
+    mailbox: normalizeGroup(),
+    dht: normalizeGroup(),
+    sync: normalizeGroup(),
+    other: normalizeGroup(),
   }
   for (const row of endpointRows.value) {
     const name = String(row.name)
     const key = name.includes('mailbox') ? 'mailbox' : name.includes('dht') ? 'dht' : name.includes('sync') ? 'sync' : 'other'
     groups[key].requests += Number(row.requests ?? 0)
+    groups[key].responses_2xx += Number(row.responses_2xx ?? 0)
     groups[key].responses_4xx += Number(row.responses_4xx ?? 0)
     groups[key].responses_5xx += Number(row.responses_5xx ?? 0)
-    groups[key].count += 1
+    groups[key].endpoints += 1
+    const slowest = Number(row.max_duration_micros ?? 0)
+    if (slowest > groups[key].max_duration_micros) groups[key].max_duration_micros = slowest
   }
   return groups
 })
+
+function normalizeGroup(group?: any) {
+  return {
+    endpoints: Number(group?.endpoints ?? 0),
+    requests: Number(group?.requests ?? 0),
+    responses_2xx: Number(group?.responses_2xx ?? 0),
+    responses_4xx: Number(group?.responses_4xx ?? 0),
+    responses_5xx: Number(group?.responses_5xx ?? 0),
+    max_duration_micros: Number(group?.max_duration_micros ?? 0),
+  }
+}
 </script>
 
 <template>
@@ -68,23 +91,33 @@ const groupedRows = computed(() => {
     <div v-if="error" class="outbox-error danger-text">{{ error }}</div>
     <div v-else-if="!data" class="empty">连接节点后显示运行统计</div>
     <template v-else>
-      <div class="outbox-summary compact-summary">
-        <span>请求总数 {{ data.requests_total ?? 0 }}</span>
-        <span>2xx {{ data.responses_2xx ?? 0 }}</span>
-        <span :class="{ 'danger-text': Number(data.responses_4xx ?? 0) > 0 }">4xx {{ data.responses_4xx ?? 0 }}</span>
-        <span :class="{ 'danger-text': Number(data.responses_5xx ?? 0) > 0 }">5xx {{ data.responses_5xx ?? 0 }}</span>
+      <div class="stats-overview-grid">
+        <div class="stats-overview-card">
+          <span>请求总数</span>
+          <b>{{ data.requests_total ?? 0 }}</b>
+          <small>2xx {{ data.responses_2xx ?? 0 }} · 4xx {{ data.responses_4xx ?? 0 }} · 5xx {{ data.responses_5xx ?? 0 }}</small>
+        </div>
+        <div class="stats-overview-card">
+          <span>安全事件</span>
+          <b :class="{ 'danger-text': Number(data.unauthorized ?? 0) > 0 || Number(data.rate_limited ?? 0) > 0 }">{{ Number(data.unauthorized ?? 0) + Number(data.rate_limited ?? 0) + Number(data.cors_rejected ?? 0) + Number(data.bad_requests ?? 0) }}</b>
+          <small>401 {{ data.unauthorized ?? 0 }} · 429 {{ data.rate_limited ?? 0 }} · CORS {{ data.cors_rejected ?? 0 }} · bad {{ data.bad_requests ?? 0 }}</small>
+        </div>
+        <div class="stats-overview-card">
+          <span>Mailbox</span>
+          <b>{{ groupedRows.mailbox.requests }}</b>
+          <small>{{ groupedRows.mailbox.endpoints }} 个端点 · 2xx {{ groupedRows.mailbox.responses_2xx }} · 5xx {{ groupedRows.mailbox.responses_5xx }}</small>
+        </div>
+        <div class="stats-overview-card">
+          <span>DHT</span>
+          <b>{{ groupedRows.dht.requests }}</b>
+          <small>{{ groupedRows.dht.endpoints }} 个端点 · 2xx {{ groupedRows.dht.responses_2xx }} · 5xx {{ groupedRows.dht.responses_5xx }}</small>
+        </div>
       </div>
-      <div class="outbox-summary">
-        <span :class="{ 'danger-text': Number(data.unauthorized ?? 0) > 0 }">未授权 {{ data.unauthorized ?? 0 }}</span>
-        <span :class="{ 'danger-text': Number(data.rate_limited ?? 0) > 0 }">限流命中 {{ data.rate_limited ?? 0 }}</span>
-        <span :class="{ 'danger-text': Number(data.cors_rejected ?? 0) > 0 }">CORS 拒绝 {{ data.cors_rejected ?? 0 }}</span>
-        <span>坏请求 {{ data.bad_requests ?? 0 }}</span>
-      </div>
       <div class="outbox-summary compact-summary">
-        <span>Mailbox {{ groupedRows.mailbox.requests }}</span>
-        <span>DHT {{ groupedRows.dht.requests }}</span>
         <span>Sync {{ groupedRows.sync.requests }}</span>
         <span>其他 {{ groupedRows.other.requests }}</span>
+        <span>Mailbox 慢 {{ groupedRows.mailbox.max_duration_micros }}</span>
+        <span>DHT 慢 {{ groupedRows.dht.max_duration_micros }}</span>
       </div>
       <div v-if="endpointRows.length" class="outbox-list">
         <div v-for="row in endpointRows" :key="row.name" class="outbox-row">

@@ -6,6 +6,7 @@ pub(super) struct ControlStatsResponse<'a> {
     pub(crate) runtime: &'a ControlRuntimeStats,
     pub(crate) maintenance: NodeMaintenanceStats,
     pub(crate) state_db: Option<StateDbStats>,
+    pub(crate) endpoint_groups: EndpointGroupSummary,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -76,6 +77,35 @@ pub(super) struct ControlRuntimeStats {
     pub(crate) dht_routing_refresh_schedule_delay_micros_max: u128,
     pub(crate) last_dht_routing_refresh_schedule_delay_micros: Option<u128>,
     pub(crate) endpoints: HashMap<String, ControlEndpointStats>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+pub(super) struct EndpointGroupSummary {
+    pub(crate) mailbox: EndpointGroupStats,
+    pub(crate) dht: EndpointGroupStats,
+    pub(crate) sync: EndpointGroupStats,
+    pub(crate) other: EndpointGroupStats,
+}
+
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+pub(super) struct EndpointGroupStats {
+    pub(crate) endpoints: u64,
+    pub(crate) requests: u64,
+    pub(crate) responses_2xx: u64,
+    pub(crate) responses_4xx: u64,
+    pub(crate) responses_5xx: u64,
+    pub(crate) max_duration_micros: u128,
+}
+
+impl EndpointGroupStats {
+    fn add_endpoint(&mut self, stats: &ControlEndpointStats) {
+        self.endpoints = self.endpoints.saturating_add(1);
+        self.requests = self.requests.saturating_add(stats.requests);
+        self.responses_2xx = self.responses_2xx.saturating_add(stats.responses_2xx);
+        self.responses_4xx = self.responses_4xx.saturating_add(stats.responses_4xx);
+        self.responses_5xx = self.responses_5xx.saturating_add(stats.responses_5xx);
+        self.max_duration_micros = self.max_duration_micros.max(stats.max_duration_micros);
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
@@ -1368,6 +1398,27 @@ impl ControlRuntimeStats {
             }
             _ => {}
         }
+    }
+
+    pub(crate) fn endpoint_group_summary(&self) -> EndpointGroupSummary {
+        let mut summary = EndpointGroupSummary::default();
+        for (endpoint, stats) in &self.endpoints {
+            let path = endpoint
+                .split_once(' ')
+                .map(|(_, path)| path)
+                .unwrap_or(endpoint.as_str());
+            let group = if path.contains("/mailbox/") {
+                &mut summary.mailbox
+            } else if path.contains("/dht/") {
+                &mut summary.dht
+            } else if path.contains("/sync/") {
+                &mut summary.sync
+            } else {
+                &mut summary.other
+            };
+            group.add_endpoint(stats);
+        }
+        summary
     }
 
     pub(crate) fn record_response(&mut self, endpoint: &str, status: u16, duration: Duration) {

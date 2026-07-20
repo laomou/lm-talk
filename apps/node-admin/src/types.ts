@@ -30,6 +30,17 @@ export interface EndpointStats {
   responses_4xx?: number
   responses_5xx?: number
   last_status?: number
+  max_duration_micros?: number
+  [key: string]: unknown
+}
+
+export interface EndpointGroupStats {
+  endpoints?: number
+  requests?: number
+  responses_2xx?: number
+  responses_4xx?: number
+  responses_5xx?: number
+  max_duration_micros?: number
   [key: string]: unknown
 }
 
@@ -44,6 +55,7 @@ export interface ControlStatsResponse {
   cors_rejected?: number
   rate_limited?: number
   endpoints?: Record<string, EndpointStats>
+  endpoint_groups?: Record<'mailbox' | 'dht' | 'sync' | 'other', EndpointGroupStats>
   maintenance?: Record<string, unknown>
   state_db?: Record<string, unknown> | null
   state_file?: Record<string, unknown> | null

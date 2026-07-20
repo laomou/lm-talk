@@ -775,3 +775,9 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 .report-toggle { margin-top: var(--sp-2); }
 .report-toggle summary { cursor: pointer; color: var(--c-primary-ink); font-weight: 600; }
 .report-toggle textarea { margin-top: var(--sp-2); }
+
+.stats-overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.stats-overview-card { display: grid; gap: 4px; padding: var(--sp-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface-2); }
+.stats-overview-card span { color: var(--c-ink-3); font-size: 12px; }
+.stats-overview-card b { font-size: 18px; color: var(--c-ink); }
+.stats-overview-card small { color: var(--c-ink-3); overflow-wrap: anywhere; }

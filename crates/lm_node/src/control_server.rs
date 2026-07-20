@@ -518,6 +518,7 @@ pub(super) fn handle_stream(
                 runtime: runtime_stats,
                 maintenance: node.maintenance_stats().clone(),
                 state_db: state_db_stats_opt(state_db),
+                endpoint_groups: runtime_stats.endpoint_group_summary(),
             },
         )
     } else if request.method == "GET" && request.path.starts_with("/api/control/metrics") {
