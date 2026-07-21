@@ -181,6 +181,7 @@ const onboardingSteps = computed(() => [
 
 const messagesEl = ref<HTMLElement | null>(null)
 function scrollToBottom() {
+  if (!props.ctx.activePeerId?.value && !props.ctx.activeGroupId?.value) return
   const el = messagesEl.value
   if (el) el.scrollTop = el.scrollHeight
 }
