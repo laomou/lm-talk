@@ -792,6 +792,32 @@ test('注册后可在独立导入页导入身份，再回登录页登录', async
   await expect(page.locator('.chat-shell')).toBeVisible()
 })
 
+test('窄屏下内容区域在底部导航上方，导航不会遮挡聊天界面', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await clearBrowserState(page)
+  await createIdentity(page, 'Mobile', 'mobile layout 2026')
+
+  const layout = await page.locator('.app-shell').evaluate((shell) => {
+    const content = shell.querySelector<HTMLElement>('.app-content')!
+    const rail = shell.querySelector<HTMLElement>('.app-rail')!
+    const contentBox = content.getBoundingClientRect()
+    const railBox = rail.getBoundingClientRect()
+    return {
+      contentTop: contentBox.top,
+      contentBottom: contentBox.bottom,
+      railTop: railBox.top,
+      railBottom: railBox.bottom,
+      viewportWidth: window.innerWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }
+  })
+
+  expect(layout.contentTop).toBe(0)
+  expect(layout.contentBottom).toBeLessThanOrEqual(layout.railTop + 1)
+  expect(layout.railBottom).toBeLessThanOrEqual(844)
+  expect(layout.scrollWidth).toBeLessThanOrEqual(layout.viewportWidth)
+})
+
 // Focused, minimal end-to-end message path: add friend, confirm both ways,
 // send one encrypted message, decrypt it on the receiver. Deliberately avoids
 // the fragile DHT-stats / strict-E2EE-wizard / group / read-receipt assertions

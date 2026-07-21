@@ -176,7 +176,12 @@ button.secondary.danger:hover { background: var(--c-danger-soft); border-color: 
 }
 
 /* ---- App shell: rail + content ------------------------------------------ */
-.app-shell { display: grid; grid-template-columns: 72px minmax(0, 1fr); height: 100vh; }
+.app-shell {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
+}
 
 .app-rail {
   background: #20262e;
@@ -765,7 +770,22 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 /* ---- Responsive --------------------------------------------------------- */
 @media (max-width: 850px) {
   .app-shell { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) 60px; }
-  .app-rail { flex-direction: row; justify-content: space-around; align-items: center; padding: 0; gap: 0; }
+  /*
+   * Keep the rail at the bottom on narrow screens. The rail precedes the
+   * content in the DOM for the desktop two-column layout, so explicit grid
+   * placement is necessary after the grid becomes a single column.
+   */
+  .app-content { grid-row: 1; min-height: 0; }
+  .app-rail {
+    grid-row: 2;
+    flex-direction: row;
+    justify-content: space-around;
+    align-items: center;
+    padding: 0;
+    gap: 0;
+    min-height: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
   .rail-avatar { display: none; }
   .rail-item { width: auto; flex: 1 1 0; border-radius: 0; padding: 8px 0; }
   .rail-spacer { display: none; }
@@ -779,7 +799,7 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 }
 
 @media (max-width: 640px) {
-  .app-shell { grid-template-rows: minmax(0, 1fr) 56px; }
+  .app-shell { grid-template-rows: minmax(0, 1fr) calc(56px + env(safe-area-inset-bottom)); }
   .rail-item span { font-size: 10px; }
   .rail-item svg { width: 20px; height: 20px; }
 
