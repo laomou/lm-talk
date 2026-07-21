@@ -350,7 +350,7 @@ test('登录注册、主界面和诊断页是产品化 UI', async ({ page }) => 
   expect(filterStyle.appearance).toBe('none')
   expect(filterStyle.backgroundImage).toContain('data:image/svg+xml')
   expect(filterStyle.borderRadius).not.toBe('0px')
-  await page.getByRole('button', { name: '收件箱' }).click()
+  await page.getByRole('tab', { name: /收件箱/ }).click()
   await expect(page.getByRole('button', { name: '同步' })).toBeVisible()
   await expect(page.locator('.app-shell')).not.toContainText('粘贴好友请求')
   await expect(page.locator('.app-shell')).not.toContainText('粘贴群邀请')
@@ -425,15 +425,15 @@ test('消息同步可完成好友请求和消息收发', async ({ browser }) => 
   await enableSync(bob)
 
   await alice.goto('/#/contacts')
-  await alice.getByRole('button', { name: '添加' }).click()
+  await alice.locator('.contacts-topbar').getByRole('button', { name: '添加好友' }).click()
   await fieldAfterLabel(alice, '对方名片').fill(bobCard)
-  await alice.getByRole('button', { name: '添加好友' }).click()
+  await alice.locator('.detail-col').getByRole('button', { name: '添加好友' }).click()
   await alice.goto('/#/chat')
   await alice.locator('.contact').filter({ hasText: 'Bob' }).click()
   await expect(alice.locator('.contact').filter({ hasText: '等待通过' })).toBeVisible()
 
   await bob.goto('/#/contacts')
-  await bob.getByRole('button', { name: '收件箱' }).click()
+  await bob.getByRole('tab', { name: /收件箱/ }).click()
   await bob.getByRole('button', { name: '同步' }).click()
   await expect(bob.getByRole('button', { name: '接受' })).toBeVisible()
   await bob.getByRole('button', { name: '接受' }).click()
@@ -444,7 +444,7 @@ test('消息同步可完成好友请求和消息收发', async ({ browser }) => 
   await bob.getByRole('button', { name: '确定' }).click()
 
   await alice.goto('/#/contacts')
-  await alice.getByRole('button', { name: '收件箱' }).click()
+  await alice.getByRole('tab', { name: /收件箱/ }).click()
   await alice.getByRole('button', { name: '同步' }).click()
   await alice.locator('.contact').filter({ hasText: 'Bob' }).click()
   await alice.getByRole('button', { name: '已人工核验，标记可信' }).click()
@@ -460,7 +460,7 @@ test('消息同步可完成好友请求和消息收发', async ({ browser }) => 
   await expect(alice.locator('.bubble.out')).toContainText('你好 Bob')
 
   await bob.goto('/#/contacts')
-  await bob.getByRole('button', { name: '收件箱' }).click()
+  await bob.getByRole('tab', { name: /收件箱/ }).click()
   await bob.getByRole('button', { name: '同步' }).click()
   await expect(bob.getByText(/Mailbox 容量：/)).toBeVisible()
   await expect.poll(async () => bob.locator('.contact').filter({ hasText: 'Alice' }).count(), { timeout: 15_000 }).toBeGreaterThan(0)
@@ -475,7 +475,7 @@ test('消息同步可完成好友请求和消息收发', async ({ browser }) => 
     return bob.locator('.bubble.in').filter({ hasText: '你好 Bob' }).count()
   }, { timeout: 30_000 }).toBe(1)
   await alice.goto('/#/contacts')
-  await alice.getByRole('button', { name: '收件箱' }).click()
+  await alice.getByRole('tab', { name: /收件箱/ }).click()
   // The delivery receipt travels back over the mailbox too (Bob acks, Alice
   // pulls), so re-sync until the outbound bubble flips to 已送达.
   await expect.poll(async () => {
@@ -899,13 +899,13 @@ test('最小端到端：加好友后发送并解密一条加密消息', async ({
 
   // Alice adds Bob and sends a friend request via mailbox.
   await alice.goto('/#/contacts')
-  await alice.getByRole('button', { name: '添加' }).click()
+  await alice.locator('.contacts-topbar').getByRole('button', { name: '添加好友' }).click()
   await fieldAfterLabel(alice, '对方名片').fill(bobCard)
-  await alice.getByRole('button', { name: '添加好友' }).click()
+  await alice.locator('.detail-col').getByRole('button', { name: '添加好友' }).click()
 
   // Bob syncs, sees the request, accepts, and marks Alice verified.
   await bob.goto('/#/contacts')
-  await bob.getByRole('button', { name: '收件箱' }).click()
+  await bob.getByRole('tab', { name: /收件箱/ }).click()
   await bob.getByRole('button', { name: '同步' }).click()
   await expect(bob.getByRole('button', { name: '接受' })).toBeVisible()
   await bob.getByRole('button', { name: '接受' }).click()
@@ -916,7 +916,7 @@ test('最小端到端：加好友后发送并解密一条加密消息', async ({
 
   // Alice syncs the acceptance and marks Bob verified so the session is ready.
   await alice.goto('/#/contacts')
-  await alice.getByRole('button', { name: '收件箱' }).click()
+  await alice.getByRole('tab', { name: /收件箱/ }).click()
   await alice.getByRole('button', { name: '同步' }).click()
   await alice.locator('.contact').filter({ hasText: 'Bob' }).click()
   await alice.getByRole('button', { name: '已人工核验，标记可信' }).click()
@@ -933,7 +933,7 @@ test('最小端到端：加好友后发送并解密一条加密消息', async ({
 
   // Bob syncs the mailbox and decrypts the message.
   await bob.goto('/#/contacts')
-  await bob.getByRole('button', { name: '收件箱' }).click()
+  await bob.getByRole('tab', { name: /收件箱/ }).click()
   await bob.getByRole('button', { name: '同步' }).click()
   await bob.goto('/#/chat')
   await bob.locator('.contact').filter({ hasText: 'Alice' }).click()
