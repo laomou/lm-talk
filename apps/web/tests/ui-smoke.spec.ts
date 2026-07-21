@@ -425,7 +425,7 @@ test('消息同步可完成好友请求和消息收发', async ({ browser }) => 
   await enableSync(bob)
 
   await alice.goto('/#/contacts')
-  await alice.getByRole('button', { name: '添加' }).click()
+  await alice.getByRole('button', { name: '添加好友' }).click()
   await fieldAfterLabel(alice, '对方名片').fill(bobCard)
   await alice.getByRole('button', { name: '添加好友' }).click()
   await alice.goto('/#/chat')
@@ -899,7 +899,7 @@ test('最小端到端：加好友后发送并解密一条加密消息', async ({
 
   // Alice adds Bob and sends a friend request via mailbox.
   await alice.goto('/#/contacts')
-  await alice.getByRole('button', { name: '添加' }).click()
+  await alice.getByRole('button', { name: '添加好友' }).click()
   await fieldAfterLabel(alice, '对方名片').fill(bobCard)
   await alice.getByRole('button', { name: '添加好友' }).click()
 

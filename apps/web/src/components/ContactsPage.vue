@@ -48,8 +48,8 @@ function openGroupDetail(groupId: string) {
       <header class="list-col-header">
         <h2>通讯录</h2>
         <div class="header-actions">
-          <button class="ghost-btn" @click="view = 'add'">添加</button>
-          <button class="ghost-btn" @click="view = 'group'">建群</button>
+          <button class="ghost-btn" @click="view = 'add'">添加好友</button>
+          <button class="ghost-btn" @click="view = 'group'">发起群聊</button>
         </div>
       </header>
       <div class="list-col-search">
@@ -69,7 +69,7 @@ function openGroupDetail(groupId: string) {
           <span class="avatar" style="background:#f59e0b">新</span>
           <span class="contact-main">
             <b>收件箱 <em v-if="requestCount">{{ requestCount }}</em></b>
-            <small>好友请求 / 群邀请 / Mailbox</small>
+            <small>处理好友请求、群邀请和同步失败</small>
           </span>
         </button>
 
@@ -110,7 +110,7 @@ function openGroupDetail(groupId: string) {
           </span>
         </button>
 
-        <div v-if="filteredGroups.length === 0 && filteredContacts.length === 0" class="empty">暂无好友或群聊</div>
+        <div v-if="filteredGroups.length === 0 && filteredContacts.length === 0" class="empty">暂无好友或群聊，可先添加好友或打开收件箱同步请求</div>
       </div>
     </aside>
 
@@ -464,8 +464,29 @@ function openGroupDetail(groupId: string) {
       </section>
 
       <!-- 默认欢迎 -->
-      <section v-else class="detail-empty">
-        <p>选择左侧联系人查看详情</p>
+      <section v-else class="detail-scroll">
+        <header class="detail-bar"><h2>通讯录</h2></header>
+        <div class="detail-body narrow">
+          <section class="home-card">
+            <h3>你想做什么？</h3>
+            <div class="outbox-list">
+              <button class="settings-row" aria-label="查看收件箱" @click="view = 'requests'">
+                <span>查看收件箱</span><span class="chevron">好友请求、群邀请、同步失败</span>
+              </button>
+              <button class="settings-row" aria-label="添加好友" @click="view = 'add'">
+                <span>添加好友</span><span class="chevron">粘贴对方名片后发送好友请求</span>
+              </button>
+              <button class="settings-row" aria-label="发起群聊" @click="view = 'group'">
+                <span>发起群聊</span><span class="chevron">选择已成为好友的联系人建群</span>
+              </button>
+            </div>
+          </section>
+          <section class="home-card">
+            <h3>使用提示</h3>
+            <small>左侧列表用于搜索好友和群聊；点开联系人后可以发消息、核验指纹、刷新 DHT 或处理设备风险。</small>
+            <small>收到好友请求或群邀请时，先打开收件箱并点击同步。</small>
+          </section>
+        </div>
       </section>
     </main>
   </div>
