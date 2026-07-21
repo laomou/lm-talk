@@ -622,11 +622,29 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
   height: 100%;
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   background: var(--c-surface);
 }
+.contacts-topbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-6);
+  background: var(--c-surface);
+  border-bottom: 1px solid var(--c-line);
+  min-height: 60px;
+}
+.contacts-topbar h2 { font-size: 18px; }
+.contacts-tabs { display: flex; align-items: center; gap: var(--sp-2); }
+.contacts-tabs .ghost-btn.active { background: var(--c-surface-2); color: var(--c-primary-ink); }
+.contacts-tabs em { font-style: normal; margin-left: 6px; color: var(--c-ink-3); }
 .contacts-list-col { min-width: 0; }
 
 .detail-col { min-width: 0; display: flex; flex-direction: column; background: var(--c-canvas); }
+.contacts-wide { grid-column: 1 / -1; }
+.inbox-body { max-width: 760px; }
 .detail-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
 .detail-bar {
   flex: 0 0 auto;
@@ -856,8 +874,9 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .rail-item { width: auto; flex: 1 1 0; border-radius: 0; padding: 8px 0; }
   .rail-spacer { display: none; }
 
-  .chat-shell,
-  .contacts-shell { grid-template-columns: 1fr; grid-template-rows: minmax(0, 40vh) minmax(0, 1fr); }
+  .chat-shell { grid-template-columns: 1fr; grid-template-rows: minmax(0, 40vh) minmax(0, 1fr); }
+  .contacts-shell { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 40vh) minmax(0, 1fr); }
+  .contacts-topbar { grid-column: auto; padding: var(--sp-3); }
   .sidebar,
   .contacts-list-col { border-right: 0; border-bottom: 1px solid var(--c-line); }
   .bubble { max-width: 86%; }
@@ -869,8 +888,11 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .rail-item span { font-size: 10px; }
   .rail-item svg { width: 20px; height: 20px; }
 
-  .chat-shell,
-  .contacts-shell { grid-template-rows: minmax(0, 34vh) minmax(0, 1fr); }
+  .chat-shell { grid-template-rows: minmax(0, 34vh) minmax(0, 1fr); }
+  .contacts-shell { grid-template-rows: auto minmax(0, 34vh) minmax(0, 1fr); }
+  .contacts-topbar { flex-direction: column; align-items: stretch; gap: var(--sp-2); }
+  .contacts-tabs { width: 100%; }
+  .contacts-tabs .ghost-btn { flex: 1 1 0; }
   .list-col-header { min-height: 48px; padding: var(--sp-3); }
   .list-col-search { padding: var(--sp-2); display: grid; gap: var(--sp-2); }
   .list-col-search select,
