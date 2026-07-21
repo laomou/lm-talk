@@ -879,7 +879,7 @@ const syncFailureSummaryText = computed(() => {
   return parts.length ? parts.join('；') : '暂无同步失败'
 })
 const storageEstimateText = ref('尚未估算')
-const webVersionText = `v${__APP_VERSION__} (${__BUILD_REF__})`
+const webVersionText = `Version ${__APP_VERSION__} (${__BUILD_REF__})`
 const selectedFile = ref<File | null>(null)
 const filePackageText = ref('')
 const incomingFilePackageText = ref('')

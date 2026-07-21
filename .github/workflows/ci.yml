@@ -44,11 +44,19 @@ jobs:
         working-directory: apps/web
         run: npm ci
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('apps/web/package-lock.json') }}
+
       - name: Install Playwright Chromium
         working-directory: apps/web
         run: npx playwright install --with-deps chromium
 
       - name: Release check quick
+        env:
+          RELEASE_CHECK_SKIP_CLIPPY: '1'
         run: ./scripts/release-check.sh quick
 
   clippy:
@@ -76,8 +84,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect dependency file changes
+        id: deps
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --quiet "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}" -- \
+            Cargo.lock Cargo.toml crates/*/Cargo.toml fuzz/Cargo.toml \
+            apps/web/package.json apps/web/package-lock.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Setup Node
+        if: steps.deps.outputs.changed == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -85,22 +112,31 @@ jobs:
           cache-dependency-path: apps/web/package-lock.json
 
       - name: Setup Rust
+        if: steps.deps.outputs.changed == 'true'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo
+        if: steps.deps.outputs.changed == 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: .
 
       - name: Install cargo-audit
+        if: steps.deps.outputs.changed == 'true'
         uses: taiki-e/install-action@cargo-audit
 
       - name: Install web dependencies
+        if: steps.deps.outputs.changed == 'true'
         working-directory: apps/web
         run: npm ci
 
       - name: Dependency audit
+        if: steps.deps.outputs.changed == 'true'
         run: ./scripts/check-audit.sh
+
+      - name: Skip dependency audit
+        if: steps.deps.outputs.changed != 'true'
+        run: echo "No dependency manifests or lockfiles changed; skipping dependency audit."
 
 
   dependency-review:
