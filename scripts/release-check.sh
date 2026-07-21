@@ -30,8 +30,12 @@ cd "$ROOT"
 section "cargo fmt --check"
 cargo fmt --check
 
-section "cargo clippy"
-cargo clippy --workspace --all-targets -- -D warnings
+if [[ "${RELEASE_CHECK_SKIP_CLIPPY:-0}" == "1" ]]; then
+  section "cargo clippy skipped"
+else
+  section "cargo clippy"
+  cargo clippy --workspace --all-targets -- -D warnings
+fi
 
 section "lm_core full tests"
 cargo test -p lm_core
