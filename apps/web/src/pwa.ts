@@ -7,15 +7,55 @@ export type PwaStatus = {
   message: string
 }
 
+const UPDATE_READY_EVENT = 'lm-pwa-update-ready'
+let updateRegistration: ServiceWorkerRegistration | undefined
+let reloadAfterControllerChange = false
+
 export async function registerPwa(): Promise<PwaStatus> {
   if (!('serviceWorker' in navigator)) return pwaStatus('unsupported')
   try {
     const base = import.meta.env.BASE_URL || '/'
-    await navigator.serviceWorker.register(`${base}sw.js`, { scope: base })
+    const registration = await navigator.serviceWorker.register(`${base}sw.js`, { scope: base })
+    watchForUpdate(registration)
     return readPwaStatus()
   } catch {
     return pwaStatus('error')
   }
+}
+
+export function applyPwaUpdate(): boolean {
+  const waiting = updateRegistration?.waiting
+  if (!waiting) return false
+  reloadAfterControllerChange = true
+  waiting.postMessage({ type: 'LM_TALK_SKIP_WAITING' })
+  return true
+}
+
+export function onPwaUpdateReady(listener: () => void): () => void {
+  window.addEventListener(UPDATE_READY_EVENT, listener)
+  return () => window.removeEventListener(UPDATE_READY_EVENT, listener)
+}
+
+function watchForUpdate(registration: ServiceWorkerRegistration) {
+  updateRegistration = registration
+  const notifyIfWaiting = () => {
+    if (registration.waiting && navigator.serviceWorker.controller) {
+      window.dispatchEvent(new Event(UPDATE_READY_EVENT))
+    }
+  }
+  notifyIfWaiting()
+  registration.addEventListener('updatefound', () => {
+    const worker = registration.installing
+    if (!worker) return
+    worker.addEventListener('statechange', () => {
+      if (worker.state === 'installed') notifyIfWaiting()
+    })
+  })
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!reloadAfterControllerChange) return
+    reloadAfterControllerChange = false
+    window.location.reload()
+  })
 }
 
 export async function readPwaStatus(): Promise<PwaStatus> {

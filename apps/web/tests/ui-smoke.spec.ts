@@ -381,6 +381,18 @@ test('登录注册、主界面和诊断页是产品化 UI', async ({ page }) => 
   await expect(page.locator('meta[name="referrer"]')).toHaveAttribute('content', 'no-referrer')
 })
 
+test('发现 PWA 新版本时显示非阻塞刷新提示，稍后可在本次会话隐藏', async ({ page }) => {
+  await clearBrowserState(page)
+  await createIdentity(page, 'PwaUpdate', 'pwa update 2026')
+  await page.evaluate(() => window.dispatchEvent(new Event('lm-pwa-update-ready')))
+  const banner = page.getByLabel('应用更新提示')
+  await expect(banner).toBeVisible()
+  await expect(banner).toContainText('发现应用新版本')
+  await expect(banner).toContainText('不会中断当前操作')
+  await banner.getByRole('button', { name: '稍后' }).click()
+  await expect(banner).toBeHidden()
+})
+
 test('消息同步可完成好友请求和消息收发', async ({ browser }) => {
   const mailboxes = new Map<string, MockMailboxMessage[]>()
   const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })

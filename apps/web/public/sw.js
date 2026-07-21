@@ -15,7 +15,13 @@ async function cacheShell() {
 }
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(cacheShell().then(() => self.skipWaiting()))
+  // A new shell waits for explicit user action from the page before taking
+  // control. Reloading automatically could discard a draft or an import.
+  event.waitUntil(cacheShell())
+})
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'LM_TALK_SKIP_WAITING') self.skipWaiting()
 })
 
 self.addEventListener('activate', (event) => {

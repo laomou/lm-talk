@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import LoginPage from './components/LoginPage.vue'
 import ChatPage from './components/ChatPage.vue'
@@ -7,7 +7,7 @@ import DiagnosticsPage from './components/DiagnosticsPage.vue'
 import ContactsPage from './components/ContactsPage.vue'
 import SettingsPage from './components/SettingsPage.vue'
 import QRCode from 'qrcode'
-import { readPwaStatus } from './pwa'
+import { applyPwaUpdate, onPwaUpdateReady, readPwaStatus } from './pwa'
 import { TABLES, idbDel, idbGet, idbSet, idbTableClear, idbTableGet, idbTableGetAllByPrefix, idbTableReplaceByPrefix } from './idb'
 import init, {
   accept_friend_request,
@@ -664,6 +664,8 @@ let outboxRetryTimer: number | undefined
 let lastDeliveryError = ''
 const runtimeStatusText = ref('尚未检查')
 const pwaStatusText = ref('PWA：尚未检查')
+const pwaUpdateAvailable = ref(false)
+let stopWatchingPwaUpdate: (() => void) | undefined
 const inAppRuntimePolicyText = computed(() => {
   const visibility = document.visibilityState === 'visible' ? '前台可见' : '后台可能被浏览器暂停'
   const mailbox = autoMailboxTake.value ? '自动收取已开启，切回前台最多 30 秒触发一次' : '自动收取已关闭，需要手动同步'
@@ -1465,6 +1467,9 @@ router.afterEach((to) => {
 })
 
 onMounted(async () => {
+  stopWatchingPwaUpdate = onPwaUpdateReady(() => {
+    pwaUpdateAvailable.value = true
+  })
   try {
     await init()
     loadLocalIdentityList()
@@ -1488,6 +1493,10 @@ onMounted(async () => {
   } catch (e) {
     appendLog(`WASM 初始化失败：${String(e)}`)
   }
+})
+
+onUnmounted(() => {
+  stopWatchingPwaUpdate?.()
 })
 
 function appendLog(line: string) {
@@ -1557,6 +1566,14 @@ function toast(text: string, kind: ToastKind = 'info') {
 
 async function refreshPwaStatus() {
   pwaStatusText.value = (await readPwaStatus()).message
+}
+
+function deferPwaUpdate() {
+  pwaUpdateAvailable.value = false
+}
+
+function refreshForPwaUpdate() {
+  if (!applyPwaUpdate()) window.location.reload()
 }
 
 async function refreshRuntimeStatus() {
@@ -9427,6 +9444,17 @@ const appContext = {
   <div class="toast-stack" aria-live="polite">
     <div v-for="item in toasts" :key="item.id" class="toast" :class="item.kind">{{ item.text }}</div>
   </div>
+
+  <aside v-if="pwaUpdateAvailable" class="pwa-update-banner" role="status" aria-label="应用更新提示">
+    <div>
+      <b>发现应用新版本</b>
+      <small>刷新后即可使用新版本；未刷新前不会中断当前操作。</small>
+    </div>
+    <div class="pwa-update-actions">
+      <button class="secondary" @click="deferPwaUpdate">稍后</button>
+      <button @click="refreshForPwaUpdate">立即刷新</button>
+    </div>
+  </aside>
 
   <div v-if="alertDialog.open" class="dialog-mask" @click.self="closeAlert">
     <section class="dialog-card" :class="alertDialog.kind" role="alertdialog" aria-modal="true" aria-labelledby="alert-dialog-title">
