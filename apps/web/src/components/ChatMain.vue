@@ -181,9 +181,15 @@ const onboardingSteps = computed(() => [
 
 const messagesEl = ref<HTMLElement | null>(null)
 function scrollToBottom() {
-  if (!props.ctx.activePeerId?.value && !props.ctx.activeGroupId?.value) return
   const el = messagesEl.value
-  if (el) el.scrollTop = el.scrollHeight
+  if (!el) return
+  // Returning to “选择一个聊天” reuses the same scroll container. Reset the
+  // previous conversation's scroll position so the onboarding starts at top.
+  if (!props.ctx.activePeerId?.value && !props.ctx.activeGroupId?.value) {
+    el.scrollTop = 0
+    return
+  }
+  el.scrollTop = el.scrollHeight
 }
 watch(
   () => [props.ctx.activeMessages.value.length, props.ctx.activePeerId?.value, props.ctx.activeGroupId?.value, messageSearch.value],
