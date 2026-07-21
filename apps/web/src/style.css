@@ -878,7 +878,19 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 .onboarding-list { margin: var(--sp-3) 0; padding-left: 20px; color: var(--c-ink-2); font-size: 13px; line-height: 1.6; }
 
 @media (max-width: 640px) {
-  .onboarding-empty { padding: var(--sp-3); justify-content: flex-start; }
+  /*
+   * The empty-chat onboarding can be taller than the remaining chat pane on
+   * a phone (the conversation list still occupies the top part). Do not
+   * vertically centre an overflowing grid: that makes “选择一个聊天” start
+   * outside the visible area. Keep the first-use steps anchored at the top
+   * and let the message pane scroll normally.
+   */
+  .chat-empty-state.onboarding-empty {
+    min-height: 100%;
+    padding: var(--sp-3);
+    align-content: start;
+    justify-content: stretch;
+  }
   .onboarding-steps { grid-template-columns: 1fr; gap: var(--sp-2); }
   .onboarding-step { padding: var(--sp-3); }
   .onboarding-step button { width: 100%; }
