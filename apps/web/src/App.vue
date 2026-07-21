@@ -9423,7 +9423,7 @@ const appContext = {
       <button class="rail-item" :class="{ active: currentPage === 'contacts' }" :aria-current="currentPage === 'contacts' ? 'page' : undefined" aria-label="打开通讯录" @click="goContactsPage">
         <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         <span>通讯录</span>
-        <em v-if="friendRequests.length || groupInvites.length" class="rail-badge">{{ friendRequests.length + groupInvites.length }}</em>
+        <em v-if="friendRequests.length" class="rail-badge">{{ friendRequests.length }}</em>
       </button>
       <div class="rail-spacer"></div>
       <button class="rail-item" :class="{ active: currentPage === 'settings' || currentPage === 'diagnostics' }" :aria-current="currentPage === 'settings' || currentPage === 'diagnostics' ? 'page' : undefined" aria-label="打开我的设置" @click="goSettingsPage">
