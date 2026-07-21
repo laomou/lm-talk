@@ -5,9 +5,6 @@ import { avatarColor } from '../avatarColor'
 const props = defineProps<{ ctx: any }>()
 const keyword = ref('')
 
-const contactName = (userId: string) =>
-  props.ctx.contacts.value.find((c: any) => c.user_id === userId)?.display_name || userId
-
 function lastMessageFor(pred: (m: any) => boolean) {
   let last: any = null
   for (const m of props.ctx.messages.value) {
@@ -23,51 +20,34 @@ const conversations = computed(() => {
     const last = lastMessageFor((m) => !m.group_id && m.peer_user_id === c.user_id)
     items.push({ type: 'contact', id: c.user_id, data: c, last, ts: last?.created_at ?? 0 })
   }
-  for (const g of props.ctx.groups.value) {
-    const last = lastMessageFor((m) => m.group_id === g.group_id)
-    items.push({ type: 'group', id: g.group_id, data: g, last, ts: last?.created_at ?? 0 })
-  }
   return items.sort((a, b) => b.ts - a.ts)
 })
 
 const filtered = computed(() => {
   const q = keyword.value.trim().toLowerCase()
   if (!q) return conversations.value
-  return conversations.value.filter((it) => {
-    const name = it.type === 'contact' ? it.data.display_name || it.data.user_id : it.data.name
-    return `${name || ''} ${it.id}`.toLowerCase().includes(q)
-  })
+  return conversations.value.filter((it) => `${it.data.display_name || ''} ${it.id}`.toLowerCase().includes(q))
 })
 
 function convName(it: any) {
-  return it.type === 'contact' ? it.data.display_name || '未命名' : it.data.name
+  return it.data.display_name || '未命名'
 }
-function strictBadgeText(it: any) {
-  if (it.type === 'contact' && it.data.state === 'Friend') {
-    return props.ctx.contactStrictE2eeRiskLevel(it.data) === 'high' ? '严格风险' : '严格就绪'
-  }
-  if (it.type === 'group' && it.data.member_user_ids?.length) {
-    return props.ctx.groupStrictE2eeRiskTextFor(it.data) ? '严格风险' : '严格就绪'
-  }
-  return ''
+function trustBadgeText(it: any) {
+  if (it.type !== 'contact' || it.data.state !== 'Friend') return ''
+  return it.data.fingerprint_verified_at ? '✓' : '⚠️'
 }
-function strictBadgeTitle(it: any) {
-  if (it.type === 'contact' && it.data.state === 'Friend') return props.ctx.contactStrictE2eeStatusText(it.data)
-  if (it.type === 'group') return props.ctx.groupStrictE2eeRiskTextFor(it.data) || '群聊严格 E2EE 就绪'
-  return ''
+function trustBadgeTitle(it: any) {
+  if (it.type !== 'contact' || it.data.state !== 'Friend') return ''
+  return it.data.fingerprint_verified_at ? '指纹已核验' : '指纹未核验'
 }
 function convPreview(it: any) {
   if (it.last) {
-    if (it.type === 'group' && it.last.direction !== 'out') return `${contactName(it.last.peer_user_id)}：${it.last.text}`
     return it.last.text
   }
-  if (it.type === 'contact') {
-    if (it.data.state === 'RequestSent') return '等待对方通过'
-    if (it.data.state === 'Blocked') return '已拉黑'
-    if (it.data.state !== 'Friend') return '还不是好友'
-    return '暂无消息'
-  }
-  return `${it.data.member_user_ids.length} 人的群聊`
+  if (it.data.state === 'RequestSent') return '等待对方通过'
+  if (it.data.state === 'Blocked') return '已拉黑'
+  if (it.data.state !== 'Friend') return '还不是好友'
+  return '暂无消息'
 }
 function convTime(ts: number) {
   if (!ts) return ''
@@ -82,11 +62,10 @@ function convTime(ts: number) {
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
 }
 function isActive(it: any) {
-  return it.type === 'contact' ? it.id === props.ctx.activePeerId.value : it.id === props.ctx.activeGroupId.value
+  return it.id === props.ctx.activePeerId.value
 }
 function select(it: any) {
-  if (it.type === 'contact') props.ctx.selectContact(it.id)
-  else props.ctx.selectGroup(it.id)
+  props.ctx.selectContact(it.id)
 }
 </script>
 
@@ -108,20 +87,19 @@ function select(it: any) {
         :aria-current="isActive(it) ? 'true' : undefined"
         @click="select(it)"
       >
-        <span v-if="it.type === 'group'" class="avatar group-avatar">群</span>
-        <span v-else class="avatar" :style="{ background: avatarColor(it.id) }">{{ (convName(it) || '?').slice(0, 1).toUpperCase() }}</span>
+        <span class="avatar" :style="{ background: avatarColor(it.id) }">{{ (convName(it) || '?').slice(0, 1).toUpperCase() }}</span>
         <span class="contact-main">
           <b>
             <span class="conv-name">
               {{ convName(it) }}
-              <em v-if="it.type === 'contact' && it.data.state === 'RequestSent'">等待通过</em>
-              <em v-else-if="it.type === 'contact' && it.data.state === 'Blocked'">已拉黑</em>
+              <em v-if="it.data.state === 'RequestSent'">等待通过</em>
+              <em v-else-if="it.data.state === 'Blocked'">已拉黑</em>
               <em
-                v-else-if="strictBadgeText(it)"
+                v-else-if="trustBadgeText(it)"
                 class="strict-badge"
-                :class="{ danger: props.ctx.contactStrictE2eeRiskLevel(it.data) === 'high' }"
-                :title="strictBadgeTitle(it)"
-              >{{ strictBadgeText(it) }}</em>
+                :class="{ danger: !it.data.fingerprint_verified_at }"
+                :title="trustBadgeTitle(it)"
+              >{{ trustBadgeText(it) }}</em>
             </span>
             <span v-if="it.ts" class="conv-time">{{ convTime(it.ts) }}</span>
           </b>
