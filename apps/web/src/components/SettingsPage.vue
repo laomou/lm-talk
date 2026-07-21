@@ -98,7 +98,7 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
         </div>
       </section>
 
-      <footer class="app-version" aria-label="应用版本信息">· {{ ctx.webVersionText }}</footer>
+      <footer class="app-version" aria-label="应用版本信息">LM Talk Web · {{ ctx.webVersionText }}</footer>
     </div>
   </div>
 </template>
