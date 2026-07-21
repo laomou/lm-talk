@@ -5,7 +5,9 @@ import { avatarColor } from '../avatarColor'
 const props = defineProps<{ ctx: any }>()
 const keyword = ref('')
 const trustFilter = ref<'all' | 'unverified' | 'verified' | 'revoked' | 'strict-blocked'>('all')
-type View = 'welcome' | 'requests' | 'detail' | 'add' | 'group'
+type MainTab = 'contacts' | 'inbox'
+type View = 'welcome' | 'detail' | 'add' | 'group'
+const mainTab = ref<MainTab>('contacts')
 const view = ref<View>('welcome')
 
 const query = computed(() => keyword.value.trim().toLowerCase())
@@ -33,24 +35,53 @@ function stateLabel(state: string) {
   return state === 'Friend' ? '好友' : state === 'RequestSent' ? '等待通过' : state === 'Blocked' ? '已拉黑' : '未验证'
 }
 function openContact(userId: string) {
+  mainTab.value = 'contacts'
   props.ctx.selectContact(userId)
   view.value = 'detail'
 }
 function openGroupDetail(groupId: string) {
+  mainTab.value = 'contacts'
   props.ctx.selectGroup(groupId)
   view.value = 'detail'
+}
+function openInbox() {
+  mainTab.value = 'inbox'
 }
 </script>
 
 <template>
   <div class="contacts-shell">
-    <aside class="sidebar contacts-list-col">
-      <header class="list-col-header">
-        <h2>通讯录</h2>
-        <div class="header-actions">
-          <button class="ghost-btn" @click="view = 'add'">添加</button>
-          <button class="ghost-btn" @click="view = 'group'">建群</button>
-        </div>
+    <header class="contacts-topbar">
+      <h2>通讯录</h2>
+      <div class="contacts-tabs" role="tablist" aria-label="通讯录视图切换">
+        <button
+          class="ghost-btn"
+          role="tab"
+          :aria-selected="mainTab === 'contacts'"
+          :class="{ active: mainTab === 'contacts' }"
+          @click="mainTab = 'contacts'"
+        >
+          联系人
+        </button>
+        <button
+          class="ghost-btn"
+          role="tab"
+          :aria-selected="mainTab === 'inbox'"
+          :class="{ active: mainTab === 'inbox' }"
+          @click="openInbox"
+        >
+          收件箱 <em v-if="requestCount">{{ requestCount }}</em>
+        </button>
+      </div>
+      <div class="header-actions" v-if="mainTab === 'contacts'">
+        <button class="ghost-btn" @click="view = 'add'">添加好友</button>
+        <button class="ghost-btn" @click="view = 'group'">发起群聊</button>
+      </div>
+    </header>
+
+    <aside v-if="mainTab === 'contacts'" class="sidebar contacts-list-col">
+      <header class="list-col-header compact">
+        <h2>联系人</h2>
       </header>
       <div class="list-col-search">
         <input v-model="keyword" type="search" aria-label="搜索好友或群聊" placeholder="搜索好友或群聊" />
@@ -65,14 +96,6 @@ function openGroupDetail(groupId: string) {
       </div>
 
       <div class="conversation-list">
-        <button class="contact" :class="{ active: view === 'requests' }" :aria-current="view === 'requests' ? 'true' : undefined" @click="view = 'requests'">
-          <span class="avatar" style="background:#f59e0b">新</span>
-          <span class="contact-main">
-            <b>收件箱 <em v-if="requestCount">{{ requestCount }}</em></b>
-            <small>好友请求 / 群邀请 / Mailbox</small>
-          </span>
-        </button>
-
         <h3 v-if="filteredGroups.length">群聊</h3>
         <button
           v-for="g in filteredGroups"
@@ -110,123 +133,12 @@ function openGroupDetail(groupId: string) {
           </span>
         </button>
 
-        <div v-if="filteredGroups.length === 0 && filteredContacts.length === 0" class="empty">暂无好友或群聊</div>
+        <div v-if="filteredGroups.length === 0 && filteredContacts.length === 0" class="empty">暂无好友或群聊，可先添加好友或打开收件箱同步请求</div>
       </div>
     </aside>
 
-    <main class="detail-col">
-      <!-- 新的朋友 -->
-      <section v-if="view === 'requests'" class="detail-scroll">
-        <header class="detail-bar"><h2>收件箱</h2><button class="secondary" @click="ctx.syncNow">同步</button></header>
-        <div class="detail-body">
-          <section class="home-card inbox-status-card">
-            <h3>Mailbox 状态</h3>
-            <div class="inbox-status-grid">
-              <span>好友请求 {{ ctx.visibleFriendRequests.value.length }}</span>
-              <span>垃圾请求 {{ ctx.quarantinedFriendRequests.value.length }}</span>
-              <span>群邀请 {{ ctx.groupInvites.value.length }}</span>
-              <span>24小时计数 {{ ctx.friendRequestRateRecords.value.length }}</span>
-            </div>
-            <small v-if="ctx.friendRequestRateSummaryText.value" class="danger-text">请求频率：{{ ctx.friendRequestRateSummaryText.value }}</small>
-            <small>{{ ctx.mailboxInboxStatus.value }}</small>
-            <small :class="{ 'danger-text': ctx.mailboxQuotaPressureLevel.value !== 'ok' }">{{ ctx.mailboxQuotaStatusText.value }}</small>
-            <small>{{ ctx.mailboxDedupeStatusText.value }}</small>
-            <small v-if="ctx.mailboxFailureSummaryText.value" class="danger-text">{{ ctx.mailboxFailureSummaryText.value }}</small>
-            <small v-if="ctx.mailboxInboxErrorText.value" class="danger-text">{{ ctx.mailboxInboxErrorText.value }}</small>
-            <div class="row compact">
-              <button class="secondary" :disabled="ctx.mailboxDedupeCount.value === 0" @click="ctx.clearProcessedMailboxIds">清空去重记录</button>
-              <button class="secondary" :disabled="ctx.mailboxFailedCount.value === 0" @click="ctx.retryFailedMailboxItems">重试失败</button>
-              <button class="secondary danger" :disabled="ctx.mailboxFailedCount.value === 0" @click="ctx.clearFailedMailboxItems">清空失败</button>
-              <button class="secondary danger" :disabled="ctx.friendRequestRateRecords.value.length === 0" @click="ctx.clearFriendRequestRateRecords">清空请求计数</button>
-            </div>
-          </section>
-
-          <section v-if="ctx.mailboxFailedRecoveryItems.value.length" class="home-card">
-            <div class="section-title-row">
-              <h3>Mailbox 失败恢复</h3>
-              <div class="row compact">
-                <button class="secondary" @click="ctx.retryFailedMailboxItems">全部重试</button>
-                <button class="secondary danger" @click="ctx.clearFailedMailboxItems">清空失败</button>
-              </div>
-            </div>
-            <div class="outbox-list">
-              <div v-for="item in ctx.mailboxFailedRecoveryItems.value" :key="item.id" class="outbox-row">
-                <b>{{ item.kind }} · {{ item.from_user_id || '未知发送者' }}</b>
-                <small class="danger-text">{{ item.reason }}</small>
-                <small>{{ item.hint }}</small>
-                <small>重试 {{ item.retry_count }} 次<span v-if="item.last_failed_at"> · 最近 {{ ctx.formatDateTime(item.last_failed_at) }}</span><span v-if="item.delivery_id"> · delivery {{ item.delivery_id.slice(0, 8) }}…</span></small>
-                <div class="row compact">
-                  <button class="secondary" @click="ctx.retryMailboxFailedItem(item.id)">重试此项</button>
-                  <button v-if="item.from_user_id" class="secondary" @click="ctx.selectContact(item.from_user_id)">打开联系人</button>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section class="home-card">
-            <div class="section-title-row">
-              <h3>好友请求</h3>
-              <div v-if="ctx.visibleFriendRequests.value.length" class="row compact">
-                <button class="secondary" @click="ctx.rejectAllInboxRequests">全部忽略</button>
-                <button class="secondary danger" @click="ctx.blockAllInboxRequests">全部拉黑</button>
-              </div>
-            </div>
-            <div v-if="ctx.visibleFriendRequests.value.length" class="request-grid">
-              <div v-for="req in ctx.visibleFriendRequests.value" :key="req.request_id" class="request-item">
-                <b>{{ req.from_user_id }}</b>
-                <small>{{ req.note || '无备注' }}</small>
-                <div class="row compact">
-                  <button @click="ctx.acceptInboxRequest(req)">接受</button>
-                  <button class="secondary danger" @click="ctx.rejectInboxRequest(req)">忽略</button>
-                </div>
-              </div>
-            </div>
-            <div v-else class="empty">暂无好友请求</div>
-          </section>
-
-          <section class="home-card">
-            <div class="section-title-row">
-              <h3>垃圾请求</h3>
-              <div v-if="ctx.quarantinedFriendRequests.value.length" class="row compact">
-                <button class="secondary" @click="ctx.restoreAllQuarantinedFriendRequests">全部恢复</button>
-                <button class="secondary danger" @click="ctx.clearQuarantinedFriendRequests">清空</button>
-              </div>
-            </div>
-            <div v-if="ctx.quarantinedFriendRequests.value.length" class="request-grid">
-              <div v-for="req in ctx.quarantinedFriendRequests.value" :key="req.request_id" class="request-item">
-                <b>{{ req.from_user_id }}</b>
-                <small>{{ req.quarantine_reason || '本地规则隔离' }}</small>
-                <small>{{ req.note || '无备注' }}</small>
-                <div class="row compact">
-                  <button class="secondary" @click="ctx.restoreQuarantinedFriendRequest(req)">恢复</button>
-                  <button class="secondary danger" @click="ctx.rejectInboxRequest(req)">忽略</button>
-                </div>
-              </div>
-            </div>
-            <div v-else class="empty">暂无垃圾请求</div>
-          </section>
-
-          <section class="home-card">
-            <h3>群邀请</h3>
-            <div v-if="ctx.groupInvites.value.length" class="request-grid">
-              <div v-for="inv in ctx.groupInvites.value" :key="inv.invite_id" class="request-item">
-                <b>{{ inv.group_name }}</b>
-                <small>{{ inv.member_user_ids.length }} 人</small>
-                <small>接受后只显示本机收到的新消息，历史消息不会自动同步。</small>
-                <small v-if="ctx.groupInviteStrictE2eeRiskText(inv)" class="danger-text">{{ ctx.groupInviteStrictE2eeRiskText(inv) }}</small>
-                <div class="row compact">
-                  <button @click="ctx.acceptGroupInvite(inv)">接受入群</button>
-                  <button class="secondary danger" @click="ctx.ignoreGroupInvite(inv)">忽略</button>
-                </div>
-              </div>
-            </div>
-            <div v-else class="empty">暂无群邀请</div>
-          </section>
-        </div>
-      </section>
-
-      <!-- 联系人详情 -->
-      <section v-else-if="view === 'detail' && ctx.activeContact.value" class="detail-scroll">
+    <main v-if="mainTab === 'contacts'" class="detail-col">
+      <section v-if="view === 'detail' && ctx.activeContact.value" class="detail-scroll">
         <div class="detail-hero">
           <span class="avatar large" :style="{ background: avatarColor(ctx.activeContact.value.user_id) }">{{ (ctx.activeContact.value.display_name || ctx.activeContact.value.user_id || '?').slice(0, 1).toUpperCase() }}</span>
           <div class="detail-hero-text">
@@ -351,8 +263,6 @@ function openGroupDetail(groupId: string) {
           </div>
         </div>
       </section>
-
-      <!-- 群详情 -->
       <section v-else-if="view === 'detail' && ctx.activeGroup.value" class="detail-scroll">
         <div class="detail-hero">
           <span class="avatar large group-avatar">群</span>
@@ -426,8 +336,6 @@ function openGroupDetail(groupId: string) {
           <small class="sync-note">通知退群会向其他成员发送退群事件；仅本机退出不会通知其他成员。</small>
         </div>
       </section>
-
-      <!-- 添加好友 -->
       <section v-else-if="view === 'add'" class="detail-scroll">
         <header class="detail-bar"><h2>添加好友</h2></header>
         <div class="detail-body narrow">
@@ -438,8 +346,6 @@ function openGroupDetail(groupId: string) {
           </section>
         </div>
       </section>
-
-      <!-- 发起群聊 -->
       <section v-else-if="view === 'group'" class="detail-scroll">
         <header class="detail-bar"><h2>发起群聊</h2></header>
         <div class="detail-body narrow">
@@ -462,10 +368,143 @@ function openGroupDetail(groupId: string) {
           </section>
         </div>
       </section>
+      <section v-else class="detail-scroll">
+        <header class="detail-bar"><h2>通讯录</h2></header>
+        <div class="detail-body narrow">
+          <section class="home-card">
+            <h3>你想做什么？</h3>
+            <div class="outbox-list">
+              <button class="settings-row" aria-label="查看收件箱" @click="openInbox">
+                <span>查看收件箱</span><span class="chevron">好友请求、群邀请、同步失败</span>
+              </button>
+              <button class="settings-row" aria-label="添加好友" @click="view = 'add'">
+                <span>添加好友</span><span class="chevron">粘贴对方名片后发送好友请求</span>
+              </button>
+              <button class="settings-row" aria-label="发起群聊" @click="view = 'group'">
+                <span>发起群聊</span><span class="chevron">选择已成为好友的联系人建群</span>
+              </button>
+            </div>
+          </section>
+          <section class="home-card">
+            <h3>使用提示</h3>
+            <small>左侧列表用于搜索好友和群聊；点开联系人后可以发消息、核验指纹、刷新 DHT 或处理设备风险。</small>
+            <small>收到好友请求或群邀请时，先打开收件箱并点击同步。</small>
+          </section>
+        </div>
+      </section>
+    </main>
 
-      <!-- 默认欢迎 -->
-      <section v-else class="detail-empty">
-        <p>选择左侧联系人查看详情</p>
+    <main v-else class="detail-col contacts-wide">
+      <section class="detail-scroll">
+        <header class="detail-bar">
+          <h2>收件箱</h2>
+          <button class="secondary" @click="ctx.syncNow">同步</button>
+        </header>
+        <div class="detail-body inbox-body">
+          <section class="home-card inbox-status-card">
+            <h3>Mailbox 状态</h3>
+            <div class="inbox-status-grid">
+              <span>好友请求 {{ ctx.visibleFriendRequests.value.length }}</span>
+              <span>垃圾请求 {{ ctx.quarantinedFriendRequests.value.length }}</span>
+              <span>群邀请 {{ ctx.groupInvites.value.length }}</span>
+              <span>24小时计数 {{ ctx.friendRequestRateRecords.value.length }}</span>
+            </div>
+            <small v-if="ctx.friendRequestRateSummaryText.value" class="danger-text">请求频率：{{ ctx.friendRequestRateSummaryText.value }}</small>
+            <small>{{ ctx.mailboxInboxStatus.value }}</small>
+            <small :class="{ 'danger-text': ctx.mailboxQuotaPressureLevel.value !== 'ok' }">{{ ctx.mailboxQuotaStatusText.value }}</small>
+            <small>{{ ctx.mailboxDedupeStatusText.value }}</small>
+            <small v-if="ctx.mailboxFailureSummaryText.value" class="danger-text">{{ ctx.mailboxFailureSummaryText.value }}</small>
+            <small v-if="ctx.mailboxInboxErrorText.value" class="danger-text">{{ ctx.mailboxInboxErrorText.value }}</small>
+            <div class="row compact">
+              <button class="secondary" :disabled="ctx.mailboxDedupeCount.value === 0" @click="ctx.clearProcessedMailboxIds">清空去重记录</button>
+              <button class="secondary" :disabled="ctx.mailboxFailedCount.value === 0" @click="ctx.retryFailedMailboxItems">重试失败</button>
+              <button class="secondary danger" :disabled="ctx.mailboxFailedCount.value === 0" @click="ctx.clearFailedMailboxItems">清空失败</button>
+              <button class="secondary danger" :disabled="ctx.friendRequestRateRecords.value.length === 0" @click="ctx.clearFriendRequestRateRecords">清空请求计数</button>
+            </div>
+          </section>
+
+          <section v-if="ctx.mailboxFailedRecoveryItems.value.length" class="home-card">
+            <div class="section-title-row">
+              <h3>Mailbox 失败恢复</h3>
+              <div class="row compact">
+                <button class="secondary" @click="ctx.retryFailedMailboxItems">全部重试</button>
+                <button class="secondary danger" @click="ctx.clearFailedMailboxItems">清空失败</button>
+              </div>
+            </div>
+            <div class="outbox-list">
+              <div v-for="item in ctx.mailboxFailedRecoveryItems.value" :key="item.id" class="outbox-row">
+                <b>{{ item.kind }} · {{ item.from_user_id || '未知发送者' }}</b>
+                <small class="danger-text">{{ item.reason }}</small>
+                <small>{{ item.hint }}</small>
+                <small>重试 {{ item.retry_count }} 次<span v-if="item.last_failed_at"> · 最近 {{ ctx.formatDateTime(item.last_failed_at) }}</span><span v-if="item.delivery_id"> · delivery {{ item.delivery_id.slice(0, 8) }}…</span></small>
+                <div class="row compact">
+                  <button class="secondary" @click="ctx.retryMailboxFailedItem(item.id)">重试此项</button>
+                  <button v-if="item.from_user_id" class="secondary" @click="mainTab = 'contacts'; ctx.selectContact(item.from_user_id); view = 'detail'">打开联系人</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="home-card">
+            <div class="section-title-row">
+              <h3>好友请求</h3>
+              <div v-if="ctx.visibleFriendRequests.value.length" class="row compact">
+                <button class="secondary" @click="ctx.rejectAllInboxRequests">全部忽略</button>
+                <button class="secondary danger" @click="ctx.blockAllInboxRequests">全部拉黑</button>
+              </div>
+            </div>
+            <div v-if="ctx.visibleFriendRequests.value.length" class="request-grid">
+              <div v-for="req in ctx.visibleFriendRequests.value" :key="req.request_id" class="request-item">
+                <b>{{ req.from_user_id }}</b>
+                <small>{{ req.note || '无备注' }}</small>
+                <div class="row compact">
+                  <button @click="ctx.acceptInboxRequest(req)">接受</button>
+                  <button class="secondary danger" @click="ctx.rejectInboxRequest(req)">忽略</button>
+                </div>
+              </div>
+            </div>
+            <div v-else class="empty">暂无好友请求</div>
+          </section>
+
+          <section class="home-card">
+            <div class="section-title-row">
+              <h3>垃圾请求</h3>
+              <div v-if="ctx.quarantinedFriendRequests.value.length" class="row compact">
+                <button class="secondary" @click="ctx.restoreAllQuarantinedFriendRequests">全部恢复</button>
+                <button class="secondary danger" @click="ctx.clearQuarantinedFriendRequests">清空</button>
+              </div>
+            </div>
+            <div v-if="ctx.quarantinedFriendRequests.value.length" class="request-grid">
+              <div v-for="req in ctx.quarantinedFriendRequests.value" :key="req.request_id" class="request-item">
+                <b>{{ req.from_user_id }}</b>
+                <small>{{ req.quarantine_reason || '本地规则隔离' }}</small>
+                <small>{{ req.note || '无备注' }}</small>
+                <div class="row compact">
+                  <button class="secondary" @click="ctx.restoreQuarantinedFriendRequest(req)">恢复</button>
+                  <button class="secondary danger" @click="ctx.rejectInboxRequest(req)">忽略</button>
+                </div>
+              </div>
+            </div>
+            <div v-else class="empty">暂无垃圾请求</div>
+          </section>
+
+          <section class="home-card">
+            <h3>群邀请</h3>
+            <div v-if="ctx.groupInvites.value.length" class="request-grid">
+              <div v-for="inv in ctx.groupInvites.value" :key="inv.invite_id" class="request-item">
+                <b>{{ inv.group_name }}</b>
+                <small>{{ inv.member_user_ids.length }} 人</small>
+                <small>接受后只显示本机收到的新消息，历史消息不会自动同步。</small>
+                <small v-if="ctx.groupInviteStrictE2eeRiskText(inv)" class="danger-text">{{ ctx.groupInviteStrictE2eeRiskText(inv) }}</small>
+                <div class="row compact">
+                  <button @click="ctx.acceptGroupInvite(inv)">接受入群</button>
+                  <button class="secondary danger" @click="ctx.ignoreGroupInvite(inv)">忽略</button>
+                </div>
+              </div>
+            </div>
+            <div v-else class="empty">暂无群邀请</div>
+          </section>
+        </div>
       </section>
     </main>
   </div>
