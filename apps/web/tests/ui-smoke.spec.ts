@@ -337,6 +337,19 @@ test('登录注册、主界面和诊断页是产品化 UI', async ({ page }) => 
   await expect(page.locator('.app-shell')).not.toContainText('离线添加')
 
   await page.goto('/#/contacts')
+  const contactTrustFilter = page.getByLabel('联系人信任筛选')
+  await expect(contactTrustFilter).toHaveValue('all')
+  const filterStyle = await contactTrustFilter.evaluate((element) => {
+    const style = getComputedStyle(element)
+    return {
+      appearance: style.appearance,
+      backgroundImage: style.backgroundImage,
+      borderRadius: style.borderRadius,
+    }
+  })
+  expect(filterStyle.appearance).toBe('none')
+  expect(filterStyle.backgroundImage).toContain('data:image/svg+xml')
+  expect(filterStyle.borderRadius).not.toBe('0px')
   await page.getByRole('button', { name: '收件箱' }).click()
   await expect(page.getByRole('button', { name: '同步' })).toBeVisible()
   await expect(page.locator('.app-shell')).not.toContainText('粘贴好友请求')
