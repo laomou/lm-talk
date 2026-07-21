@@ -97,6 +97,11 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
           </button>
         </div>
       </section>
+
+      <footer class="app-version" aria-label="应用版本信息">
+        <span>LM Talk Web {{ ctx.webVersionText }}</span>
+        <span>版本信息可用于反馈问题和确认缓存是否已更新。</span>
+      </footer>
     </div>
   </div>
 </template>

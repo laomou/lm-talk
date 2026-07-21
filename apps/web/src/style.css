@@ -678,6 +678,16 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 .settings-row:hover { background: var(--c-surface-2); }
 .settings-row .chevron { color: var(--c-ink-3); font-size: 20px; line-height: 1; }
 .danger-row { color: var(--c-danger); }
+.app-version {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: var(--sp-2) 0 var(--sp-4);
+  color: var(--c-ink-3);
+  font-size: 12px;
+  text-align: center;
+}
+.app-version span:first-child { color: var(--c-ink-2); font-family: var(--font-mono); }
 
 /* ---- Settings / sync ---------------------------------------------------- */
 .sync-pill { font-size: 12px; font-weight: 600; color: var(--c-ink-3); background: var(--c-surface-2); border: 1px solid var(--c-line); border-radius: var(--r-pill); padding: 3px 10px; }
