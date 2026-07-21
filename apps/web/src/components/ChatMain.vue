@@ -155,30 +155,6 @@ const activeFileOutboxError = computed(() => {
 })
 
 
-const onboardingSteps = computed(() => [
-  {
-    title: '1. 备份身份',
-    text: props.ctx.lastFullDataBackupAt?.value ? `完整数据备份：${props.ctx.fullDataBackupFreshnessText.value}` : '先到“我”导出身份和完整数据备份，提示词不会上传或找回。',
-    done: Boolean(props.ctx.lastFullDataBackupAt?.value),
-    action: '去备份',
-    run: () => props.ctx.goSettingsPage(),
-  },
-  {
-    title: '2. 添加好友',
-    text: props.ctx.contacts.value.length ? `已有 ${props.ctx.contacts.value.length} 个联系人` : '粘贴或扫码对方名片，双方确认后才能开始端到端加密聊天。',
-    done: props.ctx.contacts.value.length > 0,
-    action: '添加好友',
-    run: () => props.ctx.goContactsPage(),
-  },
-  {
-    title: '3. 配置同步',
-    text: props.ctx.nodeEnabled.value ? props.ctx.nodeSettingsSummaryText.value : '配置 lm_node 后可收发好友请求、离线消息和跨设备同步。',
-    done: Boolean(props.ctx.nodeEnabled.value),
-    action: '配置同步',
-    run: () => props.ctx.goSettingsPage(),
-  },
-])
-
 const messagesEl = ref<HTMLElement | null>(null)
 function scrollToBottom() {
   const el = messagesEl.value
@@ -380,16 +356,8 @@ function onComposerKeydown(e: KeyboardEvent) {
         <div v-else-if="thread.length === 0" class="empty center">没有匹配的消息</div>
       </template>
 
-      <section v-else class="chat-empty-state onboarding-empty">
+      <section v-else class="chat-empty-state">
         <h2>选择一个聊天</h2>
-        <p>第一次使用建议先完成下面 3 步，再开始聊天。</p>
-        <div class="onboarding-steps">
-          <article v-for="step in onboardingSteps" :key="step.title" class="onboarding-step" :class="{ done: step.done }">
-            <b>{{ step.title }}</b>
-            <small>{{ step.text }}</small>
-            <button class="secondary" @click="step.run">{{ step.done ? '查看' : step.action }}</button>
-          </article>
-        </div>
       </section>
     </div>
 

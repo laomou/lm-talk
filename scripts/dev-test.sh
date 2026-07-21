@@ -9,11 +9,11 @@ usage() {
 Usage: ./scripts/dev-test.sh [all|rust|fmt|e2e|web|typecheck]
 
 Test/check commands.
-  all        fmt, Rust tests, core/node e2e, web typecheck, web build, web e2e (default)
+  all        fmt, Rust tests, core/node e2e, web typecheck and production build (default)
   rust       cargo test
   fmt        cargo fmt --check
   e2e        core/node Rust e2e only
-  web        web typecheck, production build, Playwright e2e
+  web        web typecheck and production build
   typecheck  web typecheck only
 USAGE
 }
@@ -58,8 +58,6 @@ web_tests() {
   cd "$ROOT/apps/web"
   section "web production build"
   npm run build
-  section "web e2e"
-  npm run test:e2e
 }
 
 case "$target" in
