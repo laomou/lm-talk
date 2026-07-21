@@ -360,7 +360,7 @@ test('登录注册、主界面和诊断页是产品化 UI', async ({ page }) => 
   await expect(page.getByRole('button', { name: '立即同步' })).toBeVisible()
   await expect(page.getByText('PWA 应用')).toBeVisible()
   await expect(page.getByText(/只缓存静态应用壳/)).toBeVisible()
-  await expect(page.getByLabel('应用版本信息')).toContainText(/LM Talk Web v0\.1\.0 \(dev\)/)
+  await expect(page.getByLabel('应用版本信息')).toHaveText('LM Talk Web · Version 0.1.0')
   await expect(page.getByRole('button', { name: '诊断工具' })).toBeVisible()
   await expect(page.locator('.app-shell')).not.toContainText('调试页面')
   await expect(page.locator('.app-shell')).not.toContainText('开发协议工具')
