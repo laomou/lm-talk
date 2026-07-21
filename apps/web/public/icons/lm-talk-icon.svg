@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="LM Talk">
+  <rect width="512" height="512" rx="112" fill="#07c160"/>
+  <path d="M117 238c0-76 63-137 141-137s141 61 141 137-63 137-141 137c-18 0-35-3-51-9l-82 31 29-74c-23-24-37-54-37-85z" fill="#fff" opacity=".96"/>
+  <circle cx="211" cy="239" r="18" fill="#07c160"/>
+  <circle cx="258" cy="239" r="18" fill="#07c160"/>
+  <circle cx="305" cy="239" r="18" fill="#07c160"/>
+  <path d="M178 333c22 16 49 25 80 25 71 0 128-54 128-120 0-19-5-37-14-53" fill="none" stroke="#067647" stroke-width="18" stroke-linecap="round" opacity=".28"/>
+</svg>

@@ -345,6 +345,8 @@ test('登录注册、主界面和诊断页是产品化 UI', async ({ page }) => 
 
   await page.goto('/#/me')
   await expect(page.getByRole('button', { name: '立即同步' })).toBeVisible()
+  await expect(page.getByText('PWA 应用')).toBeVisible()
+  await expect(page.getByText(/只缓存静态应用壳/)).toBeVisible()
   await expect(page.getByRole('button', { name: '诊断工具' })).toBeVisible()
   await expect(page.locator('.app-shell')).not.toContainText('调试页面')
   await expect(page.locator('.app-shell')).not.toContainText('开发协议工具')

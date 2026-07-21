@@ -33,6 +33,15 @@ const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.n
 
       <section class="home-card sync-card">
         <div class="section-title-row">
+          <h3>PWA 应用</h3>
+          <button class="secondary" @click="ctx.refreshPwaStatus">刷新状态</button>
+        </div>
+        <small>{{ ctx.pwaStatusText.value }}</small>
+        <small>安全边界：PWA 只缓存静态应用壳；不会在 Service Worker 中保存身份密钥、解密消息、后台同步 Mailbox 或发送 Outbox。</small>
+      </section>
+
+      <section class="home-card sync-card">
+        <div class="section-title-row">
           <h3>消息同步</h3>
           <span class="sync-pill" :class="{ on: ctx.nodeEnabled.value }">{{ ctx.nodeEnabled.value ? '已开启' : '未开启' }}</span>
         </div>

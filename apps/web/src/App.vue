@@ -7,6 +7,7 @@ import DiagnosticsPage from './components/DiagnosticsPage.vue'
 import ContactsPage from './components/ContactsPage.vue'
 import SettingsPage from './components/SettingsPage.vue'
 import QRCode from 'qrcode'
+import { readPwaStatus } from './pwa'
 import { TABLES, idbDel, idbGet, idbSet, idbTableClear, idbTableGet, idbTableGetAllByPrefix, idbTableReplaceByPrefix } from './idb'
 import init, {
   accept_friend_request,
@@ -662,6 +663,7 @@ const contactCardUpdateFanoutRecords = ref<ContactCardUpdateFanoutRecord[]>([])
 let outboxRetryTimer: number | undefined
 let lastDeliveryError = ''
 const runtimeStatusText = ref('尚未检查')
+const pwaStatusText = ref('PWA：尚未检查')
 const inAppRuntimePolicyText = computed(() => {
   const visibility = document.visibilityState === 'visible' ? '前台可见' : '后台可能被浏览器暂停'
   const mailbox = autoMailboxTake.value ? '自动收取已开启，切回前台最多 30 秒触发一次' : '自动收取已关闭，需要手动同步'
@@ -1553,6 +1555,10 @@ function toast(text: string, kind: ToastKind = 'info') {
   }, 2800)
 }
 
+async function refreshPwaStatus() {
+  pwaStatusText.value = (await readPwaStatus()).message
+}
+
 async function refreshRuntimeStatus() {
   const online = navigator.onLine ? '在线' : '离线'
   const visibility = document.visibilityState === 'visible' ? '前台' : '后台'
@@ -1566,6 +1572,7 @@ async function refreshRuntimeStatus() {
     }
   }
   runtimeStatusText.value = `${online} · ${visibility}${battery}`
+  await refreshPwaStatus()
 }
 
 function showAlert(title: string, message: string, kind: ToastKind = 'info') {
@@ -9325,7 +9332,7 @@ const appContext = {
   goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, webVersionText,
   nodeControlUrl, nodeUrlList, nodeEntrySummaries, nodeSettingsSummaryText, nodeTokenStorageText, nodeTokenCount, nodeMissingRemoteTokenCount, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake, autoReadReceipts,
-  runtimeStatusText, inAppRuntimePolicyText, refreshRuntimeStatus,
+  runtimeStatusText, pwaStatusText, inAppRuntimePolicyText, refreshRuntimeStatus, refreshPwaStatus,
   autoPublishPreKey, autoNodeSync, autoSelfMailboxSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodeStateFileSecurityText, nodeStateFileSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutMyContactCardUpdateToFriends, fanoutDeviceRevokeToFriends, myDeviceCertJson, myDeviceBackupText,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
