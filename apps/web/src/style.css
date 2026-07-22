@@ -813,7 +813,7 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 }
 .ui-list-row:first-child { border-top: 0; }
 .ui-list-row:hover { background: var(--c-surface-2); }
-.ui-list-row.danger { color: var(--c-danger); }
+.ui-list-row.is-danger { color: var(--c-danger); }
 .ui-list-row-main { min-width: 0; }
 .ui-list-row-end { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--c-ink-3); }
 .ui-list-row .chevron { font-size: 20px; line-height: 1; }
