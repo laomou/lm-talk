@@ -9414,7 +9414,6 @@ const appContext = {
     @create="createIdentityAndEnter"
     @login="loginSelectedIdentity"
     @import-identity="importIdentityOnly"
-    @reset-register="resetRegisterForm"
     @remove-identity="removeLocalIdentity"
     @clear="clearPersisted"
   />

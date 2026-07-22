@@ -36,7 +36,6 @@ const emit = defineEmits<{
   login: []
   importIdentity: []
   clear: []
-  resetRegister: []
   removeIdentity: [id: string]
 }>()
 
@@ -78,12 +77,6 @@ function goImport() {
   void router.push('/import')
 }
 
-function verifyRegisteredBackup() {
-  if (!props.registeredIdentity) return
-  backupText.value = props.registeredIdentity.backup_text
-  void router.push('/import')
-}
-
 function login() {
   emit('login')
 }
@@ -98,12 +91,6 @@ function fallbackCopyText(value: string) {
   textarea.select()
   document.execCommand('copy')
   document.body.removeChild(textarea)
-}
-
-async function copyRegisteredBackup() {
-  if (!props.registeredIdentity) return
-  if ((navigator.clipboard as Clipboard | undefined)?.writeText) await navigator.clipboard.writeText(props.registeredIdentity.backup_text)
-  else fallbackCopyText(props.registeredIdentity.backup_text)
 }
 
 async function copyRegisteredChecksum() {
@@ -123,9 +110,6 @@ function downloadRegisteredBackup() {
   URL.revokeObjectURL(url)
 }
 
-function resetRegister() {
-  emit('resetRegister')
-}
 </script>
 
 <template>
@@ -189,10 +173,7 @@ function resetRegister() {
           </div>
           <UiActionGroup>
             <button @click="downloadRegisteredBackup">下载身份</button>
-            <button class="secondary" @click="copyRegisteredBackup">复制身份</button>
-            <button class="secondary" @click="verifyRegisteredBackup">验证导入</button>
             <button class="secondary" @click="goLogin">去登录</button>
-            <button @click="resetRegister">返回注册</button>
           </UiActionGroup>
         </div>
 
