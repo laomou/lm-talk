@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import UiPageHeader from './UiPageHeader.vue'
-import UiCard from './UiCard.vue'
+import UiSection from './UiSection.vue'
 import UiActionGroup from './UiActionGroup.vue'
+import UiStatusBadge from './UiStatusBadge.vue'
 
 const props = defineProps<{ ctx: any }>()
 const diagnosticReport = ref('')
@@ -180,47 +181,40 @@ async function runDiagnostics() {
       <UiPageHeader title="诊断工具" back-label="返回" @back="ctx.goDiagnosticsBack" />
       <p class="hint diagnostic-page-hint">用于排查登录、同步、消息收发和本地数据问题。日常聊天不需要打开。</p>
 
-      <section class="diagnostic-overview">
-        <UiCard variant="compact" class="diagnostic-card">
-          <span>当前账号</span>
-          <b>{{ ctx.displayName.value || '未命名' }}</b>
-          <small>{{ ctx.identity.value?.user_id }}</small>
-        </UiCard>
-        <UiCard variant="compact" class="diagnostic-card">
-          <span>消息同步</span>
-          <b>{{ ctx.nodeEnabled.value ? '已开启' : '未开启' }}</b>
-          <small>{{ ctx.nodeUrlList().length ? ctx.nodeUrlList().join('，') : '未配置同步服务' }}</small>
-        </UiCard>
-        <UiCard variant="compact" class="diagnostic-card">
-          <span>待发送</span>
-          <b>{{ ctx.outbox.value.filter((x: any) => x.status !== 'sent').length }}</b>
-          <small>总队列 {{ ctx.outbox.value.length }}</small>
-        </UiCard>
-        <UiCard variant="compact" class="diagnostic-card">
-          <span>新朋友</span>
-          <b>{{ ctx.visibleFriendRequests.value.length }}</b>
-          <small>群邀请 {{ ctx.groupInvites.value.length }}</small>
-        </UiCard>
-        <UiCard variant="compact" class="diagnostic-card">
-          <span>垃圾请求</span>
-          <b>{{ ctx.quarantinedFriendRequests.value.length }}</b>
-          <small>去重记录 {{ ctx.mailboxDedupeCount.value }}</small>
-        </UiCard>
-        <UiCard variant="compact" class="diagnostic-card">
-          <span>DHT 状态</span>
-          <b>{{ ctx.nodePeerHealthRiskLevel.value === 'ok' ? '正常' : ctx.nodePeerHealthRiskLevel.value === 'warning' ? '警告' : '异常' }}</b>
-          <small>{{ ctx.nodePeerHealthStatusText.value }}</small>
-        </UiCard>
-        <UiCard variant="compact" class="diagnostic-card">
-          <span>群聊严格 E2EE</span>
-          <b>{{ ctx.groups.value.filter((g: any) => ctx.groupStrictE2eeRiskTextFor(g)).length }}</b>
-          <small>风险群聊 / 总群聊 {{ ctx.groups.value.length }}</small>
-        </UiCard>
-      </section>
+      <UiSection title="运行状态">
+        <div class="diagnostic-list">
+          <div class="diagnostic-row">
+            <span><b>当前账号</b><small>{{ ctx.identity.value?.user_id }}</small></span>
+            <strong>{{ ctx.displayName.value || '未命名' }}</strong>
+          </div>
+          <div class="diagnostic-row">
+            <span><b>消息同步</b><small>{{ ctx.nodeUrlList().length ? ctx.nodeUrlList().join('，') : '未配置同步服务' }}</small></span>
+            <UiStatusBadge :tone="ctx.nodeEnabled.value ? 'success' : 'neutral'">{{ ctx.nodeEnabled.value ? '已开启' : '未开启' }}</UiStatusBadge>
+          </div>
+          <div class="diagnostic-row">
+            <span><b>待发送</b><small>总队列 {{ ctx.outbox.value.length }}</small></span>
+            <strong>{{ ctx.outbox.value.filter((x: any) => x.status !== 'sent').length }}</strong>
+          </div>
+          <div class="diagnostic-row">
+            <span><b>新的朋友</b><small>群邀请 {{ ctx.groupInvites.value.length }}</small></span>
+            <strong>{{ ctx.visibleFriendRequests.value.length }}</strong>
+          </div>
+          <div class="diagnostic-row">
+            <span><b>垃圾请求</b><small>去重记录 {{ ctx.mailboxDedupeCount.value }}</small></span>
+            <strong>{{ ctx.quarantinedFriendRequests.value.length }}</strong>
+          </div>
+          <div class="diagnostic-row">
+            <span><b>DHT 状态</b><small>{{ ctx.nodePeerHealthStatusText.value }}</small></span>
+            <UiStatusBadge :tone="ctx.nodePeerHealthRiskLevel.value === 'ok' ? 'success' : ctx.nodePeerHealthRiskLevel.value === 'warning' ? 'warning' : 'danger'">{{ ctx.nodePeerHealthRiskLevel.value === 'ok' ? '正常' : ctx.nodePeerHealthRiskLevel.value === 'warning' ? '警告' : '异常' }}</UiStatusBadge>
+          </div>
+          <div class="diagnostic-row">
+            <span><b>群聊严格 E2EE</b><small>风险群聊 / 总群聊 {{ ctx.groups.value.length }}</small></span>
+            <strong>{{ ctx.groups.value.filter((g: any) => ctx.groupStrictE2eeRiskTextFor(g)).length }}</strong>
+          </div>
+        </div>
+      </UiSection>
 
-      <UiCard>
-        <h3>一键诊断</h3>
-        <p class="hint">生成只包含状态摘要的诊断报告，不会导出提示词、身份私钥或消息明文。</p>
+      <UiSection title="诊断报告" description="生成只包含状态摘要的诊断报告，不会导出提示词、身份私钥或消息明文。">
         <label class="check-row diagnostic-option">
           <input v-model="redactDiagnosticReport" type="checkbox" />
           脱敏账号和同步服务地址
@@ -236,15 +230,14 @@ async function runDiagnostics() {
           <button class="secondary" @click="ctx.syncNow">立即同步</button>
         </UiActionGroup>
         <textarea v-if="diagnosticReport && showDiagnosticReport" v-model="diagnosticReport" class="mono" rows="12" readonly />
-      </UiCard>
+      </UiSection>
 
-      <UiCard>
-        <h3>最近记录</h3>
+      <UiSection title="最近记录">
         <div v-if="ctx.log.value.length" class="diagnostic-log">
           <div v-for="line in ctx.log.value.slice(0, 8).map(diagnosticLogLine)" :key="line">{{ line }}</div>
         </div>
         <div v-else class="empty">暂无记录</div>
-      </UiCard>
+      </UiSection>
     </div>
   </section>
 </template>

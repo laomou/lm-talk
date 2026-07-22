@@ -781,13 +781,18 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 
 /* ---- Diagnostics -------------------------------------------------------- */
 .debug-page { height: 100%; overflow: auto; background: var(--c-canvas); }
-.debug-inner { max-width: 980px; margin: 0 auto; display: grid; gap: var(--sp-4); padding: 0 var(--sp-6) var(--sp-6); }
+.debug-inner { max-width: 640px; margin: 0 auto; display: grid; gap: var(--sp-4); padding: 0 var(--sp-6) var(--sp-6); }
 .diagnostic-page-hint { line-height: 1.5; margin-top: var(--sp-4); }
-.diagnostic-overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--sp-3); }
-.diagnostic-card { background: var(--c-surface); border: 1px solid var(--c-line); border-radius: var(--r-lg); padding: var(--sp-4); display: grid; gap: var(--sp-1); min-width: 0; box-shadow: var(--shadow-1); }
-.diagnostic-card span { color: var(--c-ink-3); font-size: 13px; }
-.diagnostic-card b { font-size: 22px; font-weight: 700; color: var(--c-ink); overflow-wrap: anywhere; }
-.diagnostic-card small { color: var(--c-ink-3); overflow-wrap: anywhere; }
+.diagnostic-list { display: grid; }
+.diagnostic-row {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+  padding: 14px var(--sp-1); border-top: 1px solid var(--c-line); min-width: 0;
+}
+.diagnostic-row:first-child { border-top: 0; }
+.diagnostic-row span { min-width: 0; display: grid; gap: 3px; }
+.diagnostic-row b { color: var(--c-ink); font-size: 14px; font-weight: 600; }
+.diagnostic-row small { color: var(--c-ink-3); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.diagnostic-row strong { flex: 0 0 auto; max-width: 42%; color: var(--c-ink-2); font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .diagnostic-log { display: grid; gap: var(--sp-2); color: var(--c-ink-2); font-family: var(--font-mono); font-size: 12.5px; overflow-wrap: anywhere; }
 
 /* ---- Modals: toast / dialog / qr ---------------------------------------- */
@@ -1012,7 +1017,6 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .me-hero { grid-template-columns: auto minmax(0, 1fr); padding: var(--sp-4); }
   .me-hero-actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
   .me-hero-actions button { min-width: 0; }
-  .diagnostic-overview { grid-template-columns: 1fr; gap: var(--sp-2); }
   .dialog-mask { padding: var(--sp-3); }
   .dialog-card { padding: var(--sp-4); }
   .pwa-update-banner {
