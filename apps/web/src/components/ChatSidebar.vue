@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { avatarColor } from '../avatarColor'
 
 const props = defineProps<{ ctx: any }>()
 const keyword = ref('')
+const route = useRoute()
+const router = useRouter()
+const searchOpen = computed(() => route.path === '/chat/search')
 
 function lastMessageFor(pred: (m: any) => boolean) {
   let last: any = null
@@ -70,14 +74,12 @@ function select(it: any) {
 </script>
 
 <template>
-  <aside class="sidebar wechat-sidebar">
-    <header class="list-col-header">
+  <aside v-if="!searchOpen" class="sidebar wechat-sidebar">
+    <header class="list-col-header product-chat-list-header">
+      <span></span>
       <h2>聊天</h2>
+      <button class="icon-btn" aria-label="搜索聊天" title="搜索聊天" @click="router.push('/chat/search')">🔍</button>
     </header>
-    <div class="list-col-search">
-      <input v-model="keyword" type="search" aria-label="搜索聊天" placeholder="搜索聊天" />
-    </div>
-
     <section class="conversation-list only-conversations">
       <button
         v-for="it in filtered"
@@ -108,7 +110,47 @@ function select(it: any) {
       </button>
 
       <div v-if="filtered.length === 0" class="empty">
-        {{ keyword ? '没有匹配的聊天' : '暂无聊天，去通讯录添加好友' }}
+        暂无聊天，去通讯录添加好友
+      </div>
+    </section>
+  </aside>
+
+  <aside v-else class="sidebar wechat-sidebar chat-search-page">
+    <header class="list-col-header product-chat-search-header">
+      <button class="back-btn" aria-label="返回聊天" @click="router.push('/chat')">‹</button>
+      <input v-model="keyword" type="search" aria-label="搜索聊天" placeholder="搜索聊天" autofocus />
+    </header>
+    <section class="conversation-list only-conversations">
+      <button
+        v-for="it in filtered"
+        :key="it.type + ':' + it.id"
+        class="contact"
+        :class="{ active: isActive(it) }"
+        :aria-current="isActive(it) ? 'true' : undefined"
+        @click="select(it)"
+      >
+        <span class="avatar" :style="{ background: avatarColor(it.id) }">{{ (convName(it) || '?').slice(0, 1).toUpperCase() }}</span>
+        <span class="contact-main">
+          <b>
+            <span class="conv-name">
+              {{ convName(it) }}
+              <em v-if="it.data.state === 'RequestSent'">等待通过</em>
+              <em v-else-if="it.data.state === 'Blocked'">已拉黑</em>
+              <em
+                v-else-if="trustBadgeText(it)"
+                class="strict-badge"
+                :class="{ danger: !it.data.fingerprint_verified_at }"
+                :title="trustBadgeTitle(it)"
+              >{{ trustBadgeText(it) }}</em>
+            </span>
+            <span v-if="it.ts" class="conv-time">{{ convTime(it.ts) }}</span>
+          </b>
+          <small class="conv-preview">{{ convPreview(it) }}</small>
+        </span>
+      </button>
+
+      <div v-if="filtered.length === 0" class="empty">
+        {{ keyword ? '没有匹配的聊天' : '输入名称搜索聊天' }}
       </div>
     </section>
   </aside>

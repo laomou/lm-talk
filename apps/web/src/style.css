@@ -315,8 +315,12 @@ button.secondary.danger:hover { background: var(--c-danger-soft); border-color: 
 .chat-shell {
   height: 100%;
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   background: var(--c-surface);
+}
+.single-column-chat > .wechat-sidebar {
+  height: 100%;
+  border-right: 0;
 }
 
 /* List column header (shared by chat + contacts) */
@@ -474,6 +478,29 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
   font-size: 13px;
 }
 .chat-header-actions button { padding: 7px 12px; font-size: 13px; }
+.chat-message-search-page {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  background: var(--c-canvas);
+}
+.chat-message-search-results { overflow: auto; padding: var(--sp-3); }
+.search-message-result {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  color: var(--c-ink);
+  background: var(--c-surface);
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-md);
+  padding: var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+.search-message-result:hover { background: var(--c-surface-2); border-color: var(--c-line-strong); }
+.search-message-result span { color: var(--c-ink-3); font-size: 12px; }
+.search-message-result b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .outbox-error { max-width: 220px; color: var(--c-danger); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .chat-notice-panel {
@@ -656,6 +683,22 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
   background: var(--c-surface); border-bottom: 1px solid var(--c-line); min-height: 60px;
 }
 .detail-bar h2 { font-size: 18px; }
+.ui-page-header {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(44px, 1fr) minmax(0, auto) minmax(44px, 1fr);
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 60px;
+  padding: var(--sp-3) var(--sp-5);
+  background: var(--c-surface);
+  border-bottom: 1px solid var(--c-line);
+}
+.ui-page-header-start { justify-self: start; min-width: 0; }
+.ui-page-header-title { min-width: 0; text-align: center; }
+.ui-page-header-title h2 { font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-page-header-end { justify-self: end; min-width: 0; }
+.ui-page-header .subbar-search { width: min(440px, 58vw); }
 .detail-hero {
   flex: 0 0 auto;
   display: flex; align-items: center; gap: var(--sp-4);
@@ -834,11 +877,14 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 .dialog-card.warning { border-top-color: #f59e0b; }
 .dialog-card.error { border-top-color: var(--c-danger); }
 .dialog-card h2 { margin-bottom: var(--sp-2); font-size: 17px; }
+.dialog-card-header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+.dialog-card-header h2 { margin-bottom: 0; }
+.dialog-card-body { margin-top: var(--sp-2); }
 .dialog-card.success h2 { color: var(--c-primary-ink); }
 .dialog-card.warning h2 { color: #b45309; }
 .dialog-card.error h2 { color: var(--c-danger); }
 .dialog-card p { color: var(--c-ink-2); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
-.dialog-actions { justify-content: flex-end; margin: var(--sp-5) 0 0; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: var(--sp-2); margin-top: var(--sp-5); }
 @keyframes dialog-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
 
 .qr-mask { z-index: 50; }
@@ -877,13 +923,15 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .rail-item { width: auto; flex: 1 1 0; border-radius: 0; padding: 8px 0; }
   .rail-spacer { display: none; }
 
-  .chat-shell { grid-template-columns: 1fr; grid-template-rows: minmax(0, 40vh) minmax(0, 1fr); }
+  .chat-shell { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr); }
   .contacts-shell { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 40vh) minmax(0, 1fr); }
   .contacts-topbar { grid-column: auto; padding: var(--sp-3); }
   .sidebar,
   .contacts-list-col { border-right: 0; border-bottom: 1px solid var(--c-line); }
   .bubble { max-width: 86%; }
   .me-page { padding: var(--sp-5) var(--sp-4); }
+  .contact-directory,
+  .alpha-heading { width: min(640px, calc(100% - 32px)); }
 }
 
 @media (max-width: 640px) {
@@ -891,7 +939,7 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .rail-item span { font-size: 10px; }
   .rail-item svg { width: 20px; height: 20px; }
 
-  .chat-shell { grid-template-rows: minmax(0, 34vh) minmax(0, 1fr); }
+  .chat-shell { grid-template-rows: minmax(0, 1fr); }
   .contacts-shell { grid-template-rows: auto minmax(0, 34vh) minmax(0, 1fr); }
   .contacts-topbar { flex-direction: column; align-items: stretch; gap: var(--sp-2); }
   .contacts-tabs { width: 100%; }
@@ -934,6 +982,8 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .received-file-card button { grid-column: 1 / -1; grid-row: auto; justify-self: stretch; text-align: center; }
 
   .detail-bar { min-height: 48px; padding: var(--sp-3); }
+  .ui-page-header { min-height: 52px; padding: var(--sp-2) var(--sp-3); }
+  .ui-page-header .subbar-search { width: min(100%, 64vw); }
   .detail-hero { padding: var(--sp-4); align-items: flex-start; }
   .detail-body { padding: var(--sp-3); gap: var(--sp-3); max-width: none; }
   .home-card { padding: var(--sp-4); }
@@ -944,6 +994,8 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 
   .me-page,
   .debug-page { padding: var(--sp-3); }
+  .contact-directory,
+  .alpha-heading { width: calc(100% - 24px); }
   .me-inner,
   .debug-inner { max-width: none; gap: var(--sp-3); }
   .me-hero { grid-template-columns: auto minmax(0, 1fr); padding: var(--sp-4); }
@@ -976,13 +1028,7 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 .onboarding-list { margin: var(--sp-3) 0; padding-left: 20px; color: var(--c-ink-2); font-size: 13px; line-height: 1.6; }
 
 @media (max-width: 640px) {
-  /*
-   * The empty-chat onboarding can be taller than the remaining chat pane on
-   * a phone (the conversation list still occupies the top part). Do not
-   * vertically centre an overflowing grid: that makes “选择一个聊天” start
-   * outside the visible area. Keep the first-use steps anchored at the top
-   * and let the message pane scroll normally.
-   */
+  /* Keep empty-chat content anchored at the top when the pane is short. */
   .chat-empty-state.onboarding-empty {
     min-height: 100%;
     padding: var(--sp-3);
@@ -1123,7 +1169,12 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 .contacts-mobile-bar h2 { text-align: center; }
 .icon-actions { justify-self: end; display: flex; gap: var(--sp-1); }
 .contact-directory {
-  max-width: 760px;
+  /*
+   * Match the same responsive column as .me-inner. On a narrow Web content
+   * pane the available width is below either desktop max-width, so explicit
+   * page gutters are required instead of relying on max-width alone.
+   */
+  width: min(640px, calc(100% - 48px));
   margin: 0 auto;
   padding: var(--sp-3) 0 var(--sp-8);
 }
@@ -1157,7 +1208,7 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 .directory-main b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .directory-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .alpha-heading {
-  max-width: 760px;
+  width: min(640px, calc(100% - 48px));
   margin: var(--sp-3) auto 0;
   padding: var(--sp-2) var(--sp-5);
   color: var(--c-ink-3);
@@ -1195,7 +1246,6 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 
 @media (max-width: 850px) {
   .chat-shell { grid-template-rows: minmax(0, 1fr); }
-  .chat-shell:has(.chat-main .chat-empty-state) { grid-template-rows: minmax(0, 40vh) minmax(0, 1fr); }
   .product-contacts-shell { height: 100%; }
 }
 
@@ -1210,4 +1260,80 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .emoji-panel { grid-template-columns: repeat(4, 1fr); }
   .pending-file-card { grid-template-columns: auto minmax(0, 1fr); }
   .pending-file-card button { grid-column: 1 / -1; }
+}
+
+/* ---- Chat page stack alignment ------------------------------------------ */
+.product-chat-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 60px;
+  padding: var(--sp-3) var(--sp-5);
+}
+.chat-back-btn { justify-self: start; }
+.product-chat-title {
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.product-chat-title h2 {
+  max-width: min(360px, 52vw);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.product-chat-title .trust-inline { font-size: 11px; padding: 1px 7px; }
+.product-chat-actions { justify-self: end; }
+.outbox-summary-inline {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--c-warn-ink);
+  background: var(--c-warn-bg);
+  border-radius: var(--r-pill);
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+@media (max-width: 850px) {
+  .product-chat-header { min-height: 60px; padding: var(--sp-3) var(--sp-5); }
+  .product-chat-actions input { display: none; }
+  .product-chat-actions .secondary,
+  .outbox-summary-inline { display: none; }
+}
+
+.product-chat-list-header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  min-height: 60px;
+  padding: var(--sp-3) var(--sp-5);
+}
+.product-chat-list-header h2 { text-align: center; }
+.product-chat-list-header .icon-btn { justify-self: end; }
+.product-chat-search-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--sp-2);
+}
+.product-chat-search-header input {
+  min-width: 0;
+  width: 100%;
+  background: var(--c-surface-2);
+}
+
+@media (max-width: 850px) {
+  .app-shell.in-chat-detail { grid-template-rows: minmax(0, 1fr); }
+  .app-shell.in-chat-detail .app-rail { display: none; }
+  .app-shell.in-chat-detail .app-content { grid-row: 1; }
+}
+
+@media (max-width: 640px) {
+  .product-chat-header { min-height: 52px; padding: var(--sp-2) var(--sp-3); }
+  .product-chat-list-header { min-height: 52px; padding: var(--sp-2) var(--sp-3); }
+  .product-chat-search-header { min-height: 52px; padding: var(--sp-2) var(--sp-3); }
 }

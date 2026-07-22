@@ -6,6 +6,7 @@ import ChatPage from './components/ChatPage.vue'
 import DiagnosticsPage from './components/DiagnosticsPage.vue'
 import ContactsPage from './components/ContactsPage.vue'
 import SettingsPage from './components/SettingsPage.vue'
+import UiDialog from './components/UiDialog.vue'
 import QRCode from 'qrcode'
 import { applyPwaUpdate, onPwaUpdateReady, readPwaStatus } from './pwa'
 import { TABLES, idbDel, idbGet, idbSet, idbTableClear, idbTableGet, idbTableGetAllByPrefix, idbTableReplaceByPrefix } from './idb'
@@ -560,7 +561,13 @@ let fingerprintScanStopped = true
 const route = useRoute()
 const router = useRouter()
 const authMode = computed(() => route.path === '/register' ? 'register' : route.path === '/import' ? 'import' : 'login')
-const currentPage = computed(() => route.path === '/diagnostics' ? 'diagnostics' : route.path === '/contacts' ? 'contacts' : (route.path === '/me' || route.path === '/settings') ? 'settings' : 'chat')
+const currentPage = computed(() => route.path === '/diagnostics'
+  ? 'diagnostics'
+  : route.path.startsWith('/contacts')
+    ? 'contacts'
+    : (route.path === '/me' || route.path === '/settings')
+      ? 'settings'
+      : 'chat')
 type ToastKind = 'success' | 'error' | 'warning' | 'info'
 type ToastItem = { id: string; kind: ToastKind; text: string }
 type ConfirmDialogState = {
@@ -9411,7 +9418,7 @@ const appContext = {
     @clear="clearPersisted"
   />
 
-  <main v-else class="app-shell">
+  <main v-else class="app-shell" :class="{ 'in-chat-detail': currentPage === 'chat' && activePeerId }">
     <nav class="app-rail" aria-label="主导航">
       <button class="rail-avatar" title="我" aria-label="打开我的设置" :aria-current="currentPage === 'settings' || currentPage === 'diagnostics' ? 'page' : undefined" @click="goSettingsPage">
         {{ (displayName || identity?.user_id || '?').slice(0, 1).toUpperCase() }}
@@ -9456,26 +9463,18 @@ const appContext = {
     </div>
   </aside>
 
-  <div v-if="alertDialog.open" class="dialog-mask" @click.self="closeAlert">
-    <section class="dialog-card" :class="alertDialog.kind" role="alertdialog" aria-modal="true" aria-labelledby="alert-dialog-title">
-      <h2 id="alert-dialog-title">{{ alertDialog.title }}</h2>
+  <UiDialog v-if="alertDialog.open" :title="alertDialog.title" :kind="alertDialog.kind" alert @close="closeAlert">
       <p>{{ alertDialog.message }}</p>
-      <div class="row compact dialog-actions">
-        <button @click="closeAlert">知道了</button>
-      </div>
-    </section>
-  </div>
+      <template #actions><button @click="closeAlert">知道了</button></template>
+  </UiDialog>
 
-  <div v-if="confirmDialog.open" class="dialog-mask" @click.self="closeConfirm(false)">
-    <section class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
-      <h2 id="confirm-dialog-title">{{ confirmDialog.title }}</h2>
+  <UiDialog v-if="confirmDialog.open" :title="confirmDialog.title" @close="closeConfirm(false)">
       <p>{{ confirmDialog.message }}</p>
-      <div class="row compact dialog-actions">
+      <template #actions>
         <button class="secondary" @click="closeConfirm(false)">取消</button>
         <button :class="{ danger: confirmDialog.danger }" @click="closeConfirm(true)">确定</button>
-      </div>
-    </section>
-  </div>
+      </template>
+  </UiDialog>
 
   <div v-if="fingerprintScanOpen" class="qr-mask" @click.self="stopFingerprintQrScan">
     <section class="qr-modal" role="dialog" aria-modal="true" aria-labelledby="fingerprint-scan-title">

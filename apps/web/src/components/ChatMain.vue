@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import UiPageHeader from './UiPageHeader.vue'
+import { useRoute, useRouter } from 'vue-router'
 
 const props = defineProps<{ ctx: any }>()
+const route = useRoute()
+const router = useRouter()
 const contactName = (userId: string) => props.ctx.contacts.value.find((c: any) => c.user_id === userId)?.display_name || userId
 const messageSearch = ref('')
+const messageSearchOpen = computed(() => route.path === '/chat/search/messages')
 const composerPanel = ref<'none' | 'attach' | 'emoji'>('none')
 const fileInput = ref<HTMLInputElement | null>(null)
+const composerTextarea = ref<HTMLTextAreaElement | null>(null)
 const emojis = ['😀', '😃', '😄', '😁', '🙂', '😉', '😊', '😍', '👍', '👏', '🙏', '💪', '🎉', '❤️', '🔥', '✅']
 
 function hmTime(ts: number) {
@@ -73,20 +79,6 @@ function canManageMessageOutbox(message: any) {
   return messageOutboxCount(message) > 0
 }
 
-const activePendingOutboxCount = computed(() => {
-  const peerId = props.ctx.activeContact.value?.user_id
-  if (!peerId) return 0
-  return props.ctx.outbox.value.filter((item: any) => item.peer_user_id === peerId && item.status !== 'sent').length
-})
-
-const activeFailedOutboxCount = computed(() => {
-  const peerId = props.ctx.activeContact.value?.user_id
-  if (!peerId) return 0
-  return props.ctx.outbox.value.filter((item: any) => item.peer_user_id === peerId && item.status === 'failed').length
-})
-
-const activeQueuedOutboxCount = computed(() => Math.max(0, activePendingOutboxCount.value - activeFailedOutboxCount.value))
-
 function messageStatusDetailText(message: any) {
   const parts = [messageStatusShortText(message)]
   if (message.read_at) parts.push(`已读 ${props.ctx.formatDateTime(message.read_at)}`)
@@ -113,6 +105,11 @@ const thread = computed(() => {
   }
   return out
 })
+const messageSearchResults = computed(() => {
+  const q = messageSearch.value.trim().toLowerCase()
+  if (!q) return []
+  return props.ctx.activeMessages.value.filter((m: any) => `${m.text || ''}`.toLowerCase().includes(q))
+})
 
 const activeFileOutboxError = computed(() => {
   const peerId = props.ctx.activeContact.value?.user_id
@@ -128,8 +125,8 @@ const messagesEl = ref<HTMLElement | null>(null)
 function scrollToBottom() {
   const el = messagesEl.value
   if (!el) return
-  // Returning to “选择一个聊天” reuses the same scroll container. Reset the
-  // previous conversation's scroll position so the onboarding starts at top.
+  // Returning to the chat list reuses the same scroll container. Reset the
+  // previous conversation's scroll position so the empty state starts at top.
   if (!props.ctx.activePeerId?.value) {
     el.scrollTop = 0
     return
@@ -152,7 +149,15 @@ function trustText(contact: any) {
   return contact?.fingerprint_verified_at ? '✓ 已核验' : '⚠️ 未核验'
 }
 function appendEmoji(emoji: string) {
-  props.ctx.composerText.value = `${props.ctx.composerText.value || ''}${emoji}`
+  const el = composerTextarea.value
+  const text = props.ctx.composerText.value || ''
+  const start = el?.selectionStart ?? text.length
+  const end = el?.selectionEnd ?? start
+  props.ctx.composerText.value = `${text.slice(0, start)}${emoji}${text.slice(end)}`
+  void nextTick(() => {
+    composerTextarea.value?.focus()
+    composerTextarea.value?.setSelectionRange(start + emoji.length, start + emoji.length)
+  })
 }
 function togglePanel(panel: 'attach' | 'emoji') {
   composerPanel.value = composerPanel.value === panel ? 'none' : panel
@@ -174,23 +179,41 @@ function sendAndClose() {
 
 <template>
   <section class="chat-main clean-chat-main">
-    <header class="chat-header clean-chat-header">
-      <div v-if="ctx.activeContact.value" class="chat-title-block product-chat-title">
-        <h2>{{ ctx.activeContact.value.display_name || '未命名联系人' }} <span class="trust-inline" :class="{ danger: !ctx.activeContact.value.fingerprint_verified_at }">{{ trustText(ctx.activeContact.value) }}</span></h2>
+    <header v-if="ctx.activeContact.value && !messageSearchOpen" class="chat-header clean-chat-header product-chat-header">
+      <button class="back-btn chat-back-btn" aria-label="返回聊天列表" @click="ctx.goChatHome">‹</button>
+      <div class="chat-title-block product-chat-title">
+        <h2>{{ ctx.activeContact.value.display_name || '未命名联系人' }}</h2>
+        <span class="trust-inline" :class="{ danger: !ctx.activeContact.value.fingerprint_verified_at }">{{ trustText(ctx.activeContact.value) }}</span>
       </div>
-      <div v-else class="chat-title-block">
-        <h2>选择一个聊天</h2>
-      </div>
-      <div v-if="ctx.activeContact.value" class="chat-header-actions product-chat-actions">
-        <input v-model="messageSearch" type="search" aria-label="搜索当前聊天" placeholder="搜索消息" />
-        <span v-if="activePendingOutboxCount" class="outbox-summary-inline">待发送 {{ activeQueuedOutboxCount }} · 失败 {{ activeFailedOutboxCount }}</span>
-        <button v-if="activePendingOutboxCount" class="secondary" @click="ctx.flushOutboxForActive">重试</button>
-        <button v-if="activePendingOutboxCount" class="secondary danger" @click="ctx.cancelOutboxForActive">取消</button>
+      <div class="chat-header-actions product-chat-actions">
+        <button
+          class="icon-btn"
+          :aria-label="messageSearchOpen ? '关闭会话内搜索' : '搜索消息'"
+          :title="messageSearchOpen ? '关闭搜索' : '搜索消息'"
+          @click="router.push('/chat/search/messages')"
+        >🔍</button>
         <button class="icon-btn" aria-label="更多" title="更多">⋯</button>
       </div>
     </header>
+    <section v-if="ctx.activeContact.value && messageSearchOpen" class="chat-message-search-page">
+      <UiPageHeader back-label="返回聊天" @back="router.push('/chat')">
+        <template #title>
+          <input v-model="messageSearch" class="subbar-search" type="search" aria-label="搜索当前会话消息" placeholder="搜索聊天记录" autofocus />
+        </template>
+      </UiPageHeader>
+      <div class="chat-message-search-results">
+        <p v-if="!messageSearch" class="empty">输入关键词搜索聊天记录</p>
+        <template v-else>
+          <button v-for="message in messageSearchResults" :key="message.id" class="search-message-result" @click="router.push('/chat')">
+            <span>{{ message.direction === 'out' ? '我' : contactName(message.peer_user_id) }} · {{ hmTime(message.created_at) }}</span>
+            <b>{{ message.text }}</b>
+          </button>
+          <p v-if="messageSearchResults.length === 0" class="empty">没有匹配的消息</p>
+        </template>
+      </div>
+    </section>
 
-    <section v-if="!ctx.activeContact.value && !ctx.strictE2eePolicyEnabled.value" class="chat-notice-panel">
+    <section v-if="!messageSearchOpen && !ctx.activeContact.value && !ctx.strictE2eePolicyEnabled.value" class="chat-notice-panel">
       <div class="notice-text">
         <b>建议开启严格 E2EE</b>
         <span>新身份建议先启用指纹核验和安全收发策略，再开始添加联系人和发送消息。</span>
@@ -202,7 +225,7 @@ function sendAndClose() {
       </div>
     </section>
 
-    <section v-if="ctx.activeContact.value && ctx.activeContact.value.state !== 'Friend'" class="chat-notice-panel">
+    <section v-if="!messageSearchOpen && ctx.activeContact.value && ctx.activeContact.value.state !== 'Friend'" class="chat-notice-panel">
       <div v-if="ctx.activeContact.value.state === 'RequestSent'" class="notice-text">
         <b>好友请求已发送</b>
         <span>等待对方通过后即可聊天。</span>
@@ -225,7 +248,7 @@ function sendAndClose() {
 
     </section>
 
-    <section v-if="ctx.activeContact.value?.state === 'Friend' && ctx.activeStrictE2eeSendRiskText.value" class="chat-notice-panel">
+    <section v-if="!messageSearchOpen && ctx.activeContact.value?.state === 'Friend' && ctx.activeStrictE2eeSendRiskText.value" class="chat-notice-panel">
       <div class="notice-text">
         <b>发送前严格 E2EE 风险</b>
         <span v-if="ctx.activeStrictE2eeSendBlockingText.value" class="danger-text">{{ ctx.activeStrictE2eeSendBlockingText.value }}</span>
@@ -242,7 +265,7 @@ function sendAndClose() {
 
 
 
-    <div class="messages clean-messages" ref="messagesEl" role="log" aria-label="消息列表" aria-live="polite">
+    <div v-if="!messageSearchOpen" class="messages clean-messages" ref="messagesEl" role="log" aria-label="消息列表" aria-live="polite">
       <template v-if="ctx.activeContact.value">
         <template v-for="item in thread" :key="item.id">
           <div v-if="item.kind === 'sep'" class="day-sep"><span>{{ item.label }}</span></div>
@@ -274,7 +297,7 @@ function sendAndClose() {
       </section>
     </div>
 
-    <footer class="composer clean-composer product-composer" v-if="ctx.activeContact.value && ctx.activeContact.value.state === 'Friend'">
+    <footer class="composer clean-composer product-composer" v-if="!messageSearchOpen && ctx.activeContact.value && ctx.activeContact.value.state === 'Friend'">
       <input ref="fileInput" class="hidden-file-input" type="file" aria-label="选择附件" @change="onHiddenFileChange" />
       <div v-if="ctx.selectedFile.value" class="selected-file-card pending-file-card">
         <div class="file-icon">{{ filePreviewLabel(ctx.selectedFile.value.name, ctx.selectedFile.value.type).slice(0, 1) }}</div>
@@ -316,7 +339,7 @@ function sendAndClose() {
       </div>
       <div class="composer-bar">
         <button class="composer-icon" aria-label="添加附件" @click="togglePanel('attach')">＋</button>
-        <textarea v-model="ctx.composerText.value" rows="1" aria-label="输入消息" placeholder="输入消息…" @keydown="onComposerKeydown" />
+        <textarea ref="composerTextarea" v-model="ctx.composerText.value" rows="1" aria-label="输入消息" placeholder="输入消息…" @keydown="onComposerKeydown" />
         <button class="composer-icon" aria-label="选择 Emoji" @click="togglePanel('emoji')">😊</button>
         <button class="send-icon" :disabled="!ctx.composerText.value.trim()" aria-label="发送" @click="sendAndClose">↑</button>
       </div>
