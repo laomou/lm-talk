@@ -1273,6 +1273,16 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 }
 .product-chat-list-header h2 { text-align: center; }
 .product-chat-list-header .icon-btn { justify-self: end; }
+.product-chat-search-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--sp-2);
+}
+.product-chat-search-header input {
+  min-width: 0;
+  width: 100%;
+  background: var(--c-surface-2);
+}
 
 @media (max-width: 850px) {
   .app-shell.in-chat-detail { grid-template-rows: minmax(0, 1fr); }
@@ -1283,4 +1293,5 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 @media (max-width: 640px) {
   .product-chat-header { min-height: 52px; padding: var(--sp-2) var(--sp-3); }
   .product-chat-list-header { min-height: 52px; padding: var(--sp-2) var(--sp-3); }
+  .product-chat-search-header { min-height: 52px; padding: var(--sp-2) var(--sp-3); }
 }

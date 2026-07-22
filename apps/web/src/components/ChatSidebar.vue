@@ -72,14 +72,15 @@ function select(it: any) {
 
 <template>
   <aside class="sidebar wechat-sidebar">
-    <header class="list-col-header product-chat-list-header">
+    <header v-if="!searchOpen" class="list-col-header product-chat-list-header">
       <span></span>
       <h2>聊天</h2>
-      <button class="icon-btn" aria-label="搜索聊天" title="搜索聊天" @click="searchOpen = !searchOpen">🔍</button>
+      <button class="icon-btn" aria-label="搜索聊天" title="搜索聊天" @click="searchOpen = true">🔍</button>
     </header>
-    <div v-if="searchOpen" class="list-col-search">
+    <header v-else class="list-col-header product-chat-search-header">
+      <button class="back-btn" aria-label="返回聊天" @click="searchOpen = false">‹</button>
       <input v-model="keyword" type="search" aria-label="搜索聊天" placeholder="搜索聊天" autofocus />
-    </div>
+    </header>
 
     <section class="conversation-list only-conversations">
       <button
