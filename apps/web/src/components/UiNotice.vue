@@ -3,13 +3,15 @@ import UiIcon from './UiIcon.vue'
 
 withDefaults(defineProps<{
   tone?: 'info' | 'warning' | 'danger' | 'success'
+  compact?: boolean
 }>(), {
   tone: 'warning',
+  compact: false,
 })
 </script>
 
 <template>
-  <section class="ui-notice" :class="tone">
+  <section class="ui-notice" :class="[tone, { compact }]">
     <div class="ui-notice-icon" aria-hidden="true">
       <UiIcon :name="tone === 'success' ? 'check' : tone === 'info' ? 'info' : 'alert'" size="16" />
     </div>

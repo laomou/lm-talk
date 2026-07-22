@@ -136,7 +136,7 @@ function downloadRegisteredBackup() {
             <li>把提示词保存在密码管理器或离线安全位置。</li>
             <li>可选：点击“验证导入”确认备份可恢复。</li>
           </ol>
-          <UiNotice>身份文件和提示词缺一不可；任意一项丢失都无法恢复这个身份。</UiNotice>
+          <UiNotice compact>身份文件和提示词缺一不可；任意一项丢失都无法恢复这个身份。</UiNotice>
           <UiActionGroup align="center">
             <button @click="downloadRegisteredBackup">下载身份</button>
             <button class="secondary" @click="goLogin">去登录</button>
@@ -147,7 +147,7 @@ function downloadRegisteredBackup() {
           <UiField label="提示词" for-id="register-passphrase">
             <textarea id="register-passphrase" v-model="passphrase" rows="2" aria-label="注册提示词" placeholder="设置你的提示词" />
           </UiField>
-          <UiNotice class="auth-hint-notice">提示词不会上传或找回；注册后请下载身份文件。</UiNotice>
+          <UiNotice compact>提示词不会上传或找回；注册后请下载身份文件。</UiNotice>
           <UiActionGroup class="auth-actions" full-width>
             <button @click="$emit('create')">注册</button>
           </UiActionGroup>
@@ -159,7 +159,7 @@ function downloadRegisteredBackup() {
         <UiField label="提示词" for-id="import-passphrase">
           <textarea id="import-passphrase" v-model="passphrase" rows="2" aria-label="导入身份提示词" placeholder="输入身份对应提示词" />
         </UiField>
-        <UiNotice>导入需要身份文本和对应提示词；提示词错误或丢失时无法恢复。</UiNotice>
+        <UiNotice compact>导入需要身份文本和对应提示词；提示词错误或丢失时无法恢复。</UiNotice>
         <UiField label="身份文本" for-id="import-backup-text">
           <textarea id="import-backup-text" v-model="backupText" rows="6" aria-label="导入身份文本" placeholder="粘贴导出的身份文本" />
         </UiField>
