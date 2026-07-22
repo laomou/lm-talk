@@ -4,6 +4,10 @@ import { useRouter } from 'vue-router'
 import UiNotice from './UiNotice.vue'
 import UiField from './UiField.vue'
 import UiActionGroup from './UiActionGroup.vue'
+import UiCard from './UiCard.vue'
+import UiAuthHeader from './UiAuthHeader.vue'
+import UiIdentityChoice from './UiIdentityChoice.vue'
+import UiEmptyState from './UiEmptyState.vue'
 
 type LocalIdentityRecord = {
   id: string
@@ -125,20 +129,16 @@ function resetRegister() {
 </script>
 
 <template>
-  <main v-if="!ready" class="login-page">
-    <div class="login-card"><h1>LM Talk</h1><p>正在加载 WASM...</p></div>
+  <main v-if="!ready" class="login-page auth-page">
+    <UiCard class="auth-card auth-loading-card"><UiEmptyState title="正在准备 LM Talk" description="正在加载安全组件…" /></UiCard>
   </main>
 
   <main v-else-if="!loggedIn" class="login-page auth-page">
-    <section class="login-card auth-card">
-      <header class="auth-header">
-        <h1 v-if="props.mode === 'login'">登录 LM Talk</h1>
-        <h1 v-else-if="props.mode === 'register'">注册 LM Talk</h1>
-        <h1 v-else>导入身份</h1>
-        <p v-if="props.mode === 'login'">选择本机保存的身份，输入提示词登录。</p>
-        <p v-else-if="props.mode === 'register'">注册新身份只需要提示词，用户名可以进入聊天后再改。</p>
-        <p v-else>粘贴导出的身份文本，输入对应提示词导入到本机。</p>
-      </header>
+    <UiCard class="auth-card">
+      <UiAuthHeader
+        :title="props.mode === 'login' ? '登录' : props.mode === 'register' ? '创建身份' : '导入身份'"
+        :description="props.mode === 'login' ? '选择本机身份并输入提示词继续。' : props.mode === 'register' ? '创建身份后，请立即完成备份。' : '粘贴身份文本并输入对应提示词。'"
+      />
 
 
       <section v-if="props.mode === 'login'" class="auth-panel">
@@ -146,22 +146,20 @@ function resetRegister() {
           <textarea id="login-passphrase" v-model="passphrase" rows="2" aria-label="登录提示词" placeholder="输入你的提示词" autofocus />
         </UiField>
 
-        <label>选择身份</label>
+        <p class="auth-field-label">选择身份</p>
         <div v-if="hasLocalIdentity" class="identity-list">
-          <div v-for="item in localIdentities" :key="item.id" class="identity-choice">
-            <label class="identity-select">
-              <input type="radio" :value="item.id" v-model="selectedIdentityId" />
-              <span>
-                <b>{{ item.display_name || '未命名' }}</b>
-                <small>{{ item.user_id }}</small>
-              </span>
-            </label>
-            <button class="identity-delete" title="删除本地身份" aria-label="删除本地身份" @click="emit('removeIdentity', item.id)">×</button>
-          </div>
+          <UiIdentityChoice
+            v-for="item in localIdentities"
+            :key="item.id"
+            :id="item.id"
+            :name="item.display_name"
+            :user-id="item.user_id"
+            :selected="selectedIdentityId === item.id"
+            @select="selectedIdentityId = $event"
+            @remove="emit('removeIdentity', $event)"
+          />
         </div>
-        <div v-else class="empty auth-empty">
-          本机还没有保存的身份。
-        </div>
+        <UiEmptyState v-else title="还没有本机身份" description="注册新身份，或导入已有身份后再登录。" />
 
         <UiActionGroup class="auth-actions" full-width>
           <button :disabled="!hasLocalIdentity" @click="login">登录</button>
@@ -172,10 +170,12 @@ function resetRegister() {
       </section>
 
       <section v-else-if="props.mode === 'register'" class="auth-panel register-page">
-        <div v-if="registeredIdentity" class="registered-result">
-          <h2>注册成功</h2>
-          <p>身份已保存在本机。请先完成备份，再返回登录。</p>
-          <small>{{ registeredIdentity.display_name }} · {{ registeredIdentity.user_id }}</small>
+        <div v-if="registeredIdentity" class="auth-success-flow">
+          <header class="auth-success-header">
+            <span class="auth-success-mark">✓</span>
+            <div><h2>身份已创建</h2><p>身份已保存在本机。请先完成备份，再返回登录。</p></div>
+          </header>
+          <p class="auth-identity-summary">{{ registeredIdentity.display_name }} · {{ registeredIdentity.user_id }}</p>
           <ol class="onboarding-list">
             <li>下载或复制身份文件。</li>
             <li>把提示词保存在密码管理器或离线安全位置。</li>
@@ -225,6 +225,6 @@ function resetRegister() {
         </UiActionGroup>
         <p class="auth-switch">导入后请回到登录页登录。<button class="link-button" @click="goLogin">返回登录</button></p>
       </section>
-    </section>
+    </UiCard>
   </main>
 </template>
