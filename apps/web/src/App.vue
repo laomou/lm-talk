@@ -9381,8 +9381,16 @@ function goSyncSettings() {
 }
 
 
-function goDiagnosticsPage() {
-  void router.push('/diagnostics')
+function goDiagnosticsPage(from?: 'me' | 'me-sync') {
+  void router.push({ path: '/diagnostics', query: from ? { from } : undefined })
+}
+
+function goDiagnosticsBack() {
+  if (route.query.from === 'me-sync') {
+    void router.push({ path: '/me', query: { section: 'sync' } })
+    return
+  }
+  void router.push('/me')
 }
 
 function logout() {
@@ -9393,7 +9401,7 @@ function logout() {
   void router.push('/login')
 }
 const appContext = {
-  goChatPage, goChatHome, goContactsPage, goSettingsPage, goSyncSettings, goDiagnosticsPage, showAlert, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
+  goChatPage, goChatHome, goContactsPage, goSettingsPage, goSyncSettings, goDiagnosticsPage, goDiagnosticsBack, showAlert, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, webVersionText,
   nodeControlUrl, nodeUrlList, nodeEntrySummaries, nodeSettingsSummaryText, nodeTokenStorageText, nodeTokenCount, nodeMissingRemoteTokenCount, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake, autoReadReceipts,
   runtimeStatusText, pwaStatusText, inAppRuntimePolicyText, refreshRuntimeStatus, refreshPwaStatus,

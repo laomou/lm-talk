@@ -155,7 +155,7 @@ function backHome() {
           </UiActionGroup>
         </UiSection>
         <UiSection class="sync-card" title="诊断">
-          <template #actions><button class="secondary" @click="ctx.goDiagnosticsPage">打开诊断工具</button></template>
+          <template #actions><button class="secondary" @click="ctx.goDiagnosticsPage('me-sync')">打开诊断工具</button></template>
           <small v-if="ctx.mailboxFailureSummaryText.value" class="danger-text">{{ ctx.mailboxFailureSummaryText.value }}</small>
           <small v-if="ctx.mailboxInboxErrorText.value" class="danger-text">{{ ctx.mailboxInboxErrorText.value }}</small>
           <small>{{ ctx.mailboxInboxStatus.value }}</small>

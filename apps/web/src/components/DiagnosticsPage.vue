@@ -177,7 +177,7 @@ async function runDiagnostics() {
 <template>
   <section class="debug-page">
     <div class="debug-inner">
-      <UiPageHeader title="诊断工具" back-label="返回" @back="ctx.goSettingsPage" />
+      <UiPageHeader title="诊断工具" back-label="返回" @back="ctx.goDiagnosticsBack" />
       <p class="hint diagnostic-page-hint">用于排查登录、同步、消息收发和本地数据问题。日常聊天不需要打开。</p>
 
       <section class="diagnostic-overview">
