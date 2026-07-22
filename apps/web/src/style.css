@@ -1132,7 +1132,7 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 .contacts-mobile-bar h2 { text-align: center; }
 .icon-actions { justify-self: end; display: flex; gap: var(--sp-1); }
 .contact-directory {
-  max-width: 760px;
+  max-width: 640px;
   margin: 0 auto;
   padding: var(--sp-3) 0 var(--sp-8);
 }
@@ -1166,7 +1166,7 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 .directory-main b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .directory-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .alpha-heading {
-  max-width: 760px;
+  max-width: 640px;
   margin: var(--sp-3) auto 0;
   padding: var(--sp-2) var(--sp-5);
   color: var(--c-ink-3);
