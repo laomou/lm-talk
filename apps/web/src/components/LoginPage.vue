@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import UiNotice from './UiNotice.vue'
+import UiField from './UiField.vue'
 
 type LocalIdentityRecord = {
   id: string
@@ -140,8 +141,9 @@ function resetRegister() {
 
 
       <section v-if="props.mode === 'login'" class="auth-panel">
-        <label for="login-passphrase">提示词</label>
-        <textarea id="login-passphrase" v-model="passphrase" rows="2" aria-label="登录提示词" placeholder="输入你的提示词" autofocus />
+        <UiField label="提示词" for-id="login-passphrase">
+          <textarea id="login-passphrase" v-model="passphrase" rows="2" aria-label="登录提示词" placeholder="输入你的提示词" autofocus />
+        </UiField>
 
         <label>选择身份</label>
         <div v-if="hasLocalIdentity" class="identity-list">
@@ -194,8 +196,9 @@ function resetRegister() {
         </div>
 
         <template v-else>
-          <label for="register-passphrase">提示词</label>
-          <textarea id="register-passphrase" v-model="passphrase" rows="2" aria-label="注册提示词" placeholder="设置你的提示词" />
+          <UiField label="提示词" for-id="register-passphrase">
+            <textarea id="register-passphrase" v-model="passphrase" rows="2" aria-label="注册提示词" placeholder="设置你的提示词" />
+          </UiField>
           <UiNotice class="backup-warning">提示词不会上传或找回；注册后请下载身份文件。</UiNotice>
           <div class="row auth-actions">
             <button @click="$emit('create')">注册</button>
@@ -205,11 +208,13 @@ function resetRegister() {
       </section>
 
       <section v-else class="auth-panel import-page">
-        <label for="import-passphrase">提示词</label>
-        <textarea id="import-passphrase" v-model="passphrase" rows="2" aria-label="导入身份提示词" placeholder="输入身份对应提示词" />
+        <UiField label="提示词" for-id="import-passphrase">
+          <textarea id="import-passphrase" v-model="passphrase" rows="2" aria-label="导入身份提示词" placeholder="输入身份对应提示词" />
+        </UiField>
         <UiNotice class="backup-warning">导入需要身份文本和对应提示词；提示词错误或丢失时无法恢复。</UiNotice>
-        <label for="import-backup-text">身份文本</label>
-        <textarea id="import-backup-text" v-model="backupText" rows="6" aria-label="导入身份文本" placeholder="粘贴导出的身份文本" />
+        <UiField label="身份文本" for-id="import-backup-text">
+          <textarea id="import-backup-text" v-model="backupText" rows="6" aria-label="导入身份文本" placeholder="粘贴导出的身份文本" />
+        </UiField>
         <div v-if="importBackupChecksum" class="backup-checksum compact-checksum">
           <span>导入文本校验码</span>
           <b>{{ importBackupChecksum }}</b>

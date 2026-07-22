@@ -7,6 +7,8 @@ import UiStatusBadge from './UiStatusBadge.vue'
 import UiIcon from './UiIcon.vue'
 import UiEmptyState from './UiEmptyState.vue'
 import UiCard from './UiCard.vue'
+import UiField from './UiField.vue'
+import UiSection from './UiSection.vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const props = defineProps<{ ctx: any }>()
@@ -170,12 +172,12 @@ function addContact() {
       <section v-else-if="view === 'add'" class="detail-scroll">
         <UiPageHeader title="添加" back-label="返回通讯录" @back="backHome" />
         <div class="detail-body narrow add-page-body">
-          <UiCard>
-            <h3>添加好友（粘贴名片）</h3>
-            <label for="contact-card-input">对方名片</label>
-            <textarea id="contact-card-input" v-model="ctx.addContactText.value" rows="7" aria-label="对方名片文本" placeholder="粘贴对方发来的名片文本" />
+          <UiSection title="添加好友（粘贴名片）">
+            <UiField label="对方名片" for-id="contact-card-input">
+              <textarea id="contact-card-input" v-model="ctx.addContactText.value" rows="7" aria-label="对方名片文本" placeholder="粘贴对方发来的名片文本" />
+            </UiField>
             <div class="row"><button @click="addContact">添加好友</button></div>
-          </UiCard>
+          </UiSection>
           <button class="settings-row mobile-only-row" aria-label="扫码添加" @click="ctx.showAlert('扫码添加', '扫码添加后续接入；也可以先使用“添加好友（粘贴名片）”。', 'info')">
             <span>扫码添加</span><span class="chevron">›</span>
           </button>
