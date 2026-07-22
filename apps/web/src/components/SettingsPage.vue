@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
+import { setLocale, type SupportedLocale } from '../i18n'
 import UiPageHeader from './UiPageHeader.vue'
 import UiListRow from './UiListRow.vue'
 import UiStatusBadge from './UiStatusBadge.vue'
@@ -15,6 +17,7 @@ type MeView = 'home' | 'profile' | 'backup' | 'security' | 'sync' | 'settings' |
 const view = ref<MeView>('home')
 const route = useRoute()
 const router = useRouter()
+const { locale, t } = useI18n()
 const showSyncServiceEditor = ref(false)
 const showDataBackupEditor = ref(false)
 const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.nodeEntrySummaries.value.length === 0)
@@ -59,6 +62,10 @@ function backHome() {
 function saveSyncSettings() {
   if (props.ctx.saveNetworkSettings()) showSyncServiceEditor.value = false
 }
+
+function changeLocale(event: Event) {
+  setLocale((event.target as HTMLSelectElement).value as SupportedLocale)
+}
 </script>
 
 <template>
@@ -75,20 +82,20 @@ function saveSyncSettings() {
 
         <UiCard>
           <UiListGroup class="product-me-rows">
-            <UiListRow @click="view = 'profile'">个人资料</UiListRow>
-            <UiListRow @click="view = 'backup'">身份备份</UiListRow>
-            <UiListRow @click="view = 'security'">安全与设备</UiListRow>
+            <UiListRow @click="view = 'profile'">{{ t('me.profile') }}</UiListRow>
+            <UiListRow @click="view = 'backup'">{{ t('me.backup') }}</UiListRow>
+            <UiListRow @click="view = 'security'">{{ t('me.security') }}</UiListRow>
             <UiListRow @click="view = 'sync'">
-              同步与安全
+              {{ t('me.sync') }}
               <template #end><UiStatusBadge compact :tone="syncStatus.tone">{{ syncStatus.text }}</UiStatusBadge><span class="chevron">›</span></template>
             </UiListRow>
-            <UiListRow @click="view = 'settings'">设置</UiListRow>
-            <UiListRow @click="view = 'about'">关于</UiListRow>
+            <UiListRow @click="view = 'settings'">{{ t('me.settings') }}</UiListRow>
+            <UiListRow @click="view = 'about'">{{ t('me.about') }}</UiListRow>
           </UiListGroup>
         </UiCard>
 
         <UiCard>
-          <UiListRow danger aria-label="退出登录" @click="ctx.logout">退出登录</UiListRow>
+          <UiListRow danger :aria-label="t('me.logout')" @click="ctx.logout">{{ t('me.logout') }}</UiListRow>
         </UiCard>
       </template>
 
@@ -186,7 +193,15 @@ function saveSyncSettings() {
       </template>
 
       <template v-else-if="view === 'settings'">
-        <UiPageHeader title="设置" back-label="返回我" @back="backHome" />
+        <UiPageHeader :title="t('me.settings')" :back-label="t('common.backToMe')" @back="backHome" />
+        <UiSection class="sync-card" :title="t('me.language')" :description="t('me.languageDescription')">
+          <UiField :label="t('me.language')" for-id="locale-select">
+            <select id="locale-select" :value="locale" aria-label="Language" @change="changeLocale">
+              <option value="zh-CN">{{ t('language.zhCN') }}</option>
+              <option value="en-US">{{ t('language.enUS') }}</option>
+            </select>
+          </UiField>
+        </UiSection>
         <UiSection class="sync-card" title="PWA 应用">
           <template #actions><button class="secondary" @click="ctx.refreshPwaStatus">刷新状态</button></template>
           <small>{{ ctx.pwaStatusText.value }}</small>
