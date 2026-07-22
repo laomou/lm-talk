@@ -60,7 +60,7 @@ function backHome() {
             <UiListRow @click="view = 'security'">安全与设备</UiListRow>
             <UiListRow @click="view = 'sync'">
               同步与安全
-              <template #end><UiStatusBadge :tone="syncStatus === '正常' ? 'success' : 'warning'">{{ syncStatus }}</UiStatusBadge><span class="chevron">›</span></template>
+              <template #end><UiStatusBadge compact :tone="syncStatus === '正常' ? 'success' : 'warning'">{{ syncStatus }}</UiStatusBadge><span class="chevron">›</span></template>
             </UiListRow>
             <UiListRow @click="view = 'settings'">设置</UiListRow>
             <UiListRow @click="view = 'about'">关于</UiListRow>
@@ -124,7 +124,7 @@ function backHome() {
 
       <template v-else-if="view === 'sync'">
         <UiPageHeader title="同步与安全" back-label="返回我" @back="backHome">
-          <template #end><UiStatusBadge :tone="syncStatus === '正常' ? 'success' : 'warning'">{{ syncStatus }}</UiStatusBadge></template>
+          <template #end><UiStatusBadge compact :tone="syncStatus === '正常' ? 'success' : 'warning'">{{ syncStatus }}</UiStatusBadge></template>
         </UiPageHeader>
         <UiSection class="sync-card" title="消息同步">
           <template #actions><UiStatusBadge :tone="ctx.nodeEnabled.value ? 'success' : 'neutral'">{{ ctx.nodeEnabled.value ? '已开启' : '未开启' }}</UiStatusBadge></template>
