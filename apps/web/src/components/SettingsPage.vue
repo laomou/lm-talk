@@ -171,12 +171,13 @@ function saveSyncSettings() {
           </UiActionGroup>
           <small v-if="ctx.syncRecoveryStatusText.value && ctx.syncRecoveryStatusText.value !== '尚未恢复'">{{ ctx.syncRecoveryStatusText.value }}</small>
         </UiSection>
+        <UiSection v-if="unreadableMailboxCount" class="sync-card" title="无法读取的旧消息">
+          <template #actions><UiStatusBadge tone="neutral">{{ unreadableMailboxCount }}</UiStatusBadge></template>
+          <small>这些消息不是同步故障，无法通过重试恢复；不会影响后续收发。请让对方重新发送需要保留的内容。</small>
+          <UiActionGroup><button class="secondary" @click="ctx.clearUnreadableMailboxItems">清除旧消息</button></UiActionGroup>
+        </UiSection>
         <UiSection class="sync-card" title="诊断">
           <template #actions><button class="secondary" @click="ctx.goDiagnosticsPage('me-sync')">打开诊断工具</button></template>
-          <template v-if="unreadableMailboxCount">
-            <small>有 {{ unreadableMailboxCount }} 条旧消息无法读取；这不会影响后续收发，请让对方重新发送。</small>
-            <UiActionGroup><button class="secondary" @click="ctx.clearUnreadableMailboxItems">清除无法读取的消息</button></UiActionGroup>
-          </template>
           <small v-if="ctx.recoverableMailboxFailedCount.value && ctx.mailboxFailureSummaryText.value" class="danger-text">{{ ctx.mailboxFailureSummaryText.value }}</small>
           <small v-if="ctx.mailboxInboxErrorText.value" class="danger-text">{{ ctx.mailboxInboxErrorText.value }}</small>
           <small>{{ ctx.mailboxInboxStatus.value }}</small>
