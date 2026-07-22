@@ -1,0 +1,83 @@
+import { expect, test, type Page } from '@playwright/test'
+
+const LOCAL_IDENTITIES_KEY = 'lm-talk-local-identities-v1'
+
+async function clearBrowserState(page: Page) {
+  await page.goto('/#/login')
+  await page.evaluate(async () => {
+    localStorage.clear()
+    sessionStorage.clear()
+    const databases = await indexedDB.databases?.()
+    await Promise.all((databases ?? []).map((database) => database.name
+      ? new Promise<void>((resolve) => {
+          const request = indexedDB.deleteDatabase(database.name!)
+          request.onsuccess = () => resolve()
+          request.onerror = () => resolve()
+          request.onblocked = () => resolve()
+        })
+      : Promise.resolve()))
+  })
+}
+
+test.beforeEach(async ({ page }) => {
+  await clearBrowserState(page)
+})
+
+test('注册后可下载身份并回到登录页', async ({ page }) => {
+  await page.goto('/#/register')
+  await page.getByLabel('注册提示词').fill('playwright-register-passphrase')
+
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: '注册' }).click()
+  await expect(page.getByRole('heading', { name: '身份已创建' })).toBeVisible()
+  await expect(page.getByText('身份文件和提示词缺一不可')).toBeVisible()
+
+  await page.getByRole('button', { name: '下载身份' }).click()
+  const identityFile = await download
+  expect(identityFile.suggestedFilename()).toContain('.lm-identity-backup.txt')
+
+  await page.getByRole('button', { name: '去登录' }).click()
+  await expect(page.getByRole('heading', { name: '登录' })).toBeVisible()
+  await expect(page.getByText('选择身份')).toBeVisible()
+})
+
+test('登录页可取消或确认删除本地身份', async ({ page }) => {
+  await page.evaluate((storageKey) => {
+    localStorage.setItem(storageKey, JSON.stringify([{
+      id: 'delete-test-user',
+      user_id: 'delete-test-user',
+      display_name: '删除测试',
+      backup_text: 'lm-identity-backup-v1:test',
+      updated_at: Date.now(),
+    }]))
+  }, LOCAL_IDENTITIES_KEY)
+  await page.reload()
+
+  await page.getByRole('button', { name: '删除本地身份' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toHaveText(/删除本地身份/)
+
+  await dialog.getByRole('button', { name: '取消' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByText('删除测试')).toBeVisible()
+
+  await page.getByRole('button', { name: '删除本地身份' }).click()
+  await dialog.getByRole('button', { name: '确定' }).click()
+  await expect(page.getByText('还没有本机身份')).toBeVisible()
+  await expect.poll(() => page.evaluate((storageKey) => localStorage.getItem(storageKey), LOCAL_IDENTITIES_KEY)).toBe('[]')
+})
+
+test('导入身份页需要身份文本并可返回登录页', async ({ page }) => {
+  await page.goto('/#/import')
+  await expect(page.getByRole('heading', { name: '导入身份' })).toBeVisible()
+  await expect(page.getByText('导入需要身份文本和对应提示词')).toBeVisible()
+  await expect(page.getByRole('button', { name: '导入' })).toBeDisabled()
+
+  await page.getByLabel('导入身份提示词').fill('wrong-passphrase')
+  await page.getByLabel('导入身份文本').fill('not-a-valid-identity-package')
+  await expect(page.getByRole('button', { name: '导入' })).toBeEnabled()
+
+  await page.getByRole('button', { name: '返回登录' }).click()
+  await expect(page.getByRole('heading', { name: '登录' })).toBeVisible()
+})
