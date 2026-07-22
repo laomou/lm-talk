@@ -4,6 +4,7 @@ import UiPageHeader from './UiPageHeader.vue'
 import UiStatusBadge from './UiStatusBadge.vue'
 import UiNotice from './UiNotice.vue'
 import UiIcon from './UiIcon.vue'
+import UiEmptyState from './UiEmptyState.vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const props = defineProps<{ ctx: any }>()
@@ -205,13 +206,13 @@ function sendAndClose() {
         </template>
       </UiPageHeader>
       <div class="chat-message-search-results">
-        <p v-if="!messageSearch" class="empty">输入关键词搜索聊天记录</p>
+        <UiEmptyState v-if="!messageSearch" title="搜索聊天记录" description="输入关键词查找当前会话的消息。" />
         <template v-else>
           <button v-for="message in messageSearchResults" :key="message.id" class="search-message-result" @click="router.push('/chat')">
             <span>{{ message.direction === 'out' ? '我' : contactName(message.peer_user_id) }} · {{ hmTime(message.created_at) }}</span>
             <b>{{ message.text }}</b>
           </button>
-          <p v-if="messageSearchResults.length === 0" class="empty">没有匹配的消息</p>
+          <UiEmptyState v-if="messageSearchResults.length === 0" icon="search" title="没有匹配的消息" description="换个关键词试试。" />
         </template>
       </div>
     </section>
@@ -288,8 +289,8 @@ function sendAndClose() {
             </div>
           </div>
         </template>
-        <div v-if="ctx.activeMessages.value.length === 0" class="empty center">还没有消息</div>
-        <div v-else-if="thread.length === 0" class="empty center">没有匹配的消息</div>
+        <UiEmptyState v-if="ctx.activeMessages.value.length === 0" title="还没有消息" description="发送一条消息开始聊天。" />
+        <UiEmptyState v-else-if="thread.length === 0" icon="search" title="没有匹配的消息" description="换个关键词试试。" />
       </template>
 
       <section v-else class="chat-empty-state">

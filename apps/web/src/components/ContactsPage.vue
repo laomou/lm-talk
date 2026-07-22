@@ -5,6 +5,7 @@ import UiPageHeader from './UiPageHeader.vue'
 import UiListRow from './UiListRow.vue'
 import UiStatusBadge from './UiStatusBadge.vue'
 import UiIcon from './UiIcon.vue'
+import UiEmptyState from './UiEmptyState.vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const props = defineProps<{ ctx: any }>()
@@ -106,9 +107,7 @@ function addContact() {
             </button>
           </template>
 
-          <div v-if="groupedContacts.length === 0" class="empty product-empty">
-            暂无好友，点击右上角 ＋ 添加好友。
-          </div>
+          <UiEmptyState v-if="groupedContacts.length === 0" title="暂无好友" description="点击右上角添加好友。" />
         </div>
       </section>
 
@@ -129,7 +128,7 @@ function addContact() {
                 </div>
               </div>
             </div>
-            <div v-else class="empty">暂无好友申请</div>
+            <UiEmptyState v-else title="暂无好友申请" description="新的好友申请会显示在这里。" />
           </section>
 
           <section v-if="ctx.quarantinedFriendRequests.value.length" class="home-card">
@@ -163,7 +162,7 @@ function addContact() {
             <UiStatusBadge :tone="c.fingerprint_verified_at ? 'success' : 'warning'">{{ trustText(c) }}</UiStatusBadge>
             <span class="chevron">›</span>
           </button>
-          <div v-if="visibleContacts.length === 0" class="empty">没有匹配的联系人</div>
+          <UiEmptyState v-if="visibleContacts.length === 0" icon="search" title="没有匹配的联系人" description="换个名称或 ID 试试。" />
         </div>
       </section>
 

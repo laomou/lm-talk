@@ -958,11 +958,30 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
   .dialog-card { animation: none; }
 }
 
-.qr-mask { z-index: 50; }
-.qr-modal { width: min(460px, 100%); background: var(--c-surface); border-radius: var(--r-lg); padding: var(--sp-5); box-shadow: var(--shadow-3); }
-.qr-modal header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
-.qr-modal h2 { font-size: 18px; }
-.qr-modal img { width: 100%; max-width: 360px; display: block; margin: var(--sp-4) auto; border: 1px solid var(--c-line); border-radius: var(--r-md); }
+.ui-action-group { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-2); }
+.fingerprint-scan-video { width: 100%; border-radius: var(--r-md); border: 1px solid var(--c-line); background: #000; }
+.qr-dialog-image { width: 100%; max-width: 360px; display: block; margin: 0 auto var(--sp-4); border: 1px solid var(--c-line); border-radius: var(--r-md); }
+
+.ui-empty-state {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: var(--sp-2);
+  min-height: 132px;
+  padding: var(--sp-5);
+  color: var(--c-ink-3);
+  text-align: center;
+}
+.ui-empty-state-icon {
+  width: 38px; height: 38px;
+  display: grid; place-items: center;
+  border-radius: var(--r-pill);
+  background: var(--c-surface-2);
+  color: var(--c-ink-3);
+}
+.ui-empty-state h3 { color: var(--c-ink-2); font-size: 15px; font-weight: 600; }
+.ui-empty-state p { margin-top: 2px; font-size: 13px; line-height: 1.5; }
+.ui-empty-state-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2); margin-top: var(--sp-1); }
 
 /* ---- Utilities ---------------------------------------------------------- */
 .empty { color: var(--c-ink-3); font-size: 13px; padding: var(--sp-3); text-align: center; }
