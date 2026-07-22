@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import UiPageHeader from './UiPageHeader.vue'
 
 const props = defineProps<{ ctx: any }>()
 const contactName = (userId: string) => props.ctx.contacts.value.find((c: any) => c.user_id === userId)?.display_name || userId
@@ -101,6 +102,11 @@ const thread = computed(() => {
   }
   return out
 })
+const messageSearchResults = computed(() => {
+  const q = messageSearch.value.trim().toLowerCase()
+  if (!q) return []
+  return props.ctx.activeMessages.value.filter((m: any) => `${m.text || ''}`.toLowerCase().includes(q))
+})
 
 const activeFileOutboxError = computed(() => {
   const peerId = props.ctx.activeContact.value?.user_id
@@ -170,7 +176,7 @@ function sendAndClose() {
 
 <template>
   <section class="chat-main clean-chat-main">
-    <header v-if="ctx.activeContact.value" class="chat-header clean-chat-header product-chat-header">
+    <header v-if="ctx.activeContact.value && !messageSearchOpen" class="chat-header clean-chat-header product-chat-header">
       <button class="back-btn chat-back-btn" aria-label="返回聊天列表" @click="ctx.goChatHome">‹</button>
       <div class="chat-title-block product-chat-title">
         <h2>{{ ctx.activeContact.value.display_name || '未命名联系人' }}</h2>
@@ -181,17 +187,30 @@ function sendAndClose() {
           class="icon-btn"
           :aria-label="messageSearchOpen ? '关闭会话内搜索' : '搜索消息'"
           :title="messageSearchOpen ? '关闭搜索' : '搜索消息'"
-          @click="messageSearchOpen = !messageSearchOpen"
+          @click="messageSearchOpen = true"
         >🔍</button>
         <button class="icon-btn" aria-label="更多" title="更多">⋯</button>
       </div>
     </header>
-    <div v-if="ctx.activeContact.value && messageSearchOpen" class="message-search-bar">
-      <input v-model="messageSearch" type="search" aria-label="搜索当前会话消息" placeholder="搜索当前会话消息" autofocus />
-      <button v-if="messageSearch" class="secondary" @click="messageSearch = ''">清除</button>
-    </div>
+    <section v-if="ctx.activeContact.value && messageSearchOpen" class="chat-message-search-page">
+      <UiPageHeader back-label="返回聊天" @back="messageSearchOpen = false">
+        <template #title>
+          <input v-model="messageSearch" class="subbar-search" type="search" aria-label="搜索当前会话消息" placeholder="搜索聊天记录" autofocus />
+        </template>
+      </UiPageHeader>
+      <div class="chat-message-search-results">
+        <p v-if="!messageSearch" class="empty">输入关键词搜索聊天记录</p>
+        <template v-else>
+          <button v-for="message in messageSearchResults" :key="message.id" class="search-message-result" @click="messageSearchOpen = false">
+            <span>{{ message.direction === 'out' ? '我' : contactName(message.peer_user_id) }} · {{ hmTime(message.created_at) }}</span>
+            <b>{{ message.text }}</b>
+          </button>
+          <p v-if="messageSearchResults.length === 0" class="empty">没有匹配的消息</p>
+        </template>
+      </div>
+    </section>
 
-    <section v-if="!ctx.activeContact.value && !ctx.strictE2eePolicyEnabled.value" class="chat-notice-panel">
+    <section v-if="!messageSearchOpen && !ctx.activeContact.value && !ctx.strictE2eePolicyEnabled.value" class="chat-notice-panel">
       <div class="notice-text">
         <b>建议开启严格 E2EE</b>
         <span>新身份建议先启用指纹核验和安全收发策略，再开始添加联系人和发送消息。</span>
@@ -203,7 +222,7 @@ function sendAndClose() {
       </div>
     </section>
 
-    <section v-if="ctx.activeContact.value && ctx.activeContact.value.state !== 'Friend'" class="chat-notice-panel">
+    <section v-if="!messageSearchOpen && ctx.activeContact.value && ctx.activeContact.value.state !== 'Friend'" class="chat-notice-panel">
       <div v-if="ctx.activeContact.value.state === 'RequestSent'" class="notice-text">
         <b>好友请求已发送</b>
         <span>等待对方通过后即可聊天。</span>
@@ -226,7 +245,7 @@ function sendAndClose() {
 
     </section>
 
-    <section v-if="ctx.activeContact.value?.state === 'Friend' && ctx.activeStrictE2eeSendRiskText.value" class="chat-notice-panel">
+    <section v-if="!messageSearchOpen && ctx.activeContact.value?.state === 'Friend' && ctx.activeStrictE2eeSendRiskText.value" class="chat-notice-panel">
       <div class="notice-text">
         <b>发送前严格 E2EE 风险</b>
         <span v-if="ctx.activeStrictE2eeSendBlockingText.value" class="danger-text">{{ ctx.activeStrictE2eeSendBlockingText.value }}</span>
@@ -243,7 +262,7 @@ function sendAndClose() {
 
 
 
-    <div class="messages clean-messages" ref="messagesEl" role="log" aria-label="消息列表" aria-live="polite">
+    <div v-if="!messageSearchOpen" class="messages clean-messages" ref="messagesEl" role="log" aria-label="消息列表" aria-live="polite">
       <template v-if="ctx.activeContact.value">
         <template v-for="item in thread" :key="item.id">
           <div v-if="item.kind === 'sep'" class="day-sep"><span>{{ item.label }}</span></div>
@@ -275,7 +294,7 @@ function sendAndClose() {
       </section>
     </div>
 
-    <footer class="composer clean-composer product-composer" v-if="ctx.activeContact.value && ctx.activeContact.value.state === 'Friend'">
+    <footer class="composer clean-composer product-composer" v-if="!messageSearchOpen && ctx.activeContact.value && ctx.activeContact.value.state === 'Friend'">
       <input ref="fileInput" class="hidden-file-input" type="file" aria-label="选择附件" @change="onHiddenFileChange" />
       <div v-if="ctx.selectedFile.value" class="selected-file-card pending-file-card">
         <div class="file-icon">{{ filePreviewLabel(ctx.selectedFile.value.name, ctx.selectedFile.value.type).slice(0, 1) }}</div>

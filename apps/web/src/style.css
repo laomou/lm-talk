@@ -478,17 +478,29 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
   font-size: 13px;
 }
 .chat-header-actions button { padding: 7px 12px; font-size: 13px; }
-.message-search-bar {
-  flex: 0 0 auto;
+.chat-message-search-page {
   display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-3);
-  background: var(--c-surface-2);
-  border-bottom: 1px solid var(--c-line);
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  background: var(--c-canvas);
 }
-.message-search-bar input { min-width: 0; flex: 1 1 auto; background: var(--c-surface); }
-.message-search-bar .secondary { flex: 0 0 auto; }
+.chat-message-search-results { overflow: auto; padding: var(--sp-3); }
+.search-message-result {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  color: var(--c-ink);
+  background: var(--c-surface);
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-md);
+  padding: var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+.search-message-result:hover { background: var(--c-surface-2); border-color: var(--c-line-strong); }
+.search-message-result span { color: var(--c-ink-3); font-size: 12px; }
+.search-message-result b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .outbox-error { max-width: 220px; color: var(--c-danger); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .chat-notice-panel {
