@@ -183,7 +183,7 @@ function addContact() {
 
       <section v-else-if="view === 'detail' && ctx.activeContact.value" class="detail-scroll">
         <UiPageHeader title="联系人详情" back-label="返回通讯录" @back="backHome" />
-        <div class="detail-hero product-contact-hero">
+        <div class="detail-hero product-contact-hero contact-detail-centered">
           <span class="avatar large" :style="{ background: avatarColor(ctx.activeContact.value.user_id) }">{{ (ctx.activeContact.value.display_name || ctx.activeContact.value.user_id || '?').slice(0, 1).toUpperCase() }}</span>
           <div class="detail-hero-text">
             <h2>{{ ctx.activeContact.value.display_name || '未命名' }}</h2>
@@ -191,7 +191,7 @@ function addContact() {
             <small>{{ shortId(ctx.activeContact.value.user_id) }}</small>
           </div>
         </div>
-        <div class="detail-body narrow">
+        <div class="detail-body narrow contact-detail-centered">
           <button class="primary-action" @click="ctx.goChatPage()">发消息</button>
           <UiSection v-if="ctx.activeContact.value.state === 'Friend'" title="安全与设备">
             <template #actions><UiStatusBadge :tone="ctx.activeContact.value.fingerprint_verified_at ? 'success' : 'warning'">{{ trustText(ctx.activeContact.value) }}</UiStatusBadge></template>
