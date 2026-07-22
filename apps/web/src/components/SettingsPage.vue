@@ -7,6 +7,7 @@ import UiCard from './UiCard.vue'
 import UiField from './UiField.vue'
 import UiSection from './UiSection.vue'
 import UiActionGroup from './UiActionGroup.vue'
+import UiListGroup from './UiListGroup.vue'
 
 const props = defineProps<{ ctx: any }>()
 type MeView = 'home' | 'profile' | 'backup' | 'security' | 'sync' | 'settings' | 'about'
@@ -41,7 +42,7 @@ function backHome() {
         </header>
 
         <UiCard>
-          <div class="settings-rows product-me-rows">
+          <UiListGroup class="product-me-rows">
             <UiListRow @click="view = 'profile'">个人资料</UiListRow>
             <UiListRow @click="view = 'backup'">身份备份</UiListRow>
             <UiListRow @click="view = 'security'">安全与设备</UiListRow>
@@ -51,7 +52,7 @@ function backHome() {
             </UiListRow>
             <UiListRow @click="view = 'settings'">设置</UiListRow>
             <UiListRow @click="view = 'about'">关于</UiListRow>
-          </div>
+          </UiListGroup>
         </UiCard>
 
         <UiCard>

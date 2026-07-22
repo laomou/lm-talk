@@ -10,6 +10,7 @@ import UiCard from './UiCard.vue'
 import UiField from './UiField.vue'
 import UiSection from './UiSection.vue'
 import UiActionGroup from './UiActionGroup.vue'
+import UiListGroup from './UiListGroup.vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const props = defineProps<{ ctx: any }>()
@@ -204,12 +205,12 @@ function addContact() {
             </UiActionGroup>
           </UiSection>
           <UiCard>
-            <div class="settings-rows">
+            <UiListGroup>
               <UiListRow @click="ctx.showQr(ctx.activeContact.value.contact_card_text, '好友身份')">查看名片</UiListRow>
               <UiListRow v-if="ctx.activeContact.value.state !== 'Blocked'" @click="ctx.blockActiveContact">拉黑</UiListRow>
               <UiListRow v-else @click="ctx.unblockActiveContact">解除拉黑</UiListRow>
               <UiListRow danger @click="ctx.removeActiveContact">删除好友</UiListRow>
-            </div>
+            </UiListGroup>
           </UiCard>
         </div>
       </section>

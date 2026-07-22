@@ -167,8 +167,6 @@ button.secondary.danger:hover { background: var(--c-danger-soft); border-color: 
 .link-button:hover { background: transparent; color: var(--c-primary-hover); text-decoration: underline; }
 
 /* ---- Layout primitives -------------------------------------------------- */
-.row { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-3) 0; }
-.compact button { padding: 7px 12px; font-size: 13px; }
 
 .ui-section { display: grid; gap: var(--sp-3); }
 .ui-section-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
@@ -289,7 +287,6 @@ button.secondary.danger:hover { background: var(--c-danger-soft); border-color: 
 .registered-result h2 { color: var(--c-primary-ink); }
 .registered-result p { color: var(--c-ink-2); font-size: 14px; }
 .registered-result small { max-width: 100%; overflow-wrap: anywhere; }
-.registered-result .row { width: 100%; justify-content: center; margin-top: var(--sp-3); }
 .registered-result .row button { min-width: 110px; }
 .backup-checksum {
   width: 100%;
@@ -773,7 +770,7 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 .policy-grid label:not(.identity-select) { display: grid; gap: var(--sp-1); font-size: 13px; color: var(--c-ink-2); }
 .policy-grid select { min-width: 0; }
 .sync-options { margin-top: var(--sp-3); }
-.settings-rows { display: grid; }
+.ui-list-group { display: grid; }
 .danger-row { color: var(--c-danger); }
 .ui-list-row {
   display: flex; align-items: center; justify-content: space-between;

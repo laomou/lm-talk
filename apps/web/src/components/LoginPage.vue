@@ -163,9 +163,9 @@ function resetRegister() {
           本机还没有保存的身份。
         </div>
 
-        <div class="row auth-actions">
+        <UiActionGroup class="auth-actions" full-width>
           <button :disabled="!hasLocalIdentity" @click="login">登录</button>
-        </div>
+        </UiActionGroup>
         <p class="auth-switch">
           还没有身份？<button class="link-button" @click="goRegister">注册</button>，<button class="link-button" @click="goImport">导入</button>
         </p>
@@ -201,9 +201,9 @@ function resetRegister() {
             <textarea id="register-passphrase" v-model="passphrase" rows="2" aria-label="注册提示词" placeholder="设置你的提示词" />
           </UiField>
           <UiNotice>提示词不会上传或找回；注册后请下载身份文件。</UiNotice>
-          <div class="row auth-actions">
+          <UiActionGroup class="auth-actions" full-width>
             <button @click="$emit('create')">注册</button>
-          </div>
+          </UiActionGroup>
           <p class="auth-switch">已有身份？<button class="link-button" @click="goLogin">返回登录</button></p>
         </template>
       </section>
@@ -220,9 +220,9 @@ function resetRegister() {
           <span>导入文本校验码</span>
           <b>{{ importBackupChecksum }}</b>
         </div>
-        <div class="row auth-actions">
+        <UiActionGroup class="auth-actions" full-width>
           <button :disabled="!backupText.trim()" @click="emit('importIdentity')">导入</button>
-        </div>
+        </UiActionGroup>
         <p class="auth-switch">导入后请回到登录页登录。<button class="link-button" @click="goLogin">返回登录</button></p>
       </section>
     </section>
