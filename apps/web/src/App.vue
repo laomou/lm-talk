@@ -75,6 +75,7 @@ import init, {
   ratchet_decrypt_text_message,
   reencrypt_identity_backup,
   restore_identity,
+  restore_identity_with_key,
 } from './wasm/lm_wasm.js'
 
 type IdentityOutput = {
@@ -608,6 +609,8 @@ const MAX_FILE_BYTES = 16 * 1024 * 1024
 const MAX_RTC_TEXT_BYTES = MAX_FILE_BYTES * 3
 const MAX_OUTBOX_RETRY_COUNT = 5
 const NODE_FETCH_TIMEOUT_MS = 10_000
+const WASM_IDENTITY_BACKUP_PREFIX = 'lm-identity-backup-v1:wasm-local:'
+const WASM_IDENTITY_BACKUP_ITERATIONS = 600_000
 
 function nodeFetchTimeoutMs(): number {
   const override = typeof window !== 'undefined' ? Number((window as any).nodeFetchTimeoutMsForTests) : 0
@@ -1742,6 +1745,13 @@ function base64UrlToString(value: string): string {
   return atob(padded)
 }
 
+function base64UrlToBytes(value: string): Uint8Array {
+  const binary = base64UrlToString(value)
+  const out = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i)
+  return out
+}
+
 function contactCardDeviceCerts(cardText: string): DeviceCertItem[] {
   try {
     const payload = cardText.slice('lm-contact-card-v1:'.length)
@@ -1783,6 +1793,33 @@ function base64ToBytesRaw(value: string): Uint8Array {
   const out = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i)
   return out
+}
+
+async function restoreIdentityForLogin(backup: string, passphraseText: string): Promise<RestoreOutput> {
+  if (!backup.startsWith(WASM_IDENTITY_BACKUP_PREFIX)) return safeJson<RestoreOutput>(restore_identity(backup, passphraseText))
+  const parts = backup.slice(WASM_IDENTITY_BACKUP_PREFIX.length).split(':')
+  if (parts.length !== 4) return safeJson<RestoreOutput>(restore_identity(backup, passphraseText))
+  const webCrypto = globalThis.crypto
+  if (!webCrypto?.subtle) return safeJson<RestoreOutput>(restore_identity(backup, passphraseText))
+
+  const material = await webCrypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(normalize_passphrase(passphraseText)),
+    'PBKDF2',
+    false,
+    ['deriveBits'],
+  )
+  const bits = await webCrypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: base64UrlToBytes(parts[1]).buffer.slice(0) as ArrayBuffer,
+      iterations: WASM_IDENTITY_BACKUP_ITERATIONS,
+      hash: 'SHA-256',
+    },
+    material,
+    256,
+  )
+  return safeJson<RestoreOutput>(restore_identity_with_key(backup, bytesToBase64Raw(new Uint8Array(bits))))
 }
 
 async function localStorageCryptoKey(): Promise<CryptoKey | null> {
@@ -4186,41 +4223,33 @@ function createIdentityAndEnter() {
   })
 }
 
-function restoreAndEnter() {
+async function restoreAndEnter() {
   try {
     if (!backupText.value.trim()) throw new Error('请粘贴身份备份包')
     if (!passphrase.value.trim()) throw new Error('请输入提示词')
     const loginBackup = backupText.value
+    const loginPassphrase = passphrase.value
     const loginName = displayName.value || 'Me'
     const destination = isAppRoute(route.path) ? route.fullPath : loginReturnPath.value
-    const out = safeJson<RestoreOutput>(restore_identity(loginBackup, passphrase.value))
+    const out = await restoreIdentityForLogin(loginBackup, loginPassphrase)
     identity.value = out
     resetAccountScopedState()
     backupText.value = loginBackup
     displayName.value = loginName
-    void loadPersistedState()
-      .then(() => {
-        loggedIn.value = true
-        if (!myContactCardText.value) exportMyCard()
-        rememberLocalIdentity(out.user_id, displayName.value, backupText.value)
-        persist()
-        appendLog('✅ 登录')
-        void router.push(destination)
-        void afterLoginAutomation()
-      })
-      .catch((e) => {
-        const message = userFacingError(e)
-        appendLog(`❌ 登录失败：${message}`)
-        showAlert('登录失败', message, 'error')
-      })
-      .finally(() => {
-        loginPending.value = false
-      })
+    await loadPersistedState()
+    loggedIn.value = true
+    if (!myContactCardText.value) exportMyCard()
+    rememberLocalIdentity(out.user_id, displayName.value, backupText.value)
+    persist()
+    appendLog('✅ 登录')
+    void router.push(destination)
+    void afterLoginAutomation()
   } catch (e) {
-    loginPending.value = false
     const message = userFacingError(e)
     appendLog(`❌ 登录: ${message}`)
     showAlert('登录', message, 'error')
+  } finally {
+    loginPending.value = false
   }
 }
 

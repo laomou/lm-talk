@@ -194,10 +194,14 @@ fn wasm_identity_backup_text(
     ))
 }
 
-fn restore_wasm_identity_backup(
-    text: &str,
-    passphrase: &str,
-) -> Result<Option<(String, [u8; lm_core::identity::IDENTITY_SEED_LEN])>, JsValue> {
+struct WasmIdentityBackupParts {
+    user_id: String,
+    salt: Vec<u8>,
+    nonce: [u8; 24],
+    ciphertext: Vec<u8>,
+}
+
+fn parse_wasm_identity_backup(text: &str) -> Result<Option<WasmIdentityBackupParts>, JsValue> {
     let Some(rest) = text.strip_prefix(WASM_IDENTITY_BACKUP_PREFIX) else {
         return Ok(None);
     };
@@ -210,34 +214,55 @@ fn restore_wasm_identity_backup(
         return Err(JsValue::from_str("invalid wasm backup"));
     }
 
-    let user_id = parts[0];
-    let salt_text = parts[1];
-    let nonce_text = parts[2];
-    let ciphertext_text = parts[3];
     let salt = URL_SAFE_NO_PAD
-        .decode(salt_text.as_bytes())
+        .decode(parts[1].as_bytes())
         .map_err(|_| JsValue::from_str("invalid wasm backup salt"))?;
     let nonce_vec = URL_SAFE_NO_PAD
-        .decode(nonce_text.as_bytes())
+        .decode(parts[2].as_bytes())
         .map_err(|_| JsValue::from_str("invalid wasm backup nonce"))?;
     let nonce: [u8; 24] = nonce_vec
         .try_into()
         .map_err(|_| JsValue::from_str("invalid wasm backup nonce"))?;
     let ciphertext = URL_SAFE_NO_PAD
-        .decode(ciphertext_text.as_bytes())
+        .decode(parts[3].as_bytes())
         .map_err(|_| JsValue::from_str("invalid wasm backup ciphertext"))?;
-    let key = wasm_identity_backup_key(passphrase, &salt);
+    Ok(Some(WasmIdentityBackupParts {
+        user_id: parts[0].to_string(),
+        salt,
+        nonce,
+        ciphertext,
+    }))
+}
+
+fn restore_wasm_identity_backup_with_key_bytes(
+    text: &str,
+    key: &[u8; 32],
+) -> Result<Option<(String, [u8; lm_core::identity::IDENTITY_SEED_LEN])>, JsValue> {
+    let Some(parts) = parse_wasm_identity_backup(text)? else {
+        return Ok(None);
+    };
     let seed_vec = lm_core::crypto::xchacha20poly1305_decrypt(
-        &key,
-        &nonce,
-        &ciphertext,
+        key,
+        &parts.nonce,
+        &parts.ciphertext,
         WASM_IDENTITY_BACKUP_AAD,
     )
     .map_err(|_| JsValue::from_str("WrongPassphrase"))?;
     let seed: [u8; lm_core::identity::IDENTITY_SEED_LEN] = seed_vec
         .try_into()
         .map_err(|_| JsValue::from_str("invalid wasm backup seed"))?;
-    Ok(Some((user_id.to_string(), seed)))
+    Ok(Some((parts.user_id, seed)))
+}
+
+fn restore_wasm_identity_backup(
+    text: &str,
+    passphrase: &str,
+) -> Result<Option<(String, [u8; lm_core::identity::IDENTITY_SEED_LEN])>, JsValue> {
+    let Some(parts) = parse_wasm_identity_backup(text)? else {
+        return Ok(None);
+    };
+    let key = wasm_identity_backup_key(passphrase, &parts.salt);
+    restore_wasm_identity_backup_with_key_bytes(text, &key)
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -411,6 +436,30 @@ struct RestoreIdentityOutput {
 pub fn restore_identity(backup_text: &str, passphrase: &str) -> Result<String, JsValue> {
     ensure_js_len(backup_text, lm_core::limits::MAX_IDENTITY_BACKUP_TEXT_BYTES)?;
     let identity = restore_identity_any(backup_text, passphrase)?;
+    let out = RestoreIdentityOutput {
+        user_id: identity.user_id().to_string(),
+        identity_public_key: BASE64.encode(identity.identity_public_key()),
+        x25519_public_key: BASE64.encode(identity.x25519_public_key()),
+    };
+    to_json_string(&out)
+}
+
+#[wasm_bindgen]
+pub fn restore_identity_with_key(backup_text: &str, key_base64: &str) -> Result<String, JsValue> {
+    ensure_js_len(backup_text, lm_core::limits::MAX_IDENTITY_BACKUP_TEXT_BYTES)?;
+    let key_vec = BASE64
+        .decode(key_base64.as_bytes())
+        .map_err(|_| JsValue::from_str("invalid identity key encoding"))?;
+    let key: [u8; 32] = key_vec
+        .try_into()
+        .map_err(|_| JsValue::from_str("invalid identity key length"))?;
+    let Some((expected_user_id, seed)) = restore_wasm_identity_backup_with_key_bytes(backup_text, &key)? else {
+        return Err(JsValue::from_str("unsupported identity backup for key restore"));
+    };
+    let identity = wasm_identity_from_seed(seed)?;
+    if identity.user_id().to_string() != expected_user_id {
+        return Err(JsValue::from_str("backup user_id mismatch"));
+    }
     let out = RestoreIdentityOutput {
         user_id: identity.user_id().to_string(),
         identity_public_key: BASE64.encode(identity.identity_public_key()),
