@@ -78,7 +78,7 @@
 
 /* ---- Reset & base ------------------------------------------------------- */
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--c-canvas); color: var(--c-ink); }
+body { margin: 0; background: var(--c-canvas); color: var(--c-ink); overscroll-behavior-y: contain; }
 
 h1 { font-size: 22px; font-weight: 700; margin: 0; }
 h2 { font-size: 18px; font-weight: 600; margin: 0; }
