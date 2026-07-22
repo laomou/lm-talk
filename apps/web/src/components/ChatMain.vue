@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import UiPageHeader from './UiPageHeader.vue'
 import UiStatusBadge from './UiStatusBadge.vue'
 import UiNotice from './UiNotice.vue'
+import UiIcon from './UiIcon.vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const props = defineProps<{ ctx: any }>()
@@ -182,7 +183,7 @@ function sendAndClose() {
 <template>
   <section class="chat-main clean-chat-main">
     <header v-if="ctx.activeContact.value && !messageSearchOpen" class="chat-header clean-chat-header product-chat-header">
-      <button class="back-btn chat-back-btn" aria-label="返回聊天列表" @click="ctx.goChatHome">‹</button>
+      <button class="back-btn chat-back-btn" aria-label="返回聊天列表" @click="ctx.goChatHome"><UiIcon name="back" /></button>
       <div class="chat-title-block product-chat-title">
         <h2>{{ ctx.activeContact.value.display_name || '未命名联系人' }}</h2>
         <UiStatusBadge :tone="ctx.activeContact.value.fingerprint_verified_at ? 'success' : 'warning'" compact>{{ trustText(ctx.activeContact.value) }}</UiStatusBadge>
@@ -193,8 +194,8 @@ function sendAndClose() {
           :aria-label="messageSearchOpen ? '关闭会话内搜索' : '搜索消息'"
           :title="messageSearchOpen ? '关闭搜索' : '搜索消息'"
           @click="router.push('/chat/search/messages')"
-        >🔍</button>
-        <button class="icon-btn" aria-label="更多" title="更多">⋯</button>
+        ><UiIcon name="search" /></button>
+        <button class="icon-btn" aria-label="更多" title="更多"><UiIcon name="more" /></button>
       </div>
     </header>
     <section v-if="ctx.activeContact.value && messageSearchOpen" class="chat-message-search-page">
@@ -339,10 +340,10 @@ function sendAndClose() {
         </div>
       </div>
       <div class="composer-bar">
-        <button class="composer-icon" aria-label="添加附件" @click="togglePanel('attach')">＋</button>
+        <button class="composer-icon" aria-label="添加附件" @click="togglePanel('attach')"><UiIcon name="add" /></button>
         <textarea ref="composerTextarea" v-model="ctx.composerText.value" rows="1" aria-label="输入消息" placeholder="输入消息…" @keydown="onComposerKeydown" />
-        <button class="composer-icon" aria-label="选择 Emoji" @click="togglePanel('emoji')">😊</button>
-        <button class="send-icon" :disabled="!ctx.composerText.value.trim()" aria-label="发送" @click="sendAndClose">↑</button>
+        <button class="composer-icon" aria-label="选择 Emoji" @click="togglePanel('emoji')"><UiIcon name="smile" /></button>
+        <button class="send-icon" :disabled="!ctx.composerText.value.trim()" aria-label="发送" @click="sendAndClose"><UiIcon name="send" /></button>
       </div>
       <div v-if="composerPanel === 'attach'" class="composer-panel attachment-panel">
         <button class="panel-choice" @click="chooseFile('image')">图片</button>

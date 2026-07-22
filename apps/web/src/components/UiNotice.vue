@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import UiIcon from './UiIcon.vue'
+
 withDefaults(defineProps<{
   tone?: 'info' | 'warning' | 'danger' | 'success'
 }>(), {
@@ -9,7 +11,7 @@ withDefaults(defineProps<{
 <template>
   <section class="ui-notice" :class="tone">
     <div class="ui-notice-icon" aria-hidden="true">
-      {{ tone === 'success' ? '✓' : tone === 'danger' ? '!' : tone === 'info' ? 'i' : '!' }}
+      <UiIcon :name="tone === 'success' ? 'check' : tone === 'info' ? 'info' : 'alert'" size="16" />
     </div>
     <div class="ui-notice-content">
       <slot />

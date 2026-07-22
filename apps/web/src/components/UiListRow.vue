@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import UiIcon from './UiIcon.vue'
+
 withDefaults(defineProps<{
   danger?: boolean
   ariaLabel?: string
@@ -14,7 +16,7 @@ const emit = defineEmits<{ click: [] }>()
   <button class="ui-list-row" :class="{ 'is-danger': danger }" :aria-label="ariaLabel" @click="emit('click')">
     <span class="ui-list-row-main"><slot /></span>
     <span class="ui-list-row-end">
-      <slot name="end"><span class="chevron">›</span></slot>
+      <slot name="end"><UiIcon name="next" /></slot>
     </span>
   </button>
 </template>

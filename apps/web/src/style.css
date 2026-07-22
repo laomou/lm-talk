@@ -1128,10 +1128,12 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   border-radius: var(--r-pill);
   font-size: 18px;
 }
+.ui-icon { display: block; flex: 0 0 auto; }
 .icon-btn:hover,
 .back-btn:hover,
 .composer-icon:hover { background: var(--c-surface-2); color: var(--c-ink); }
-.back-btn { font-size: 28px; line-height: 1; }
+.back-btn { line-height: 1; }
+.back-btn .ui-icon { width: 22px; height: 22px; }
 
 .trust-inline,
 .trust-mark,
@@ -1185,8 +1187,6 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 .send-icon {
   background: var(--c-primary);
   color: #fff;
-  font-size: 20px;
-  font-weight: 800;
 }
 .send-icon:hover { background: var(--c-primary-hover); }
 .send-icon:disabled { background: var(--c-line-strong); color: #fff; }

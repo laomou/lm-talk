@@ -4,6 +4,7 @@ import { avatarColor } from '../avatarColor'
 import UiPageHeader from './UiPageHeader.vue'
 import UiListRow from './UiListRow.vue'
 import UiStatusBadge from './UiStatusBadge.vue'
+import UiIcon from './UiIcon.vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const props = defineProps<{ ctx: any }>()
@@ -73,8 +74,8 @@ function addContact() {
           <span></span>
           <h2>通讯录</h2>
           <div class="header-actions icon-actions">
-            <button class="icon-btn" aria-label="搜索联系人" title="搜索联系人" @click="router.push('/contacts/search')">🔍</button>
-            <button class="icon-btn" aria-label="添加好友" title="添加好友" @click="view = 'add'">＋</button>
+            <button class="icon-btn" aria-label="搜索联系人" title="搜索联系人" @click="router.push('/contacts/search')"><UiIcon name="search" /></button>
+            <button class="icon-btn" aria-label="添加好友" title="添加好友" @click="view = 'add'"><UiIcon name="add" /></button>
           </div>
         </header>
 
