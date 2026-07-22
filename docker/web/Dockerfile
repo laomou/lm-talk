@@ -21,7 +21,7 @@ COPY --from=wasm-builder /src/apps/web/src/wasm ./apps/web/src/wasm
 
 ARG BUILD_REF=container
 ENV BUILD_REF=${BUILD_REF}
-RUN npm run build --prefix apps/web
+RUN cd apps/web && npx vite build
 
 FROM caddy:2-alpine AS runtime
 COPY docker/web/Caddyfile /etc/caddy/Caddyfile
