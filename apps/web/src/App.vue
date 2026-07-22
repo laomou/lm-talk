@@ -628,6 +628,7 @@ const GROUP_SENDER_KEY_PAYLOAD_PREFIX = 'lm-group-sender-key-message-v1:'
 const passphrase = ref('')
 const newIdentityPassphrase = ref('')
 const backupText = ref('')
+let missingWebCryptoWarningShown = false
 let keepBackupText = false
 const identity = ref<(IdentityOutput | RestoreOutput) | null>(null)
 const displayName = ref('Me')
@@ -1811,7 +1812,10 @@ async function localStorageCryptoKey(): Promise<CryptoKey | null> {
   if (!identity.value || !passphrase.value) return null
   const webCrypto = globalThis.crypto
   if (!webCrypto?.subtle) {
-    appendLog(`⚠️ 当前页面没有 WebCrypto subtle，无法解密/加密本地敏感数据；当前地址：${window.location.protocol}//${window.location.host}。请使用 https 或 http://127.0.0.1 访问`)
+    if (!missingWebCryptoWarningShown) {
+      missingWebCryptoWarningShown = true
+      appendLog(`⚠️ 当前页面没有 WebCrypto subtle，无法解密/加密本地敏感数据；当前地址：${window.location.protocol}//${window.location.host}。请使用 https 或 http://127.0.0.1 访问`)
+    }
     return null
   }
   const material = await webCrypto.subtle.importKey(
