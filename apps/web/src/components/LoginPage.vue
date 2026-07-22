@@ -1,6 +1,13 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import UiNotice from './UiNotice.vue'
+import UiField from './UiField.vue'
+import UiActionGroup from './UiActionGroup.vue'
+import UiCard from './UiCard.vue'
+import UiAuthHeader from './UiAuthHeader.vue'
+import UiIdentityChoice from './UiIdentityChoice.vue'
+import UiEmptyState from './UiEmptyState.vue'
 
 type LocalIdentityRecord = {
   id: string
@@ -29,35 +36,11 @@ const emit = defineEmits<{
   login: []
   importIdentity: []
   clear: []
-  resetRegister: []
   removeIdentity: [id: string]
 }>()
 
 const router = useRouter()
 const hasLocalIdentity = computed(() => props.localIdentities.length > 0)
-const registeredBackupChecksum = ref('')
-const importBackupChecksum = ref('')
-
-async function sha256Hex(value: string): Promise<string> {
-  const bytes = new TextEncoder().encode(value)
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
-}
-
-watch(
-  () => props.registeredIdentity?.backup_text,
-  async (value) => {
-    registeredBackupChecksum.value = value ? (await sha256Hex(value)).slice(0, 16) : ''
-  },
-  { immediate: true },
-)
-
-watch(
-  backupText,
-  async (value) => {
-    importBackupChecksum.value = value.trim() ? (await sha256Hex(value.trim())).slice(0, 16) : ''
-  },
-)
 
 function goRegister() {
   void router.push('/register')
@@ -68,12 +51,6 @@ function goLogin() {
 }
 
 function goImport() {
-  void router.push('/import')
-}
-
-function verifyRegisteredBackup() {
-  if (!props.registeredIdentity) return
-  backupText.value = props.registeredIdentity.backup_text
   void router.push('/import')
 }
 
@@ -93,18 +70,6 @@ function fallbackCopyText(value: string) {
   document.body.removeChild(textarea)
 }
 
-async function copyRegisteredBackup() {
-  if (!props.registeredIdentity) return
-  if ((navigator.clipboard as Clipboard | undefined)?.writeText) await navigator.clipboard.writeText(props.registeredIdentity.backup_text)
-  else fallbackCopyText(props.registeredIdentity.backup_text)
-}
-
-async function copyRegisteredChecksum() {
-  if (!registeredBackupChecksum.value) return
-  if ((navigator.clipboard as Clipboard | undefined)?.writeText) await navigator.clipboard.writeText(registeredBackupChecksum.value)
-  else fallbackCopyText(registeredBackupChecksum.value)
-}
-
 function downloadRegisteredBackup() {
   if (!props.registeredIdentity) return
   const blob = new Blob([props.registeredIdentity.backup_text], { type: 'text/plain;charset=utf-8' })
@@ -116,108 +81,93 @@ function downloadRegisteredBackup() {
   URL.revokeObjectURL(url)
 }
 
-function resetRegister() {
-  emit('resetRegister')
-}
 </script>
 
 <template>
-  <main v-if="!ready" class="login-page">
-    <div class="login-card"><h1>LM Talk</h1><p>正在加载 WASM...</p></div>
+  <main v-if="!ready" class="login-page auth-page">
+    <UiCard class="auth-card auth-loading-card"><UiEmptyState title="正在准备 LM Talk" description="正在加载安全组件…" /></UiCard>
   </main>
 
   <main v-else-if="!loggedIn" class="login-page auth-page">
-    <section class="login-card auth-card">
-      <header class="auth-header">
-        <h1 v-if="props.mode === 'login'">登录 LM Talk</h1>
-        <h1 v-else-if="props.mode === 'register'">注册 LM Talk</h1>
-        <h1 v-else>导入身份</h1>
-        <p v-if="props.mode === 'login'">选择本机保存的身份，输入提示词登录。</p>
-        <p v-else-if="props.mode === 'register'">注册新身份只需要提示词，用户名可以进入聊天后再改。</p>
-        <p v-else>粘贴导出的身份文本，输入对应提示词导入到本机。</p>
-      </header>
+    <UiCard class="auth-card">
+      <UiAuthHeader
+        :title="props.mode === 'login' ? '登录' : props.mode === 'register' ? '创建身份' : '导入身份'"
+        :description="props.mode === 'login' ? '选择本机身份并输入提示词继续。' : props.mode === 'register' ? '创建身份后，请立即完成备份。' : '粘贴身份文本并输入对应提示词。'"
+      />
 
 
       <section v-if="props.mode === 'login'" class="auth-panel">
-        <label for="login-passphrase">提示词</label>
-        <textarea id="login-passphrase" v-model="passphrase" rows="2" aria-label="登录提示词" placeholder="输入你的提示词" autofocus />
+        <UiField label="提示词" for-id="login-passphrase">
+          <textarea id="login-passphrase" v-model="passphrase" rows="2" aria-label="登录提示词" placeholder="输入你的提示词" autofocus />
+        </UiField>
 
-        <label>选择身份</label>
+        <p class="auth-field-label">选择身份</p>
         <div v-if="hasLocalIdentity" class="identity-list">
-          <div v-for="item in localIdentities" :key="item.id" class="identity-choice">
-            <label class="identity-select">
-              <input type="radio" :value="item.id" v-model="selectedIdentityId" />
-              <span>
-                <b>{{ item.display_name || '未命名' }}</b>
-                <small>{{ item.user_id }}</small>
-              </span>
-            </label>
-            <button class="identity-delete" title="删除本地身份" aria-label="删除本地身份" @click="emit('removeIdentity', item.id)">×</button>
-          </div>
+          <UiIdentityChoice
+            v-for="item in localIdentities"
+            :key="item.id"
+            :id="item.id"
+            :name="item.display_name"
+            :user-id="item.user_id"
+            :selected="selectedIdentityId === item.id"
+            @select="selectedIdentityId = $event"
+            @request-delete="emit('removeIdentity', $event)"
+          />
         </div>
-        <div v-else class="empty auth-empty">
-          本机还没有保存的身份。
-        </div>
+        <UiEmptyState v-else title="还没有本机身份" description="注册新身份，或导入已有身份后再登录。" />
 
-        <div class="row auth-actions">
+        <UiActionGroup class="auth-actions" full-width>
           <button :disabled="!hasLocalIdentity" @click="login">登录</button>
-        </div>
+        </UiActionGroup>
         <p class="auth-switch">
           还没有身份？<button class="link-button" @click="goRegister">注册</button>，<button class="link-button" @click="goImport">导入</button>
         </p>
       </section>
 
       <section v-else-if="props.mode === 'register'" class="auth-panel register-page">
-        <div v-if="registeredIdentity" class="registered-result">
-          <h2>注册成功</h2>
-          <p>身份已保存在本机。请先完成备份，再返回登录。</p>
-          <small>{{ registeredIdentity.display_name }} · {{ registeredIdentity.user_id }}</small>
+        <div v-if="registeredIdentity" class="auth-success-flow">
+          <header class="auth-success-header">
+            <span class="auth-success-mark">✓</span>
+            <div><h2>身份已创建</h2><p>身份已保存在本机。请先完成备份，再返回登录。</p></div>
+          </header>
+          <p class="auth-identity-summary">{{ registeredIdentity.display_name }} · {{ registeredIdentity.user_id }}</p>
           <ol class="onboarding-list">
             <li>下载或复制身份文件。</li>
             <li>把提示词保存在密码管理器或离线安全位置。</li>
             <li>可选：点击“验证导入”确认备份可恢复。</li>
           </ol>
-          <p class="backup-warning">身份文件和提示词缺一不可；任意一项丢失都无法恢复这个身份。</p>
-          <div v-if="registeredBackupChecksum" class="backup-checksum">
-            <span>备份校验码</span>
-            <b>{{ registeredBackupChecksum }}</b>
-            <button class="secondary" @click="copyRegisteredChecksum">复制校验码</button>
-          </div>
-          <div class="row compact">
+          <UiNotice compact>身份文件和提示词缺一不可；任意一项丢失都无法恢复这个身份。</UiNotice>
+          <UiActionGroup align="center">
             <button @click="downloadRegisteredBackup">下载身份</button>
-            <button class="secondary" @click="copyRegisteredBackup">复制身份</button>
-            <button class="secondary" @click="verifyRegisteredBackup">验证导入</button>
             <button class="secondary" @click="goLogin">去登录</button>
-            <button @click="resetRegister">返回注册</button>
-          </div>
+          </UiActionGroup>
         </div>
 
         <template v-else>
-          <label for="register-passphrase">提示词</label>
-          <textarea id="register-passphrase" v-model="passphrase" rows="2" aria-label="注册提示词" placeholder="设置你的提示词" />
-          <p class="backup-warning">提示词不会上传或找回；注册后请下载身份文件。</p>
-          <div class="row auth-actions">
+          <UiField label="提示词" for-id="register-passphrase">
+            <textarea id="register-passphrase" v-model="passphrase" rows="2" aria-label="注册提示词" placeholder="设置你的提示词" />
+          </UiField>
+          <UiNotice compact>提示词不会上传或找回；注册后请下载身份文件。</UiNotice>
+          <UiActionGroup class="auth-actions" full-width>
             <button @click="$emit('create')">注册</button>
-          </div>
+          </UiActionGroup>
           <p class="auth-switch">已有身份？<button class="link-button" @click="goLogin">返回登录</button></p>
         </template>
       </section>
 
       <section v-else class="auth-panel import-page">
-        <label for="import-passphrase">提示词</label>
-        <textarea id="import-passphrase" v-model="passphrase" rows="2" aria-label="导入身份提示词" placeholder="输入身份对应提示词" />
-        <p class="backup-warning">导入需要身份文本和对应提示词；提示词错误或丢失时无法恢复。</p>
-        <label for="import-backup-text">身份文本</label>
-        <textarea id="import-backup-text" v-model="backupText" rows="6" aria-label="导入身份文本" placeholder="粘贴导出的身份文本" />
-        <div v-if="importBackupChecksum" class="backup-checksum compact-checksum">
-          <span>导入文本校验码</span>
-          <b>{{ importBackupChecksum }}</b>
-        </div>
-        <div class="row auth-actions">
+        <UiField label="提示词" for-id="import-passphrase">
+          <textarea id="import-passphrase" v-model="passphrase" rows="2" aria-label="导入身份提示词" placeholder="输入身份对应提示词" />
+        </UiField>
+        <UiNotice compact>导入需要身份文本和对应提示词；提示词错误或丢失时无法恢复。</UiNotice>
+        <UiField label="身份文本" for-id="import-backup-text">
+          <textarea id="import-backup-text" v-model="backupText" rows="6" aria-label="导入身份文本" placeholder="粘贴导出的身份文本" />
+        </UiField>
+        <UiActionGroup class="auth-actions" full-width>
           <button :disabled="!backupText.trim()" @click="emit('importIdentity')">导入</button>
-        </div>
+        </UiActionGroup>
         <p class="auth-switch">导入后请回到登录页登录。<button class="link-button" @click="goLogin">返回登录</button></p>
       </section>
-    </section>
+    </UiCard>
   </main>
 </template>

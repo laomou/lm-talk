@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import UiPageHeader from './UiPageHeader.vue'
+import UiStatusBadge from './UiStatusBadge.vue'
+import UiNotice from './UiNotice.vue'
+import UiIcon from './UiIcon.vue'
+import UiEmptyState from './UiEmptyState.vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const props = defineProps<{ ctx: any }>()
@@ -180,10 +184,10 @@ function sendAndClose() {
 <template>
   <section class="chat-main clean-chat-main">
     <header v-if="ctx.activeContact.value && !messageSearchOpen" class="chat-header clean-chat-header product-chat-header">
-      <button class="back-btn chat-back-btn" aria-label="返回聊天列表" @click="ctx.goChatHome">‹</button>
+      <button class="back-btn chat-back-btn" aria-label="返回聊天列表" @click="ctx.goChatHome"><UiIcon name="back" /></button>
       <div class="chat-title-block product-chat-title">
         <h2>{{ ctx.activeContact.value.display_name || '未命名联系人' }}</h2>
-        <span class="trust-inline" :class="{ danger: !ctx.activeContact.value.fingerprint_verified_at }">{{ trustText(ctx.activeContact.value) }}</span>
+        <UiStatusBadge :tone="ctx.activeContact.value.fingerprint_verified_at ? 'success' : 'warning'" compact>{{ trustText(ctx.activeContact.value) }}</UiStatusBadge>
       </div>
       <div class="chat-header-actions product-chat-actions">
         <button
@@ -191,8 +195,8 @@ function sendAndClose() {
           :aria-label="messageSearchOpen ? '关闭会话内搜索' : '搜索消息'"
           :title="messageSearchOpen ? '关闭搜索' : '搜索消息'"
           @click="router.push('/chat/search/messages')"
-        >🔍</button>
-        <button class="icon-btn" aria-label="更多" title="更多">⋯</button>
+        ><UiIcon name="search" /></button>
+        <button class="icon-btn" aria-label="更多" title="更多"><UiIcon name="more" /></button>
       </div>
     </header>
     <section v-if="ctx.activeContact.value && messageSearchOpen" class="chat-message-search-page">
@@ -202,30 +206,30 @@ function sendAndClose() {
         </template>
       </UiPageHeader>
       <div class="chat-message-search-results">
-        <p v-if="!messageSearch" class="empty">输入关键词搜索聊天记录</p>
+        <UiEmptyState v-if="!messageSearch" title="搜索聊天记录" description="输入关键词查找当前会话的消息。" />
         <template v-else>
           <button v-for="message in messageSearchResults" :key="message.id" class="search-message-result" @click="router.push('/chat')">
             <span>{{ message.direction === 'out' ? '我' : contactName(message.peer_user_id) }} · {{ hmTime(message.created_at) }}</span>
             <b>{{ message.text }}</b>
           </button>
-          <p v-if="messageSearchResults.length === 0" class="empty">没有匹配的消息</p>
+          <UiEmptyState v-if="messageSearchResults.length === 0" icon="search" title="没有匹配的消息" description="换个关键词试试。" />
         </template>
       </div>
     </section>
 
-    <section v-if="!messageSearchOpen && !ctx.activeContact.value && !ctx.strictE2eePolicyEnabled.value" class="chat-notice-panel">
+    <UiNotice v-if="!messageSearchOpen && !ctx.activeContact.value && !ctx.strictE2eePolicyEnabled.value">
       <div class="notice-text">
         <b>建议开启严格 E2EE</b>
         <span>新身份建议先启用指纹核验和安全收发策略，再开始添加联系人和发送消息。</span>
         <span>{{ ctx.strictE2eeReadiness.value.text }}</span>
       </div>
-      <div class="row compact">
+      <template #actions>
         <button class="secondary" @click="ctx.enableStrictE2eePolicy">一键严格 E2EE</button>
         <button class="secondary" @click="ctx.goSettingsPage">查看安全策略</button>
-      </div>
-    </section>
+      </template>
+    </UiNotice>
 
-    <section v-if="!messageSearchOpen && ctx.activeContact.value && ctx.activeContact.value.state !== 'Friend'" class="chat-notice-panel">
+    <UiNotice v-if="!messageSearchOpen && ctx.activeContact.value && ctx.activeContact.value.state !== 'Friend'">
       <div v-if="ctx.activeContact.value.state === 'RequestSent'" class="notice-text">
         <b>好友请求已发送</b>
         <span>等待对方通过后即可聊天。</span>
@@ -239,16 +243,15 @@ function sendAndClose() {
         <span v-if="ctx.activeContact.value.last_friend_request_error">上次发送失败：{{ ctx.activeContact.value.last_friend_request_error }}</span>
         <span v-else>发送好友请求，对方通过后即可开始聊天。</span>
       </div>
-      <div class="row compact">
+      <template #actions>
         <button v-if="ctx.activeContact.value.state === 'RequestSent'" class="secondary" @click="ctx.createFriendRequestForActive">重新发送</button>
         <button v-if="ctx.activeContact.value.state !== 'RequestSent' && ctx.activeContact.value.state !== 'Blocked'" @click="ctx.createFriendRequestForActive">发送好友请求</button>
         <button v-if="ctx.activeContact.value.last_friend_request_error" class="secondary" @click="ctx.clearActiveFriendRequestError">清除请求错误</button>
         <button v-if="ctx.activeContact.value.state === 'Blocked'" @click="ctx.unblockActiveContact">解除拉黑</button>
-      </div>
+      </template>
+    </UiNotice>
 
-    </section>
-
-    <section v-if="!messageSearchOpen && ctx.activeContact.value?.state === 'Friend' && ctx.activeStrictE2eeSendRiskText.value" class="chat-notice-panel">
+    <UiNotice v-if="!messageSearchOpen && ctx.activeContact.value?.state === 'Friend' && ctx.activeStrictE2eeSendRiskText.value" tone="warning">
       <div class="notice-text">
         <b>发送前严格 E2EE 风险</b>
         <span v-if="ctx.activeStrictE2eeSendBlockingText.value" class="danger-text">{{ ctx.activeStrictE2eeSendBlockingText.value }}</span>
@@ -256,12 +259,12 @@ function sendAndClose() {
         <span>{{ ctx.activeStrictE2eeSendRiskText.value }}</span>
         <span>建议先核验指纹并刷新联系人安全信息。</span>
       </div>
-      <div class="row compact">
+      <template #actions>
         <button class="secondary" @click="ctx.enableStrictE2eePolicy">一键严格 E2EE</button>
         <button class="secondary" @click="ctx.findActiveContactContactCard">刷新 ContactCard</button>
         <button v-if="!ctx.activeContact.value.fingerprint_verified_at" class="secondary" @click="ctx.showActiveContactFingerprintQr">指纹核验码</button>
-      </div>
-    </section>
+      </template>
+    </UiNotice>
 
 
 
@@ -272,7 +275,7 @@ function sendAndClose() {
           <div v-else class="bubble" :class="item.m.direction">
             <div class="text">{{ item.m.text }}</div>
             <small class="bubble-meta">
-              <span class="status-pill" :class="messageStatusClass(item.m)" :title="messageStatusDetailText(item.m)">{{ messageStatusShortText(item.m) }}</span>
+              <UiStatusBadge :tone="messageStatusClass(item.m)" compact :title="messageStatusDetailText(item.m)">{{ messageStatusShortText(item.m) }}</UiStatusBadge>
               <span>{{ hmTime(item.m.created_at) }}</span>
               <span v-if="item.m.read_at"> · 已读 {{ ctx.formatDateTime(item.m.read_at) }}</span>
               <span v-else-if="item.m.delivered_at"> · 送达 {{ ctx.formatDateTime(item.m.delivered_at) }}</span>
@@ -286,8 +289,8 @@ function sendAndClose() {
             </div>
           </div>
         </template>
-        <div v-if="ctx.activeMessages.value.length === 0" class="empty center">还没有消息</div>
-        <div v-else-if="thread.length === 0" class="empty center">没有匹配的消息</div>
+        <UiEmptyState v-if="ctx.activeMessages.value.length === 0" title="还没有消息" description="发送一条消息开始聊天。" />
+        <UiEmptyState v-else-if="thread.length === 0" icon="search" title="没有匹配的消息" description="换个关键词试试。" />
       </template>
 
       <section v-else class="chat-empty-state">
@@ -338,10 +341,10 @@ function sendAndClose() {
         </div>
       </div>
       <div class="composer-bar">
-        <button class="composer-icon" aria-label="添加附件" @click="togglePanel('attach')">＋</button>
+        <button class="composer-icon" aria-label="添加附件" @click="togglePanel('attach')"><UiIcon name="add" /></button>
         <textarea ref="composerTextarea" v-model="ctx.composerText.value" rows="1" aria-label="输入消息" placeholder="输入消息…" @keydown="onComposerKeydown" />
-        <button class="composer-icon" aria-label="选择 Emoji" @click="togglePanel('emoji')">😊</button>
-        <button class="send-icon" :disabled="!ctx.composerText.value.trim()" aria-label="发送" @click="sendAndClose">↑</button>
+        <button class="composer-icon" aria-label="选择 Emoji" @click="togglePanel('emoji')"><UiIcon name="smile" /></button>
+        <button class="send-icon" :disabled="!ctx.composerText.value.trim()" aria-label="发送" @click="sendAndClose"><UiIcon name="send" /></button>
       </div>
       <div v-if="composerPanel === 'attach'" class="composer-panel attachment-panel">
         <button class="panel-choice" @click="chooseFile('image')">图片</button>

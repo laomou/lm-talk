@@ -2,6 +2,8 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { avatarColor } from '../avatarColor'
+import UiIcon from './UiIcon.vue'
+import UiEmptyState from './UiEmptyState.vue'
 
 const props = defineProps<{ ctx: any }>()
 const keyword = ref('')
@@ -78,7 +80,7 @@ function select(it: any) {
     <header class="list-col-header product-chat-list-header">
       <span></span>
       <h2>聊天</h2>
-      <button class="icon-btn" aria-label="搜索聊天" title="搜索聊天" @click="router.push('/chat/search')">🔍</button>
+      <button class="icon-btn" aria-label="搜索聊天" title="搜索聊天" @click="router.push('/chat/search')"><UiIcon name="search" /></button>
     </header>
     <section class="conversation-list only-conversations">
       <button
@@ -109,15 +111,13 @@ function select(it: any) {
         </span>
       </button>
 
-      <div v-if="filtered.length === 0" class="empty">
-        暂无聊天，去通讯录添加好友
-      </div>
+      <UiEmptyState v-if="filtered.length === 0" title="暂无聊天" description="去通讯录添加好友后开始聊天。" />
     </section>
   </aside>
 
   <aside v-else class="sidebar wechat-sidebar chat-search-page">
     <header class="list-col-header product-chat-search-header">
-      <button class="back-btn" aria-label="返回聊天" @click="router.push('/chat')">‹</button>
+      <button class="back-btn" aria-label="返回聊天" @click="router.push('/chat')"><UiIcon name="back" /></button>
       <input v-model="keyword" type="search" aria-label="搜索聊天" placeholder="搜索聊天" autofocus />
     </header>
     <section class="conversation-list only-conversations">
@@ -149,9 +149,7 @@ function select(it: any) {
         </span>
       </button>
 
-      <div v-if="filtered.length === 0" class="empty">
-        {{ keyword ? '没有匹配的聊天' : '输入名称搜索聊天' }}
-      </div>
+      <UiEmptyState v-if="filtered.length === 0" :icon="keyword ? 'search' : 'info'" :title="keyword ? '没有匹配的聊天' : '搜索聊天'" :description="keyword ? '换个名称或关键词试试。' : '输入名称搜索聊天。'" />
     </section>
   </aside>
 </template>

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import UiIcon from './UiIcon.vue'
+
 withDefaults(defineProps<{
   title: string
   kind?: 'info' | 'success' | 'warning' | 'error'
@@ -21,8 +23,9 @@ const emit = defineEmits<{ close: [] }>()
       :aria-label="title"
     >
       <header class="dialog-card-header">
+        <span class="dialog-kind-icon" :class="kind"><UiIcon :name="kind === 'success' ? 'check' : kind === 'info' ? 'info' : 'alert'" /></span>
         <h2>{{ title }}</h2>
-        <button class="icon-btn" aria-label="关闭对话框" title="关闭" @click="emit('close')">×</button>
+        <button class="icon-btn" aria-label="关闭对话框" title="关闭" @click="emit('close')"><UiIcon name="close" /></button>
       </header>
       <div class="dialog-card-body">
         <slot />

@@ -7,6 +7,7 @@ import DiagnosticsPage from './components/DiagnosticsPage.vue'
 import ContactsPage from './components/ContactsPage.vue'
 import SettingsPage from './components/SettingsPage.vue'
 import UiDialog from './components/UiDialog.vue'
+import UiActionGroup from './components/UiActionGroup.vue'
 import QRCode from 'qrcode'
 import { applyPwaUpdate, onPwaUpdateReady, readPwaStatus } from './pwa'
 import { TABLES, idbDel, idbGet, idbSet, idbTableClear, idbTableGet, idbTableGetAllByPrefix, idbTableReplaceByPrefix } from './idb'
@@ -9413,7 +9414,6 @@ const appContext = {
     @create="createIdentityAndEnter"
     @login="loginSelectedIdentity"
     @import-identity="importIdentityOnly"
-    @reset-register="resetRegisterForm"
     @remove-identity="removeLocalIdentity"
     @clear="clearPersisted"
   />
@@ -9465,41 +9465,33 @@ const appContext = {
 
   <UiDialog v-if="alertDialog.open" :title="alertDialog.title" :kind="alertDialog.kind" alert @close="closeAlert">
       <p>{{ alertDialog.message }}</p>
-      <template #actions><button @click="closeAlert">知道了</button></template>
+      <template #actions><UiActionGroup><button @click="closeAlert">知道了</button></UiActionGroup></template>
   </UiDialog>
 
   <UiDialog v-if="confirmDialog.open" :title="confirmDialog.title" @close="closeConfirm(false)">
       <p>{{ confirmDialog.message }}</p>
       <template #actions>
+        <UiActionGroup>
         <button class="secondary" @click="closeConfirm(false)">取消</button>
         <button :class="{ danger: confirmDialog.danger }" @click="closeConfirm(true)">确定</button>
+        </UiActionGroup>
       </template>
   </UiDialog>
 
-  <div v-if="fingerprintScanOpen" class="qr-mask" @click.self="stopFingerprintQrScan">
-    <section class="qr-modal" role="dialog" aria-modal="true" aria-labelledby="fingerprint-scan-title">
-      <header>
-        <h2 id="fingerprint-scan-title">扫码核验联系人指纹</h2>
-        <button class="danger" @click="stopFingerprintQrScan">关闭</button>
-      </header>
-      <video ref="fingerprintScanVideo" playsinline muted style="width:100%;border-radius:12px;border:1px solid var(--c-line);background:#000"></video>
+  <UiDialog v-if="fingerprintScanOpen" title="扫码核验联系人指纹" @close="stopFingerprintQrScan">
+      <video ref="fingerprintScanVideo" class="fingerprint-scan-video" playsinline muted></video>
       <small>{{ fingerprintScanStatus }}</small>
       <small>如果浏览器不支持摄像头扫码，请复制/粘贴 lm-contact-fingerprint-v1 核验码。</small>
-    </section>
-  </div>
+      <template #actions><UiActionGroup><button class="secondary" @click="stopFingerprintQrScan">关闭</button></UiActionGroup></template>
+  </UiDialog>
 
-  <div v-if="qrDataUrl" class="qr-mask" @click.self="closeQr">
-    <section class="qr-modal" role="dialog" aria-modal="true" aria-labelledby="qr-dialog-title">
-      <header>
-        <h2 id="qr-dialog-title">{{ qrTitle }}</h2>
-        <button class="danger" @click="closeQr">关闭</button>
-      </header>
-      <img :src="qrDataUrl" alt="二维码" />
+  <UiDialog v-if="qrDataUrl" :title="qrTitle" @close="closeQr">
+      <img class="qr-dialog-image" :src="qrDataUrl" alt="二维码" />
       <small>内容长度：{{ qrRawText.length }} 字符。过长内容可能不适合二维码扫描。</small>
-      <div class="row">
+      <template #actions><UiActionGroup>
         <button @click="copyText(qrRawText, qrTitle)">复制原文</button>
-      </div>
-    </section>
-  </div>
+        <button class="secondary" @click="closeQr">关闭</button>
+      </UiActionGroup></template>
+  </UiDialog>
 
 </template>
