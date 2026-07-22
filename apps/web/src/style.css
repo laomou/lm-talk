@@ -930,6 +930,8 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .contacts-list-col { border-right: 0; border-bottom: 1px solid var(--c-line); }
   .bubble { max-width: 86%; }
   .me-page { padding: var(--sp-5) var(--sp-4); }
+  .contact-directory,
+  .alpha-heading { width: min(640px, calc(100% - 32px)); }
 }
 
 @media (max-width: 640px) {
@@ -992,6 +994,8 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 
   .me-page,
   .debug-page { padding: var(--sp-3); }
+  .contact-directory,
+  .alpha-heading { width: calc(100% - 24px); }
   .me-inner,
   .debug-inner { max-width: none; gap: var(--sp-3); }
   .me-hero { grid-template-columns: auto minmax(0, 1fr); padding: var(--sp-4); }
@@ -1166,10 +1170,11 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 .icon-actions { justify-self: end; display: flex; gap: var(--sp-1); }
 .contact-directory {
   /*
-   * “我”页的设置 Item 位于 640px 卡片内：20px × 2 内边距和 1px × 2
-   * 边框后，实际 Item 宽度为 598px。通讯录行直接采用这一可见宽度。
+   * Match the same responsive column as .me-inner. On a narrow Web content
+   * pane the available width is below either desktop max-width, so explicit
+   * page gutters are required instead of relying on max-width alone.
    */
-  max-width: 598px;
+  width: min(640px, calc(100% - 48px));
   margin: 0 auto;
   padding: var(--sp-3) 0 var(--sp-8);
 }
@@ -1203,7 +1208,7 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 .directory-main b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .directory-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .alpha-heading {
-  max-width: 598px;
+  width: min(640px, calc(100% - 48px));
   margin: var(--sp-3) auto 0;
   padding: var(--sp-2) var(--sp-5);
   color: var(--c-ink-3);
