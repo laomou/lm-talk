@@ -18,6 +18,10 @@ const router = useRouter()
 const showSyncServiceEditor = ref(false)
 const showDataBackupEditor = ref(false)
 const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.nodeEntrySummaries.value.length === 0)
+const mailboxInboxErrorLines = computed(() => props.ctx.mailboxInboxErrorText.value
+  .split('\n')
+  .map((line: string) => line.trim())
+  .filter(Boolean))
 const syncStatus = computed(() => {
   if (!props.ctx.nodeEnabled.value) return { text: '未开启', tone: 'neutral' as const }
   if (props.ctx.nodeMissingRemoteTokenCount.value > 0) return { text: '需配置', tone: 'warning' as const }
@@ -173,7 +177,7 @@ function saveSyncSettings() {
         <UiSection class="sync-card" title="诊断">
           <template #actions><button class="secondary" @click="ctx.goDiagnosticsPage('me-sync')">打开诊断工具</button></template>
           <small v-if="ctx.mailboxFailureSummaryText.value" class="danger-text">{{ ctx.mailboxFailureSummaryText.value }}</small>
-          <small v-if="ctx.mailboxInboxErrorText.value" class="danger-text">{{ ctx.mailboxInboxErrorText.value }}</small>
+          <small v-for="(line, index) in mailboxInboxErrorLines" :key="`${index}-${line}`" class="danger-text">{{ line }}</small>
           <small>{{ ctx.mailboxInboxStatus.value }}</small>
           <small>{{ ctx.mailboxQuotaStatusText.value }}</small>
         </UiSection>
