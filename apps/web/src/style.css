@@ -778,7 +778,7 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 .outbox-list { display: grid; gap: var(--sp-2); }
 .outbox-row { display: grid; gap: 2px; padding: var(--sp-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface-2); min-width: 0; }
 .outbox-row b, .outbox-row small { overflow-wrap: anywhere; }
-.danger-text { color: var(--c-danger); }
+.danger-text { color: var(--c-danger); white-space: pre-line; }
 
 /* ---- Diagnostics -------------------------------------------------------- */
 .debug-page { height: 100%; overflow: auto; background: var(--c-canvas); }
