@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import UiPageHeader from './UiPageHeader.vue'
 
 const props = defineProps<{ ctx: any }>()
 type MeView = 'home' | 'profile' | 'backup' | 'security' | 'sync' | 'settings' | 'about'
@@ -53,7 +54,7 @@ function backHome() {
       </template>
 
       <template v-else-if="view === 'profile'">
-        <header class="detail-bar product-subbar"><button class="back-btn" @click="backHome">‹</button><h2>个人资料</h2><span></span></header>
+        <UiPageHeader title="个人资料" back-label="返回我" @back="backHome" />
         <section class="home-card">
           <h3>我的资料</h3>
           <label for="display-name-input">显示名</label>
@@ -68,7 +69,7 @@ function backHome() {
       </template>
 
       <template v-else-if="view === 'backup'">
-        <header class="detail-bar product-subbar"><button class="back-btn" @click="backHome">‹</button><h2>身份备份</h2><span></span></header>
+        <UiPageHeader title="身份备份" back-label="返回我" @back="backHome" />
         <section class="home-card">
           <div class="section-title-row">
             <h3>身份备份</h3>
@@ -93,7 +94,7 @@ function backHome() {
       </template>
 
       <template v-else-if="view === 'security'">
-        <header class="detail-bar product-subbar"><button class="back-btn" @click="backHome">‹</button><h2>安全与设备</h2><span></span></header>
+        <UiPageHeader title="安全与设备" back-label="返回我" @back="backHome" />
         <section class="home-card sync-card">
           <div class="section-title-row">
             <h3>严格 E2EE</h3>
@@ -114,7 +115,9 @@ function backHome() {
       </template>
 
       <template v-else-if="view === 'sync'">
-        <header class="detail-bar product-subbar"><button class="back-btn" @click="backHome">‹</button><h2>同步与安全</h2><span class="sync-pill" :class="syncStatusClass">{{ syncStatus }}</span></header>
+        <UiPageHeader title="同步与安全" back-label="返回我" @back="backHome">
+          <template #end><span class="sync-pill" :class="syncStatusClass">{{ syncStatus }}</span></template>
+        </UiPageHeader>
         <section class="home-card sync-card">
           <div class="section-title-row">
             <h3>消息同步</h3>
@@ -154,7 +157,7 @@ function backHome() {
       </template>
 
       <template v-else-if="view === 'settings'">
-        <header class="detail-bar product-subbar"><button class="back-btn" @click="backHome">‹</button><h2>设置</h2><span></span></header>
+        <UiPageHeader title="设置" back-label="返回我" @back="backHome" />
         <section class="home-card sync-card">
           <div class="section-title-row"><h3>PWA 应用</h3><button class="secondary" @click="ctx.refreshPwaStatus">刷新状态</button></div>
           <small>{{ ctx.pwaStatusText.value }}</small>
@@ -164,7 +167,7 @@ function backHome() {
       </template>
 
       <template v-else-if="view === 'about'">
-        <header class="detail-bar product-subbar"><button class="back-btn" @click="backHome">‹</button><h2>关于</h2><span></span></header>
+        <UiPageHeader title="关于" back-label="返回我" @back="backHome" />
         <section class="home-card about-card">
           <h2>LM Talk Web</h2>
           <p>{{ ctx.webVersionText }}</p>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { avatarColor } from '../avatarColor'
+import UiPageHeader from './UiPageHeader.vue'
 
 const props = defineProps<{ ctx: any }>()
 const keyword = ref('')
@@ -107,11 +108,9 @@ function addContact() {
       </section>
 
       <section v-else-if="view === 'friends'" class="detail-scroll">
-        <header class="detail-bar product-subbar">
-          <button class="back-btn" aria-label="返回通讯录" @click="backHome">‹</button>
-          <h2>新的朋友</h2>
-          <button class="secondary" @click="ctx.syncNow">同步</button>
-        </header>
+        <UiPageHeader title="新的朋友" back-label="返回通讯录" @back="backHome">
+          <template #end><button class="secondary" @click="ctx.syncNow">同步</button></template>
+        </UiPageHeader>
         <div class="detail-body narrow">
           <section class="home-card">
             <h3>好友申请</h3>
@@ -148,10 +147,9 @@ function addContact() {
       </section>
 
       <section v-else-if="view === 'search'" class="detail-scroll">
-        <header class="detail-bar product-subbar">
-          <button class="back-btn" aria-label="返回通讯录" @click="backHome">‹</button>
-          <input v-model="keyword" class="subbar-search" type="search" aria-label="搜索联系人" placeholder="搜索联系人" autofocus />
-        </header>
+        <UiPageHeader back-label="返回通讯录" @back="backHome">
+          <template #title><input v-model="keyword" class="subbar-search" type="search" aria-label="搜索联系人" placeholder="搜索联系人" autofocus /></template>
+        </UiPageHeader>
         <div class="contact-directory search-directory">
           <h3 class="alpha-heading">联系人</h3>
           <button v-for="c in visibleContacts" :key="c.user_id" class="directory-row contact-row" @click="openContact(c.user_id)">
@@ -165,11 +163,7 @@ function addContact() {
       </section>
 
       <section v-else-if="view === 'add'" class="detail-scroll">
-        <header class="detail-bar product-subbar">
-          <button class="back-btn" aria-label="返回通讯录" @click="backHome">‹</button>
-          <h2>添加</h2>
-          <span></span>
-        </header>
+        <UiPageHeader title="添加" back-label="返回通讯录" @back="backHome" />
         <div class="detail-body narrow add-page-body">
           <section class="home-card">
             <h3>添加好友（粘贴名片）</h3>
@@ -184,11 +178,7 @@ function addContact() {
       </section>
 
       <section v-else-if="view === 'detail' && ctx.activeContact.value" class="detail-scroll">
-        <header class="detail-bar product-subbar">
-          <button class="back-btn" aria-label="返回通讯录" @click="backHome">‹</button>
-          <h2>联系人详情</h2>
-          <span></span>
-        </header>
+        <UiPageHeader title="联系人详情" back-label="返回通讯录" @back="backHome" />
         <div class="detail-hero product-contact-hero">
           <span class="avatar large" :style="{ background: avatarColor(ctx.activeContact.value.user_id) }">{{ (ctx.activeContact.value.display_name || ctx.activeContact.value.user_id || '?').slice(0, 1).toUpperCase() }}</span>
           <div class="detail-hero-text">
