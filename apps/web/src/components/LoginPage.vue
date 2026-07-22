@@ -58,18 +58,6 @@ function login() {
   emit('login')
 }
 
-function fallbackCopyText(value: string) {
-  const textarea = document.createElement('textarea')
-  textarea.value = value
-  textarea.setAttribute('readonly', 'true')
-  textarea.style.position = 'fixed'
-  textarea.style.left = '-9999px'
-  document.body.appendChild(textarea)
-  textarea.select()
-  document.execCommand('copy')
-  document.body.removeChild(textarea)
-}
-
 function downloadRegisteredBackup() {
   if (!props.registeredIdentity) return
   const blob = new Blob([props.registeredIdentity.backup_text], { type: 'text/plain;charset=utf-8' })
@@ -79,6 +67,12 @@ function downloadRegisteredBackup() {
   a.download = `${props.registeredIdentity.display_name || props.registeredIdentity.user_id}.lm-identity-backup.txt`
   a.click()
   URL.revokeObjectURL(url)
+}
+
+function verifyRegisteredBackup() {
+  if (!props.registeredIdentity) return
+  backupText.value = props.registeredIdentity.backup_text
+  void router.push('/import')
 }
 
 </script>
@@ -132,13 +126,14 @@ function downloadRegisteredBackup() {
           </header>
           <p class="auth-identity-summary">{{ registeredIdentity.display_name }} · {{ registeredIdentity.user_id }}</p>
           <ol class="onboarding-list">
-            <li>下载或复制身份文件。</li>
+            <li>下载身份文件。</li>
             <li>把提示词保存在密码管理器或离线安全位置。</li>
             <li>可选：点击“验证导入”确认备份可恢复。</li>
           </ol>
           <UiNotice compact>身份文件和提示词缺一不可；任意一项丢失都无法恢复这个身份。</UiNotice>
           <UiActionGroup align="center">
             <button @click="downloadRegisteredBackup">下载身份</button>
+            <button class="secondary" @click="verifyRegisteredBackup">验证导入</button>
             <button class="secondary" @click="goLogin">去登录</button>
           </UiActionGroup>
         </div>
