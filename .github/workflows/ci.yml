@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  rust-format:
+  code-format:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -25,7 +25,7 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
 
-  rust-core-tests:
+  core-tests:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -42,7 +42,7 @@ jobs:
       - name: Run lm_core tests
         run: cargo test -p lm_core
 
-  node-integration-tests:
+  node-tests:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -56,17 +56,31 @@ jobs:
         with:
           workspaces: .
 
-      - name: Run lm_node library and binary tests
+      - name: Run lm_node tests
         run: |
           cargo test -p lm_node --lib
           cargo test -p lm_node --bin lm_node
 
-      - name: Run lm_node integration flows
+  node-sync-and-api-flows:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+
+      - name: Run node sync and HTTP control flows
         run: |
           cargo test -p lm_node --test e2e_node_flow
           cargo test -p lm_node --test e2e_http_control_flow
 
-  fuzz-harness-check:
+  fuzz-harness-build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -83,7 +97,7 @@ jobs:
       - name: Check fuzz harnesses compile
         run: cargo check --manifest-path fuzz/Cargo.toml --bins --locked
 
-  web-build:
+  web-quality:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -116,7 +130,7 @@ jobs:
         working-directory: apps/web
         run: npm run build
 
-  web-user-flows:
+  web-auth-flows:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
