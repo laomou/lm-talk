@@ -181,7 +181,7 @@ async function runDiagnostics() {
           <h1>诊断工具</h1>
           <p class="hint">用于排查登录、同步、消息收发和本地数据问题。日常聊天不需要打开。</p>
         </div>
-        <button class="secondary" @click="ctx.goSettingsPage">返回我</button>
+        <button class="secondary" @click="ctx.goSettingsPage">返回</button>
       </header>
 
       <section class="diagnostic-overview">
