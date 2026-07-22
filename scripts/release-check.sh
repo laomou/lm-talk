@@ -36,18 +36,14 @@ else
   cargo clippy --workspace --all-targets -- -D warnings
 fi
 
-section "lm_core full tests"
+section "test lm_core"
 cargo test -p lm_core
 
-section "lm_node library tests"
-cargo test -p lm_node --lib
+section "test lm_node"
+cargo test -p lm_node
 
-section "lm_node binary tests"
-cargo test -p lm_node --bin lm_node
-
-section "node e2e tests"
-cargo test -p lm_node --test e2e_node_flow
-cargo test -p lm_node --test e2e_http_control_flow
+section "test lm_wasm"
+cargo test -p lm_wasm
 
 if [[ "$mode" == "full" ]]; then
   section "workspace cargo test"

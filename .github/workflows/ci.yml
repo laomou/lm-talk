@@ -48,12 +48,8 @@ jobs:
         with:
           workspaces: .
 
-      - name: Run lm_node tests and integration flows
-        run: |
-          cargo test -p lm_node --lib
-          cargo test -p lm_node --bin lm_node
-          cargo test -p lm_node --test e2e_node_flow
-          cargo test -p lm_node --test e2e_http_control_flow
+      - name: Test lm_node
+        run: cargo test -p lm_node
 
   wasm:
     runs-on: ubuntu-latest
@@ -74,7 +70,7 @@ jobs:
       - name: Install wasm-pack
         uses: taiki-e/install-action@wasm-pack
 
-      - name: Test bindings and build browser Wasm
+      - name: Test lm_wasm and build browser Wasm
         run: |
           cargo test -p lm_wasm
           wasm-pack build crates/lm_wasm --target web --out-dir ../../apps/web/src/wasm --no-opt
