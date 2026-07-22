@@ -609,6 +609,7 @@ const GROUP_SENDER_KEY_PAYLOAD_PREFIX = 'lm-group-sender-key-message-v1:'
 const passphrase = ref('')
 const newIdentityPassphrase = ref('')
 const backupText = ref('')
+let keepBackupText = false
 const identity = ref<(IdentityOutput | RestoreOutput) | null>(null)
 const displayName = ref('Me')
 const localIdentities = ref<LocalIdentityRecord[]>([])
@@ -1471,7 +1472,8 @@ const groupSenderDistributionFanoutItems = computed(() => {
 })
 
 router.afterEach((to) => {
-  if (to.path === '/import') backupText.value = ''
+  if (to.path === '/import' && !keepBackupText) backupText.value = ''
+  keepBackupText = false
 })
 
 onMounted(async () => {
@@ -4104,6 +4106,13 @@ function loginSelectedIdentity() {
     displayName.value = selected.display_name || displayName.value
   }
   restoreAndEnter()
+}
+
+function verifyRegisteredBackup() {
+  if (!lastRegisteredIdentity.value) return
+  backupText.value = lastRegisteredIdentity.value.backup_text
+  keepBackupText = true
+  void router.push('/import')
 }
 
 function importIdentityOnly() {
@@ -9414,6 +9423,7 @@ const appContext = {
     @create="createIdentityAndEnter"
     @login="loginSelectedIdentity"
     @import-identity="importIdentityOnly"
+    @verify-backup="verifyRegisteredBackup"
     @remove-identity="removeLocalIdentity"
     @clear="clearPersisted"
   />

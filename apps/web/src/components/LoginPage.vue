@@ -35,6 +35,7 @@ const emit = defineEmits<{
   create: []
   login: []
   importIdentity: []
+  verifyBackup: []
   clear: []
   removeIdentity: [id: string]
 }>()
@@ -69,11 +70,6 @@ function downloadRegisteredBackup() {
   URL.revokeObjectURL(url)
 }
 
-function verifyRegisteredBackup() {
-  if (!props.registeredIdentity) return
-  backupText.value = props.registeredIdentity.backup_text
-  void router.push('/import')
-}
 
 </script>
 
@@ -133,7 +129,7 @@ function verifyRegisteredBackup() {
           <UiNotice compact>身份文件和提示词缺一不可；任意一项丢失都无法恢复这个身份。</UiNotice>
           <UiActionGroup align="center">
             <button @click="downloadRegisteredBackup">下载身份</button>
-            <button class="secondary" @click="verifyRegisteredBackup">验证导入</button>
+            <button class="secondary" @click="emit('verifyBackup')">验证导入</button>
             <button class="secondary" @click="goLogin">去登录</button>
           </UiActionGroup>
         </div>
