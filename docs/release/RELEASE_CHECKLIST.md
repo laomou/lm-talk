@@ -77,9 +77,7 @@ LM_NODE_FEDERATION_REPORT=/tmp/lm-federation-report.json \
 每个包应包含：
 
 - `lm_node` 二进制
-- 关键部署文档
-- `RELEASE_INFO.txt`
-- `node_admin.zip`（本机 `/admin/` 管理页）
+- `node.config.example.json`
 - `.sha256`
 
 本地打包示例：
@@ -92,7 +90,7 @@ python3 scripts/release-package.py \
   --out-dir dist
 ```
 
-`release-package.py` 默认会自动构建并打包 `node_admin.zip`，用于 `lm_node serve-control --web-admin node_admin.zip` 的本机 `/admin/` 管理页。如需跳过管理页，可显式传 `--no-web-admin`。
+`release-package.py` 只打包原生 `lm_node` 和 `node.config.example.json`，避免把管理前端、文档和构建元数据塞进原生压缩包。容器化 HTTPS 部署请使用 GHCR 镜像和 `deploy/lm-node-public/` 的 Caddy Compose 模板。
 
 验证已发布 tag：
 
