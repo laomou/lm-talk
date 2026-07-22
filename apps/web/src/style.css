@@ -315,8 +315,12 @@ button.secondary.danger:hover { background: var(--c-danger-soft); border-color: 
 .chat-shell {
   height: 100%;
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   background: var(--c-surface);
+}
+.single-column-chat > .wechat-sidebar {
+  height: 100%;
+  border-right: 0;
 }
 
 /* List column header (shared by chat + contacts) */
@@ -877,7 +881,7 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .rail-item { width: auto; flex: 1 1 0; border-radius: 0; padding: 8px 0; }
   .rail-spacer { display: none; }
 
-  .chat-shell { grid-template-columns: 1fr; grid-template-rows: minmax(0, 40vh) minmax(0, 1fr); }
+  .chat-shell { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr); }
   .contacts-shell { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 40vh) minmax(0, 1fr); }
   .contacts-topbar { grid-column: auto; padding: var(--sp-3); }
   .sidebar,
@@ -891,7 +895,7 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .rail-item span { font-size: 10px; }
   .rail-item svg { width: 20px; height: 20px; }
 
-  .chat-shell { grid-template-rows: minmax(0, 34vh) minmax(0, 1fr); }
+  .chat-shell { grid-template-rows: minmax(0, 1fr); }
   .contacts-shell { grid-template-rows: auto minmax(0, 34vh) minmax(0, 1fr); }
   .contacts-topbar { flex-direction: column; align-items: stretch; gap: var(--sp-2); }
   .contacts-tabs { width: 100%; }
@@ -1189,7 +1193,6 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 
 @media (max-width: 850px) {
   .chat-shell { grid-template-rows: minmax(0, 1fr); }
-  .chat-shell:has(.chat-main .chat-empty-state) { grid-template-rows: minmax(0, 40vh) minmax(0, 1fr); }
   .product-contacts-shell { height: 100%; }
 }
 
@@ -1215,9 +1218,9 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 .chat-back-btn { justify-self: start; }
 .product-chat-title {
   justify-self: center;
-  display: grid;
-  justify-items: center;
-  gap: 2px;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
   min-width: 0;
 }
 .product-chat-title h2 {
@@ -1242,9 +1245,6 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 }
 
 @media (max-width: 850px) {
-  .chat-shell.has-active-chat .wechat-sidebar { display: none; }
-  .chat-shell:not(.has-active-chat) .chat-main { display: none; }
-  .chat-shell:not(.has-active-chat) .wechat-sidebar { min-height: 0; border-bottom: 0; }
   .product-chat-header { min-height: 52px; padding: var(--sp-2) var(--sp-3); }
   .product-chat-actions input { display: none; }
   .product-chat-actions .secondary,

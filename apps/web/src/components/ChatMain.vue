@@ -74,20 +74,6 @@ function canManageMessageOutbox(message: any) {
   return messageOutboxCount(message) > 0
 }
 
-const activePendingOutboxCount = computed(() => {
-  const peerId = props.ctx.activeContact.value?.user_id
-  if (!peerId) return 0
-  return props.ctx.outbox.value.filter((item: any) => item.peer_user_id === peerId && item.status !== 'sent').length
-})
-
-const activeFailedOutboxCount = computed(() => {
-  const peerId = props.ctx.activeContact.value?.user_id
-  if (!peerId) return 0
-  return props.ctx.outbox.value.filter((item: any) => item.peer_user_id === peerId && item.status === 'failed').length
-})
-
-const activeQueuedOutboxCount = computed(() => Math.max(0, activePendingOutboxCount.value - activeFailedOutboxCount.value))
-
 function messageStatusDetailText(message: any) {
   const parts = [messageStatusShortText(message)]
   if (message.read_at) parts.push(`已读 ${props.ctx.formatDateTime(message.read_at)}`)
@@ -190,9 +176,6 @@ function sendAndClose() {
         <span class="trust-inline" :class="{ danger: !ctx.activeContact.value.fingerprint_verified_at }">{{ trustText(ctx.activeContact.value) }}</span>
       </div>
       <div class="chat-header-actions product-chat-actions">
-        <span v-if="activePendingOutboxCount" class="outbox-summary-inline">待发送 {{ activeQueuedOutboxCount }} · 失败 {{ activeFailedOutboxCount }}</span>
-        <button v-if="activePendingOutboxCount" class="secondary" @click="ctx.flushOutboxForActive">重试</button>
-        <button v-if="activePendingOutboxCount" class="secondary danger" @click="ctx.cancelOutboxForActive">取消</button>
         <button class="icon-btn" aria-label="更多" title="更多">⋯</button>
       </div>
     </header>

@@ -6,8 +6,8 @@ defineProps<{ ctx: any }>()
 </script>
 
 <template>
-  <div class="chat-shell" :class="{ 'has-active-chat': ctx.activePeerId.value }">
-    <ChatSidebar :ctx="ctx" />
-    <ChatMain :ctx="ctx" />
+  <div class="chat-shell single-column-chat">
+    <ChatSidebar v-if="!ctx.activePeerId.value" :ctx="ctx" />
+    <ChatMain v-else :ctx="ctx" />
   </div>
 </template>
