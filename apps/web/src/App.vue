@@ -619,6 +619,7 @@ const GROUP_SENDER_KEY_PAYLOAD_PREFIX = 'lm-group-sender-key-message-v1:'
 const passphrase = ref('')
 const newIdentityPassphrase = ref('')
 const backupText = ref('')
+const loginPending = ref(false)
 let keepBackupText = false
 const identity = ref<(IdentityOutput | RestoreOutput) | null>(null)
 const displayName = ref('Me')
@@ -4126,12 +4127,16 @@ function resetRegisterForm() {
 }
 
 function loginSelectedIdentity() {
+  if (loginPending.value) return
   const selected = selectedLocalIdentity()
   if (selected) {
     backupText.value = selected.backup_text
     displayName.value = selected.display_name || displayName.value
   }
-  restoreAndEnter()
+  loginPending.value = true
+  window.requestAnimationFrame(() => {
+    window.setTimeout(() => restoreAndEnter(), 0)
+  })
 }
 
 function verifyRegisteredBackup() {
@@ -4182,7 +4187,7 @@ function createIdentityAndEnter() {
 }
 
 function restoreAndEnter() {
-  run('登录', () => {
+  try {
     if (!backupText.value.trim()) throw new Error('请粘贴身份备份包')
     if (!passphrase.value.trim()) throw new Error('请输入提示词')
     const loginBackup = backupText.value
@@ -4199,6 +4204,7 @@ function restoreAndEnter() {
         if (!myContactCardText.value) exportMyCard()
         rememberLocalIdentity(out.user_id, displayName.value, backupText.value)
         persist()
+        appendLog('✅ 登录')
         void router.push(destination)
         void afterLoginAutomation()
       })
@@ -4207,7 +4213,15 @@ function restoreAndEnter() {
         appendLog(`❌ 登录失败：${message}`)
         showAlert('登录失败', message, 'error')
       })
-  })
+      .finally(() => {
+        loginPending.value = false
+      })
+  } catch (e) {
+    loginPending.value = false
+    const message = userFacingError(e)
+    appendLog(`❌ 登录: ${message}`)
+    showAlert('登录', message, 'error')
+  }
 }
 
 function exportMyCard() {
@@ -9457,6 +9471,7 @@ const appContext = {
     :log="log"
     :local-identities="localIdentities"
     :registered-identity="lastRegisteredIdentity"
+    :login-busy="loginPending"
     :mode="authMode"
     v-model:selected-identity-id="selectedLocalIdentityId"
     @create="createIdentityAndEnter"

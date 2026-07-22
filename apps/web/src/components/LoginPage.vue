@@ -24,6 +24,7 @@ const props = defineProps<{
   log: string[]
   localIdentities: LocalIdentityRecord[]
   registeredIdentity: LocalIdentityRecord | null
+  loginBusy?: boolean
   mode: 'login' | 'register' | 'import'
 }>()
 
@@ -56,6 +57,7 @@ function goImport() {
 }
 
 function login() {
+  if (props.loginBusy) return
   emit('login')
 }
 
@@ -107,7 +109,7 @@ function downloadRegisteredBackup() {
         <UiEmptyState v-else title="还没有本机身份" description="注册新身份，或导入已有身份后再登录。" />
 
         <UiActionGroup class="auth-actions" full-width>
-          <button :disabled="!hasLocalIdentity" @click="login">登录</button>
+          <button :disabled="!hasLocalIdentity || props.loginBusy" @click="login">{{ props.loginBusy ? '登录中…' : '登录' }}</button>
         </UiActionGroup>
         <p class="auth-switch">
           还没有身份？<button class="link-button" @click="goRegister">注册</button>，<button class="link-button" @click="goImport">导入</button>
