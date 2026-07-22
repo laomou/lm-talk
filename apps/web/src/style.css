@@ -252,19 +252,6 @@ button.secondary.danger:hover { background: var(--c-danger-soft); border-color: 
 .auth-success-header h2 { font-size: 19px; }
 .auth-success-header p, .auth-identity-summary { margin-top: var(--sp-1); color: var(--c-ink-3); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .auth-identity-summary { padding: var(--sp-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface-2); color: var(--c-ink-2); }
-.backup-checksum {
-  width: 100%;
-  display: grid;
-  gap: var(--sp-1);
-  padding: var(--sp-3);
-  border: 1px solid var(--c-line);
-  border-radius: var(--r-md);
-  background: var(--c-surface);
-}
-.backup-checksum span { color: var(--c-ink-3); font-size: 12px; }
-.backup-checksum b { font-family: var(--font-mono); font-size: 13px; overflow-wrap: anywhere; }
-.backup-checksum button { justify-self: center; padding: 6px 10px; font-size: 12px; }
-.compact-checksum { margin-top: var(--sp-3); text-align: center; }
 
 /* ---- Chat: shell -------------------------------------------------------- */
 .chat-shell {
@@ -479,6 +466,8 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 .ui-notice-content { min-width: 0; }
 .ui-notice .notice-text { color: var(--c-warn-ink); }
 .ui-notice-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-2); }
+.auth-hint-notice { padding: var(--sp-2) var(--sp-3); gap: var(--sp-2); font-size: 12px; }
+.auth-hint-notice .ui-notice-icon { width: 20px; height: 20px; font-size: 11px; }
 .ui-notice.info { background: var(--c-primary-soft); border-color: var(--c-success-line); }
 .ui-notice.info .ui-notice-icon { color: var(--c-primary-ink); background: rgba(6, 118, 71, .12); }
 .ui-notice.info .notice-text { color: var(--c-primary-ink); }

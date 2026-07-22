@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import UiNotice from './UiNotice.vue'
 import UiField from './UiField.vue'
@@ -41,29 +41,6 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const hasLocalIdentity = computed(() => props.localIdentities.length > 0)
-const registeredBackupChecksum = ref('')
-const importBackupChecksum = ref('')
-
-async function sha256Hex(value: string): Promise<string> {
-  const bytes = new TextEncoder().encode(value)
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
-}
-
-watch(
-  () => props.registeredIdentity?.backup_text,
-  async (value) => {
-    registeredBackupChecksum.value = value ? (await sha256Hex(value)).slice(0, 16) : ''
-  },
-  { immediate: true },
-)
-
-watch(
-  backupText,
-  async (value) => {
-    importBackupChecksum.value = value.trim() ? (await sha256Hex(value.trim())).slice(0, 16) : ''
-  },
-)
 
 function goRegister() {
   void router.push('/register')
@@ -91,12 +68,6 @@ function fallbackCopyText(value: string) {
   textarea.select()
   document.execCommand('copy')
   document.body.removeChild(textarea)
-}
-
-async function copyRegisteredChecksum() {
-  if (!registeredBackupChecksum.value) return
-  if ((navigator.clipboard as Clipboard | undefined)?.writeText) await navigator.clipboard.writeText(registeredBackupChecksum.value)
-  else fallbackCopyText(registeredBackupChecksum.value)
 }
 
 function downloadRegisteredBackup() {
@@ -166,11 +137,6 @@ function downloadRegisteredBackup() {
             <li>可选：点击“验证导入”确认备份可恢复。</li>
           </ol>
           <UiNotice>身份文件和提示词缺一不可；任意一项丢失都无法恢复这个身份。</UiNotice>
-          <div v-if="registeredBackupChecksum" class="backup-checksum">
-            <span>备份校验码</span>
-            <b>{{ registeredBackupChecksum }}</b>
-            <button class="secondary" @click="copyRegisteredChecksum">复制校验码</button>
-          </div>
           <UiActionGroup>
             <button @click="downloadRegisteredBackup">下载身份</button>
             <button class="secondary" @click="goLogin">去登录</button>
@@ -181,7 +147,7 @@ function downloadRegisteredBackup() {
           <UiField label="提示词" for-id="register-passphrase">
             <textarea id="register-passphrase" v-model="passphrase" rows="2" aria-label="注册提示词" placeholder="设置你的提示词" />
           </UiField>
-          <UiNotice>提示词不会上传或找回；注册后请下载身份文件。</UiNotice>
+          <UiNotice class="auth-hint-notice">提示词不会上传或找回；注册后请下载身份文件。</UiNotice>
           <UiActionGroup class="auth-actions" full-width>
             <button @click="$emit('create')">注册</button>
           </UiActionGroup>
@@ -197,10 +163,6 @@ function downloadRegisteredBackup() {
         <UiField label="身份文本" for-id="import-backup-text">
           <textarea id="import-backup-text" v-model="backupText" rows="6" aria-label="导入身份文本" placeholder="粘贴导出的身份文本" />
         </UiField>
-        <div v-if="importBackupChecksum" class="backup-checksum compact-checksum">
-          <span>导入文本校验码</span>
-          <b>{{ importBackupChecksum }}</b>
-        </div>
         <UiActionGroup class="auth-actions" full-width>
           <button :disabled="!backupText.trim()" @click="emit('importIdentity')">导入</button>
         </UiActionGroup>
