@@ -120,7 +120,7 @@ function addContact() {
         <UiPageHeader title="新的朋友" back-label="返回通讯录" @back="backHome">
           <template #end><button class="secondary" @click="ctx.syncNow">同步</button></template>
         </UiPageHeader>
-        <div class="detail-body narrow">
+        <div class="detail-body narrow friend-requests-body">
           <UiCard>
             <h3>好友申请</h3>
             <div v-if="ctx.visibleFriendRequests.value.length" class="request-grid">
