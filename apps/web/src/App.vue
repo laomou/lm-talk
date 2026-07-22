@@ -895,7 +895,7 @@ const syncFailureSummaryText = computed(() => {
   if (failedOutbox.length > 0) parts.push(`Outbox：失败 ${failedOutbox.length} 条`)
   if (/failed|失败/i.test(nodeSyncStatusText.value)) parts.push(`节点快照：${nodeSyncStatusText.value}`)
   if (selfSyncGapCount.value > 0) parts.push(`轻量自同步：缺口 ${selfSyncGapCount.value} 次`)
-  return parts.length ? parts.join('；') : '暂无同步失败'
+  return parts.length ? parts.join('；') : ''
 })
 const storageEstimateText = ref('尚未估算')
 const webVersionText = `Version ${__APP_VERSION__} (${__BUILD_REF__})`
