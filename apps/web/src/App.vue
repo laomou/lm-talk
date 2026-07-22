@@ -580,8 +580,16 @@ type ConfirmDialogState = {
   danger: boolean
   resolve?: (value: boolean) => void
 }
+type AlertDialogState = {
+  open: boolean
+  title: string
+  message: string
+  kind: ToastKind
+  actionLabel?: string
+  action?: () => void
+}
 const toasts = ref<ToastItem[]>([])
-const alertDialog = ref({ open: false, title: '', message: '', kind: 'info' as ToastKind })
+const alertDialog = ref<AlertDialogState>({ open: false, title: '', message: '', kind: 'info' })
 const confirmDialog = ref<ConfirmDialogState>({ open: false, title: '', message: '', danger: false })
 
 const MAX_TEXT_MESSAGE_BYTES = 64 * 1024
@@ -1604,12 +1612,27 @@ async function refreshRuntimeStatus() {
   await refreshPwaStatus()
 }
 
-function showAlert(title: string, message: string, kind: ToastKind = 'info') {
-  alertDialog.value = { open: true, title, message, kind }
+function showAlert(title: string, message: string, kind: ToastKind = 'info', action?: Pick<AlertDialogState, 'actionLabel' | 'action'>) {
+  alertDialog.value = { open: true, title, message, kind, ...action }
 }
 
 function closeAlert() {
-  alertDialog.value.open = false
+  alertDialog.value = { open: false, title: '', message: '', kind: 'info' }
+}
+
+function runAlertAction() {
+  const action = alertDialog.value.action
+  closeAlert()
+  action?.()
+}
+
+function showSyncEnableDialog(message = '开启后可同步新的好友申请和离线消息。') {
+  showAlert(
+    '开启消息同步',
+    message,
+    'info',
+    { actionLabel: '去开启', action: goSyncSettings },
+  )
 }
 
 function showConfirm(title: string, message: string, danger = false): Promise<boolean> {
@@ -3339,7 +3362,7 @@ async function syncNow() {
   ensureOwnDeviceCertForStrict('消息同步前的严格 E2EE 默认策略')
   if (!nodeEnabled.value) {
     appendLog('⚠️ 消息同步未开启')
-    showAlert('未开启消息同步', '请先在“我 → 消息同步”开启同步。', 'warning')
+    showSyncEnableDialog()
     return
   }
   appendLog('🔄 开始消息同步')
@@ -5683,7 +5706,7 @@ function createFriendRequestForActive() {
     )
     const req = safeJson<any>(inspect_friend_request(friendRequestText.value))
     if (!nodeEnabled.value) {
-      showAlert('请先开启消息同步', '好友请求需要通过消息同步发送。请到“我 → 消息同步”开启后重试。', 'warning')
+      showSyncEnableDialog('发送好友请求需要开启消息同步。开启后可自动发送好友请求和接收回应。')
       return
     }
     const contact = activeContact.value
@@ -6733,7 +6756,7 @@ function retrySecureSessionForActiveContact() {
     if (!activeContact.value) throw new Error('请选择联系人')
     if (activeContact.value.state !== 'Friend') throw new Error('联系人还不是 Friend')
     if (!nodeEnabled.value) {
-      showAlert('请先开启消息同步', '安全建链重试需要通过消息同步发送。请到“我 → 消息同步”开启后重试。', 'warning')
+      showSyncEnableDialog('重试安全建链需要开启消息同步。开启后可向对方发送建链消息。')
       return
     }
     const contact = activeContact.value
@@ -9353,6 +9376,10 @@ function goSettingsPage() {
   void router.push('/me')
 }
 
+function goSyncSettings() {
+  void router.push({ path: '/me', query: { section: 'sync' } })
+}
+
 
 function goDiagnosticsPage() {
   void router.push('/diagnostics')
@@ -9366,7 +9393,7 @@ function logout() {
   void router.push('/login')
 }
 const appContext = {
-  goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, showAlert, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
+  goChatPage, goChatHome, goContactsPage, goSettingsPage, goSyncSettings, goDiagnosticsPage, showAlert, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, webVersionText,
   nodeControlUrl, nodeUrlList, nodeEntrySummaries, nodeSettingsSummaryText, nodeTokenStorageText, nodeTokenCount, nodeMissingRemoteTokenCount, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake, autoReadReceipts,
   runtimeStatusText, pwaStatusText, inAppRuntimePolicyText, refreshRuntimeStatus, refreshPwaStatus,
@@ -9478,7 +9505,12 @@ const appContext = {
 
   <UiDialog v-if="alertDialog.open" :title="alertDialog.title" :kind="alertDialog.kind" alert @close="closeAlert">
       <p>{{ alertDialog.message }}</p>
-      <template #actions><UiActionGroup><button @click="closeAlert">知道了</button></UiActionGroup></template>
+      <template #actions>
+        <UiActionGroup>
+          <button v-if="alertDialog.actionLabel" class="secondary" @click="closeAlert">暂不</button>
+          <button @click="alertDialog.actionLabel ? runAlertAction() : closeAlert">{{ alertDialog.actionLabel || '知道了' }}</button>
+        </UiActionGroup>
+      </template>
   </UiDialog>
 
   <UiDialog v-if="confirmDialog.open" :title="confirmDialog.title" @close="closeConfirm(false)">
