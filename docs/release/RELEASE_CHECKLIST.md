@@ -69,28 +69,21 @@ LM_NODE_FEDERATION_REPORT=/tmp/lm-federation-report.json \
 
 推送 `v*` 标签时，`.github/workflows/release-node.yml` 会构建：
 
-- `lm_node-linux-x86_64.tar.gz`
-- `lm_node-macos-x86_64.tar.gz`
-- `lm_node-macos-arm64.tar.gz`
-- `lm_node-windows-x86_64.zip`
+- `lm_node-linux-x86_64`
+- `lm_node-macos-x86_64`
+- `lm_node-macos-arm64`
+- `lm_node-windows-x86_64.exe`
 
-每个包应包含：
+每个平台产物直接是对应的 `lm_node` 可执行文件，不再打包 `node.config.example.json`、`node_admin.zip`、文档或构建元数据。每个二进制都有独立的 `.sha256`，Release 还会提供合并的 `SHA256SUMS.txt`。
 
-- `lm_node` 二进制
-- `node.config.example.json`
-- `.sha256`
-
-本地打包示例：
+本地构建示例：
 
 ```bash
 cargo build --locked --release -p lm_node --target x86_64-unknown-linux-gnu
-python3 scripts/release-package.py \
-  --target x86_64-unknown-linux-gnu \
-  --package-name lm_node-linux-x86_64 \
-  --out-dir dist
+cp target/x86_64-unknown-linux-gnu/release/lm_node lm_node-linux-x86_64
 ```
 
-`release-package.py` 只打包原生 `lm_node` 和 `node.config.example.json`，避免把管理前端、文档和构建元数据塞进原生压缩包。容器化 HTTPS 部署请使用 GHCR 镜像和 `deploy/lm-node-public/` 的 Caddy Compose 模板。
+配置模板保留在仓库的 `docs/examples/lm-node.config.example.json`。容器化 HTTPS 部署请使用 GHCR 镜像和 `deploy/lm-node-public/` 的 Caddy Compose 模板。
 
 验证已发布 tag：
 
