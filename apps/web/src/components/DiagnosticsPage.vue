@@ -234,7 +234,7 @@ async function runDiagnostics() {
 
       <UiSection title="最近记录">
         <div v-if="ctx.log.value.length" class="diagnostic-log">
-          <div v-for="line in ctx.log.value.slice(0, 8).map(diagnosticLogLine)" :key="line">{{ line }}</div>
+          <div v-for="(line, index) in ctx.log.value.slice(0, 8).map(diagnosticLogLine)" :key="`${index}-${line}`">{{ line }}</div>
         </div>
         <div v-else class="empty">暂无记录</div>
       </UiSection>
