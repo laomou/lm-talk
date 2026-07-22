@@ -4676,7 +4676,7 @@ async function confirmStrictE2eeSendRiskIfNeeded(contact: ContactItem): Promise<
     const blockers = strictE2eeSendBlockingReasons(contact)
     if (blockers.length) {
       const text = `发送前阻塞：${blockers.join('；')}`
-      showAlert('发送被严格 E2EE 策略阻止', text, 'warning')
+      showAlert('无法发送', text, 'error')
       appendLog(`已阻止发送：${text}`)
       return false
     }
@@ -5876,7 +5876,7 @@ async function sendMessage() {
   if (pendingText.trim() && activeGroup.value) {
     const riskText = activeGroupStrictE2eeRiskText.value
     if (riskText && strictE2eePolicyEnabled.value) {
-      showAlert('群消息被严格 E2EE 策略阻止', riskText, 'warning')
+      showAlert('无法发送', riskText, 'error')
       appendLog(`已阻止群消息发送：${riskText}`)
       return
     }
