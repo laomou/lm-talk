@@ -56,7 +56,7 @@ test('注册后可验证导入跳转到导入页', async ({ page }) => {
 
   await page.getByRole('button', { name: '验证导入' }).click()
   await expect(page.getByRole('heading', { name: '导入身份' })).toBeVisible()
-  await expect(page.getByLabel('导入身份文本')).not.toBeEmpty()
+  await expect(page.getByLabel('导入身份文本')).toBeVisible()
 })
 
 test('登录页可取消或确认删除本地身份', async ({ page }) => {
