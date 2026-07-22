@@ -4,8 +4,8 @@ This directory is a minimal self-hosted `lm_node` deployment for a public Mailbo
 
 ## Files
 
-- `Dockerfile` builds `lm_node` from this workspace.
-- `docker-compose.yml` runs one `lm_node` service behind a Caddy HTTPS reverse proxy.
+- `Dockerfile` is available for local node-image development.
+- `docker-compose.yml` runs the published `ghcr.io/laomou/lm-talk-node` image behind a Caddy HTTPS reverse proxy.
 - `Caddyfile.example` is a TLS reverse-proxy starter config.
 - `config.example.json` is a hardened starter config with:
   - persistent plaintext SQLite state under `/data` (at-rest protection via full-disk encryption / LUKS/dm-crypt);
@@ -32,6 +32,22 @@ Verify the deployed node:
 
 Point the Web app sync service at `https://YOUR_DOMAIN` and use the value in `secrets/control-token` as the node token.
 
+## Published container images
+
+A release tag such as `v0.1.0` publishes matching multi-architecture (`linux/amd64`, `linux/arm64`) images:
+
+- `ghcr.io/laomou/lm-talk-node:0.1.0` — public node service.
+- `ghcr.io/laomou/lm-talk-web:0.1.0` — static Web app served by Caddy.
+
+Stable tags additionally update `:latest`. Pin a numeric version in production:
+
+```bash
+LM_TALK_NODE_IMAGE=ghcr.io/laomou/lm-talk-node:0.1.0 docker compose up -d
+docker run --rm -p 8080:80 ghcr.io/laomou/lm-talk-web:0.1.0
+```
+
+The Web image includes Caddy only for static-file delivery. Put it behind your own HTTPS Caddy site (or another reverse proxy) when exposing it publicly.
+
 ## Manual quick start
 
 ```bash
@@ -43,7 +59,8 @@ openssl rand -base64 32 > secrets/control-token
 chmod 600 secrets/control-token
 # Edit config.json: peer_id and cors_allow_origins.
 # Edit Caddyfile: replace lm-node.example.com with your node domain.
-docker compose up -d --build
+LM_TALK_NODE_IMAGE=ghcr.io/laomou/lm-talk-node:latest docker compose pull
+LM_TALK_NODE_IMAGE=ghcr.io/laomou/lm-talk-node:latest docker compose up -d
 ```
 
 ## Production notes

@@ -14,6 +14,7 @@ Options:
   --peer-id ID           Node peer id. Default: derived from domain.
   --data-dir DIR         Deployment directory. Default: current deploy/lm-node-public directory.
   --email EMAIL          ACME contact email for Caddy. Optional.
+  --image IMAGE          Node image. Default: ghcr.io/laomou/lm-talk-node:latest.
   --allow-any-origin    Use CORS ["*"] for testing only; not recommended for production.
   --dry-run             Generate files and print next steps without running docker compose.
   -h, --help            Show this help.
@@ -29,6 +30,7 @@ DOMAIN=""
 PEER_ID=""
 DATA_DIR="$SCRIPT_DIR"
 EMAIL=""
+IMAGE="ghcr.io/laomou/lm-talk-node:latest"
 DRY_RUN=0
 ALLOW_ANY_ORIGIN=0
 WEB_ORIGINS=()
@@ -40,6 +42,7 @@ while [[ $# -gt 0 ]]; do
     --peer-id) PEER_ID="${2:-}"; shift 2 ;;
     --data-dir) DATA_DIR="${2:-}"; shift 2 ;;
     --email) EMAIL="${2:-}"; shift 2 ;;
+    --image) IMAGE="${2:-}"; shift 2 ;;
     --allow-any-origin) ALLOW_ANY_ORIGIN=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -85,7 +88,6 @@ copy_template() {
   fi
 }
 copy_template "$SCRIPT_DIR/docker-compose.yml" "$DATA_DIR/docker-compose.yml"
-copy_template "$SCRIPT_DIR/Dockerfile" "$DATA_DIR/Dockerfile"
 
 secret_file() {
   local path="$1"
@@ -131,7 +133,9 @@ $DOMAIN {
 EOF_CADDY
 } > "$DATA_DIR/Caddyfile"
 
-: > "$DATA_DIR/.env"
+cat > "$DATA_DIR/.env" <<EOF_ENV
+LM_TALK_NODE_IMAGE=$IMAGE
+EOF_ENV
 
 CONTROL_TOKEN="$(cat "$DATA_DIR/secrets/control-token")"
 cat > "$DATA_DIR/DEPLOYMENT_INFO.txt" <<EOF_INFO
@@ -151,7 +155,7 @@ if [[ "$DRY_RUN" == "1" ]]; then
   echo "generated deployment in: $DATA_DIR"
 else
   echo "== starting LM Talk node =="
-  (cd "$DATA_DIR" && "${COMPOSE[@]}" up -d --build)
+  (cd "$DATA_DIR" && "${COMPOSE[@]}" pull && "${COMPOSE[@]}" up -d)
 fi
 
 cat <<EOF_DONE

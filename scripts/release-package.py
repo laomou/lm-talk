@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""Package the lm_node release binary with provenance and checksums."""
+"""Package the lm_node native binary and config template."""
 
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import hashlib
-import os
 import shutil
 import stat
 import subprocess
@@ -17,68 +15,12 @@ import zipfile
 from pathlib import Path
 
 
-def run_text(args: list[str], cwd: Path, required: bool = False) -> str:
-    try:
-        completed = subprocess.run(
-            args,
-            cwd=cwd,
-            check=required,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        if completed.returncode != 0:
-            return "unknown"
-        return completed.stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return "unknown"
-
-
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def add_tree_to_tar(tar: tarfile.TarFile, root: Path, arc_root: str) -> None:
-    for path in sorted(root.rglob("*")):
-        arcname = str(Path(arc_root) / path.relative_to(root))
-        tar.add(path, arcname=arcname, recursive=False)
-
-
-def add_tree_to_zip(zipf: zipfile.ZipFile, root: Path, arc_root: str) -> None:
-    for path in sorted(root.rglob("*")):
-        arcname = str(Path(arc_root) / path.relative_to(root)).replace(os.sep, "/")
-        zipf.write(path, arcname=arcname)
-
-
-def build_node_admin_zip(repo: Path, destination: Path, base: str) -> None:
-    admin_root = repo / "apps" / "node-admin"
-    package_json = admin_root / "package.json"
-    if not package_json.is_file():
-        raise SystemExit(f"node-admin package not found: {package_json}")
-    env = os.environ.copy()
-    tools_node = repo / ".tools" / "node" / "bin"
-    if tools_node.is_dir():
-        env["PATH"] = f"{tools_node}{os.pathsep}{env.get('PATH', '')}"
-    env["NODE_ADMIN_BASE"] = base
-    npm_bin = shutil.which("npm.cmd", path=env.get("PATH")) or shutil.which("npm", path=env.get("PATH"))
-    if not npm_bin:
-        raise SystemExit("failed to build node-admin bundle: npm not found in PATH")
-    try:
-        subprocess.run([npm_bin, "run", "build"], cwd=admin_root, check=True, env=env)
-    except (OSError, subprocess.CalledProcessError) as err:
-        raise SystemExit(f"failed to build node-admin bundle: {err}") from err
-    dist = admin_root / "dist"
-    index = dist / "index.html"
-    if not index.is_file():
-        raise SystemExit(f"node-admin build did not produce {index}")
-    if f'{base.rstrip("/")}/assets/' not in index.read_text(encoding="utf-8") and base != "/":
-        raise SystemExit(f"node-admin build base mismatch: expected assets under {base} in {index}")
-    with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zipf:
-        add_tree_to_zip(zipf, dist, "")
 
 
 def main() -> int:
@@ -89,21 +31,6 @@ def main() -> int:
     parser.add_argument("--cargo-features", default="", help="Comma/space separated Cargo features used for this build")
     parser.add_argument("--repo-root", default=".", help="Repository root")
     parser.add_argument(
-        "--web-admin-zip",
-        default="",
-        help="Optional path to node_admin.zip to bundle into the archive; if omitted, the script builds one automatically",
-    )
-    parser.add_argument(
-        "--web-admin-base",
-        default="/admin/",
-        help="Vite base used when auto-building node_admin.zip (default: /admin/)",
-    )
-    parser.add_argument(
-        "--no-web-admin",
-        action="store_true",
-        help="Do not bundle node_admin.zip",
-    )
-    parser.add_argument(
         "--archive-format",
         choices=("auto", "tar.gz", "zip"),
         default="auto",
@@ -113,9 +40,6 @@ def main() -> int:
 
     repo = Path(args.repo_root).resolve()
     out_dir = (repo / args.out_dir).resolve()
-    status = run_text(["git", "status", "--porcelain"], repo)
-    dirty = "unknown" if status == "unknown" else str(bool(status)).lower()
-
     is_windows_target = "pc-windows" in args.target or "windows" in args.target
     binary_name = "lm_node.exe" if is_windows_target else "lm_node"
     binary_path = repo / "target" / args.target / "release" / binary_name
@@ -127,15 +51,7 @@ def main() -> int:
     if archive_format == "auto":
         archive_format = "zip" if is_windows_target else "tar.gz"
 
-    commit = run_text(["git", "rev-parse", "HEAD"], repo)
     out_dir.mkdir(parents=True, exist_ok=True)
-
-    build_time = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    binary_sha = sha256_file(binary_path)
-    rustc = run_text(["rustc", "-Vv"], repo)
-    cargo = run_text(["cargo", "-V"], repo)
-    cargo_features = " ".join(args.cargo_features.replace(",", " ").split())
-    cargo_features_display = cargo_features or "default"
 
     with tempfile.TemporaryDirectory(prefix="lm-node-release-") as tmp:
         staging = Path(tmp) / args.package_name
@@ -146,71 +62,20 @@ def main() -> int:
             mode = staged_binary.stat().st_mode
             staged_binary.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
-        docs_to_include = [
-            "README.md",
-            "README_zh.md",
-            "LICENSE",
-            "SECURITY.md",
-            "SECURITY_zh.md",
-            "docs/README.md",
-            "docs/deploy/NODE_CONFIG.md",
-            "docs/overview/DEV_WORKFLOW.md",
-            "docs/release/RELEASE_CHECKLIST.md",
-            "docs/release/RELEASE_SIGNING.md",
-        ]
-        for relative in docs_to_include:
-            source = repo / relative
-            if source.is_file():
-                destination = staging / relative
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source, destination)
-
         example_config = repo / "docs/examples/lm-node.config.example.json"
         if example_config.is_file():
             shutil.copy2(example_config, staging / "node.config.example.json")
 
-        bundled_admin = False
-        if not args.no_web_admin:
-            admin_zip: Path | None = None
-            if args.web_admin_zip:
-                admin_zip = Path(args.web_admin_zip)
-                if not admin_zip.is_absolute():
-                    admin_zip = (repo / admin_zip).resolve()
-                if not admin_zip.is_file():
-                    raise SystemExit(f"--web-admin-zip not found: {admin_zip}")
-                shutil.copy2(admin_zip, staging / "node_admin.zip")
-            else:
-                build_node_admin_zip(repo, staging / "node_admin.zip", args.web_admin_base)
-            bundled_admin = (staging / "node_admin.zip").is_file()
-
-        release_info = staging / "RELEASE_INFO.txt"
-        release_info.write_text(
-            "LM Talk native node release artifact\n"
-            f"package={args.package_name}\n"
-            f"target={args.target}\n"
-            f"binary={binary_name}\n"
-            f"binary_sha256={binary_sha}\n"
-            f"cargo_features={cargo_features_display}\n"
-            f"source_commit={commit}\n"
-            f"source_dirty={dirty}\n"
-            f"build_time_utc={build_time}\n"
-            f"web_admin_bundled={str(bundled_admin).lower()}\n"
-            f"web_admin_mount=/admin/\n"
-            "\n[rustc -Vv]\n"
-            f"{rustc}\n"
-            "\n[cargo -V]\n"
-            f"{cargo}\n",
-            encoding="utf-8",
-        )
-
         if archive_format == "zip":
             archive = out_dir / f"{args.package_name}.zip"
             with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zipf:
-                add_tree_to_zip(zipf, staging, args.package_name)
+                for path in sorted(staging.iterdir()):
+                    zipf.write(path, f"{args.package_name}/{path.name}")
         else:
             archive = out_dir / f"{args.package_name}.tar.gz"
             with tarfile.open(archive, "w:gz") as tar:
-                add_tree_to_tar(tar, staging, args.package_name)
+                for path in sorted(staging.iterdir()):
+                    tar.add(path, arcname=f"{args.package_name}/{path.name}", recursive=False)
 
     archive_sha = sha256_file(archive)
     checksum_file = archive.with_suffix(archive.suffix + ".sha256")

@@ -13,10 +13,7 @@ services:
       - caddy_config:/config
 
   lm-node:
-    build:
-      context: ../..
-      dockerfile: deploy/lm-node-public/Dockerfile
-    image: lm-talk/lm-node-public:local
+    image: ${LM_TALK_NODE_IMAGE:-ghcr.io/laomou/lm-talk-node:latest}
     restart: unless-stopped
     command: ["serve-control", "--config-file", "/app/config.json"]
     expose:
