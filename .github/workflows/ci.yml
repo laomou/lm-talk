@@ -11,7 +11,79 @@ permissions:
   contents: read
 
 jobs:
-  release-check:
+  rust-format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+  rust-core-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+
+      - name: Run lm_core tests
+        run: cargo test -p lm_core
+
+  node-integration-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+
+      - name: Run lm_node library and binary tests
+        run: |
+          cargo test -p lm_node --lib
+          cargo test -p lm_node --bin lm_node
+
+      - name: Run lm_node integration flows
+        run: |
+          cargo test -p lm_node --test e2e_node_flow
+          cargo test -p lm_node --test e2e_http_control_flow
+
+  fuzz-harness-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+
+      - name: Check fuzz harnesses compile
+        run: cargo check --manifest-path fuzz/Cargo.toml --bins --locked
+
+  web-build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -28,14 +100,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-          components: rustfmt
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            .
-            fuzz
 
       - name: Install wasm-pack
         uses: taiki-e/install-action@wasm-pack
@@ -44,12 +108,15 @@ jobs:
         working-directory: apps/web
         run: npm ci
 
-      - name: Release check quick
-        env:
-          RELEASE_CHECK_SKIP_CLIPPY: '1'
-        run: ./scripts/release-check.sh quick
+      - name: Check types
+        working-directory: apps/web
+        run: npm run typecheck
 
-  web-e2e:
+      - name: Build production web app
+        working-directory: apps/web
+        run: npm run build
+
+  web-user-flows:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -78,7 +145,7 @@ jobs:
         working-directory: apps/web
         run: npx playwright install --with-deps chromium
 
-      - name: Run user auth flows
+      - name: Run browser user flows
         working-directory: apps/web
         run: npm run test:e2e
 

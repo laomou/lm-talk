@@ -9,7 +9,7 @@ usage() {
 Usage: ./scripts/release-check.sh [quick|full|fuzz-smoke]
 
 Release-candidate verification gate.
-  quick  fmt, clippy, Rust core/node targeted suites, fuzz harness cargo check, web typecheck/build/e2e (default)
+  quick  fmt, clippy, Rust core/node targeted suites, fuzz harness cargo check, web typecheck/build (default)
   full   quick plus full cargo test workspace
   fuzz-smoke  quick plus short cargo-fuzz smoke runs for every target
 
@@ -63,7 +63,7 @@ if [[ "$mode" == "fuzz-smoke" ]]; then
   ./scripts/fuzz-smoke.sh
 fi
 
-section "web typecheck/build/e2e"
+section "web typecheck/build"
 ./scripts/dev-test.sh web
 
 section "release-check $mode ok"
