@@ -18,11 +18,12 @@ const router = useRouter()
 const showSyncServiceEditor = ref(false)
 const showDataBackupEditor = ref(false)
 const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.nodeEntrySummaries.value.length === 0)
+const unreadableMailboxCount = computed(() => props.ctx.unreadableMailboxFailedCount.value)
 const syncStatus = computed(() => {
   if (!props.ctx.nodeEnabled.value) return { text: '未开启', tone: 'neutral' as const }
   if (props.ctx.nodeMissingRemoteTokenCount.value > 0) return { text: '需配置', tone: 'warning' as const }
   const hasOutbox = props.ctx.outbox.value.some((item: any) => item.status !== 'sent')
-  const hasMailboxIssue = props.ctx.mailboxFailureSummaryText.value || props.ctx.mailboxInboxErrorText.value
+  const hasMailboxIssue = props.ctx.recoverableMailboxFailedCount.value > 0
   const hasSyncIssue = props.ctx.syncFailureSummaryText.value
   return hasOutbox || hasMailboxIssue || hasSyncIssue
     ? { text: '需处理', tone: 'warning' as const }
@@ -32,7 +33,7 @@ const pendingOutboxCount = computed(() => props.ctx.outbox.value.filter((item: a
 const failedOutboxCount = computed(() => props.ctx.outbox.value.filter((item: any) => item.status === 'failed').length)
 const retrySyncIssueText = computed(() => {
   if (pendingOutboxCount.value > 0) return props.ctx.nodeEnabled.value ? `重试待发送（${pendingOutboxCount.value}）` : `重新排队待发送（${pendingOutboxCount.value}）`
-  if (props.ctx.mailboxFailedCount.value > 0) return `重新处理收取失败（${props.ctx.mailboxFailedCount.value}）`
+  if (props.ctx.recoverableMailboxFailedCount.value > 0) return `重新处理收取失败（${props.ctx.recoverableMailboxFailedCount.value}）`
   if (props.ctx.prekeyAutoErrorText.value) return '重试 PreKey 发布'
   if (/failed|失败/i.test(props.ctx.nodeSyncStatusText.value) && props.ctx.autoNodeSync.value && props.ctx.nodeSyncPeerUrl.value.trim()) return '重试节点同步'
   if (props.ctx.selfSyncGapCount.value > 0 && props.ctx.nodeEnabled.value) return `修复设备同步缺口（${props.ctx.selfSyncGapCount.value}）`
@@ -172,7 +173,11 @@ function saveSyncSettings() {
         </UiSection>
         <UiSection class="sync-card" title="诊断">
           <template #actions><button class="secondary" @click="ctx.goDiagnosticsPage('me-sync')">打开诊断工具</button></template>
-          <small v-if="ctx.mailboxFailureSummaryText.value" class="danger-text">{{ ctx.mailboxFailureSummaryText.value }}</small>
+          <template v-if="unreadableMailboxCount">
+            <small>有 {{ unreadableMailboxCount }} 条旧消息无法读取；这不会影响后续收发，请让对方重新发送。</small>
+            <UiActionGroup><button class="secondary" @click="ctx.clearUnreadableMailboxItems">清除无法读取的消息</button></UiActionGroup>
+          </template>
+          <small v-if="ctx.recoverableMailboxFailedCount.value && ctx.mailboxFailureSummaryText.value" class="danger-text">{{ ctx.mailboxFailureSummaryText.value }}</small>
           <small v-if="ctx.mailboxInboxErrorText.value" class="danger-text">{{ ctx.mailboxInboxErrorText.value }}</small>
           <small>{{ ctx.mailboxInboxStatus.value }}</small>
           <small>{{ ctx.mailboxQuotaStatusText.value }}</small>

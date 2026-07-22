@@ -845,6 +845,14 @@ const mailboxInboxErrorText = ref('')
 const mailboxFailureSummaryText = ref('')
 const mailboxDedupeCount = computed(() => processedMailboxIds.value.length)
 const mailboxFailedCount = computed(() => mailboxFailedItems.value.length)
+function isUnreadableMailboxFailure(reason: string, kind = ''): boolean {
+  return /directenvelope|direct-envelope/i.test(`${kind} ${reason}`)
+    && /解密失败|cryptographic operation failed/i.test(reason)
+}
+const unreadableMailboxFailedCount = computed(() => mailboxFailedItems.value.filter((item) =>
+  isUnreadableMailboxFailure(item.reason, String(item.message?.kind ?? '')),
+).length)
+const recoverableMailboxFailedCount = computed(() => mailboxFailedCount.value - unreadableMailboxFailedCount.value)
 function mailboxFailureRecoveryHint(reason: string): string {
   if (/未知联系人|not-a-friend|还不是好友/.test(reason)) return '先添加/恢复联系人，再重试该 Mailbox 项。'
   if (/未核验|安全策略/.test(reason)) return '先核验联系人指纹或调整 strict E2EE 策略，再重试。'
@@ -903,7 +911,9 @@ const syncRecoveryHistory = ref<string[]>([])
 const syncFailureSummaryText = computed(() => {
   const parts: string[] = []
   if (prekeyAutoErrorText.value) parts.push(`PreKey：${prekeyAutoErrorText.value}`)
-  if (mailboxInboxErrorText.value) parts.push(`Mailbox：${mailboxInboxErrorText.value.split('\n')[0]}`)
+  if (mailboxInboxErrorText.value && !isUnreadableMailboxFailure(mailboxInboxErrorText.value)) {
+    parts.push(`Mailbox：${mailboxInboxErrorText.value.split('\n')[0]}`)
+  }
   const failedOutbox = outbox.value.filter((item) => item.status === 'failed')
   if (failedOutbox.length > 0) parts.push(`Outbox：失败 ${failedOutbox.length} 条`)
   if (/failed|失败/i.test(nodeSyncStatusText.value)) parts.push(`节点快照：${nodeSyncStatusText.value}`)
@@ -8946,6 +8956,25 @@ function clearFailedMailboxItems() {
   persist()
 }
 
+function clearUnreadableMailboxItems() {
+  const count = unreadableMailboxFailedCount.value
+  if (count === 0) {
+    mailboxInboxStatus.value = '没有无法读取的旧消息'
+    return
+  }
+  mailboxFailedItems.value = mailboxFailedItems.value.filter((item) =>
+    !isUnreadableMailboxFailure(item.reason, String(item.message?.kind ?? '')),
+  )
+  mailboxFailureSummaryText.value = summarizeMailboxFailures(mailboxFailedItems.value
+    .filter((item) => !isUnreadableMailboxFailure(item.reason, String(item.message?.kind ?? '')))
+    .map((item) => item.reason))
+  mailboxInboxStatus.value = `已清除 ${count} 条无法读取的旧消息`
+  mailboxInboxErrorText.value = ''
+  appendLog(`已清除 ${count} 条无法读取的旧 Mailbox 消息`)
+  toast(mailboxInboxStatus.value, 'success')
+  persist()
+}
+
 function summarizeMailboxFailures(reasons: string[]): string {
   if (reasons.length === 0) return ''
   const counts = new Map<string, number>()
@@ -8989,7 +9018,7 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
   }
   mailboxInboxStatus.value = `收到 ${messagesFromNode.length}，已处理 ${handled}，重复 ${duplicate}${duplicateAckResent ? `，补发回执 ${duplicateAckResent}` : ''}，失败 ${failed}`
   mailboxInboxErrorText.value = failureReasons.slice(0, 3).join('\n')
-  mailboxFailureSummaryText.value = summarizeMailboxFailures(failureReasons)
+  mailboxFailureSummaryText.value = summarizeMailboxFailures(failureReasons.filter((reason) => !isUnreadableMailboxFailure(reason)))
   appendLog(`mailbox 自动处理完成：${mailboxInboxStatus.value}`)
   if (events.length > 0) toast(`收到新内容：${mailboxEventSummaryText(events)}`, 'success')
   persist()
@@ -8997,7 +9026,9 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
 }
 
 async function retryFailedMailboxItemsNow() {
-  const items = [...mailboxFailedItems.value]
+  const items = mailboxFailedItems.value.filter((item) =>
+    !isUnreadableMailboxFailure(item.reason, String(item.message?.kind ?? '')),
+  )
   if (items.length === 0) {
     mailboxInboxStatus.value = '失败队列为空'
     return { handled: 0, failed: 0 }
@@ -9031,7 +9062,7 @@ async function retryFailedMailboxItemsNow() {
   mailboxFailedItems.value = mailboxFailedItems.value.filter((item) => !handledItemIds.includes(item.id))
   mailboxInboxStatus.value = `失败队列重试：成功 ${handled}，失败 ${failed}`
   mailboxInboxErrorText.value = failureReasons.slice(0, 3).join('\n')
-  mailboxFailureSummaryText.value = summarizeMailboxFailures(failureReasons)
+  mailboxFailureSummaryText.value = summarizeMailboxFailures(failureReasons.filter((reason) => !isUnreadableMailboxFailure(reason)))
   appendLog(`mailbox 失败队列重试完成：${mailboxInboxStatus.value}`)
   persist()
   return { handled, failed }
@@ -9060,7 +9091,9 @@ async function retryMailboxFailedItem(id: string) {
       mailboxInboxStatus.value = '单条失败项仍失败'
       mailboxInboxErrorText.value = item.reason
     }
-    mailboxFailureSummaryText.value = summarizeMailboxFailures(mailboxFailedItems.value.map((failed) => failed.reason))
+    mailboxFailureSummaryText.value = summarizeMailboxFailures(mailboxFailedItems.value
+      .filter((failed) => !isUnreadableMailboxFailure(failed.reason, String(failed.message?.kind ?? '')))
+      .map((failed) => failed.reason))
     persist()
   })
 }
@@ -9074,7 +9107,7 @@ async function recoverSyncFailures() {
       actions.push('PreKey')
       results.push('PreKey 已重试')
     }
-    if (mailboxFailedItems.value.length > 0) {
+    if (recoverableMailboxFailedCount.value > 0) {
       const result = await retryFailedMailboxItemsNow()
       actions.push('Mailbox 失败队列')
       results.push(`Mailbox 成功 ${result.handled}，失败 ${result.failed}`)
@@ -9551,7 +9584,7 @@ const appContext = {
   ratchetInfoText, safetyPolicy, enableStrictE2eePolicy, strictE2eePolicyEnabled, strictE2eeReadiness, strictE2eeReadinessIssues, strictE2eeReadinessReportText, strictE2eeReadinessSummaryReportText, copyStrictE2eeReadinessReport, copyStrictE2eeReadinessSummaryReport, downloadStrictE2eeReadinessReport, downloadStrictE2eeReadinessSummaryReport, openStrictE2eeReadinessIssue, repairStrictE2eeForActiveContact, repairStrictE2eeForActiveGroup, repairStrictE2eeBlockers, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, perDeviceEnvelopeSentCount, perDeviceEnvelopeReceivedCount, perDeviceEnvelopeDropCount, lastPerDeviceEnvelopeAt, lastPerDeviceEnvelopeDropAt, lastPerDeviceEnvelopeDropReason, contactCardUpdateFanoutCount, contactCardUpdateFanoutSkipCount, lastContactCardUpdateFanoutAt, contactCardUpdateFanoutRecords, contactCardUpdateFanoutAckCount, contactCardUpdatePendingAckCount, contactCardUpdateStaleAckCount, retryStaleContactCardUpdateAcks, contactCardUpdateAckStatusFor, contactStrictE2eeStatusText, contactStrictE2eeRiskLevel, contactCardDhtDiscoveryIsStale, contactCardDhtAutoRefreshCount, lastContactCardDhtAutoRefreshAt, lastContactCardDhtAutoRefreshError, contactCardDhtAutoRefreshHistory, sealedSlotCoverageSummary, sealedSlotRiskContacts, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
-  nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, fillMyContactCardDhtKeyInput, findActiveContactMailboxHint, findActiveContactContactCard, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, startFingerprintQrScan, stopFingerprintQrScan, fingerprintScanOpen, fingerprintScanStatus, copyActiveContactFingerprintProof, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, showMyFingerprintQr, copyMyFingerprintProof, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxFailedRecoveryItems, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, retryMailboxFailedItem, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
+  nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, fillMyContactCardDhtKeyInput, findActiveContactMailboxHint, findActiveContactContactCard, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, startFingerprintQrScan, stopFingerprintQrScan, fingerprintScanOpen, fingerprintScanStatus, copyActiveContactFingerprintProof, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, showMyFingerprintQr, copyMyFingerprintProof, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, unreadableMailboxFailedCount, recoverableMailboxFailedCount, mailboxFailedRecoveryItems, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, retryMailboxFailedItem, clearFailedMailboxItems, clearUnreadableMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
   nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, lastNodeSnapshotSyncAt, nodeSnapshotSyncFreshnessText, nodeSnapshotSyncFreshnessLevel, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, publishAndCheckMyPreKeyDht, publishAndCheckMyMailboxHintDht, publishAndCheckMyContactCardDht, publishAndCheckAllMyDht, clearPreKeyRawState, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
