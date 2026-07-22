@@ -87,6 +87,32 @@ test('登录页可取消或确认删除本地身份', async ({ page }) => {
   await expect.poll(() => page.evaluate((storageKey) => localStorage.getItem(storageKey), LOCAL_IDENTITIES_KEY)).toBe('[]')
 })
 
+test('已登录用户刷新通讯录后，重新登录会回到通讯录', async ({ page }) => {
+  const passphrase = 'playwright-refresh-passphrase'
+  await page.goto('/#/register')
+  await waitForWasm(page)
+  await page.getByLabel('注册提示词').fill(passphrase)
+  await page.getByRole('button', { name: '注册' }).click()
+  await page.getByRole('button', { name: '去登录' }).click()
+  await page.getByLabel('登录提示词').fill(passphrase)
+  await page.getByRole('button', { name: '登录' }).click()
+  await expect(page).toHaveURL(/#\/chat$/)
+
+  await page.getByRole('button', { name: '打开通讯录' }).click()
+  await expect(page).toHaveURL(/#\/contacts$/)
+  await expect(page.getByRole('heading', { name: '通讯录' })).toBeVisible()
+
+  await page.reload()
+  await waitForWasm(page)
+  await expect(page).toHaveURL(/#\/contacts$/)
+  await expect(page.getByRole('heading', { name: '登录' })).toBeVisible()
+
+  await page.getByLabel('登录提示词').fill(passphrase)
+  await page.getByRole('button', { name: '登录' }).click()
+  await expect(page).toHaveURL(/#\/contacts$/)
+  await expect(page.getByRole('heading', { name: '通讯录' })).toBeVisible()
+})
+
 test('导入身份页需要身份文本并可返回登录页', async ({ page }) => {
   await page.goto('/#/import')
   await waitForWasm(page)

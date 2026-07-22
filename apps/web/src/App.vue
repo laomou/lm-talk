@@ -562,6 +562,8 @@ let fingerprintScanStopped = true
 const route = useRoute()
 const router = useRouter()
 const authMode = computed(() => route.path === '/register' ? 'register' : route.path === '/import' ? 'import' : 'login')
+const isAppRoute = (path: string) => !['/', '/login', '/register', '/import'].includes(path)
+const loginReturnPath = ref(isAppRoute(route.path) ? route.fullPath : '/chat')
 const currentPage = computed(() => route.path === '/diagnostics'
   ? 'diagnostics'
   : route.path.startsWith('/contacts')
@@ -4161,6 +4163,7 @@ function restoreAndEnter() {
     if (!passphrase.value.trim()) throw new Error('请输入提示词')
     const loginBackup = backupText.value
     const loginName = displayName.value || 'Me'
+    const destination = isAppRoute(route.path) ? route.fullPath : loginReturnPath.value
     const out = safeJson<RestoreOutput>(restore_identity(loginBackup, passphrase.value))
     identity.value = out
     resetAccountScopedState()
@@ -4172,7 +4175,7 @@ function restoreAndEnter() {
         if (!myContactCardText.value) exportMyCard()
         rememberLocalIdentity(out.user_id, displayName.value, backupText.value)
         persist()
-        void router.push('/chat')
+        void router.push(destination)
         void afterLoginAutomation()
       })
       .catch((e) => {
