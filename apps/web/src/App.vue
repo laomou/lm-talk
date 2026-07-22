@@ -580,8 +580,16 @@ type ConfirmDialogState = {
   danger: boolean
   resolve?: (value: boolean) => void
 }
+type AlertDialogState = {
+  open: boolean
+  title: string
+  message: string
+  kind: ToastKind
+  actionLabel?: string
+  action?: () => void
+}
 const toasts = ref<ToastItem[]>([])
-const alertDialog = ref({ open: false, title: '', message: '', kind: 'info' as ToastKind })
+const alertDialog = ref<AlertDialogState>({ open: false, title: '', message: '', kind: 'info' })
 const confirmDialog = ref<ConfirmDialogState>({ open: false, title: '', message: '', danger: false })
 
 const MAX_TEXT_MESSAGE_BYTES = 64 * 1024
@@ -1604,12 +1612,18 @@ async function refreshRuntimeStatus() {
   await refreshPwaStatus()
 }
 
-function showAlert(title: string, message: string, kind: ToastKind = 'info') {
-  alertDialog.value = { open: true, title, message, kind }
+function showAlert(title: string, message: string, kind: ToastKind = 'info', action?: Pick<AlertDialogState, 'actionLabel' | 'action'>) {
+  alertDialog.value = { open: true, title, message, kind, ...action }
 }
 
 function closeAlert() {
-  alertDialog.value.open = false
+  alertDialog.value = { open: false, title: '', message: '', kind: 'info' }
+}
+
+function runAlertAction() {
+  const action = alertDialog.value.action
+  closeAlert()
+  action?.()
 }
 
 function showConfirm(title: string, message: string, danger = false): Promise<boolean> {
@@ -3339,8 +3353,12 @@ async function syncNow() {
   ensureOwnDeviceCertForStrict('消息同步前的严格 E2EE 默认策略')
   if (!nodeEnabled.value) {
     appendLog('⚠️ 消息同步未开启')
-    toast('消息同步未开启，请先开启同步服务。', 'warning')
-    goSyncSettings()
+    showAlert(
+      '开启消息同步',
+      '开启后可同步新的好友申请和离线消息。',
+      'warning',
+      { actionLabel: '去开启', action: goSyncSettings },
+    )
     return
   }
   appendLog('🔄 开始消息同步')
@@ -9483,7 +9501,12 @@ const appContext = {
 
   <UiDialog v-if="alertDialog.open" :title="alertDialog.title" :kind="alertDialog.kind" alert @close="closeAlert">
       <p>{{ alertDialog.message }}</p>
-      <template #actions><UiActionGroup><button @click="closeAlert">知道了</button></UiActionGroup></template>
+      <template #actions>
+        <UiActionGroup>
+          <button v-if="alertDialog.actionLabel" class="secondary" @click="closeAlert">暂不</button>
+          <button @click="alertDialog.actionLabel ? runAlertAction() : closeAlert">{{ alertDialog.actionLabel || '知道了' }}</button>
+        </UiActionGroup>
+      </template>
   </UiDialog>
 
   <UiDialog v-if="confirmDialog.open" :title="confirmDialog.title" @close="closeConfirm(false)">
