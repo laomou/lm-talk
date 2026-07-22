@@ -56,7 +56,6 @@ function backHome() {
 }
 function addContact() {
   props.ctx.addContact()
-  view.value = 'home'
 }
 </script>
 
@@ -177,7 +176,7 @@ function addContact() {
             <textarea id="contact-card-input" v-model="ctx.addContactText.value" rows="7" aria-label="对方名片文本" placeholder="粘贴对方发来的名片文本" />
             <div class="row"><button @click="addContact">添加好友</button></div>
           </section>
-          <button class="settings-row mobile-only-row" aria-label="扫码添加">
+          <button class="settings-row mobile-only-row" aria-label="扫码添加" @click="ctx.showAlert('扫码添加', '扫码添加后续接入；也可以先使用“添加好友（粘贴名片）”。', 'info')">
             <span>扫码添加</span><span class="chevron">›</span>
           </button>
         </div>
