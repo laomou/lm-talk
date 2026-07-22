@@ -137,7 +137,7 @@ function downloadRegisteredBackup() {
             <li>可选：点击“验证导入”确认备份可恢复。</li>
           </ol>
           <UiNotice>身份文件和提示词缺一不可；任意一项丢失都无法恢复这个身份。</UiNotice>
-          <UiActionGroup>
+          <UiActionGroup align="center">
             <button @click="downloadRegisteredBackup">下载身份</button>
             <button class="secondary" @click="goLogin">去登录</button>
           </UiActionGroup>
