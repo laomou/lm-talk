@@ -1626,6 +1626,15 @@ function runAlertAction() {
   action?.()
 }
 
+function showSyncEnableDialog(message = '开启后可同步新的好友申请和离线消息。') {
+  showAlert(
+    '开启消息同步',
+    message,
+    'info',
+    { actionLabel: '去开启', action: goSyncSettings },
+  )
+}
+
 function showConfirm(title: string, message: string, danger = false): Promise<boolean> {
   return new Promise((resolve) => {
     confirmDialog.value = { open: true, title, message, danger, resolve }
@@ -3353,12 +3362,7 @@ async function syncNow() {
   ensureOwnDeviceCertForStrict('消息同步前的严格 E2EE 默认策略')
   if (!nodeEnabled.value) {
     appendLog('⚠️ 消息同步未开启')
-    showAlert(
-      '开启消息同步',
-      '开启后可同步新的好友申请和离线消息。',
-      'info',
-      { actionLabel: '去开启', action: goSyncSettings },
-    )
+    showSyncEnableDialog()
     return
   }
   appendLog('🔄 开始消息同步')
@@ -5702,7 +5706,7 @@ function createFriendRequestForActive() {
     )
     const req = safeJson<any>(inspect_friend_request(friendRequestText.value))
     if (!nodeEnabled.value) {
-      showAlert('请先开启消息同步', '好友请求需要通过消息同步发送。请到“我 → 消息同步”开启后重试。', 'warning')
+      showSyncEnableDialog('发送好友请求需要开启消息同步。开启后可自动发送好友请求和接收回应。')
       return
     }
     const contact = activeContact.value
@@ -6752,7 +6756,7 @@ function retrySecureSessionForActiveContact() {
     if (!activeContact.value) throw new Error('请选择联系人')
     if (activeContact.value.state !== 'Friend') throw new Error('联系人还不是 Friend')
     if (!nodeEnabled.value) {
-      showAlert('请先开启消息同步', '安全建链重试需要通过消息同步发送。请到“我 → 消息同步”开启后重试。', 'warning')
+      showSyncEnableDialog('重试安全建链需要开启消息同步。开启后可向对方发送建链消息。')
       return
     }
     const contact = activeContact.value
