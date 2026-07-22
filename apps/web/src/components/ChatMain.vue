@@ -33,7 +33,7 @@ function messageStatusShortText(message: any) {
   switch (message.status) {
     case 'queued': return '待发送'
     case 'copied': return '待发送'
-    case 'mailbox': return '已发送'
+    case 'mailbox': return '待收取'
     case 'sent': return '已发送'
     case 'delivered': return '已送达'
     case 'read': return '已读'
@@ -72,6 +72,20 @@ function messageOutboxError(message: any) {
 function canManageMessageOutbox(message: any) {
   return messageOutboxCount(message) > 0
 }
+
+const activePendingOutboxCount = computed(() => {
+  const peerId = props.ctx.activeContact.value?.user_id
+  if (!peerId) return 0
+  return props.ctx.outbox.value.filter((item: any) => item.peer_user_id === peerId && item.status !== 'sent').length
+})
+
+const activeFailedOutboxCount = computed(() => {
+  const peerId = props.ctx.activeContact.value?.user_id
+  if (!peerId) return 0
+  return props.ctx.outbox.value.filter((item: any) => item.peer_user_id === peerId && item.status === 'failed').length
+})
+
+const activeQueuedOutboxCount = computed(() => Math.max(0, activePendingOutboxCount.value - activeFailedOutboxCount.value))
 
 function messageStatusDetailText(message: any) {
   const parts = [messageStatusShortText(message)]
@@ -154,6 +168,7 @@ function onHiddenFileChange(event: Event) {
 }
 function sendAndClose() {
   props.ctx.sendMessage()
+  composerPanel.value = 'none'
 }
 </script>
 
@@ -168,6 +183,9 @@ function sendAndClose() {
       </div>
       <div v-if="ctx.activeContact.value" class="chat-header-actions product-chat-actions">
         <input v-model="messageSearch" type="search" aria-label="搜索当前聊天" placeholder="搜索消息" />
+        <span v-if="activePendingOutboxCount" class="outbox-summary-inline">待发送 {{ activeQueuedOutboxCount }} · 失败 {{ activeFailedOutboxCount }}</span>
+        <button v-if="activePendingOutboxCount" class="secondary" @click="ctx.flushOutboxForActive">重试</button>
+        <button v-if="activePendingOutboxCount" class="secondary danger" @click="ctx.cancelOutboxForActive">取消</button>
         <button class="icon-btn" aria-label="更多" title="更多">⋯</button>
       </div>
     </header>
@@ -282,8 +300,19 @@ function sendAndClose() {
         <div class="file-card-main">
           <b>{{ ctx.receivedFileName.value }}</b>
           <small>{{ filePreviewLabel(ctx.receivedFileName.value, ctx.receivedFileMime.value) }} · {{ ctx.receivedFileMeta.value }}</small>
+          <small>已解密，下载动作只在你点击后发生。</small>
         </div>
         <a :href="ctx.receivedFileUrl.value" :download="ctx.receivedFileName.value" @click="ctx.markReceivedFileDownloaded">下载</a>
+        <img
+          v-if="ctx.receivedFileMime.value.startsWith('image/')"
+          class="received-file-preview"
+          :src="ctx.receivedFileUrl.value"
+          :alt="ctx.receivedFileName.value"
+        />
+        <div v-else class="received-file-placeholder">
+          <b>{{ ctx.receivedFilePreviewKind.value }}</b>
+          <small>非图片附件不会内联预览，请下载后用本机应用打开。</small>
+        </div>
       </div>
       <div class="composer-bar">
         <button class="composer-icon" aria-label="添加附件" @click="togglePanel('attach')">＋</button>

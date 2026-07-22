@@ -9346,7 +9346,7 @@ function logout() {
   void router.push('/login')
 }
 const appContext = {
-  goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
+  goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, showAlert, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, webVersionText,
   nodeControlUrl, nodeUrlList, nodeEntrySummaries, nodeSettingsSummaryText, nodeTokenStorageText, nodeTokenCount, nodeMissingRemoteTokenCount, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake, autoReadReceipts,
   runtimeStatusText, pwaStatusText, inAppRuntimePolicyText, refreshRuntimeStatus, refreshPwaStatus,
