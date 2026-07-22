@@ -19,10 +19,14 @@ const showSyncServiceEditor = ref(false)
 const showDataBackupEditor = ref(false)
 const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.nodeEntrySummaries.value.length === 0)
 const syncStatus = computed(() => {
+  if (!props.ctx.nodeEnabled.value) return { text: '未开启', tone: 'neutral' as const }
+  if (props.ctx.nodeMissingRemoteTokenCount.value > 0) return { text: '需配置', tone: 'warning' as const }
   const hasOutbox = props.ctx.outbox.value.some((item: any) => item.status !== 'sent')
   const hasMailboxIssue = props.ctx.mailboxFailureSummaryText.value || props.ctx.mailboxInboxErrorText.value
   const hasSyncIssue = props.ctx.syncFailureSummaryText.value
-  return hasOutbox || hasMailboxIssue || hasSyncIssue ? '需处理' : '正常'
+  return hasOutbox || hasMailboxIssue || hasSyncIssue
+    ? { text: '需处理', tone: 'warning' as const }
+    : { text: '正常', tone: 'success' as const }
 })
 const pendingOutboxCount = computed(() => props.ctx.outbox.value.filter((item: any) => item.status !== 'sent').length)
 const failedOutboxCount = computed(() => props.ctx.outbox.value.filter((item: any) => item.status === 'failed').length)
@@ -64,7 +68,7 @@ function saveSyncSettings() {
             <UiListRow @click="view = 'security'">安全与设备</UiListRow>
             <UiListRow @click="view = 'sync'">
               同步与安全
-              <template #end><UiStatusBadge :tone="syncStatus === '正常' ? 'success' : 'warning'">{{ syncStatus }}</UiStatusBadge><span class="chevron">›</span></template>
+              <template #end><UiStatusBadge compact :tone="syncStatus.tone">{{ syncStatus.text }}</UiStatusBadge><span class="chevron">›</span></template>
             </UiListRow>
             <UiListRow @click="view = 'settings'">设置</UiListRow>
             <UiListRow @click="view = 'about'">关于</UiListRow>
@@ -128,7 +132,7 @@ function saveSyncSettings() {
 
       <template v-else-if="view === 'sync'">
         <UiPageHeader title="同步与安全" back-label="返回我" @back="backHome">
-          <template #end><UiStatusBadge :tone="syncStatus === '正常' ? 'success' : 'warning'">{{ syncStatus }}</UiStatusBadge></template>
+          <template #end><UiStatusBadge compact :tone="syncStatus.tone">{{ syncStatus.text }}</UiStatusBadge></template>
         </UiPageHeader>
         <UiSection class="sync-card" title="消息同步">
           <template #actions><UiStatusBadge :tone="ctx.nodeEnabled.value ? 'success' : 'neutral'">{{ ctx.nodeEnabled.value ? '已开启' : '未开启' }}</UiStatusBadge></template>
@@ -159,7 +163,7 @@ function saveSyncSettings() {
           </UiActionGroup>
         </UiSection>
         <UiSection class="sync-card" title="诊断">
-          <template #actions><button class="secondary" @click="ctx.goDiagnosticsPage">打开诊断工具</button></template>
+          <template #actions><button class="secondary" @click="ctx.goDiagnosticsPage('me-sync')">打开诊断工具</button></template>
           <small v-if="ctx.mailboxFailureSummaryText.value" class="danger-text">{{ ctx.mailboxFailureSummaryText.value }}</small>
           <small v-if="ctx.mailboxInboxErrorText.value" class="danger-text">{{ ctx.mailboxInboxErrorText.value }}</small>
           <small>{{ ctx.mailboxInboxStatus.value }}</small>
