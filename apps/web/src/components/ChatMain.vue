@@ -4,6 +4,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 const props = defineProps<{ ctx: any }>()
 const contactName = (userId: string) => props.ctx.contacts.value.find((c: any) => c.user_id === userId)?.display_name || userId
 const messageSearch = ref('')
+const messageSearchOpen = ref(false)
 const composerPanel = ref<'none' | 'attach' | 'emoji'>('none')
 const fileInput = ref<HTMLInputElement | null>(null)
 const composerTextarea = ref<HTMLTextAreaElement | null>(null)
@@ -176,9 +177,19 @@ function sendAndClose() {
         <span class="trust-inline" :class="{ danger: !ctx.activeContact.value.fingerprint_verified_at }">{{ trustText(ctx.activeContact.value) }}</span>
       </div>
       <div class="chat-header-actions product-chat-actions">
+        <button
+          class="icon-btn"
+          :aria-label="messageSearchOpen ? '关闭会话内搜索' : '搜索消息'"
+          :title="messageSearchOpen ? '关闭搜索' : '搜索消息'"
+          @click="messageSearchOpen = !messageSearchOpen"
+        >🔍</button>
         <button class="icon-btn" aria-label="更多" title="更多">⋯</button>
       </div>
     </header>
+    <div v-if="ctx.activeContact.value && messageSearchOpen" class="message-search-bar">
+      <input v-model="messageSearch" type="search" aria-label="搜索当前会话消息" placeholder="搜索当前会话消息" autofocus />
+      <button v-if="messageSearch" class="secondary" @click="messageSearch = ''">清除</button>
+    </div>
 
     <section v-if="!ctx.activeContact.value && !ctx.strictE2eePolicyEnabled.value" class="chat-notice-panel">
       <div class="notice-text">

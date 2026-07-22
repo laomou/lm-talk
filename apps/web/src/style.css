@@ -478,6 +478,17 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
   font-size: 13px;
 }
 .chat-header-actions button { padding: 7px 12px; font-size: 13px; }
+.message-search-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--c-surface-2);
+  border-bottom: 1px solid var(--c-line);
+}
+.message-search-bar input { min-width: 0; flex: 1 1 auto; background: var(--c-surface); }
+.message-search-bar .secondary { flex: 0 0 auto; }
 .outbox-error { max-width: 220px; color: var(--c-danger); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .chat-notice-panel {
@@ -1214,6 +1225,8 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
+  min-height: 60px;
+  padding: var(--sp-3) var(--sp-5);
 }
 .chat-back-btn { justify-self: start; }
 .product-chat-title {
@@ -1245,7 +1258,7 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 }
 
 @media (max-width: 850px) {
-  .product-chat-header { min-height: 52px; padding: var(--sp-2) var(--sp-3); }
+  .product-chat-header { min-height: 60px; padding: var(--sp-3) var(--sp-5); }
   .product-chat-actions input { display: none; }
   .product-chat-actions .secondary,
   .outbox-summary-inline { display: none; }
@@ -1263,4 +1276,8 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .app-shell.in-chat-detail { grid-template-rows: minmax(0, 1fr); }
   .app-shell.in-chat-detail .app-rail { display: none; }
   .app-shell.in-chat-detail .app-content { grid-row: 1; }
+}
+
+@media (max-width: 640px) {
+  .product-chat-header { min-height: 52px; padding: var(--sp-2) var(--sp-3); }
 }
