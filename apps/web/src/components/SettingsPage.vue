@@ -39,6 +39,10 @@ function backHome() {
   view.value = 'home'
   if (route.query.section) void router.replace('/me')
 }
+
+function saveSyncSettings() {
+  if (props.ctx.saveNetworkSettings()) showSyncServiceEditor.value = false
+}
 </script>
 
 <template>
@@ -141,7 +145,7 @@ function backHome() {
           <UiActionGroup>
             <button class="secondary" @click="showSyncServiceEditor = !showSyncServiceEditor">{{ showSyncEditor ? '隐藏编辑' : '编辑地址' }}</button>
             <button @click="ctx.toggleNodeEnabled">{{ ctx.nodeEnabled.value ? '关闭同步' : '开启同步' }}</button>
-            <button v-if="showSyncEditor" class="secondary" @click="ctx.saveNetworkSettings">保存</button>
+            <button v-if="showSyncEditor" class="secondary" @click="saveSyncSettings">保存</button>
             <button class="secondary" @click="ctx.syncNow">立即同步</button>
           </UiActionGroup>
         </UiSection>
