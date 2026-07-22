@@ -6,7 +6,7 @@ use lm_core::{
 };
 
 #[test]
-fn two_users_friend_x3dh_ratchet_message_roundtrip() {
+fn friend_x3dh_and_ratchet_support_bidirectional_messages() {
     let (alice, _) = Identity::create_with_passphrase("alice pineapple 2026").unwrap();
     let (bob, _) = Identity::create_with_passphrase("bob pineapple 2026").unwrap();
 
@@ -98,7 +98,7 @@ fn two_users_friend_x3dh_ratchet_message_roundtrip() {
 }
 
 #[test]
-fn exported_contact_and_prekey_text_roundtrip() {
+fn contact_card_and_prekey_exports_roundtrip() {
     let (alice, _) = Identity::create_with_passphrase("alice export").unwrap();
     let card = alice.export_contact_card(None, None, vec![]).unwrap();
     let card_text = card.to_export_text().unwrap();
@@ -114,7 +114,7 @@ fn exported_contact_and_prekey_text_roundtrip() {
 }
 
 #[test]
-fn ratchet_rejects_replay_after_bidirectional_messages() {
+fn ratchet_rejects_replayed_message_after_bidirectional_exchange() {
     let (alice, _) = Identity::create_with_passphrase("alice ratchet flow").unwrap();
     let (bob, _) = Identity::create_with_passphrase("bob ratchet flow").unwrap();
     let alice_dh = RatchetSessionState::generate_dh_keypair().unwrap();

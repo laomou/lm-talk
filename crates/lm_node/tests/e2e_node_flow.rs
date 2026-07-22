@@ -7,7 +7,7 @@ use lm_core::{
 use lm_node::{ControlRequest, NativeNode, NodeConfig, NodeStateSnapshot};
 
 #[test]
-fn node_prekey_sync_mailbox_ratchet_e2e() {
+fn prekey_sync_and_mailbox_delivery_support_ratchet_message() {
     let (alice, _) = Identity::create_with_passphrase("alice node e2e").unwrap();
     let (bob, _) = Identity::create_with_passphrase("bob node e2e").unwrap();
     let mut node_a = NativeNode::new(NodeConfig {
@@ -169,7 +169,7 @@ fn node_prekey_sync_mailbox_ratchet_e2e() {
 }
 
 #[test]
-fn mailbox_pressure_partial_ack_status_and_snapshot_recovery() {
+fn mailbox_partial_ack_and_snapshot_recovery_preserve_delivery_state() {
     let (alice, _) = Identity::create_with_passphrase("mailbox pressure alice").unwrap();
     let (bob, _) = Identity::create_with_passphrase("mailbox pressure bob").unwrap();
     let mut node = NativeNode::new(NodeConfig {
@@ -282,7 +282,7 @@ fn mailbox_pressure_partial_ack_status_and_snapshot_recovery() {
 }
 
 #[test]
-fn node_rejects_mailbox_message_when_sender_key_does_not_match_signature() {
+fn mailbox_push_rejects_mismatched_sender_key() {
     let (alice, _) = Identity::create_with_passphrase("alice mailbox signature").unwrap();
     let (bob, _) = Identity::create_with_passphrase("bob mailbox signature").unwrap();
     let mut node = NativeNode::new(NodeConfig {
@@ -313,7 +313,7 @@ fn node_rejects_mailbox_message_when_sender_key_does_not_match_signature() {
 }
 
 #[test]
-fn group_sender_key_fanout_via_mailbox() {
+fn mailbox_fanout_delivers_group_sender_key_message() {
     // 1. Create 3 identities: Alice, Bob, Carol
     let (alice, _) = Identity::create_with_passphrase("alice group fanout").unwrap();
     let (bob, _) = Identity::create_with_passphrase("bob group fanout").unwrap();

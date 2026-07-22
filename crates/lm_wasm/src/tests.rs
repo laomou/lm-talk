@@ -4,7 +4,7 @@ use super::*;
 use serde_json::Value;
 
 #[test]
-fn wasm_identity_from_seed_matches_native_user_id() {
+fn identity_from_seed_matches_native_identity() {
     let seed = [42u8; lm_core::identity::IDENTITY_SEED_LEN];
     let wasm_identity = wasm_identity_from_seed(seed).unwrap();
     let native_identity = Identity::from_seed(IdentitySeed::from_bytes(seed)).unwrap();
@@ -20,7 +20,7 @@ fn wasm_identity_from_seed_matches_native_user_id() {
 }
 
 #[test]
-fn wasm_identity_matches_native_test_vector() {
+fn identity_from_seed_matches_test_vector() {
     let vector: Value =
         serde_json::from_str(include_str!("../../../test-vectors/identity_v1.json")).unwrap();
     let wasm_identity =

@@ -5,7 +5,7 @@ use lm_wasm::*;
 use serde_json::Value;
 
 #[test]
-fn wasm_identity_contact_friend_smoke() {
+fn identity_contact_and_friend_request_roundtrip() {
     let alice = create_identity("alice pass").unwrap();
     let bob = create_identity("bob pass").unwrap();
     let alice_v: Value = serde_json::from_str(&alice).unwrap();
@@ -38,7 +38,7 @@ fn wasm_identity_contact_friend_smoke() {
 }
 
 #[test]
-fn wasm_identity_backup_can_be_reencrypted_with_new_passphrase() {
+fn identity_backup_reencrypts_with_new_passphrase() {
     let alice = create_identity("old pass").unwrap();
     let alice_v: Value = serde_json::from_str(&alice).unwrap();
     let old_backup = alice_v["backup_text"].as_str().unwrap();
@@ -54,7 +54,7 @@ fn wasm_identity_backup_can_be_reencrypted_with_new_passphrase() {
 }
 
 #[test]
-fn wasm_device_revoke_smoke() {
+fn device_backup_slot_and_revoke_roundtrip() {
     let alice = create_identity("alice pass").unwrap();
     let alice_v: Value = serde_json::from_str(&alice).unwrap();
     let backup = alice_v["backup_text"].as_str().unwrap();
@@ -104,7 +104,7 @@ fn wasm_device_revoke_smoke() {
 }
 
 #[test]
-fn wasm_data_backup_smoke() {
+fn data_backup_roundtrip() {
     let alice = create_identity("alice pass").unwrap();
     let alice_v: Value = serde_json::from_str(&alice).unwrap();
     let backup = alice_v["backup_text"].as_str().unwrap();
@@ -116,7 +116,7 @@ fn wasm_data_backup_smoke() {
 }
 
 #[test]
-fn wasm_group_invite_smoke() {
+fn group_invite_roundtrip() {
     let alice = create_identity("alice pass").unwrap();
     let bob = create_identity("bob pass").unwrap();
     let alice_v: Value = serde_json::from_str(&alice).unwrap();
@@ -144,7 +144,7 @@ fn wasm_group_invite_smoke() {
 }
 
 #[test]
-fn wasm_peer_announce_smoke() {
+fn peer_announcement_roundtrip() {
     let alice = create_identity("alice pass").unwrap();
     let alice_v: Value = serde_json::from_str(&alice).unwrap();
     let backup = alice_v["backup_text"].as_str().unwrap();
@@ -169,7 +169,7 @@ fn wasm_peer_announce_smoke() {
 }
 
 #[test]
-fn wasm_public_peer_announce_smoke() {
+fn public_peer_announcement_roundtrip() {
     let alice = create_identity("alice pass").unwrap();
     let alice_v: Value = serde_json::from_str(&alice).unwrap();
     let backup = alice_v["backup_text"].as_str().unwrap();
@@ -196,7 +196,7 @@ fn wasm_public_peer_announce_smoke() {
 }
 
 #[test]
-fn wasm_mailbox_message_smoke() {
+fn mailbox_message_roundtrip() {
     let alice = create_identity("alice pass").unwrap();
     let bob = create_identity("bob pass").unwrap();
     let alice_v: Value = serde_json::from_str(&alice).unwrap();
@@ -223,7 +223,7 @@ fn wasm_mailbox_message_smoke() {
 }
 
 #[test]
-fn wasm_message_receipt_smoke() {
+fn message_receipt_and_mailbox_wrapping_roundtrip() {
     let alice = create_identity("alice receipt pass").unwrap();
     let bob = create_identity("bob receipt pass").unwrap();
     let alice_v: Value = serde_json::from_str(&alice).unwrap();
@@ -283,7 +283,7 @@ fn wasm_message_receipt_smoke() {
 }
 
 #[test]
-fn wasm_file_package_smoke() {
+fn file_package_roundtrip() {
     let alice = create_identity("alice pass").unwrap();
     let bob = create_identity("bob pass").unwrap();
     let alice_v: Value = serde_json::from_str(&alice).unwrap();
@@ -316,7 +316,7 @@ fn wasm_file_package_smoke() {
 }
 
 #[test]
-fn wasm_group_policy_smoke() {
+fn group_policy_event_updates_state() {
     let alice = create_identity("alice pass").unwrap();
     let bob = create_identity("bob pass").unwrap();
     let alice_v: Value = serde_json::from_str(&alice).unwrap();
@@ -348,7 +348,7 @@ fn wasm_group_policy_smoke() {
 }
 
 #[test]
-fn wasm_group_sender_key_smoke() {
+fn group_sender_key_roundtrip() {
     let alice = create_identity("alice pass").unwrap();
     let alice_v: Value = serde_json::from_str(&alice).unwrap();
     let alice_backup = alice_v["backup_text"].as_str().unwrap();
@@ -381,7 +381,7 @@ fn wasm_group_sender_key_smoke() {
 }
 
 #[test]
-fn wasm_group_event_smoke() {
+fn group_event_roundtrip() {
     let alice = create_identity("alice pass").unwrap();
     let alice_v: Value = serde_json::from_str(&alice).unwrap();
     let alice_backup = alice_v["backup_text"].as_str().unwrap();
@@ -398,7 +398,7 @@ fn wasm_group_event_smoke() {
 }
 
 #[test]
-fn wasm_encrypt_decrypt_smoke() {
+fn direct_message_roundtrip() {
     let alice = create_identity("alice pass").unwrap();
     let bob = create_identity("bob pass").unwrap();
     let alice_v: Value = serde_json::from_str(&alice).unwrap();
@@ -417,7 +417,7 @@ fn wasm_encrypt_decrypt_smoke() {
 }
 
 #[test]
-fn wasm_prekey_x3dh_smoke() {
+fn prekey_x3dh_derives_matching_shared_secret() {
     let alice = create_identity("alice pass").unwrap();
     let bob = create_identity("bob pass").unwrap();
     let alice_v: Value = serde_json::from_str(&alice).unwrap();
@@ -462,7 +462,7 @@ fn wasm_prekey_x3dh_smoke() {
 }
 
 #[test]
-fn wasm_ratchet_session_with_keys_smoke() {
+fn ratchet_session_with_explicit_keys_roundtrip() {
     let alice = create_identity("alice pass").unwrap();
     let bob = create_identity("bob pass").unwrap();
     let alice_v: Value = serde_json::from_str(&alice).unwrap();
@@ -500,7 +500,7 @@ fn wasm_ratchet_session_with_keys_smoke() {
 }
 
 #[test]
-fn wasm_ratchet_envelope_smoke() {
+fn ratchet_envelope_roundtrip() {
     let alice = create_identity("alice pass").unwrap();
     let bob = create_identity("bob pass").unwrap();
     let alice_v: Value = serde_json::from_str(&alice).unwrap();
@@ -536,7 +536,7 @@ fn wasm_ratchet_envelope_smoke() {
 }
 
 #[test]
-fn wasm_ratchet_supports_bidirectional_state_updates() {
+fn ratchet_supports_bidirectional_state_updates() {
     let alice: Value =
         serde_json::from_str(&create_identity("alice ratchet flow").unwrap()).unwrap();
     let bob: Value = serde_json::from_str(&create_identity("bob ratchet flow").unwrap()).unwrap();
@@ -594,7 +594,7 @@ fn wasm_ratchet_supports_bidirectional_state_updates() {
 }
 
 #[test]
-fn wasm_ratchet_state_smoke() {
+fn ratchet_state_advances_matching_message_keys() {
     let alice = create_identity("alice pass").unwrap();
     let bob = create_identity("bob pass").unwrap();
     let alice_v: Value = serde_json::from_str(&alice).unwrap();

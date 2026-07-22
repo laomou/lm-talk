@@ -34,7 +34,7 @@ struct HttpResponse {
 }
 
 #[test]
-fn real_http_control_plane_dht_find_value_runs_iterative_query() {
+fn http_control_plane_dht_find_value_runs_iterative_query() {
     let port_a = free_port();
     let port_b = free_port();
     let base_a = format!("127.0.0.1:{port_a}");
@@ -116,7 +116,7 @@ fn real_http_control_plane_dht_find_value_runs_iterative_query() {
 }
 
 #[test]
-fn real_http_control_plane_syncs_prekeys_and_mailbox_between_nodes() {
+fn http_control_plane_syncs_prekeys_and_mailbox_between_nodes() {
     let port_a = free_port();
     let port_b = free_port();
     let base_a = format!("127.0.0.1:{port_a}");
@@ -261,7 +261,7 @@ fn real_http_control_plane_syncs_prekeys_and_mailbox_between_nodes() {
 }
 
 #[test]
-fn real_http_control_plane_auto_snapshot_sync_imports_mailbox() {
+fn http_control_plane_auto_snapshot_sync_imports_mailbox() {
     let port_a = free_port();
     let port_b = free_port();
     let base_a = format!("127.0.0.1:{port_a}");
@@ -343,7 +343,7 @@ fn real_http_control_plane_auto_snapshot_sync_imports_mailbox() {
 }
 
 #[test]
-fn real_http_control_plane_state_db_recovers_mailbox_push_take_and_ack() {
+fn http_control_plane_state_db_recovers_mailbox_push_take_and_ack() {
     let state_db = env::temp_dir().join(format!(
         "lm-node-http-crash-recovery-{}-{}.sqlite3",
         std::process::id(),
@@ -456,7 +456,7 @@ fn real_http_control_plane_state_db_recovers_mailbox_push_take_and_ack() {
 }
 
 #[test]
-fn real_http_control_plane_loads_config_file() {
+fn http_control_plane_loads_config_file() {
     let port = free_port();
     let base = format!("127.0.0.1:{port}");
     let config_file = env::temp_dir().join(format!(
@@ -509,7 +509,7 @@ fn real_http_control_plane_loads_config_file() {
 }
 
 #[test]
-fn real_http_control_plane_rejects_parser_abuse_with_precise_status() {
+fn http_control_plane_rejects_parser_abuse_with_precise_status() {
     let port = free_port();
     let base = format!("127.0.0.1:{port}");
     let _node = spawn_node(&base, "http-parser-hardening-node");
@@ -567,7 +567,7 @@ fn real_http_control_plane_rejects_parser_abuse_with_precise_status() {
 }
 
 #[test]
-fn real_http_control_plane_rate_limits_non_health_requests() {
+fn http_control_plane_rate_limits_non_health_requests() {
     let port = free_port();
     let base = format!("127.0.0.1:{port}");
     let _node = spawn_node_with_args(
@@ -593,7 +593,7 @@ fn real_http_control_plane_rate_limits_non_health_requests() {
 }
 
 #[test]
-fn real_http_control_plane_exposes_runtime_stats() {
+fn http_control_plane_exposes_runtime_stats() {
     let port = free_port();
     let base = format!("127.0.0.1:{port}");
     let _node = spawn_node_with_args(
@@ -744,7 +744,7 @@ fn real_http_control_plane_exposes_runtime_stats() {
 }
 
 #[test]
-fn real_http_control_plane_requires_token_and_enforces_cors() {
+fn http_control_plane_requires_token_and_enforces_cors() {
     let port = free_port();
     let base = format!("127.0.0.1:{port}");
     let _node = spawn_node_with_args(
