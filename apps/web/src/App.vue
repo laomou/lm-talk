@@ -4220,6 +4220,7 @@ function restoreAndEnter() {
       .then(() => {
         loggedIn.value = true
         if (!myContactCardText.value) exportMyCard()
+        resumeQueuedOutgoingMessages()
         rememberLocalIdentity(out.user_id, displayName.value, backupText.value)
         persist()
         void router.push(destination)
@@ -5856,8 +5857,31 @@ async function sendGroupFanoutPayloads(group: GroupItem, fanout: Array<{ to_user
 }
 
 function enqueueOutgoingMessage(job: OutgoingMessageJob) {
+  if (outgoingMessageQueue.some((item) => item.message_id === job.message_id)) return
   outgoingMessageQueue.push(job)
   void drainOutgoingMessageQueue()
+}
+
+function resumeQueuedOutgoingMessages() {
+  const pending = messages.value.filter((message) =>
+    message.direction === 'out'
+    && !message.group_id
+    && message.status === 'queued'
+    && !message.envelope_json
+    && message.peer_user_id
+    && message.text.trim()
+  )
+  for (const message of pending) {
+    enqueueOutgoingMessage({
+      id: newId(),
+      message_id: message.id,
+      peer_user_id: message.peer_user_id,
+      conversation_id: message.conversation_id || `conv-${message.peer_user_id}`,
+      text: message.text,
+      created_at: Date.now(),
+    })
+  }
+  if (pending.length) appendLog(`已恢复待发送消息队列：${pending.length} 条`)
 }
 
 async function drainOutgoingMessageQueue() {
@@ -5876,7 +5900,10 @@ async function drainOutgoingMessageQueue() {
 
 async function processOutgoingMessageJob(job: OutgoingMessageJob) {
   const msg = messages.value.find((item) => item.id === job.message_id)
-  if (!msg) return
+  if (!msg) {
+    appendLog(`⚠️ 待发送任务已跳过：消息不存在 ${job.message_id}`)
+    return
+  }
   const contact = contacts.value.find((item) => item.user_id === job.peer_user_id)
   if (!contact || contact.state !== 'Friend') {
     msg.status = 'failed'
