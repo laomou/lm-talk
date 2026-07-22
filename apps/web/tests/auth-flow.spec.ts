@@ -59,17 +59,6 @@ test('注册后可验证导入跳转到导入页', async ({ page }) => {
   await expect(page.getByLabel('导入身份文本')).not.toBeEmpty()
 })
 
-test('非登录页面刷新后回到登录页', async ({ page }) => {
-  await page.goto('/#/register')
-  await waitForWasm(page)
-  await expect(page.getByRole('heading', { name: '创建身份' })).toBeVisible()
-
-  await page.reload()
-
-  await expect(page).toHaveURL(/#\/login$/)
-  await expect(page.getByRole('heading', { name: '登录' })).toBeVisible()
-})
-
 test('登录页可取消或确认删除本地身份', async ({ page }) => {
   await page.evaluate((storageKey) => {
     localStorage.setItem(storageKey, JSON.stringify([{

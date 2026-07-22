@@ -29,16 +29,3 @@ export const router = createRouter({
     { path: '/:pathMatch(.*)*', redirect: '/login' },
   ],
 })
-
-// 登录态只保存在内存中。用户在登录之外的页面下拉刷新时，不保留原页面，
-// 统一回到登录页，避免注册/导入表单或已退出的应用页面被刷新后继续展示。
-let isInitialNavigation = true
-const isBrowserReload = typeof performance !== 'undefined'
-  && performance.getEntriesByType('navigation').some((entry) => (entry as PerformanceNavigationTiming).type === 'reload')
-
-router.beforeEach((to) => {
-  if (isInitialNavigation) {
-    isInitialNavigation = false
-    if (isBrowserReload && to.path !== '/login') return '/login'
-  }
-})
