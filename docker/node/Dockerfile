@@ -11,7 +11,6 @@ RUN useradd --system --create-home --uid 10001 lmnode \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /src/target/release/lm_node /usr/local/bin/lm_node
-COPY deploy/lm-node-public/config.example.json /app/config.example.json
 RUN mkdir -p /data /run/secrets \
   && chown -R lmnode:lmnode /data /run/secrets /app
 USER lmnode

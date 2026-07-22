@@ -107,36 +107,6 @@ http://<你的局域网 IP>:4173/
 http://<节点局域网 IP>:8787
 ```
 
-## Docker federation 本地验证
-
-如果本机有 `docker compose`：
-
-```bash
-LM_NODE_FEDERATION_REPORT=/tmp/lm-federation-report.json \
-  deploy/lm-node-federation/run-all.sh
-```
-
-如果没有 compose plugin，可用 direct docker fallback：
-
-```bash
-LM_NODE_FEDERATION_DIRECT_DOCKER=1 \
-MESSAGE_COUNT=10 \
-LM_NODE_FEDERATION_REPORT=/tmp/lm-federation-report.json \
-  deploy/lm-node-federation/run-all.sh
-```
-
-清理容器、网络和本地测试数据：
-
-```bash
-deploy/lm-node-federation/compose.sh clean
-```
-
-默认保留 `secrets/`。如需连 secret 一起删除：
-
-```bash
-LM_NODE_FEDERATION_CLEAN_SECRETS=1 deploy/lm-node-federation/compose.sh clean
-```
-
 ## 产物构建
 
 ### 节点 release 二进制
@@ -145,7 +115,7 @@ LM_NODE_FEDERATION_CLEAN_SECRETS=1 deploy/lm-node-federation/compose.sh clean
 ./scripts/dev-build.sh node
 ```
 
-如果后续要构建 `deploy/lm-node-public/Dockerfile` 或发布容器包，仓库会从 Docker Hub 拉取 `rust:1-bookworm` 作为 builder 基础镜像。若本机遇到拉取失败或 429 限流，通常可先重试、登录 Docker、换成已缓存的本地镜像，或在联网更稳定时重新构建。
+如果后续要构建 `docker/node/Dockerfile` 或发布容器包，仓库会从 Docker Hub 拉取 `rust:1-bookworm` 作为 builder 基础镜像。若本机遇到拉取失败或 429 限流，通常可先重试、登录 Docker、换成已缓存的本地镜像，或在联网更稳定时重新构建。
 
 ### Web 生产包
 
@@ -189,9 +159,6 @@ NODE_ADMIN_BASE=/admin/ \
 | `apps/web/dist/` | Web 生产包 | 否 |
 | `apps/node-admin/dist/` | node-admin 静态包 | 否 |
 | `.local/` | 本地 token / 临时配置 | 否 |
-| `deploy/lm-node-federation/.docker-data/` | federation 测试数据 | 否 |
-| `deploy/lm-node-federation/.docker-run/` | direct docker 运行配置 | 否 |
-| `deploy/lm-node-federation/secrets/` | federation 测试 token | 否 |
 | `node_admin.zip` | 可选的本地 `/admin/` 管理页静态包 | 不提交；不随原生 Release 发布 |
 
 提交前建议：

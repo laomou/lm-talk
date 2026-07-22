@@ -1,4 +1,0 @@
-:80 {
-  encode zstd gzip
-  reverse_proxy node-a:8787
-}

@@ -41,8 +41,6 @@
 
 ```bash
 ./scripts/release-check.sh quick
-LM_NODE_FEDERATION_REPORT=/tmp/lm-federation-report.json \
-  deploy/lm-node-federation/run-all.sh
 ```
 
 ## 完成度估计

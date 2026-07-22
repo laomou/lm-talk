@@ -41,30 +41,6 @@
 
 当前审计例外仅用于已知不可达或低相关的传递依赖路径。升级 `libp2p`、启用新特性或新增网络解析路径时，应重新检查这些例外。
 
-## Docker / federation 功能测试
-
-三节点 federation 模板位于：
-
-```text
-deploy/lm-node-federation/
-```
-
-完整 smoke / chaos / load：
-
-```bash
-LM_NODE_FEDERATION_REPORT=/tmp/lm-federation-report.json \
-  deploy/lm-node-federation/run-all.sh
-```
-
-该测试会验证：
-
-- 三个节点 `/health` 与 `/control/stats`
-- ContactCard DHT 发布与查找
-- Mailbox push/take
-- snapshot export/import
-- node outage 后恢复
-- 短 burst Mailbox 负载
-
 ## 原生节点产物
 
 推送 `v*` 标签时，`.github/workflows/release-node.yml` 会构建：
@@ -83,7 +59,7 @@ cargo build --locked --release -p lm_node --target x86_64-unknown-linux-gnu
 cp target/x86_64-unknown-linux-gnu/release/lm_node lm_node-linux-x86_64
 ```
 
-配置模板保留在仓库的 `docs/examples/lm-node.config.example.json`。容器化 HTTPS 部署请使用 GHCR 镜像和 `deploy/lm-node-public/` 的 Caddy Compose 模板。
+配置模板保留在仓库的 `docs/examples/lm-node.config.example.json`。容器部署请使用发布的 GHCR 镜像。
 
 验证已发布 tag：
 
@@ -117,21 +93,14 @@ git status --short
 ./scripts/release-check.sh quick
 ```
 
-3. 运行 Docker federation：
-
-```bash
-LM_NODE_FEDERATION_REPORT=/tmp/lm-federation-report.json \
-  deploy/lm-node-federation/run-all.sh
-```
-
-4. 如需发布原生节点产物，打 tag：
+3. 如需发布原生节点产物，打 tag：
 
 ```bash
 git tag -a v0.1.0 -m "LM Talk node v0.1.0"
 git push origin v0.1.0
 ```
 
-5. 验证 release assets：
+4. 验证 release assets：
 
 ```bash
 ./scripts/release-verify.sh v0.1.0

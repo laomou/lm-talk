@@ -206,12 +206,6 @@ LM Talk 使用多种 best-effort 路径：
 
 节点配置见 `docs/deploy/NODE_CONFIG.md`。
 
-Docker federation 模板见：
-
-```text
-deploy/lm-node-federation/
-```
-
 ## 13. 本地存储
 
 Web 使用 IndexedDB 分表保存状态。敏感字段加密，包括：
@@ -247,7 +241,6 @@ Web 提供：
 ```bash
 ./scripts/release-check.sh quick
 PATH="$PWD/.tools/node/bin:$PATH" npm --prefix apps/web run test:e2e
-LM_NODE_FEDERATION_REPORT=/tmp/lm-federation-report.json deploy/lm-node-federation/run-all.sh
 ```
 
 覆盖范围：

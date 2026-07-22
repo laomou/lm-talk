@@ -101,21 +101,6 @@ test-vectors/
 
 当前覆盖身份、备份、联系人名片、好友请求、消息加密、设备、PreKey、Ratchet、DHT、self-sync、文件、群聊和 per-device envelope。详细见 [TEST_VECTOR_COVERAGE.md](testing/TEST_VECTOR_COVERAGE.md)。
 
-## Docker / federation 测试
-
-三节点 federation 模板与测试脚本位于：
-
-```text
-deploy/lm-node-federation/
-```
-
-常用命令：
-
-```bash
-LM_NODE_FEDERATION_REPORT=/tmp/lm-federation-report.json \
-  deploy/lm-node-federation/run-all.sh
-```
-
 ## 文档维护约定
 
 - `docs/` 默认使用中文。

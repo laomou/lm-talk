@@ -24,7 +24,7 @@ ENV BUILD_REF=${BUILD_REF}
 RUN npm run build --prefix apps/web
 
 FROM caddy:2-alpine AS runtime
-COPY apps/web/Caddyfile /etc/caddy/Caddyfile
+COPY docker/web/Caddyfile /etc/caddy/Caddyfile
 COPY --from=web-builder /src/apps/web/dist /srv
 
 EXPOSE 80
