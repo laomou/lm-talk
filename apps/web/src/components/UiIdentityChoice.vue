@@ -15,15 +15,17 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <label class="ui-identity-choice" :class="{ selected }">
-    <input :checked="selected" type="radio" name="local-identity" @change="emit('select', id)" />
-    <span class="ui-identity-avatar">{{ (name || userId || '?').slice(0, 1).toUpperCase() }}</span>
-    <span class="ui-identity-copy">
-      <b>{{ name || '未命名' }}</b>
-      <small>{{ userId }}</small>
-    </span>
+  <div class="ui-identity-choice" :class="{ selected }">
+    <label class="ui-identity-select">
+      <input :checked="selected" type="radio" name="local-identity" @change="emit('select', id)" />
+      <span class="ui-identity-avatar">{{ (name || userId || '?').slice(0, 1).toUpperCase() }}</span>
+      <span class="ui-identity-copy">
+        <b>{{ name || '未命名' }}</b>
+        <small>{{ userId }}</small>
+      </span>
+    </label>
     <button class="icon-btn ui-identity-delete" type="button" title="删除本地身份" aria-label="删除本地身份" @click.prevent="emit('remove', id)">
       <UiIcon name="close" size="18" />
     </button>
-  </label>
+  </div>
 </template>

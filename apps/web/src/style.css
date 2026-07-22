@@ -236,8 +236,9 @@ button.secondary.danger:hover { background: var(--c-danger-soft); border-color: 
 .auth-field-label { margin: var(--sp-4) 0 var(--sp-2); color: var(--c-ink-2); font-size: 13px; font-weight: 600; }
 
 .identity-list { display: grid; gap: var(--sp-2); margin: var(--sp-2) 0 var(--sp-3); }
-.ui-identity-choice { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3); margin: 0; padding: 10px 12px; border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface); cursor: pointer; transition: border-color var(--transition), background var(--transition); }
+.ui-identity-choice { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--sp-2); margin: 0; padding: 10px 12px; border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface); transition: border-color var(--transition), background var(--transition); }
 .ui-identity-choice:hover, .ui-identity-choice.selected { border-color: var(--c-primary); background: var(--c-primary-soft); }
+.ui-identity-select { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: var(--sp-3); min-width: 0; cursor: pointer; }
 .ui-identity-choice input { width: auto; accent-color: var(--c-primary); }
 .ui-identity-avatar { width: 32px; height: 32px; display: grid; place-items: center; border-radius: var(--r-sm); background: var(--c-primary); color: #fff; font-size: 13px; font-weight: 700; }
 .ui-identity-copy { min-width: 0; }
