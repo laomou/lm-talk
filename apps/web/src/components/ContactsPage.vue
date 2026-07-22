@@ -2,11 +2,15 @@
 import { computed, ref } from 'vue'
 import { avatarColor } from '../avatarColor'
 import UiPageHeader from './UiPageHeader.vue'
+import { useRoute, useRouter } from 'vue-router'
 
 const props = defineProps<{ ctx: any }>()
 const keyword = ref('')
+const route = useRoute()
+const router = useRouter()
 type View = 'home' | 'friends' | 'search' | 'add' | 'detail'
 const view = ref<View>('home')
+const isSearchPage = computed(() => route.path === '/contacts/search')
 
 const requestCount = computed(() => props.ctx.visibleFriendRequests.value.length)
 const contactQuery = computed(() => keyword.value.trim().toLowerCase())
@@ -54,6 +58,7 @@ function openContact(userId: string) {
 }
 function backHome() {
   view.value = 'home'
+  void router.push('/contacts')
 }
 function addContact() {
   props.ctx.addContact()
@@ -64,12 +69,12 @@ function addContact() {
 <template>
   <div class="contacts-shell product-contacts-shell">
     <main class="detail-col contacts-wide product-contacts-main">
-      <section v-if="view === 'home'" class="detail-scroll">
+      <section v-if="view === 'home' && !isSearchPage" class="detail-scroll">
         <header class="contacts-mobile-bar">
           <span></span>
           <h2>通讯录</h2>
           <div class="header-actions icon-actions">
-            <button class="icon-btn" aria-label="搜索联系人" title="搜索联系人" @click="view = 'search'">🔍</button>
+            <button class="icon-btn" aria-label="搜索联系人" title="搜索联系人" @click="router.push('/contacts/search')">🔍</button>
             <button class="icon-btn" aria-label="添加好友" title="添加好友" @click="view = 'add'">＋</button>
           </div>
         </header>
@@ -146,7 +151,7 @@ function addContact() {
         </div>
       </section>
 
-      <section v-else-if="view === 'search'" class="detail-scroll">
+      <section v-else-if="isSearchPage" class="detail-scroll">
         <UiPageHeader back-label="返回通讯录" @back="backHome">
           <template #title><input v-model="keyword" class="subbar-search" type="search" aria-label="搜索联系人" placeholder="搜索联系人" autofocus /></template>
         </UiPageHeader>

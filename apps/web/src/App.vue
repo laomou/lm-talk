@@ -561,7 +561,13 @@ let fingerprintScanStopped = true
 const route = useRoute()
 const router = useRouter()
 const authMode = computed(() => route.path === '/register' ? 'register' : route.path === '/import' ? 'import' : 'login')
-const currentPage = computed(() => route.path === '/diagnostics' ? 'diagnostics' : route.path === '/contacts' ? 'contacts' : (route.path === '/me' || route.path === '/settings') ? 'settings' : 'chat')
+const currentPage = computed(() => route.path === '/diagnostics'
+  ? 'diagnostics'
+  : route.path.startsWith('/contacts')
+    ? 'contacts'
+    : (route.path === '/me' || route.path === '/settings')
+      ? 'settings'
+      : 'chat')
 type ToastKind = 'success' | 'error' | 'warning' | 'info'
 type ToastItem = { id: string; kind: ToastKind; text: string }
 type ConfirmDialogState = {

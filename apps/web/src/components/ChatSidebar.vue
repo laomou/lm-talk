@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { avatarColor } from '../avatarColor'
 
 const props = defineProps<{ ctx: any }>()
 const keyword = ref('')
-const searchOpen = ref(false)
+const route = useRoute()
+const router = useRouter()
+const searchOpen = computed(() => route.path === '/chat/search')
 
 function lastMessageFor(pred: (m: any) => boolean) {
   let last: any = null
@@ -75,7 +78,7 @@ function select(it: any) {
     <header class="list-col-header product-chat-list-header">
       <span></span>
       <h2>聊天</h2>
-      <button class="icon-btn" aria-label="搜索聊天" title="搜索聊天" @click="searchOpen = true">🔍</button>
+      <button class="icon-btn" aria-label="搜索聊天" title="搜索聊天" @click="router.push('/chat/search')">🔍</button>
     </header>
     <section class="conversation-list only-conversations">
       <button
@@ -114,7 +117,7 @@ function select(it: any) {
 
   <aside v-else class="sidebar wechat-sidebar chat-search-page">
     <header class="list-col-header product-chat-search-header">
-      <button class="back-btn" aria-label="返回聊天" @click="searchOpen = false">‹</button>
+      <button class="back-btn" aria-label="返回聊天" @click="router.push('/chat')">‹</button>
       <input v-model="keyword" type="search" aria-label="搜索聊天" placeholder="搜索聊天" autofocus />
     </header>
     <section class="conversation-list only-conversations">

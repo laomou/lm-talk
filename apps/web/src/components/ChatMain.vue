@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import UiPageHeader from './UiPageHeader.vue'
+import { useRoute, useRouter } from 'vue-router'
 
 const props = defineProps<{ ctx: any }>()
+const route = useRoute()
+const router = useRouter()
 const contactName = (userId: string) => props.ctx.contacts.value.find((c: any) => c.user_id === userId)?.display_name || userId
 const messageSearch = ref('')
-const messageSearchOpen = ref(false)
+const messageSearchOpen = computed(() => route.path === '/chat/search/messages')
 const composerPanel = ref<'none' | 'attach' | 'emoji'>('none')
 const fileInput = ref<HTMLInputElement | null>(null)
 const composerTextarea = ref<HTMLTextAreaElement | null>(null)
@@ -187,13 +190,13 @@ function sendAndClose() {
           class="icon-btn"
           :aria-label="messageSearchOpen ? '关闭会话内搜索' : '搜索消息'"
           :title="messageSearchOpen ? '关闭搜索' : '搜索消息'"
-          @click="messageSearchOpen = true"
+          @click="router.push('/chat/search/messages')"
         >🔍</button>
         <button class="icon-btn" aria-label="更多" title="更多">⋯</button>
       </div>
     </header>
     <section v-if="ctx.activeContact.value && messageSearchOpen" class="chat-message-search-page">
-      <UiPageHeader back-label="返回聊天" @back="messageSearchOpen = false">
+      <UiPageHeader back-label="返回聊天" @back="router.push('/chat')">
         <template #title>
           <input v-model="messageSearch" class="subbar-search" type="search" aria-label="搜索当前会话消息" placeholder="搜索聊天记录" autofocus />
         </template>
@@ -201,7 +204,7 @@ function sendAndClose() {
       <div class="chat-message-search-results">
         <p v-if="!messageSearch" class="empty">输入关键词搜索聊天记录</p>
         <template v-else>
-          <button v-for="message in messageSearchResults" :key="message.id" class="search-message-result" @click="messageSearchOpen = false">
+          <button v-for="message in messageSearchResults" :key="message.id" class="search-message-result" @click="router.push('/chat')">
             <span>{{ message.direction === 'out' ? '我' : contactName(message.peer_user_id) }} · {{ hmTime(message.created_at) }}</span>
             <b>{{ message.text }}</b>
           </button>
