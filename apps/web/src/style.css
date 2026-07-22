@@ -834,7 +834,15 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 .pwa-update-actions { display: flex; flex: 0 0 auto; gap: var(--sp-2); }
 .pwa-update-actions button { padding: 7px 11px; white-space: nowrap; }
 
-.dialog-mask,
+.dialog-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 75;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-5);
+  background: rgba(15, 23, 42, .44);
+}
 .dialog-card {
   width: min(440px, 100%);
   background: var(--c-surface);
@@ -1013,7 +1021,7 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .debug-header { flex-direction: column; padding: var(--sp-4); }
   .debug-header button { width: 100%; }
   .diagnostic-overview { grid-template-columns: 1fr; gap: var(--sp-2); }
-  .dialog-mask,
+  .dialog-mask { padding: var(--sp-3); }
   .dialog-card { padding: var(--sp-4); }
   .pwa-update-banner {
     bottom: calc(64px + env(safe-area-inset-bottom));
