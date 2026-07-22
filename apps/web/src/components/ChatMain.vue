@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import UiPageHeader from './UiPageHeader.vue'
 import UiStatusBadge from './UiStatusBadge.vue'
+import UiNotice from './UiNotice.vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const props = defineProps<{ ctx: any }>()
@@ -214,19 +215,19 @@ function sendAndClose() {
       </div>
     </section>
 
-    <section v-if="!messageSearchOpen && !ctx.activeContact.value && !ctx.strictE2eePolicyEnabled.value" class="chat-notice-panel">
+    <UiNotice v-if="!messageSearchOpen && !ctx.activeContact.value && !ctx.strictE2eePolicyEnabled.value">
       <div class="notice-text">
         <b>建议开启严格 E2EE</b>
         <span>新身份建议先启用指纹核验和安全收发策略，再开始添加联系人和发送消息。</span>
         <span>{{ ctx.strictE2eeReadiness.value.text }}</span>
       </div>
-      <div class="row compact">
+      <template #actions>
         <button class="secondary" @click="ctx.enableStrictE2eePolicy">一键严格 E2EE</button>
         <button class="secondary" @click="ctx.goSettingsPage">查看安全策略</button>
-      </div>
-    </section>
+      </template>
+    </UiNotice>
 
-    <section v-if="!messageSearchOpen && ctx.activeContact.value && ctx.activeContact.value.state !== 'Friend'" class="chat-notice-panel">
+    <UiNotice v-if="!messageSearchOpen && ctx.activeContact.value && ctx.activeContact.value.state !== 'Friend'">
       <div v-if="ctx.activeContact.value.state === 'RequestSent'" class="notice-text">
         <b>好友请求已发送</b>
         <span>等待对方通过后即可聊天。</span>
@@ -240,16 +241,15 @@ function sendAndClose() {
         <span v-if="ctx.activeContact.value.last_friend_request_error">上次发送失败：{{ ctx.activeContact.value.last_friend_request_error }}</span>
         <span v-else>发送好友请求，对方通过后即可开始聊天。</span>
       </div>
-      <div class="row compact">
+      <template #actions>
         <button v-if="ctx.activeContact.value.state === 'RequestSent'" class="secondary" @click="ctx.createFriendRequestForActive">重新发送</button>
         <button v-if="ctx.activeContact.value.state !== 'RequestSent' && ctx.activeContact.value.state !== 'Blocked'" @click="ctx.createFriendRequestForActive">发送好友请求</button>
         <button v-if="ctx.activeContact.value.last_friend_request_error" class="secondary" @click="ctx.clearActiveFriendRequestError">清除请求错误</button>
         <button v-if="ctx.activeContact.value.state === 'Blocked'" @click="ctx.unblockActiveContact">解除拉黑</button>
-      </div>
+      </template>
+    </UiNotice>
 
-    </section>
-
-    <section v-if="!messageSearchOpen && ctx.activeContact.value?.state === 'Friend' && ctx.activeStrictE2eeSendRiskText.value" class="chat-notice-panel">
+    <UiNotice v-if="!messageSearchOpen && ctx.activeContact.value?.state === 'Friend' && ctx.activeStrictE2eeSendRiskText.value" tone="warning">
       <div class="notice-text">
         <b>发送前严格 E2EE 风险</b>
         <span v-if="ctx.activeStrictE2eeSendBlockingText.value" class="danger-text">{{ ctx.activeStrictE2eeSendBlockingText.value }}</span>
@@ -257,12 +257,12 @@ function sendAndClose() {
         <span>{{ ctx.activeStrictE2eeSendRiskText.value }}</span>
         <span>建议先核验指纹并刷新联系人安全信息。</span>
       </div>
-      <div class="row compact">
+      <template #actions>
         <button class="secondary" @click="ctx.enableStrictE2eePolicy">一键严格 E2EE</button>
         <button class="secondary" @click="ctx.findActiveContactContactCard">刷新 ContactCard</button>
         <button v-if="!ctx.activeContact.value.fingerprint_verified_at" class="secondary" @click="ctx.showActiveContactFingerprintQr">指纹核验码</button>
-      </div>
-    </section>
+      </template>
+    </UiNotice>
 
 
 

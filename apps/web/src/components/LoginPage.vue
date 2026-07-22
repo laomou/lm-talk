@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import UiNotice from './UiNotice.vue'
 
 type LocalIdentityRecord = {
   id: string
@@ -177,7 +178,7 @@ function resetRegister() {
             <li>把提示词保存在密码管理器或离线安全位置。</li>
             <li>可选：点击“验证导入”确认备份可恢复。</li>
           </ol>
-          <p class="backup-warning">身份文件和提示词缺一不可；任意一项丢失都无法恢复这个身份。</p>
+          <UiNotice class="backup-warning">身份文件和提示词缺一不可；任意一项丢失都无法恢复这个身份。</UiNotice>
           <div v-if="registeredBackupChecksum" class="backup-checksum">
             <span>备份校验码</span>
             <b>{{ registeredBackupChecksum }}</b>
@@ -195,7 +196,7 @@ function resetRegister() {
         <template v-else>
           <label for="register-passphrase">提示词</label>
           <textarea id="register-passphrase" v-model="passphrase" rows="2" aria-label="注册提示词" placeholder="设置你的提示词" />
-          <p class="backup-warning">提示词不会上传或找回；注册后请下载身份文件。</p>
+          <UiNotice class="backup-warning">提示词不会上传或找回；注册后请下载身份文件。</UiNotice>
           <div class="row auth-actions">
             <button @click="$emit('create')">注册</button>
           </div>
@@ -206,7 +207,7 @@ function resetRegister() {
       <section v-else class="auth-panel import-page">
         <label for="import-passphrase">提示词</label>
         <textarea id="import-passphrase" v-model="passphrase" rows="2" aria-label="导入身份提示词" placeholder="输入身份对应提示词" />
-        <p class="backup-warning">导入需要身份文本和对应提示词；提示词错误或丢失时无法恢复。</p>
+        <UiNotice class="backup-warning">导入需要身份文本和对应提示词；提示词错误或丢失时无法恢复。</UiNotice>
         <label for="import-backup-text">身份文本</label>
         <textarea id="import-backup-text" v-model="backupText" rows="6" aria-label="导入身份文本" placeholder="粘贴导出的身份文本" />
         <div v-if="importBackupChecksum" class="backup-checksum compact-checksum">
