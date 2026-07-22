@@ -251,20 +251,6 @@ function sendAndClose() {
       </template>
     </UiNotice>
 
-    <UiNotice v-if="!messageSearchOpen && ctx.activeContact.value?.state === 'Friend' && ctx.activeStrictE2eeSendRiskText.value" tone="warning">
-      <div class="notice-text">
-        <b>发送前严格 E2EE 风险</b>
-        <span v-if="ctx.activeStrictE2eeSendBlockingText.value" class="danger-text">{{ ctx.activeStrictE2eeSendBlockingText.value }}</span>
-        <span v-else>非阻塞提醒：核心条件已满足，但仍建议修复下列新鲜度/确认状态。</span>
-        <span>{{ ctx.activeStrictE2eeSendRiskText.value }}</span>
-        <span>建议先核验指纹并刷新联系人安全信息。</span>
-      </div>
-      <template #actions>
-        <button class="secondary" @click="ctx.enableStrictE2eePolicy">一键严格 E2EE</button>
-        <button class="secondary" @click="ctx.findActiveContactContactCard">刷新 ContactCard</button>
-        <button v-if="!ctx.activeContact.value.fingerprint_verified_at" class="secondary" @click="ctx.showActiveContactFingerprintQr">指纹核验码</button>
-      </template>
-    </UiNotice>
 
 
 
