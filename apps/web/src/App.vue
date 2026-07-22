@@ -1725,13 +1725,14 @@ function userFacingError(e: unknown): string {
   return raw
 }
 
-function run(label: string, fn: () => void) {
+function run(label: string, fn: () => void, onError?: (message: string) => boolean | void) {
   try {
     fn()
     appendLog(`✅ ${label}`)
   } catch (e) {
     const message = userFacingError(e)
     appendLog(`❌ ${label}: ${message}`)
+    if (onError?.(message)) return
     showAlert(label, message, 'error')
   }
 }
@@ -4214,7 +4215,7 @@ function createIdentityAndEnter() {
 }
 
 function restoreAndEnter() {
-  try {
+  run('登录', () => {
     if (!backupText.value.trim()) throw new Error('请粘贴身份备份包')
     if (!passphrase.value.trim()) throw new Error('请输入提示词')
     const loginBackup = backupText.value
@@ -4240,16 +4241,13 @@ function restoreAndEnter() {
         appendLog(`❌ 登录失败：${message}`)
         showAlert('登录失败', message, 'error')
       })
-    appendLog('✅ 登录')
-  } catch (e) {
-    const message = userFacingError(e)
-    appendLog(`❌ 登录: ${message}`)
+  }, (message) => {
     if (message === '提示词不正确，请重新输入。') {
       showAlert('登录失败', message, 'error', { actionLabel: '重新输入', action: focusLoginPassphrase })
-      return
+      return true
     }
-    showAlert('登录', message, 'error')
-  }
+    return false
+  })
 }
 
 function exportMyCard() {
