@@ -255,6 +255,15 @@ type ChatMessage = {
   created_at: number
 }
 
+type OutgoingMessageJob = {
+  id: string
+  message_id: string
+  peer_user_id: string
+  conversation_id: string
+  text: string
+  created_at: number
+}
+
 
 type PerDeviceEnvelopeV1 = {
   type: 'lm-per-device-envelope-v1'
@@ -677,6 +686,8 @@ const groupInvites = ref<GroupInviteItem[]>([])
 const groupSenderKeys = ref<GroupSenderKeyItem[]>([])
 const messages = ref<ChatMessage[]>([])
 const outbox = ref<OutboxItem[]>([])
+const outgoingMessageQueue: OutgoingMessageJob[] = []
+let outgoingMessageQueueRunning = false
 const ratchetSessions = ref<RatchetSessionItem[]>([])
 const processedMailboxIds = ref<ProcessedMailboxRecord[]>([])
 const mailboxFailedItems = ref<MailboxFailedItem[]>([])
@@ -4246,8 +4257,8 @@ async function restoreAndEnter() {
     void afterLoginAutomation()
   } catch (e) {
     const message = userFacingError(e)
-    appendLog(`❌ 登录: ${message}`)
-    showAlert('登录', message, 'error')
+    appendLog(`❌ 登录失败: ${message}`)
+    showAlert('登录失败', message, 'error')
   } finally {
     loginPending.value = false
   }
@@ -5883,6 +5894,72 @@ async function sendGroupFanoutPayloads(group: GroupItem, fanout: Array<{ to_user
   if (msg) msg.status = failedCount > 0 ? 'failed' : queuedCount > 0 ? 'queued' : 'mailbox'
   appendLog(`群消息发送完成：已发送 ${mailboxCount}，待发送 ${queuedCount}，失败 ${failedCount}`)
   persist()
+}
+
+function enqueueOutgoingMessage(job: OutgoingMessageJob) {
+  outgoingMessageQueue.push(job)
+  void drainOutgoingMessageQueue()
+}
+
+async function drainOutgoingMessageQueue() {
+  if (outgoingMessageQueueRunning) return
+  outgoingMessageQueueRunning = true
+  try {
+    while (outgoingMessageQueue.length) {
+      const job = outgoingMessageQueue.shift()!
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
+      await processOutgoingMessageJob(job)
+    }
+  } finally {
+    outgoingMessageQueueRunning = false
+  }
+}
+
+async function processOutgoingMessageJob(job: OutgoingMessageJob) {
+  const msg = messages.value.find((item) => item.id === job.message_id)
+  if (!msg) return
+  const contact = contacts.value.find((item) => item.user_id === job.peer_user_id)
+  if (!contact || contact.state === 'Blocked' || contact.state !== 'Friend') {
+    msg.status = 'failed'
+    appendLog(`❌ 消息发送失败：${contact ? '联系人状态不可发送' : '联系人不存在'}`)
+    persist()
+    return
+  }
+  try {
+    const envelope = encryptEnvelopeForContact(contact, job.conversation_id, job.text)
+    const targetDeviceIds = contactActiveDeviceIds(contact)
+    const perDeviceEnvelope = createPerDeviceEnvelopeDraft(contact, job.conversation_id, envelope)
+    if (perDeviceEnvelope) {
+      perDeviceEnvelopeSentCount.value += 1
+      lastPerDeviceEnvelopeAt.value = Date.now()
+    }
+    msg.envelope_json = envelope
+    msg.protocol_message_id = messageProtocolIdFromEnvelope(envelope)
+    msg.target_device_ids = targetDeviceIds
+    msg.per_device_envelope_json = perDeviceEnvelope
+    msg.per_device_envelope_version = perDeviceEnvelope ? 1 : undefined
+    const deliveryPayload = perDeviceEnvelope ?? envelope
+    inboundEnvelopeText.value = deliveryPayload
+    if (dc && dc.readyState === 'open' && activePeerId.value === contact.user_id) {
+      sendRtcText(deliveryPayload, '消息')
+      msg.status = 'sent'
+      appendLog(perDeviceEnvelope ? '✅ 分设备 envelope 已发送' : '✅ 消息已发送')
+      persist()
+      return
+    }
+    if (nodeEnabled.value) {
+      appendLog(perDeviceEnvelope ? '正在通过消息同步发送分设备 envelope' : '正在通过消息同步发送')
+      await tryMailboxDeliveryForMessage(contact, deliveryPayload, msg)
+      return
+    }
+    outbox.value.push(createOutboxItem(contact, deliveryPayload, msg.id, 'direct-envelope'))
+    appendLog('未开启消息同步，消息已暂存，开启同步后会自动重发')
+    persist()
+  } catch (error) {
+    msg.status = 'failed'
+    appendLog(`❌ 消息发送失败：${userFacingError(error)}`)
+    persist()
+  }
 }
 
 async function sendMessage() {
