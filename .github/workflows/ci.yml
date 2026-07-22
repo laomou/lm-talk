@@ -104,13 +104,17 @@ jobs:
         working-directory: apps/web
         run: npm ci
 
+      - name: Build Wasm
+        working-directory: apps/web
+        run: npm run build:wasm
+
       - name: Check types
         working-directory: apps/web
-        run: npm run typecheck
+        run: npx vue-tsc --noEmit
 
       - name: Build production web app
         working-directory: apps/web
-        run: npm run build
+        run: npx vite build
 
       - name: Install Playwright browser
         working-directory: apps/web
