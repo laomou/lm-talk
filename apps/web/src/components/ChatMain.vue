@@ -14,6 +14,7 @@ const contactName = (userId: string) => props.ctx.contacts.value.find((c: any) =
 const messageSearch = ref('')
 const messageSearchOpen = computed(() => route.path === '/chat/search/messages')
 const composerPanel = ref<'none' | 'attach' | 'emoji'>('none')
+const sendPending = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 const composerTextarea = ref<HTMLTextAreaElement | null>(null)
 const emojis = ['😀', '😃', '😄', '😁', '🙂', '😉', '😊', '😍', '👍', '👏', '🙏', '💪', '🎉', '❤️', '🔥', '✅']
@@ -147,7 +148,7 @@ watch(
 function onComposerKeydown(e: KeyboardEvent) {
   if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return
   e.preventDefault()
-  props.ctx.sendMessage()
+  scheduleSend()
 }
 function trustText(contact: any) {
   return contact?.fingerprint_verified_at ? '✓ 已核验' : '⚠️ 未核验'
@@ -175,9 +176,21 @@ function onHiddenFileChange(event: Event) {
   props.ctx.onFileSelected(event)
   composerPanel.value = 'none'
 }
-function sendAndClose() {
-  props.ctx.sendMessage()
+function scheduleSend() {
+  if (sendPending.value || !props.ctx.composerText.value.trim()) return
+  sendPending.value = true
   composerPanel.value = 'none'
+  window.requestAnimationFrame(() => {
+    window.setTimeout(() => {
+      Promise.resolve(props.ctx.sendMessage()).finally(() => {
+        sendPending.value = false
+      })
+    }, 0)
+  })
+}
+
+function sendAndClose() {
+  scheduleSend()
 }
 </script>
 
@@ -330,7 +343,7 @@ function sendAndClose() {
         <button class="composer-icon" aria-label="添加附件" @click="togglePanel('attach')"><UiIcon name="add" /></button>
         <textarea ref="composerTextarea" v-model="ctx.composerText.value" rows="1" aria-label="输入消息" placeholder="输入消息…" @keydown="onComposerKeydown" />
         <button class="composer-icon" aria-label="选择 Emoji" @click="togglePanel('emoji')"><UiIcon name="smile" /></button>
-        <button class="send-icon" :disabled="!ctx.composerText.value.trim()" aria-label="发送" @click="sendAndClose"><UiIcon name="send" /></button>
+        <button class="send-icon" :disabled="!ctx.composerText.value.trim() || sendPending" aria-label="发送" @click="sendAndClose"><UiIcon name="send" /></button>
       </div>
       <div v-if="composerPanel === 'attach'" class="composer-panel attachment-panel">
         <button class="panel-choice" @click="chooseFile('image')">图片</button>
