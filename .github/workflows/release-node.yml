@@ -150,11 +150,6 @@ jobs:
           workspaces: .
           key: release-node-${{ matrix.target }}-${{ matrix.package_name }}
 
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-
       - name: Build native node
         shell: bash
         run: |
@@ -177,21 +172,30 @@ jobs:
           "$BIN" > lm_node_help.txt 2>&1
           grep -q "LM Talk" lm_node_help.txt
 
-      - name: Package native node
-        run: >-
-          python scripts/release-package.py
-          --target ${{ matrix.target }}
-          --package-name ${{ matrix.package_name }}
-          --cargo-features "${{ matrix.cargo_features }}"
-          --out-dir dist
-
-      - name: Create signing evidence report
+      - name: Stage native node binary
         shell: bash
-        run: >-
-          ./scripts/release-signing.sh
-          --target ${{ matrix.target }}
-          --package-name ${{ matrix.package_name }}
-          --out dist/${{ matrix.package_name }}-signing-evidence.json
+        run: |
+          set -euo pipefail
+          BIN="target/${{ matrix.target }}/release/lm_node"
+          OUT="dist/${{ matrix.package_name }}"
+          if [[ "${{ matrix.target }}" == *"windows"* || "${{ matrix.target }}" == *"msvc"* ]]; then
+            BIN="${BIN}.exe"
+            OUT="${OUT}.exe"
+          fi
+          mkdir -p dist
+          cp "$BIN" "$OUT"
+          python3 - <<'PY' "$OUT"
+          import hashlib
+          import pathlib
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          digest = hashlib.sha256(path.read_bytes()).hexdigest()
+          path.with_name(f"{path.name}.sha256").write_text(
+              f"{digest}  {path.name}\n",
+              encoding="utf-8",
+          )
+          PY
 
       - name: Upload release package
         uses: actions/upload-artifact@v7
@@ -229,20 +233,20 @@ jobs:
 
           This release publishes native `lm_node` binaries for:
 
-          - Linux x86_64: `lm_node-linux-x86_64.tar.gz`
-          - macOS Intel: `lm_node-macos-x86_64.tar.gz`
-          - macOS Apple Silicon: `lm_node-macos-arm64.tar.gz`
-          - Windows x86_64: `lm_node-windows-x86_64.zip`
+          - Linux x86_64: `lm_node-linux-x86_64`
+          - macOS Intel: `lm_node-macos-x86_64`
+          - macOS Apple Silicon: `lm_node-macos-arm64`
+          - Windows x86_64: `lm_node-windows-x86_64.exe`
 
           Verify downloads with `SHA256SUMS.txt` or the per-artifact `.sha256` files.
 
-          Each archive intentionally contains only the native `lm_node` binary and `node.config.example.json`. The same tag also publishes multi-architecture containers: `ghcr.io/laomou/lm-talk-node` and `ghcr.io/laomou/lm-talk-web`. For node HTTPS deployment, use the Caddy Compose template under `deploy/lm-node-public/`.
+          Each native asset is the platform binary only — no archive, config file, node-admin bundle, or release metadata is included. The same tag also publishes multi-architecture containers: `ghcr.io/laomou/lm-talk-node` and `ghcr.io/laomou/lm-talk-web`. For node HTTPS deployment, use the Caddy Compose template under `deploy/lm-node-public/`.
 
-          Config: copy `node.config.example.json`, edit it, and run `lm_node serve-control --config-file node.json`. Field reference is in `docs/NODE_CONFIG.md`.
+          Config: use `docs/examples/lm-node.config.example.json` as a starter, then run `lm_node serve-control --config-file node.json`. Field reference is in `docs/NODE_CONFIG.md`.
 
           Storage note: the node's `state_db` holds relay/mailbox operating state — offline message deliveries are already end-to-end ciphertext, and prekey/public-peer/DHT records are public by design. State is stored as plaintext; for disk-at-rest protection use full-disk encryption (LUKS/dm-crypt).
 
-          Security note: these artifacts are automated CI builds. macOS notarization and Windows code signing are scaffolded as evidence reports but not yet implemented; keep unsigned / non-notarized artifacts as a release blocker for a production-trust distribution channel. Review `*-signing-evidence.json` for each artifact.
+          Security note: these artifacts are automated CI builds. macOS notarization and Windows code signing are not yet implemented; keep unsigned / non-notarized artifacts as a release blocker for a production-trust distribution channel.
           EOF
 
       - name: Publish release
