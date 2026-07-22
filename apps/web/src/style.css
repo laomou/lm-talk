@@ -679,6 +679,7 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 .detail-hero-text small { display: block; margin-top: var(--sp-1); overflow-wrap: anywhere; }
 .detail-body { padding: var(--sp-5) var(--sp-6); display: grid; gap: var(--sp-4); max-width: 720px; }
 .detail-body.narrow { max-width: 520px; }
+.friend-requests-body { width: 100%; margin-inline: auto; }
 .detail-actions { margin: 0; }
 .detail-empty { flex: 1 1 auto; display: grid; place-content: center; color: var(--c-ink-3); font-size: 14px; }
 
