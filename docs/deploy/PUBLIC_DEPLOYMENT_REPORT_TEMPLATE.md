@@ -71,13 +71,6 @@
 
 ## Federation smoke / chaos / load
 
-可运行：
-
-```bash
-LM_NODE_FEDERATION_REPORT=/tmp/lm-federation-report.json \
-  deploy/lm-node-federation/run-all.sh
-```
-
 记录：
 
 | 测试 | 参数 | 结果 | 报告 |

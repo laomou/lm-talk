@@ -44,7 +44,7 @@ LM Talk 是一个去中心化端到端加密即时通讯系统，包含：
 | WASM | `crates/lm_wasm/src` | JS/WASM 边界、错误映射、sealed slot API。 |
 | Web 客户端 | `apps/web/src` | strict E2EE、IndexedDB、备份、自同步、UI 风险提示。 |
 | 原生节点 | `crates/lm_node/src` | 控制面、Mailbox、DHT、PreKey、snapshot、metrics。 |
-| 部署 | `deploy/` | Docker、Caddy、secret、CORS、节点拓扑。 |
+| 容器 | `docker/` | 镜像构建定义。 |
 | 测试 | `tests/`, `test-vectors/` | Web E2E、节点 E2E、协议向量、fuzz harness。 |
 
 ## 建议命令
@@ -53,7 +53,6 @@ LM Talk 是一个去中心化端到端加密即时通讯系统，包含：
 ./scripts/release-check.sh quick
 ./scripts/check-audit.sh
 ./scripts/fuzz-smoke.sh
-LM_NODE_FEDERATION_REPORT=/tmp/lm-federation-report.json deploy/lm-node-federation/run-all.sh
 ```
 
 ## 高优先级问题

@@ -59,7 +59,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: deploy/lm-node-public/Dockerfile
+          file: docker/node/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -101,7 +101,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: apps/web/Dockerfile
+          file: docker/web/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
@@ -240,7 +240,7 @@ jobs:
 
           Verify downloads with `SHA256SUMS.txt` or the per-artifact `.sha256` files.
 
-          Each native asset is the platform binary only — no archive, config file, node-admin bundle, or release metadata is included. The same tag also publishes multi-architecture containers: `ghcr.io/laomou/lm-talk-node` and `ghcr.io/laomou/lm-talk-web`. For node HTTPS deployment, use the Caddy Compose template under `deploy/lm-node-public/`.
+          Each native asset is the platform binary only — no archive, config file, node-admin bundle, or release metadata is included. The same tag also publishes multi-architecture containers: `ghcr.io/laomou/lm-talk-node` and `ghcr.io/laomou/lm-talk-web`.
 
           Config: use `docs/examples/lm-node.config.example.json` as a starter, then run `lm_node serve-control --config-file node.json`. Field reference is in `docs/NODE_CONFIG.md`.
 

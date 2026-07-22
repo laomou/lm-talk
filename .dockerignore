@@ -11,10 +11,6 @@
 *.log
 node_admin.zip
 __pycache__
-/deploy/lm-node-federation/.docker-data
-/deploy/lm-node-federation/.docker-run
-/deploy/lm-node-federation/secrets
-/deploy/lm-node-federation/federation-report.json
 /apps/web/test-results
 /apps/node-admin/test-results
 /test-results

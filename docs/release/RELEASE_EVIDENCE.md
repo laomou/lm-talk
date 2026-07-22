@@ -25,7 +25,6 @@
 
 | 检查 | 证据 | 状态 |
 | --- | --- | --- |
-| 三节点启动 | `deploy/lm-node-federation/run-all.sh` |  |
 | basic smoke | `federation-report.json` |  |
 | chaos smoke | `federation-report.json` |  |
 | load smoke | `federation-report.json` |  |

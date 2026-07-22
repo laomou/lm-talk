@@ -35,7 +35,6 @@
 
 ## 部署步骤
 
-1. 以 `deploy/lm-node-public` 或 `deploy/lm-node-federation` 为模板。
 2. 生成密钥文件：
 
 ```bash
@@ -64,12 +63,6 @@ chmod 600 secrets/*
 
 ```bash
 docker compose up -d --build
-```
-
-5. 验证本地三节点模板：
-
-```bash
-deploy/lm-node-federation/run-all.sh
 ```
 
 ## 验证命令

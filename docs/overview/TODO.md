@@ -15,7 +15,6 @@
 
 ### 1. Docker federation 测试稳定化
 
-- [x] 三节点 federation smoke/chaos/load 脚本迁移到 `deploy/lm-node-federation/`。
 - [x] Docker federation 已能跑通 basic / chaos / load。
 - [x] 在没有 `docker compose` plugin 的环境中支持 direct docker fallback，并在文档中说明。
 - [x] `compose.sh clean` 可清理 direct docker fallback 的临时目录和本地测试产物。
@@ -94,5 +93,4 @@
 ```bash
 ./scripts/release-check.sh quick
 PATH="$PWD/.tools/node/bin:$PATH" npm --prefix apps/web run test:e2e
-LM_NODE_FEDERATION_REPORT=/tmp/lm-federation-report.json deploy/lm-node-federation/run-all.sh
 ```
