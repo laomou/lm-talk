@@ -2006,7 +2006,11 @@ mod tests {
             ),
             None,
         );
-        assert_eq!(derived_contact_card.status, 200, "{}", derived_contact_card.body);
+        assert_eq!(
+            derived_contact_card.status, 200,
+            "{}",
+            derived_contact_card.body
+        );
         let body: serde_json::Value = serde_json::from_str(&derived_contact_card.body).unwrap();
         assert_eq!(
             body["key"],
