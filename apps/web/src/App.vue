@@ -8956,7 +8956,7 @@ async function retryMailboxFailedItem(id: string) {
 }
 
 async function recoverSyncFailures() {
-  await runAsync('恢复同步失败', async () => {
+  await runAsync('重试失败项', async () => {
     const actions: string[] = []
     const results: string[] = []
     if (prekeyAutoErrorText.value) {
@@ -8987,9 +8987,9 @@ async function recoverSyncFailures() {
       actions.push('轻量自同步')
       results.push('轻量自同步已补发')
     }
-    syncRecoveryStatusText.value = results.length ? results.join('；') : '没有需要恢复的同步失败'
+    syncRecoveryStatusText.value = results.length ? results.join('；') : '没有需要重试的失败项'
     syncRecoveryHistory.value = [syncRecoveryStatusText.value, ...syncRecoveryHistory.value].slice(0, 5)
-    appendLog(actions.length ? `已恢复同步失败：${actions.join('、')}` : '没有需要恢复的同步失败')
+    appendLog(actions.length ? `已重试失败项：${actions.join('、')}` : '没有需要重试的失败项')
     persist()
   })
 }
