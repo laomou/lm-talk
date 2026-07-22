@@ -21,6 +21,9 @@ const emit = defineEmits<{ close: [] }>()
       :aria-label="title"
     >
       <header class="dialog-card-header">
+        <span class="dialog-kind-icon" :class="kind" aria-hidden="true">
+          {{ kind === 'success' ? '✓' : kind === 'warning' ? '!' : kind === 'error' ? '×' : 'i' }}
+        </span>
         <h2>{{ title }}</h2>
         <button class="icon-btn" aria-label="关闭对话框" title="关闭" @click="emit('close')">×</button>
       </header>
