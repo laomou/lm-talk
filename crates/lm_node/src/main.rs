@@ -1996,6 +1996,24 @@ mod tests {
         );
         assert_eq!(body["found"], false);
 
+        let derived_contact_card = handle_control_dht_find_value_run(
+            &mut node,
+            &[],
+            DhtRunnerConfig::default(),
+            &format!(
+                "/api/dht/find-value?kind=contact-card&value={}&limit=8&max_peers=2",
+                target_identity.user_id()
+            ),
+            None,
+        );
+        assert_eq!(derived_contact_card.status, 200, "{}", derived_contact_card.body);
+        let body: serde_json::Value = serde_json::from_str(&derived_contact_card.body).unwrap();
+        assert_eq!(
+            body["key"],
+            DhtRecordKey::for_contact_card(target_identity.user_id()).to_hex()
+        );
+        assert_eq!(body["found"], false);
+
         let found_record = DhtRecord::mailbox_hint(
             target_identity.user_id(),
             "mailbox://control-found".into(),
