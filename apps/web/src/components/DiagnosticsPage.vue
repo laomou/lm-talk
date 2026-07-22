@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import UiCard from './UiCard.vue'
+import UiActionGroup from './UiActionGroup.vue'
 
 const props = defineProps<{ ctx: any }>()
 const diagnosticReport = ref('')
@@ -232,12 +233,12 @@ async function runDiagnostics() {
           <input v-model="diagnosticSummaryOnly" type="checkbox" />
           只生成摘要报告
         </label>
-        <div class="row compact">
+        <UiActionGroup>
           <button @click="runDiagnostics">生成诊断报告</button>
           <button class="secondary" :disabled="!diagnosticReport" @click="ctx.copyText(diagnosticReport, '诊断报告')">复制报告</button>
           <button class="secondary" :disabled="!diagnosticReport" @click="showDiagnosticReport = !showDiagnosticReport">{{ showDiagnosticReport ? '隐藏预览' : '显示预览' }}</button>
           <button class="secondary" @click="ctx.syncNow">立即同步</button>
-        </div>
+        </UiActionGroup>
         <textarea v-if="diagnosticReport && showDiagnosticReport" v-model="diagnosticReport" class="mono" rows="12" readonly />
       </UiCard>
 

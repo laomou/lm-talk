@@ -6,6 +6,7 @@ import UiStatusBadge from './UiStatusBadge.vue'
 import UiCard from './UiCard.vue'
 import UiField from './UiField.vue'
 import UiSection from './UiSection.vue'
+import UiActionGroup from './UiActionGroup.vue'
 
 const props = defineProps<{ ctx: any }>()
 type MeView = 'home' | 'profile' | 'backup' | 'security' | 'sync' | 'settings' | 'about'
@@ -67,9 +68,9 @@ function backHome() {
             <button @click="ctx.refreshMyContactCard">保存</button>
           </div>
           </UiField>
-          <div class="row compact">
+          <UiActionGroup>
             <button class="secondary" @click="ctx.showQr(ctx.myContactCardText.value, '我的名片')">我的名片</button>
-          </div>
+          </UiActionGroup>
         </UiSection>
       </template>
 
@@ -80,12 +81,12 @@ function backHome() {
         </UiSection>
         <UiSection title="完整数据备份" description="加密导出本机联系人、消息和设置；可用于换设备恢复。">
           <template #actions><button class="secondary" @click="showDataBackupEditor = !showDataBackupEditor">{{ showDataBackupEditor ? '隐藏' : '显示备份' }}</button></template>
-          <div class="row compact">
+          <UiActionGroup>
             <button class="secondary" @click="ctx.exportFullDataBackup">生成备份</button>
             <button class="secondary" :disabled="!ctx.dataBackupText.value.trim()" @click="ctx.downloadText(ctx.dataBackupText.value, 'lm-talk-data-backup.txt')">下载备份</button>
             <button class="secondary" :disabled="!ctx.dataBackupText.value.trim()" @click="ctx.importFullDataBackupMerge">导入合并</button>
             <button class="secondary danger" :disabled="!ctx.dataBackupText.value.trim()" @click="ctx.importFullDataBackup">导入覆盖</button>
-          </div>
+          </UiActionGroup>
           <UiField v-if="showDataBackupEditor" label="完整数据备份文本">
             <textarea v-model="ctx.dataBackupText.value" class="mono" rows="5" aria-label="完整数据备份文本" placeholder="点击生成备份，或粘贴 lm-data-backup-v1 文本后导入" />
           </UiField>
@@ -96,11 +97,11 @@ function backHome() {
         <UiPageHeader title="安全与设备" back-label="返回我" @back="backHome" />
         <UiSection class="sync-card" title="严格 E2EE" :description="ctx.strictE2eeReadiness.value.text">
           <template #actions><UiStatusBadge :tone="ctx.strictE2eePolicyEnabled.value ? 'success' : 'neutral'">{{ ctx.strictE2eePolicyEnabled.value ? '已开启' : '未开启' }}</UiStatusBadge></template>
-          <div class="row compact">
+          <UiActionGroup>
             <button class="secondary" @click="ctx.enableStrictE2eePolicy">一键严格 E2EE</button>
             <button class="secondary" @click="ctx.showMyFingerprintQr">我的指纹核验码</button>
             <button class="secondary" @click="ctx.copyMyFingerprintProof">复制我的核验码</button>
-          </div>
+          </UiActionGroup>
         </UiSection>
         <UiSection class="sync-card" title="设备">
           <small>当前设备：{{ ctx.myDeviceId.value || '未生成' }}</small>
@@ -124,21 +125,21 @@ function backHome() {
             <textarea id="sync-service-input" v-model="ctx.nodeControlUrl.value" rows="3" aria-label="同步服务地址列表" placeholder="每行一个同步服务地址，例如：&#10;http://127.0.0.1:8787&#10;http://192.168.1.23:8787|令牌" />
           </UiField>
           <small>开启后可自动收发好友请求和离线消息。跨设备访问节点需在地址后用 <code>|令牌</code> 附上。</small>
-          <div class="row compact">
+          <UiActionGroup>
             <button class="secondary" @click="showSyncServiceEditor = !showSyncServiceEditor">{{ showSyncEditor ? '隐藏编辑' : '编辑地址' }}</button>
             <button @click="ctx.toggleNodeEnabled">{{ ctx.nodeEnabled.value ? '关闭同步' : '开启同步' }}</button>
             <button v-if="showSyncEditor" class="secondary" @click="ctx.saveNetworkSettings">保存</button>
             <button class="secondary" @click="ctx.syncNow">立即同步</button>
-          </div>
+          </UiActionGroup>
         </UiSection>
         <UiSection class="sync-card" title="待发送">
           <template #actions><UiStatusBadge :tone="pendingOutboxCount ? 'warning' : 'neutral'">{{ pendingOutboxCount }}</UiStatusBadge></template>
           <small>失败：{{ failedOutboxCount }}</small>
           <small v-if="ctx.syncFailureSummaryText.value" class="danger-text">{{ ctx.syncFailureSummaryText.value }}</small>
-          <div class="row compact">
+          <UiActionGroup>
             <button class="secondary" :disabled="!pendingOutboxCount" @click="ctx.retryAllOutbox">全部重试</button>
             <button class="secondary" @click="ctx.recoverSyncFailures">修复同步失败</button>
-          </div>
+          </UiActionGroup>
         </UiSection>
         <UiSection class="sync-card" title="诊断">
           <template #actions><button class="secondary" @click="ctx.goDiagnosticsPage">打开诊断工具</button></template>

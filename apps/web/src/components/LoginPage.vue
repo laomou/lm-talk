@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import UiNotice from './UiNotice.vue'
 import UiField from './UiField.vue'
+import UiActionGroup from './UiActionGroup.vue'
 
 type LocalIdentityRecord = {
   id: string
@@ -180,26 +181,26 @@ function resetRegister() {
             <li>把提示词保存在密码管理器或离线安全位置。</li>
             <li>可选：点击“验证导入”确认备份可恢复。</li>
           </ol>
-          <UiNotice class="backup-warning">身份文件和提示词缺一不可；任意一项丢失都无法恢复这个身份。</UiNotice>
+          <UiNotice>身份文件和提示词缺一不可；任意一项丢失都无法恢复这个身份。</UiNotice>
           <div v-if="registeredBackupChecksum" class="backup-checksum">
             <span>备份校验码</span>
             <b>{{ registeredBackupChecksum }}</b>
             <button class="secondary" @click="copyRegisteredChecksum">复制校验码</button>
           </div>
-          <div class="row compact">
+          <UiActionGroup>
             <button @click="downloadRegisteredBackup">下载身份</button>
             <button class="secondary" @click="copyRegisteredBackup">复制身份</button>
             <button class="secondary" @click="verifyRegisteredBackup">验证导入</button>
             <button class="secondary" @click="goLogin">去登录</button>
             <button @click="resetRegister">返回注册</button>
-          </div>
+          </UiActionGroup>
         </div>
 
         <template v-else>
           <UiField label="提示词" for-id="register-passphrase">
             <textarea id="register-passphrase" v-model="passphrase" rows="2" aria-label="注册提示词" placeholder="设置你的提示词" />
           </UiField>
-          <UiNotice class="backup-warning">提示词不会上传或找回；注册后请下载身份文件。</UiNotice>
+          <UiNotice>提示词不会上传或找回；注册后请下载身份文件。</UiNotice>
           <div class="row auth-actions">
             <button @click="$emit('create')">注册</button>
           </div>
@@ -211,7 +212,7 @@ function resetRegister() {
         <UiField label="提示词" for-id="import-passphrase">
           <textarea id="import-passphrase" v-model="passphrase" rows="2" aria-label="导入身份提示词" placeholder="输入身份对应提示词" />
         </UiField>
-        <UiNotice class="backup-warning">导入需要身份文本和对应提示词；提示词错误或丢失时无法恢复。</UiNotice>
+        <UiNotice>导入需要身份文本和对应提示词；提示词错误或丢失时无法恢复。</UiNotice>
         <UiField label="身份文本" for-id="import-backup-text">
           <textarea id="import-backup-text" v-model="backupText" rows="6" aria-label="导入身份文本" placeholder="粘贴导出的身份文本" />
         </UiField>
