@@ -600,6 +600,7 @@ type AlertDialogState = {
 const toasts = ref<ToastItem[]>([])
 const alertDialog = ref<AlertDialogState>({ open: false, title: '', message: '', kind: 'info' })
 const confirmDialog = ref<ConfirmDialogState>({ open: false, title: '', message: '', danger: false })
+const loginPage = ref<{ focusPassphrase: () => void } | null>(null)
 
 const MAX_TEXT_MESSAGE_BYTES = 64 * 1024
 const MAX_CONTACT_CARD_BYTES = 32 * 1024
@@ -4161,6 +4162,10 @@ function loginSelectedIdentity() {
   restoreAndEnter()
 }
 
+function focusLoginPassphrase() {
+  loginPage.value?.focusPassphrase()
+}
+
 function verifyRegisteredBackup() {
   if (!lastRegisteredIdentity.value) return
   backupText.value = lastRegisteredIdentity.value.backup_text
@@ -4209,7 +4214,7 @@ function createIdentityAndEnter() {
 }
 
 function restoreAndEnter() {
-  run('登录', () => {
+  try {
     if (!backupText.value.trim()) throw new Error('请粘贴身份备份包')
     if (!passphrase.value.trim()) throw new Error('请输入提示词')
     const loginBackup = backupText.value
@@ -4235,7 +4240,16 @@ function restoreAndEnter() {
         appendLog(`❌ 登录失败：${message}`)
         showAlert('登录失败', message, 'error')
       })
-  })
+    appendLog('✅ 登录')
+  } catch (e) {
+    const message = userFacingError(e)
+    appendLog(`❌ 登录: ${message}`)
+    if (message === '提示词不正确，请重新输入。') {
+      showAlert('登录失败', message, 'error', { actionLabel: '重新输入', action: focusLoginPassphrase })
+      return
+    }
+    showAlert('登录', message, 'error')
+  }
 }
 
 function exportMyCard() {
@@ -9554,6 +9568,7 @@ const appContext = {
 
 <template>
   <LoginPage
+    ref="loginPage"
     v-if="!ready || !loggedIn"
     :ready="ready"
     :logged-in="loggedIn"

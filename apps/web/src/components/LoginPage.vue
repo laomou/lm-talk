@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import UiNotice from './UiNotice.vue'
 import UiField from './UiField.vue'
@@ -42,6 +42,7 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const hasLocalIdentity = computed(() => props.localIdentities.length > 0)
+const passphraseInput = ref<HTMLTextAreaElement | null>(null)
 
 function goRegister() {
   void router.push('/register')
@@ -59,6 +60,13 @@ function login() {
   emit('login')
 }
 
+function focusPassphrase() {
+  void nextTick(() => {
+    passphraseInput.value?.focus()
+    passphraseInput.value?.select()
+  })
+}
+
 function downloadRegisteredBackup() {
   if (!props.registeredIdentity) return
   const blob = new Blob([props.registeredIdentity.backup_text], { type: 'text/plain;charset=utf-8' })
@@ -70,6 +78,7 @@ function downloadRegisteredBackup() {
   URL.revokeObjectURL(url)
 }
 
+defineExpose({ focusPassphrase })
 
 </script>
 
@@ -88,7 +97,7 @@ function downloadRegisteredBackup() {
 
       <section v-if="props.mode === 'login'" class="auth-panel">
         <UiField label="提示词" for-id="login-passphrase">
-          <textarea id="login-passphrase" v-model="passphrase" rows="2" aria-label="登录提示词" placeholder="输入你的提示词" autofocus />
+          <textarea ref="passphraseInput" id="login-passphrase" v-model="passphrase" rows="2" aria-label="登录提示词" placeholder="输入你的提示词" autofocus />
         </UiField>
 
         <p class="auth-field-label">选择身份</p>
