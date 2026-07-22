@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted } from 'vue'
 import UiIcon from './UiIcon.vue'
 
 withDefaults(defineProps<{
@@ -11,6 +12,13 @@ withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{ close: [] }>()
+
+function closeOnEscape(event: KeyboardEvent) {
+  if (event.key === 'Escape') emit('close')
+}
+
+onMounted(() => window.addEventListener('keydown', closeOnEscape))
+onBeforeUnmount(() => window.removeEventListener('keydown', closeOnEscape))
 </script>
 
 <template>
