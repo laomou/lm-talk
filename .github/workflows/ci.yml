@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  code-format:
+  code:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,12 +20,21 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
 
-      - name: Check formatting
-        run: cargo fmt --check
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
 
-  core-tests:
+      - name: Check format, lint, and core tests
+        run: |
+          cargo fmt --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test -p lm_core
+
+  node:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -39,29 +48,14 @@ jobs:
         with:
           workspaces: .
 
-      - name: Run lm_core tests
-        run: cargo test -p lm_core
-
-  node-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: .
-
-      - name: Run lm_node tests
+      - name: Run lm_node tests and integration flows
         run: |
           cargo test -p lm_node --lib
           cargo test -p lm_node --bin lm_node
+          cargo test -p lm_node --test e2e_node_flow
+          cargo test -p lm_node --test e2e_http_control_flow
 
-  node-sync-and-api-flows:
+  wasm:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -69,35 +63,23 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: .
 
-      - name: Run node sync and HTTP control flows
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@wasm-pack
+
+      - name: Test bindings and build browser Wasm
         run: |
-          cargo test -p lm_node --test e2e_node_flow
-          cargo test -p lm_node --test e2e_http_control_flow
+          cargo test -p lm_wasm
+          wasm-pack build crates/lm_wasm --target web --out-dir ../../apps/web/src/wasm --no-opt
 
-  fuzz-harness-build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: fuzz
-
-      - name: Check fuzz harnesses compile
-        run: cargo check --manifest-path fuzz/Cargo.toml --bins --locked
-
-  web-quality:
+  web:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -130,31 +112,6 @@ jobs:
         working-directory: apps/web
         run: npm run build
 
-  web-auth-flows:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: apps/web/package-lock.json
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-
-      - name: Install wasm-pack
-        uses: taiki-e/install-action@wasm-pack
-
-      - name: Install web dependencies
-        working-directory: apps/web
-        run: npm ci
-
       - name: Install Playwright browser
         working-directory: apps/web
         run: npx playwright install --with-deps chromium
@@ -163,7 +120,7 @@ jobs:
         working-directory: apps/web
         run: npm run test:e2e
 
-  clippy:
+  fuzz:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -171,17 +128,14 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-          components: clippy
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: .
+          workspaces: fuzz
 
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Check fuzz harnesses compile
+        run: cargo check --manifest-path fuzz/Cargo.toml --bins --locked
 
   dependency-audit:
     runs-on: ubuntu-latest
