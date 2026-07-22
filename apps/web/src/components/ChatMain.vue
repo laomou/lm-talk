@@ -253,11 +253,11 @@ function sendAndClose() {
 
     <UiNotice v-if="!messageSearchOpen && ctx.activeContact.value?.state === 'Friend' && ctx.activeStrictE2eeSendRiskText.value" tone="warning">
       <div class="notice-text">
-        <b>发送前严格 E2EE 风险</b>
+        <b>{{ ctx.activeStrictE2eeSendBlockingText.value ? '发送前严格 E2EE 风险' : '联系人安全信息需刷新' }}</b>
         <span v-if="ctx.activeStrictE2eeSendBlockingText.value" class="danger-text">{{ ctx.activeStrictE2eeSendBlockingText.value }}</span>
-        <span v-else>非阻塞提醒：核心条件已满足，但仍建议修复下列新鲜度/确认状态。</span>
+        <span v-else>{{ ctx.activeContact.value.fingerprint_verified_at ? '指纹已核验；当前只是联系人安全信息可能不是最新，消息仍可发送。' : '当前是非阻塞提醒；消息仍可发送，但建议先补齐安全状态。' }}</span>
         <span>{{ ctx.activeStrictE2eeSendRiskText.value }}</span>
-        <span>建议先核验指纹并刷新联系人安全信息。</span>
+        <span>{{ ctx.activeContact.value.fingerprint_verified_at ? '建议刷新联系人安全信息，确认对方设备和撤销状态。' : '建议先核验指纹并刷新联系人安全信息。' }}</span>
       </div>
       <template #actions>
         <button class="secondary" @click="ctx.enableStrictE2eePolicy">一键严格 E2EE</button>
