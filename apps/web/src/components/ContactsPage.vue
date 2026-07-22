@@ -56,6 +56,7 @@ function backHome() {
 }
 function addContact() {
   props.ctx.addContact()
+  if (!props.ctx.addContactText.value.trim() && props.ctx.activePeerId.value) view.value = 'detail'
 }
 </script>
 

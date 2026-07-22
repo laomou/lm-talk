@@ -1211,3 +1211,62 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .pending-file-card { grid-template-columns: auto minmax(0, 1fr); }
   .pending-file-card button { grid-column: 1 / -1; }
 }
+
+/* ---- Chat page stack alignment ------------------------------------------ */
+.product-chat-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+}
+.chat-back-btn { justify-self: start; }
+.product-chat-title {
+  justify-self: center;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.product-chat-title h2 {
+  max-width: min(360px, 52vw);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.product-chat-title .trust-inline { font-size: 11px; padding: 1px 7px; }
+.product-chat-actions { justify-self: end; }
+.outbox-summary-inline {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--c-warn-ink);
+  background: var(--c-warn-bg);
+  border-radius: var(--r-pill);
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+@media (max-width: 850px) {
+  .chat-shell.has-active-chat .wechat-sidebar { display: none; }
+  .chat-shell:not(.has-active-chat) .chat-main { display: none; }
+  .chat-shell:not(.has-active-chat) .wechat-sidebar { min-height: 0; border-bottom: 0; }
+  .product-chat-header { min-height: 52px; padding: var(--sp-2) var(--sp-3); }
+  .product-chat-actions input { display: none; }
+  .product-chat-actions .secondary,
+  .outbox-summary-inline { display: none; }
+}
+
+.product-chat-list-header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+}
+.product-chat-list-header h2 { text-align: center; }
+.product-chat-list-header .icon-btn { justify-self: end; }
+
+@media (max-width: 850px) {
+  .app-shell.in-chat-detail { grid-template-rows: minmax(0, 1fr); }
+  .app-shell.in-chat-detail .app-rail { display: none; }
+  .app-shell.in-chat-detail .app-content { grid-row: 1; }
+}

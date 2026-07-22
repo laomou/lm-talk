@@ -6,7 +6,7 @@ defineProps<{ ctx: any }>()
 </script>
 
 <template>
-  <div class="chat-shell">
+  <div class="chat-shell" :class="{ 'has-active-chat': ctx.activePeerId.value }">
     <ChatSidebar :ctx="ctx" />
     <ChatMain :ctx="ctx" />
   </div>

@@ -9411,7 +9411,7 @@ const appContext = {
     @clear="clearPersisted"
   />
 
-  <main v-else class="app-shell">
+  <main v-else class="app-shell" :class="{ 'in-chat-detail': currentPage === 'chat' && activePeerId }">
     <nav class="app-rail" aria-label="主导航">
       <button class="rail-avatar" title="我" aria-label="打开我的设置" :aria-current="currentPage === 'settings' || currentPage === 'diagnostics' ? 'page' : undefined" @click="goSettingsPage">
         {{ (displayName || identity?.user_id || '?').slice(0, 1).toUpperCase() }}

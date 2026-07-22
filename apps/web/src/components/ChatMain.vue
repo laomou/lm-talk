@@ -6,6 +6,7 @@ const contactName = (userId: string) => props.ctx.contacts.value.find((c: any) =
 const messageSearch = ref('')
 const composerPanel = ref<'none' | 'attach' | 'emoji'>('none')
 const fileInput = ref<HTMLInputElement | null>(null)
+const composerTextarea = ref<HTMLTextAreaElement | null>(null)
 const emojis = ['😀', '😃', '😄', '😁', '🙂', '😉', '😊', '😍', '👍', '👏', '🙏', '💪', '🎉', '❤️', '🔥', '✅']
 
 function hmTime(ts: number) {
@@ -152,7 +153,15 @@ function trustText(contact: any) {
   return contact?.fingerprint_verified_at ? '✓ 已核验' : '⚠️ 未核验'
 }
 function appendEmoji(emoji: string) {
-  props.ctx.composerText.value = `${props.ctx.composerText.value || ''}${emoji}`
+  const el = composerTextarea.value
+  const text = props.ctx.composerText.value || ''
+  const start = el?.selectionStart ?? text.length
+  const end = el?.selectionEnd ?? start
+  props.ctx.composerText.value = `${text.slice(0, start)}${emoji}${text.slice(end)}`
+  void nextTick(() => {
+    composerTextarea.value?.focus()
+    composerTextarea.value?.setSelectionRange(start + emoji.length, start + emoji.length)
+  })
 }
 function togglePanel(panel: 'attach' | 'emoji') {
   composerPanel.value = composerPanel.value === panel ? 'none' : panel
@@ -174,15 +183,16 @@ function sendAndClose() {
 
 <template>
   <section class="chat-main clean-chat-main">
-    <header class="chat-header clean-chat-header">
+    <header class="chat-header clean-chat-header product-chat-header">
+      <button v-if="ctx.activeContact.value" class="back-btn chat-back-btn" aria-label="返回聊天列表" @click="ctx.goChatHome">‹</button>
       <div v-if="ctx.activeContact.value" class="chat-title-block product-chat-title">
-        <h2>{{ ctx.activeContact.value.display_name || '未命名联系人' }} <span class="trust-inline" :class="{ danger: !ctx.activeContact.value.fingerprint_verified_at }">{{ trustText(ctx.activeContact.value) }}</span></h2>
+        <h2>{{ ctx.activeContact.value.display_name || '未命名联系人' }}</h2>
+        <span class="trust-inline" :class="{ danger: !ctx.activeContact.value.fingerprint_verified_at }">{{ trustText(ctx.activeContact.value) }}</span>
       </div>
-      <div v-else class="chat-title-block">
-        <h2>选择一个聊天</h2>
+      <div v-else class="chat-title-block product-chat-title empty-title">
+        <h2>聊天</h2>
       </div>
       <div v-if="ctx.activeContact.value" class="chat-header-actions product-chat-actions">
-        <input v-model="messageSearch" type="search" aria-label="搜索当前聊天" placeholder="搜索消息" />
         <span v-if="activePendingOutboxCount" class="outbox-summary-inline">待发送 {{ activeQueuedOutboxCount }} · 失败 {{ activeFailedOutboxCount }}</span>
         <button v-if="activePendingOutboxCount" class="secondary" @click="ctx.flushOutboxForActive">重试</button>
         <button v-if="activePendingOutboxCount" class="secondary danger" @click="ctx.cancelOutboxForActive">取消</button>
@@ -316,7 +326,7 @@ function sendAndClose() {
       </div>
       <div class="composer-bar">
         <button class="composer-icon" aria-label="添加附件" @click="togglePanel('attach')">＋</button>
-        <textarea v-model="ctx.composerText.value" rows="1" aria-label="输入消息" placeholder="输入消息…" @keydown="onComposerKeydown" />
+        <textarea ref="composerTextarea" v-model="ctx.composerText.value" rows="1" aria-label="输入消息" placeholder="输入消息…" @keydown="onComposerKeydown" />
         <button class="composer-icon" aria-label="选择 Emoji" @click="togglePanel('emoji')">😊</button>
         <button class="send-icon" :disabled="!ctx.composerText.value.trim()" aria-label="发送" @click="sendAndClose">↑</button>
       </div>

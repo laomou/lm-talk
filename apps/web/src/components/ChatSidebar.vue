@@ -4,6 +4,7 @@ import { avatarColor } from '../avatarColor'
 
 const props = defineProps<{ ctx: any }>()
 const keyword = ref('')
+const searchOpen = ref(false)
 
 function lastMessageFor(pred: (m: any) => boolean) {
   let last: any = null
@@ -71,11 +72,13 @@ function select(it: any) {
 
 <template>
   <aside class="sidebar wechat-sidebar">
-    <header class="list-col-header">
+    <header class="list-col-header product-chat-list-header">
+      <span></span>
       <h2>聊天</h2>
+      <button class="icon-btn" aria-label="搜索聊天" title="搜索聊天" @click="searchOpen = !searchOpen">🔍</button>
     </header>
-    <div class="list-col-search">
-      <input v-model="keyword" type="search" aria-label="搜索聊天" placeholder="搜索聊天" />
+    <div v-if="searchOpen" class="list-col-search">
+      <input v-model="keyword" type="search" aria-label="搜索聊天" placeholder="搜索聊天" autofocus />
     </div>
 
     <section class="conversation-list only-conversations">
