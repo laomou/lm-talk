@@ -6373,13 +6373,22 @@ function applyFriendResponse() {
   })
 }
 
-function removeActiveContact() {
+async function removeActiveContact() {
   if (!activeContact.value) return
-  const id = activeContact.value.user_id
+  const contact = activeContact.value
+  const name = contact.display_name || contact.user_id
+  const confirmed = await showConfirm(
+    '删除好友',
+    `删除好友「${name}」？这会同时删除本机保存的聊天记录和安全会话，无法恢复。`,
+    true,
+  )
+  if (!confirmed) return
+  const id = contact.user_id
   contacts.value = contacts.value.filter((c) => c.user_id !== id)
   messages.value = messages.value.filter((m) => m.peer_user_id !== id)
   ratchetSessions.value = ratchetSessions.value.filter((r) => r.peer_user_id !== id)
   activePeerId.value = contacts.value[0]?.user_id ?? ''
+  appendLog(`已删除好友：${name}`)
   persist()
 }
 
