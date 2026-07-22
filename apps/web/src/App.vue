@@ -4670,26 +4670,16 @@ function strictE2eeSendBlockingReasons(contact: ContactItem): string[] {
 }
 
 async function confirmStrictE2eeSendRiskIfNeeded(contact: ContactItem): Promise<boolean> {
-  const riskText = contactStrictE2eeSendRiskText(contact)
-  if (!riskText) return true
-  if (strictE2eePolicyEnabled.value) {
-    const blockers = strictE2eeSendBlockingReasons(contact)
-    if (blockers.length) {
-      const text = `发送前阻塞：${blockers.join('；')}`
-      showAlert('发送被严格 E2EE 策略阻止', text, 'warning')
-      appendLog(`已阻止发送：${text}`)
-      return false
-    }
-    appendLog(`严格 E2EE 发送存在非阻塞提醒：${riskText}`)
-    return true
+  const blockers = strictE2eeSendBlockingReasons(contact)
+  if (blockers.length) {
+    const text = `发送前阻塞：${blockers.join('；')}`
+    showAlert('无法发送', text, 'error')
+    appendLog(`已阻止发送：${text}`)
+    return false
   }
-  return showConfirm(
-    '发送前严格 E2EE 风险提示',
-    `${riskText}
-
-建议先启用“一键严格 E2EE”、核验指纹、刷新 ContactCard DHT，并确认所有活跃设备支持 sealed slot。仍要继续发送吗？`,
-    true,
-  )
+  const riskText = contactStrictE2eeSendRiskText(contact)
+  if (riskText) appendLog(`严格 E2EE 发送存在非阻塞提醒：${riskText}`)
+  return true
 }
 
 async function confirmHighRiskDhtContactIfNeeded(contact: ContactItem): Promise<boolean> {
@@ -5876,16 +5866,11 @@ async function sendMessage() {
   if (pendingText.trim() && activeGroup.value) {
     const riskText = activeGroupStrictE2eeRiskText.value
     if (riskText && strictE2eePolicyEnabled.value) {
-      showAlert('群消息被严格 E2EE 策略阻止', riskText, 'warning')
+      showAlert('无法发送', riskText, 'error')
       appendLog(`已阻止群消息发送：${riskText}`)
       return
     }
-    if (riskText && !(await showConfirm('群聊严格 E2EE 风险提示', `${riskText}
-
-建议先修复群成员指纹、ContactCard DHT 和 sealed slot 覆盖，再发送群消息。仍要继续发送吗？`, true))) {
-      appendLog('已取消群消息发送：严格 E2EE 风险未确认')
-      return
-    }
+    if (riskText) appendLog(`群聊严格 E2EE 非阻塞提醒：${riskText}`)
   }
   run('发送消息', () => {
     if (!composerText.value.trim()) return
