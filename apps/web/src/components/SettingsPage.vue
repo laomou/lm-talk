@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import UiPageHeader from './UiPageHeader.vue'
+import UiListRow from './UiListRow.vue'
+import UiStatusBadge from './UiStatusBadge.vue'
 
 const props = defineProps<{ ctx: any }>()
 type MeView = 'home' | 'profile' | 'backup' | 'security' | 'sync' | 'settings' | 'about'
@@ -14,7 +16,6 @@ const syncStatus = computed(() => {
   const hasSyncIssue = props.ctx.syncFailureSummaryText.value
   return hasOutbox || hasMailboxIssue || hasSyncIssue ? '需处理' : '正常'
 })
-const syncStatusClass = computed(() => syncStatus.value === '正常' ? 'on' : 'warning')
 const pendingOutboxCount = computed(() => props.ctx.outbox.value.filter((item: any) => item.status !== 'sent').length)
 const failedOutboxCount = computed(() => props.ctx.outbox.value.filter((item: any) => item.status === 'failed').length)
 
@@ -37,19 +38,20 @@ function backHome() {
 
         <section class="home-card">
           <div class="settings-rows product-me-rows">
-            <button class="settings-row" @click="view = 'profile'"><span>个人资料</span><span class="chevron">›</span></button>
-            <button class="settings-row" @click="view = 'backup'"><span>身份备份</span><span class="chevron">›</span></button>
-            <button class="settings-row" @click="view = 'security'"><span>安全与设备</span><span class="chevron">›</span></button>
-            <button class="settings-row" @click="view = 'sync'"><span>同步与安全</span><span><span class="sync-pill" :class="syncStatusClass">{{ syncStatus }}</span><span class="chevron">›</span></span></button>
-            <button class="settings-row" @click="view = 'settings'"><span>设置</span><span class="chevron">›</span></button>
-            <button class="settings-row" @click="view = 'about'"><span>关于</span><span class="chevron">›</span></button>
+            <UiListRow @click="view = 'profile'">个人资料</UiListRow>
+            <UiListRow @click="view = 'backup'">身份备份</UiListRow>
+            <UiListRow @click="view = 'security'">安全与设备</UiListRow>
+            <UiListRow @click="view = 'sync'">
+              同步与安全
+              <template #end><UiStatusBadge :tone="syncStatus === '正常' ? 'success' : 'warning'">{{ syncStatus }}</UiStatusBadge><span class="chevron">›</span></template>
+            </UiListRow>
+            <UiListRow @click="view = 'settings'">设置</UiListRow>
+            <UiListRow @click="view = 'about'">关于</UiListRow>
           </div>
         </section>
 
         <section class="home-card">
-          <button class="settings-row danger-row" aria-label="退出登录" @click="ctx.logout">
-            <span>退出登录</span><span class="chevron">›</span>
-          </button>
+          <UiListRow danger aria-label="退出登录" @click="ctx.logout">退出登录</UiListRow>
         </section>
       </template>
 
@@ -98,7 +100,7 @@ function backHome() {
         <section class="home-card sync-card">
           <div class="section-title-row">
             <h3>严格 E2EE</h3>
-            <span class="sync-pill" :class="{ on: ctx.strictE2eePolicyEnabled.value }">{{ ctx.strictE2eePolicyEnabled.value ? '已开启' : '未开启' }}</span>
+            <UiStatusBadge :tone="ctx.strictE2eePolicyEnabled.value ? 'success' : 'neutral'">{{ ctx.strictE2eePolicyEnabled.value ? '已开启' : '未开启' }}</UiStatusBadge>
           </div>
           <small>{{ ctx.strictE2eeReadiness.value.text }}</small>
           <div class="row compact">
@@ -116,12 +118,12 @@ function backHome() {
 
       <template v-else-if="view === 'sync'">
         <UiPageHeader title="同步与安全" back-label="返回我" @back="backHome">
-          <template #end><span class="sync-pill" :class="syncStatusClass">{{ syncStatus }}</span></template>
+          <template #end><UiStatusBadge :tone="syncStatus === '正常' ? 'success' : 'warning'">{{ syncStatus }}</UiStatusBadge></template>
         </UiPageHeader>
         <section class="home-card sync-card">
           <div class="section-title-row">
             <h3>消息同步</h3>
-            <span class="sync-pill" :class="{ on: ctx.nodeEnabled.value }">{{ ctx.nodeEnabled.value ? '已开启' : '未开启' }}</span>
+            <UiStatusBadge :tone="ctx.nodeEnabled.value ? 'success' : 'neutral'">{{ ctx.nodeEnabled.value ? '已开启' : '未开启' }}</UiStatusBadge>
           </div>
           <div v-if="ctx.nodeEntrySummaries.value.length && !showSyncEditor" class="outbox-list">
             <div v-for="entry in ctx.nodeEntrySummaries.value" :key="entry.url" class="outbox-row">
@@ -139,7 +141,7 @@ function backHome() {
           </div>
         </section>
         <section class="home-card sync-card">
-          <div class="section-title-row"><h3>待发送</h3><span class="sync-pill" :class="{ warning: pendingOutboxCount }">{{ pendingOutboxCount }}</span></div>
+          <div class="section-title-row"><h3>待发送</h3><UiStatusBadge :tone="pendingOutboxCount ? 'warning' : 'neutral'">{{ pendingOutboxCount }}</UiStatusBadge></div>
           <small>失败：{{ failedOutboxCount }}</small>
           <small v-if="ctx.syncFailureSummaryText.value" class="danger-text">{{ ctx.syncFailureSummaryText.value }}</small>
           <div class="row compact">
@@ -163,7 +165,7 @@ function backHome() {
           <small>{{ ctx.pwaStatusText.value }}</small>
           <small>安全边界：PWA 只缓存静态应用壳；不会在 Service Worker 中保存身份密钥、解密消息、后台同步或发送队列。</small>
         </section>
-        <section class="home-card"><button class="settings-row" aria-label="清理浏览器缓存" @click="ctx.clearBrowserCaches"><span>清理浏览器缓存</span><span class="chevron">›</span></button></section>
+        <section class="home-card"><UiListRow aria-label="清理浏览器缓存" @click="ctx.clearBrowserCaches">清理浏览器缓存</UiListRow></section>
       </template>
 
       <template v-else-if="view === 'about'">

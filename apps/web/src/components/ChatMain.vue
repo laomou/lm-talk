@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import UiPageHeader from './UiPageHeader.vue'
+import UiStatusBadge from './UiStatusBadge.vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const props = defineProps<{ ctx: any }>()
@@ -183,7 +184,7 @@ function sendAndClose() {
       <button class="back-btn chat-back-btn" aria-label="返回聊天列表" @click="ctx.goChatHome">‹</button>
       <div class="chat-title-block product-chat-title">
         <h2>{{ ctx.activeContact.value.display_name || '未命名联系人' }}</h2>
-        <span class="trust-inline" :class="{ danger: !ctx.activeContact.value.fingerprint_verified_at }">{{ trustText(ctx.activeContact.value) }}</span>
+        <UiStatusBadge :tone="ctx.activeContact.value.fingerprint_verified_at ? 'success' : 'warning'" compact>{{ trustText(ctx.activeContact.value) }}</UiStatusBadge>
       </div>
       <div class="chat-header-actions product-chat-actions">
         <button
@@ -272,7 +273,7 @@ function sendAndClose() {
           <div v-else class="bubble" :class="item.m.direction">
             <div class="text">{{ item.m.text }}</div>
             <small class="bubble-meta">
-              <span class="status-pill" :class="messageStatusClass(item.m)" :title="messageStatusDetailText(item.m)">{{ messageStatusShortText(item.m) }}</span>
+              <UiStatusBadge :tone="messageStatusClass(item.m)" compact :title="messageStatusDetailText(item.m)">{{ messageStatusShortText(item.m) }}</UiStatusBadge>
               <span>{{ hmTime(item.m.created_at) }}</span>
               <span v-if="item.m.read_at"> · 已读 {{ ctx.formatDateTime(item.m.read_at) }}</span>
               <span v-else-if="item.m.delivered_at"> · 送达 {{ ctx.formatDateTime(item.m.delivered_at) }}</span>

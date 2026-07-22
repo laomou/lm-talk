@@ -2,6 +2,8 @@
 import { computed, ref } from 'vue'
 import { avatarColor } from '../avatarColor'
 import UiPageHeader from './UiPageHeader.vue'
+import UiListRow from './UiListRow.vue'
+import UiStatusBadge from './UiStatusBadge.vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const props = defineProps<{ ctx: any }>()
@@ -44,9 +46,6 @@ function contactInitial(contact: any) {
 function trustText(contact: any) {
   if (contact.state !== 'Friend') return ''
   return contact.fingerprint_verified_at ? '✓ 已核验' : '⚠️ 未核验'
-}
-function trustClass(contact: any) {
-  return contact.fingerprint_verified_at ? 'verified' : 'unverified'
 }
 function shortId(value?: string) {
   if (!value) return ''
@@ -101,7 +100,7 @@ function addContact() {
                 <b>{{ c.display_name || '未命名' }}</b>
                 <small>{{ shortId(c.user_id) }}</small>
               </span>
-              <span class="trust-mark" :class="trustClass(c)">{{ trustText(c) }}</span>
+              <UiStatusBadge :tone="c.fingerprint_verified_at ? 'success' : 'warning'">{{ trustText(c) }}</UiStatusBadge>
               <span class="chevron">›</span>
             </button>
           </template>
@@ -160,7 +159,7 @@ function addContact() {
           <button v-for="c in visibleContacts" :key="c.user_id" class="directory-row contact-row" @click="openContact(c.user_id)">
             <span class="avatar" :style="{ background: avatarColor(c.user_id) }">{{ (c.display_name || c.user_id || '?').slice(0, 1).toUpperCase() }}</span>
             <span class="directory-main"><b>{{ c.display_name || '未命名' }}</b><small>{{ shortId(c.user_id) }}</small></span>
-            <span class="trust-mark" :class="trustClass(c)">{{ trustText(c) }}</span>
+            <UiStatusBadge :tone="c.fingerprint_verified_at ? 'success' : 'warning'">{{ trustText(c) }}</UiStatusBadge>
             <span class="chevron">›</span>
           </button>
           <div v-if="visibleContacts.length === 0" class="empty">没有匹配的联系人</div>
@@ -188,7 +187,7 @@ function addContact() {
           <span class="avatar large" :style="{ background: avatarColor(ctx.activeContact.value.user_id) }">{{ (ctx.activeContact.value.display_name || ctx.activeContact.value.user_id || '?').slice(0, 1).toUpperCase() }}</span>
           <div class="detail-hero-text">
             <h2>{{ ctx.activeContact.value.display_name || '未命名' }}</h2>
-            <span v-if="ctx.activeContact.value.state === 'Friend'" class="trust-chip" :class="trustClass(ctx.activeContact.value)">{{ trustText(ctx.activeContact.value) }}</span>
+            <UiStatusBadge v-if="ctx.activeContact.value.state === 'Friend'" :tone="ctx.activeContact.value.fingerprint_verified_at ? 'success' : 'warning'">{{ trustText(ctx.activeContact.value) }}</UiStatusBadge>
             <small>{{ shortId(ctx.activeContact.value.user_id) }}</small>
           </div>
         </div>
@@ -197,7 +196,7 @@ function addContact() {
           <section v-if="ctx.activeContact.value.state === 'Friend'" class="home-card">
             <div class="section-title-row">
               <h3>安全与设备</h3>
-              <span class="trust-chip" :class="trustClass(ctx.activeContact.value)">{{ trustText(ctx.activeContact.value) }}</span>
+              <UiStatusBadge :tone="ctx.activeContact.value.fingerprint_verified_at ? 'success' : 'warning'">{{ trustText(ctx.activeContact.value) }}</UiStatusBadge>
             </div>
             <small v-if="ctx.activeContact.value.fingerprint_verified_at">指纹已核验：{{ ctx.formatDateTime(ctx.activeContact.value.fingerprint_verified_at) }}</small>
             <small v-else class="danger-text">指纹未核验。请通过可信渠道核对，确认对方就是本人。</small>
@@ -210,10 +209,10 @@ function addContact() {
           </section>
           <section class="home-card">
             <div class="settings-rows">
-              <button class="settings-row" @click="ctx.showQr(ctx.activeContact.value.contact_card_text, '好友身份')"><span>查看名片</span><span class="chevron">›</span></button>
-              <button v-if="ctx.activeContact.value.state !== 'Blocked'" class="settings-row" @click="ctx.blockActiveContact"><span>拉黑</span><span class="chevron">›</span></button>
-              <button v-else class="settings-row" @click="ctx.unblockActiveContact"><span>解除拉黑</span><span class="chevron">›</span></button>
-              <button class="settings-row danger-row" @click="ctx.removeActiveContact"><span>删除好友</span><span class="chevron">›</span></button>
+              <UiListRow @click="ctx.showQr(ctx.activeContact.value.contact_card_text, '好友身份')">查看名片</UiListRow>
+              <UiListRow v-if="ctx.activeContact.value.state !== 'Blocked'" @click="ctx.blockActiveContact">拉黑</UiListRow>
+              <UiListRow v-else @click="ctx.unblockActiveContact">解除拉黑</UiListRow>
+              <UiListRow danger @click="ctx.removeActiveContact">删除好友</UiListRow>
             </div>
           </section>
         </div>

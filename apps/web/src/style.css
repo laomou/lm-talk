@@ -774,6 +774,33 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 .settings-row:hover { background: var(--c-surface-2); }
 .settings-row .chevron { color: var(--c-ink-3); font-size: 20px; line-height: 1; }
 .danger-row { color: var(--c-danger); }
+.ui-list-row {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; text-align: left;
+  background: transparent; color: var(--c-ink); border: 0;
+  border-top: 1px solid var(--c-line); border-radius: 0;
+  padding: 14px var(--sp-1); font-weight: 500; font-size: 14px;
+}
+.ui-list-row:first-child { border-top: 0; }
+.ui-list-row:hover { background: var(--c-surface-2); }
+.ui-list-row.danger { color: var(--c-danger); }
+.ui-list-row-main { min-width: 0; }
+.ui-list-row-end { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--c-ink-3); }
+.ui-list-row .chevron { font-size: 20px; line-height: 1; }
+
+.ui-status-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-pill);
+  background: var(--c-surface-2); color: var(--c-ink-3);
+  padding: 3px 10px; font-size: 12px; font-weight: 600; white-space: nowrap;
+}
+.ui-status-badge.compact { padding: 1px 7px; font-size: 11px; }
+.ui-status-badge.success { color: var(--c-success-ink); background: var(--c-success-bg); border-color: transparent; }
+.ui-status-badge.ok { color: var(--c-success-ink); background: var(--c-success-bg); border-color: transparent; }
+.ui-status-badge.info { color: var(--c-primary-ink); background: var(--c-primary-soft); border-color: transparent; }
+.ui-status-badge.warning { color: var(--c-warn-ink); background: var(--c-warn-bg); border-color: var(--c-warn-line); }
+.ui-status-badge.danger { color: var(--c-danger); background: var(--c-danger-soft); border-color: transparent; }
 .app-version {
   display: grid;
   justify-items: center;
