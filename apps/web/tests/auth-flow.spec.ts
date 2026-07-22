@@ -19,19 +19,24 @@ async function clearBrowserState(page: Page) {
   })
 }
 
+async function waitForWasm(page: Page) {
+  await expect(page.getByText('正在准备')).toBeHidden({ timeout: 30_000 })
+}
+
 test.beforeEach(async ({ page }) => {
   await clearBrowserState(page)
 })
 
 test('注册后可下载身份并回到登录页', async ({ page }) => {
   await page.goto('/#/register')
+  await waitForWasm(page)
   await page.getByLabel('注册提示词').fill('playwright-register-passphrase')
 
-  const download = page.waitForEvent('download')
   await page.getByRole('button', { name: '注册' }).click()
   await expect(page.getByRole('heading', { name: '身份已创建' })).toBeVisible()
   await expect(page.getByText('身份文件和提示词缺一不可')).toBeVisible()
 
+  const download = page.waitForEvent('download')
   await page.getByRole('button', { name: '下载身份' }).click()
   const identityFile = await download
   expect(identityFile.suggestedFilename()).toContain('.lm-identity-backup.txt')
@@ -39,6 +44,19 @@ test('注册后可下载身份并回到登录页', async ({ page }) => {
   await page.getByRole('button', { name: '去登录' }).click()
   await expect(page.getByRole('heading', { name: '登录' })).toBeVisible()
   await expect(page.getByText('选择身份')).toBeVisible()
+})
+
+test('注册后可验证导入跳转到导入页', async ({ page }) => {
+  await page.goto('/#/register')
+  await waitForWasm(page)
+  await page.getByLabel('注册提示词').fill('playwright-verify-passphrase')
+
+  await page.getByRole('button', { name: '注册' }).click()
+  await expect(page.getByRole('heading', { name: '身份已创建' })).toBeVisible()
+
+  await page.getByRole('button', { name: '验证导入' }).click()
+  await expect(page.getByRole('heading', { name: '导入身份' })).toBeVisible()
+  await expect(page.getByLabel('导入身份文本')).not.toBeEmpty()
 })
 
 test('登录页可取消或确认删除本地身份', async ({ page }) => {
@@ -52,6 +70,7 @@ test('登录页可取消或确认删除本地身份', async ({ page }) => {
     }]))
   }, LOCAL_IDENTITIES_KEY)
   await page.reload()
+  await waitForWasm(page)
 
   await page.getByRole('button', { name: '删除本地身份' }).click()
   const dialog = page.getByRole('dialog')
@@ -70,6 +89,7 @@ test('登录页可取消或确认删除本地身份', async ({ page }) => {
 
 test('导入身份页需要身份文本并可返回登录页', async ({ page }) => {
   await page.goto('/#/import')
+  await waitForWasm(page)
   await expect(page.getByRole('heading', { name: '导入身份' })).toBeVisible()
   await expect(page.getByText('导入需要身份文本和对应提示词')).toBeVisible()
   await expect(page.getByRole('button', { name: '导入' })).toBeDisabled()
