@@ -21,7 +21,9 @@ COPY --from=wasm-builder /src/apps/web/src/wasm ./apps/web/src/wasm
 
 ARG BUILD_REF=container
 ENV BUILD_REF=${BUILD_REF}
-RUN npm run build --prefix apps/web
+# The WASM package is built in the previous stage and copied above.
+# Run Vite only; `npm run build` would invoke wasm-pack again, which is not installed here.
+RUN npm exec --prefix apps/web -- vite build
 
 FROM caddy:2-alpine AS runtime
 COPY docker/web/Caddyfile /etc/caddy/Caddyfile

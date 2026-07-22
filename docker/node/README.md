@@ -8,8 +8,7 @@
 ghcr.io/laomou/lm-talk-node
 ```
 
-发布版本 tag 会同时提供 `linux/amd64` 与 `linux/arm64` 镜像；稳定版本还会更新
-`:latest`。
+发布版本 tag 提供 `linux/amd64` 镜像；稳定版本还会更新 `:latest`。
 
 ## 使用发布镜像
 
