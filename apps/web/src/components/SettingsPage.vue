@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import UiPageHeader from './UiPageHeader.vue'
 import UiListRow from './UiListRow.vue'
 import UiStatusBadge from './UiStatusBadge.vue'
@@ -12,6 +13,7 @@ import UiListGroup from './UiListGroup.vue'
 const props = defineProps<{ ctx: any }>()
 type MeView = 'home' | 'profile' | 'backup' | 'security' | 'sync' | 'settings' | 'about'
 const view = ref<MeView>('home')
+const route = useRoute()
 const showSyncServiceEditor = ref(false)
 const showDataBackupEditor = ref(false)
 const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.nodeEntrySummaries.value.length === 0)
@@ -23,6 +25,14 @@ const syncStatus = computed(() => {
 })
 const pendingOutboxCount = computed(() => props.ctx.outbox.value.filter((item: any) => item.status !== 'sent').length)
 const failedOutboxCount = computed(() => props.ctx.outbox.value.filter((item: any) => item.status === 'failed').length)
+
+watch(
+  () => route.query.section,
+  (section) => {
+    view.value = section === 'sync' ? 'sync' : 'home'
+  },
+  { immediate: true },
+)
 
 function backHome() {
   view.value = 'home'

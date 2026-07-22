@@ -3339,7 +3339,8 @@ async function syncNow() {
   ensureOwnDeviceCertForStrict('消息同步前的严格 E2EE 默认策略')
   if (!nodeEnabled.value) {
     appendLog('⚠️ 消息同步未开启')
-    showAlert('未开启消息同步', '请先在“我 → 消息同步”开启同步。', 'warning')
+    toast('消息同步未开启，请先开启同步服务。', 'warning')
+    goSyncSettings()
     return
   }
   appendLog('🔄 开始消息同步')
@@ -9353,6 +9354,10 @@ function goSettingsPage() {
   void router.push('/me')
 }
 
+function goSyncSettings() {
+  void router.push({ path: '/me', query: { section: 'sync' } })
+}
+
 
 function goDiagnosticsPage() {
   void router.push('/diagnostics')
@@ -9366,7 +9371,7 @@ function logout() {
   void router.push('/login')
 }
 const appContext = {
-  goChatPage, goChatHome, goContactsPage, goSettingsPage, goDiagnosticsPage, showAlert, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
+  goChatPage, goChatHome, goContactsPage, goSettingsPage, goSyncSettings, goDiagnosticsPage, showAlert, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, webVersionText,
   nodeControlUrl, nodeUrlList, nodeEntrySummaries, nodeSettingsSummaryText, nodeTokenStorageText, nodeTokenCount, nodeMissingRemoteTokenCount, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake, autoReadReceipts,
   runtimeStatusText, pwaStatusText, inAppRuntimePolicyText, refreshRuntimeStatus, refreshPwaStatus,
