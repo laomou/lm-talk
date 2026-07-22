@@ -177,7 +177,9 @@ function saveSyncSettings() {
         <UiSection class="sync-card" title="诊断">
           <template #actions><button class="secondary" @click="ctx.goDiagnosticsPage('me-sync')">打开诊断工具</button></template>
           <small v-if="ctx.mailboxFailureSummaryText.value" class="danger-text">{{ ctx.mailboxFailureSummaryText.value }}</small>
-          <small v-for="(line, index) in mailboxInboxErrorLines" :key="`${index}-${line}`" class="danger-text">{{ line }}</small>
+          <div v-if="mailboxInboxErrorLines.length" class="mailbox-error-lines">
+            <small v-for="(line, index) in mailboxInboxErrorLines" :key="`${index}-${line}`" class="danger-text">{{ line }}</small>
+          </div>
           <small>{{ ctx.mailboxInboxStatus.value }}</small>
           <small>{{ ctx.mailboxQuotaStatusText.value }}</small>
         </UiSection>

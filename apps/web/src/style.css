@@ -770,6 +770,8 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 .sync-pill { font-size: 12px; font-weight: 600; color: var(--c-ink-3); background: var(--c-surface-2); border: 1px solid var(--c-line); border-radius: var(--r-pill); padding: 3px 10px; }
 .sync-pill.on { color: var(--c-primary-ink); background: var(--c-primary-soft); border-color: transparent; }
 .sync-card small { display: block; margin-top: var(--sp-2); color: var(--c-ink-3); line-height: 1.5; }
+.mailbox-error-lines { display: grid; gap: 2px; margin-top: var(--sp-2); }
+.mailbox-error-lines small { margin-top: 0; }
 .sync-status { margin-top: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface-2); display: grid; gap: var(--sp-1); }
 .sync-status b { font-size: 13px; color: var(--c-ink-2); }
 .sync-status small { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--c-ink-3); max-height: 120px; overflow: auto; }
