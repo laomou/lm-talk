@@ -275,7 +275,7 @@ function sendAndClose() {
             </div>
           </div>
         </template>
-        <UiEmptyState v-if="ctx.activeMessages.value.length === 0" title="还没有消息" description="发送一条消息开始聊天。" />
+        <UiEmptyState v-if="ctx.activeMessages.value.length === 0" class="chat-thread-empty" title="还没有消息" description="发送一条消息开始聊天。" />
         <UiEmptyState v-else-if="thread.length === 0" icon="search" title="没有匹配的消息" description="换个关键词试试。" />
       </template>
 
