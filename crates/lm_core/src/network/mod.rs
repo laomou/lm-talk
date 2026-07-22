@@ -300,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn tampered_signal_fails() {
+    fn signal_rejects_tampered_payload() {
         let (alice, _a) = Identity::create_with_passphrase("alice").unwrap();
         let mut offer = SignalOffer::new(&alice, None, None, "offer-sdp".into(), 3600).unwrap();
         offer.sdp = "changed".into();
@@ -834,7 +834,7 @@ mod network_extra_tests {
     use super::*;
 
     #[test]
-    fn peer_and_public_peer_announce_roundtrip() {
+    fn peer_and_public_peer_announcements_roundtrip() {
         let (alice, _a) = Identity::create_with_passphrase("alice").unwrap();
         let peer = PeerAnnounce::new(
             &alice,
@@ -866,7 +866,7 @@ mod network_extra_tests {
     }
 
     #[test]
-    fn mailbox_message_roundtrip_and_tamper() {
+    fn mailbox_message_roundtrip_rejects_tampering() {
         let (alice, _a) = Identity::create_with_passphrase("alice").unwrap();
         let (bob, _b) = Identity::create_with_passphrase("bob").unwrap();
         let mut msg = MailboxMessage::new(
@@ -886,7 +886,7 @@ mod network_extra_tests {
     }
 
     #[test]
-    fn message_receipt_roundtrip_and_tamper() {
+    fn message_receipt_roundtrip_rejects_tampering() {
         let (alice, _a) = Identity::create_with_passphrase("alice receipt").unwrap();
         let (bob, _b) = Identity::create_with_passphrase("bob receipt").unwrap();
         let mut receipt = MessageReceipt::new(

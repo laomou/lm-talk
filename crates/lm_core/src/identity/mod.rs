@@ -338,7 +338,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn create_and_restore_identity_roundtrip() {
+    fn identity_create_and_restore_roundtrip() {
         let passphrase = "correct horse battery staple";
         let (identity, backup) = Identity::create_with_passphrase(passphrase).unwrap();
         let restored = Identity::restore_from_backup(&backup, passphrase).unwrap();
@@ -356,7 +356,7 @@ mod tests {
     }
 
     #[test]
-    fn wrong_passphrase_fails() {
+    fn identity_restore_rejects_wrong_passphrase() {
         let (_identity, backup) = Identity::create_with_passphrase("right").unwrap();
         let err = Identity::restore_from_backup(&backup, "wrong").unwrap_err();
         assert_eq!(err, LmError::WrongPassphrase);

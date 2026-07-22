@@ -219,7 +219,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn contact_card_roundtrip() {
+    fn contact_card_export_import_roundtrip() {
         let (identity, _backup) = Identity::create_with_passphrase("pass").unwrap();
         let card = identity
             .export_contact_card(Some("Alice".to_string()), None, vec![])
@@ -235,7 +235,7 @@ mod tests {
     }
 
     #[test]
-    fn tampered_contact_card_fails() {
+    fn contact_card_rejects_tampered_payload() {
         let (identity, _backup) = Identity::create_with_passphrase("pass").unwrap();
         let mut card = identity.export_contact_card(None, None, vec![]).unwrap();
         card.display_name = Some("Mallory".to_string());

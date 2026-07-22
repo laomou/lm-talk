@@ -788,7 +788,7 @@ mod tests {
     }
 
     #[test]
-    fn group_event_roundtrip_and_tamper() {
+    fn group_event_roundtrip_rejects_tampering() {
         let (alice, _a) = Identity::create_with_passphrase("alice").unwrap();
         let alice_card = alice
             .export_contact_card(Some("Alice".into()), None, vec![])
@@ -812,7 +812,7 @@ mod tests {
     }
 
     #[test]
-    fn tampered_group_invite_fails() {
+    fn group_invite_rejects_tampered_payload() {
         let (alice, _a) = Identity::create_with_passphrase("alice").unwrap();
         let alice_card = alice.export_contact_card(None, None, vec![]).unwrap();
         let mut invite =
@@ -959,7 +959,7 @@ mod tests {
     }
 
     #[test]
-    fn group_sender_key_encrypt_decrypt_roundtrip() {
+    fn group_sender_key_message_roundtrip() {
         let (alice, _) = Identity::create_with_passphrase("alice").unwrap();
         let alice_card = alice
             .export_contact_card(Some("Alice".into()), None, vec![])
@@ -980,7 +980,7 @@ mod tests {
     }
 
     #[test]
-    fn group_sender_key_tamper_fails() {
+    fn group_sender_key_rejects_tampered_ciphertext() {
         let (alice, _) = Identity::create_with_passphrase("alice").unwrap();
         let alice_card = alice.export_contact_card(None, None, vec![]).unwrap();
         let mut sender_state = GroupSenderKeyState::new(&alice, Uuid::new_v4()).unwrap();

@@ -450,7 +450,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn direct_message_encrypt_decrypt() {
+    fn direct_message_encrypt_decrypt_roundtrip() {
         let (alice, _a) = Identity::create_with_passphrase("alice").unwrap();
         let (bob, _b) = Identity::create_with_passphrase("bob").unwrap();
         let envelope = DirectEnvelope::encrypt_text(
@@ -493,7 +493,7 @@ mod tests {
     }
 
     #[test]
-    fn ratchet_envelope_encrypt_decrypt() {
+    fn ratchet_envelope_encrypt_decrypt_roundtrip() {
         let alice_id = UserId::from_raw("lm1_alice".to_string()).unwrap();
         let bob_id = UserId::from_raw("lm1_bob".to_string()).unwrap();
         let (mut alice_state, mut bob_state) =
@@ -515,7 +515,7 @@ mod tests {
     }
 
     #[test]
-    fn ratchet_envelope_tamper_fails() {
+    fn ratchet_envelope_rejects_tampered_ciphertext() {
         let alice_id = UserId::from_raw("lm1_alice".to_string()).unwrap();
         let bob_id = UserId::from_raw("lm1_bob".to_string()).unwrap();
         let (mut alice_state, mut bob_state) =
@@ -531,7 +531,7 @@ mod tests {
     }
 
     #[test]
-    fn tampered_direct_message_fails() {
+    fn direct_message_rejects_tampered_ciphertext() {
         let (alice, _a) = Identity::create_with_passphrase("alice").unwrap();
         let (bob, _b) = Identity::create_with_passphrase("bob").unwrap();
         let mut envelope = DirectEnvelope::encrypt_text(

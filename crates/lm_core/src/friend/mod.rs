@@ -249,7 +249,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn friend_request_response_roundtrip() {
+    fn friend_request_and_response_roundtrip() {
         let (alice, _a) = Identity::create_with_passphrase("alice").unwrap();
         let (bob, _b) = Identity::create_with_passphrase("bob").unwrap();
         let alice_card = alice
@@ -282,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn tampered_friend_request_fails() {
+    fn friend_request_rejects_tampered_payload() {
         let (alice, _a) = Identity::create_with_passphrase("alice").unwrap();
         let (bob, _b) = Identity::create_with_passphrase("bob").unwrap();
         let bob_card = bob.export_contact_card(None, None, vec![]).unwrap();

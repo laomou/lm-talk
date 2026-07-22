@@ -268,7 +268,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn file_chunk_encrypt_decrypt() {
+    fn file_chunk_encrypt_decrypt_roundtrip() {
         let (alice, _a) = Identity::create_with_passphrase("alice").unwrap();
         let (bob, _b) = Identity::create_with_passphrase("bob").unwrap();
         let data = b"hello file";
@@ -300,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn tampered_file_chunk_fails() {
+    fn file_chunk_decrypt_rejects_tampered_ciphertext() {
         let (alice, _a) = Identity::create_with_passphrase("alice").unwrap();
         let (bob, _b) = Identity::create_with_passphrase("bob").unwrap();
         let mut chunk = FileChunkEnvelope::encrypt_chunk(
