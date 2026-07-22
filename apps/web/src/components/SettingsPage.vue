@@ -31,7 +31,7 @@ const syncStatus = computed(() => {
 const pendingOutboxCount = computed(() => props.ctx.outbox.value.filter((item: any) => item.status !== 'sent').length)
 const failedOutboxCount = computed(() => props.ctx.outbox.value.filter((item: any) => item.status === 'failed').length)
 const retrySyncIssueText = computed(() => {
-  if (pendingOutboxCount.value > 0) return `重试待发送（${pendingOutboxCount.value}）`
+  if (pendingOutboxCount.value > 0) return props.ctx.nodeEnabled.value ? `重试待发送（${pendingOutboxCount.value}）` : `重新排队待发送（${pendingOutboxCount.value}）`
   if (props.ctx.mailboxFailedCount.value > 0) return `重新处理收取失败（${props.ctx.mailboxFailedCount.value}）`
   if (props.ctx.prekeyAutoErrorText.value) return '重试 PreKey 发布'
   if (/failed|失败/i.test(props.ctx.nodeSyncStatusText.value) && props.ctx.autoNodeSync.value && props.ctx.nodeSyncPeerUrl.value.trim()) return '重试节点同步'
@@ -168,6 +168,7 @@ function saveSyncSettings() {
           <UiActionGroup>
             <button v-if="retrySyncIssueText" class="secondary" @click="ctx.recoverSyncFailures">{{ retrySyncIssueText }}</button>
           </UiActionGroup>
+          <small v-if="ctx.syncRecoveryStatusText.value && ctx.syncRecoveryStatusText.value !== '尚未恢复'">{{ ctx.syncRecoveryStatusText.value }}</small>
         </UiSection>
         <UiSection class="sync-card" title="诊断">
           <template #actions><button class="secondary" @click="ctx.goDiagnosticsPage('me-sync')">打开诊断工具</button></template>
