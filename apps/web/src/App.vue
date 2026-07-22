@@ -3563,6 +3563,7 @@ function saveNetworkSettings(): boolean {
     if (entries.length > 0) nodeControlUrl.value = entries.map(nodeEntryLine).join('\n')
     persist()
     appendLog(`✅ 已保存消息同步设置：${nodeEnabled.value ? '启用' : '停用'} ${entries.length ? `${entries.length} 个节点` : '未填写节点'}`)
+    toast('同步设置已保存', 'success')
     return true
   } catch (e) {
     const message = userFacingError(e)
