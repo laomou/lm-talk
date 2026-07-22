@@ -104,7 +104,7 @@ mod tests {
     }
 
     #[test]
-    fn aead_roundtrip() {
+    fn aead_encrypt_decrypt_roundtrip() {
         let key = [1u8; 32];
         let nonce = [2u8; 24];
         let plaintext = b"hello lm-talk";
