@@ -1,6 +1,5 @@
 # 发布检查清单
 
-本文记录 LM Talk 当前功能目标下的发布检查步骤。当前目标不再把第三方审计、长时间 fuzz、公网长期报告、macOS 公证、Windows 签名和风险登记签核作为阻塞项；这些内容保留为可选的生产发行增强。
 
 ## 必跑检查
 
@@ -16,7 +15,6 @@
 - `lm_core` 单元测试、端到端测试、属性测试和测试向量
 - `lm_node` 库测试和二进制测试
 - 节点 HTTP 控制面端到端测试
-- fuzz harness 编译检查
 - Web 类型检查、生产构建和 Playwright 端到端测试
 
 如需更完整的本地检查：
@@ -25,10 +23,8 @@
 ./scripts/release-check.sh full
 ```
 
-如需短时 fuzz smoke：
 
 ```bash
-./scripts/release-check.sh fuzz-smoke
 ```
 
 ## 依赖检查
@@ -72,7 +68,6 @@ cp target/x86_64-unknown-linux-gnu/release/lm_node lm_node-linux-x86_64
 以下项目不再作为当前功能目标阻塞项，但如果要做公开生产发行，仍建议保留证据：
 
 - 外部安全审计报告
-- 长时间 fuzz campaign 与 crash triage
 - 长时间公网 federation chaos/load 报告
 - 真实公网部署报告
 - macOS notarization

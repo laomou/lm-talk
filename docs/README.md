@@ -54,7 +54,6 @@
 | --- | --- |
 | [TEST_VECTOR_COVERAGE.md](testing/TEST_VECTOR_COVERAGE.md) | 测试向量覆盖状态。 |
 | [PROTOCOL_STABILITY.md](testing/PROTOCOL_STABILITY.md) | 协议稳定性、冻结规则和兼容策略。 |
-| [FUZZING.md](testing/FUZZING.md) | fuzz 目标、命令和结果处理方式。 |
 
 ## 发布参考
 
@@ -79,7 +78,6 @@
 | 协议规格 | `docs/protocol/` | 稳定对象格式、字段、验证规则 | 运维步骤、UI 操作教程 |
 | 安全 | `docs/security/` | 威胁模型、密码学说明、审计范围、事件响应 | 发布签核、部署执行记录 |
 | 部署 | `docs/deploy/` | 节点配置、公网运行手册、部署报告模板 | 协议字段完整定义、发布决策 |
-| 测试 | `docs/testing/` | 测试向量、fuzz、协议稳定性检查 | 长篇设计背景、发布签核 |
 | 发布 | `docs/release/` | release check、证据索引、风险登记、签名/签核模板 | 公网部署细节和协议字段定义 |
 
 模板类文档的边界：

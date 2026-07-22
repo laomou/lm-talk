@@ -136,4 +136,3 @@ Web 将更高级别的本地发件箱类型（如 `contact-update`、`device-rev
 - [x] ContactCard/DeviceCert 合并和撤销策略已有互操作测试。
 - [x] PreKey 轮换/消费策略已有互操作测试。
 - [x] Web 和节点测试中的错误代码/文本依赖已记录。
-- [ ] 发布证据索引链接了 fuzz、联邦和审计产物。

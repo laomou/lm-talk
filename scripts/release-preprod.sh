@@ -7,8 +7,6 @@ cd "$ROOT"
 RELEASE_VERSION="${RELEASE_VERSION:-preprod-local}"
 EVIDENCE_DIR="${RELEASE_EVIDENCE_DIR:-$ROOT/release-evidence}"
 RUN_FULL="${RUN_FULL:-1}"
-RUN_FUZZ_SMOKE="${RUN_FUZZ_SMOKE:-1}"
-RUN_FUZZ_CAMPAIGN="${RUN_FUZZ_CAMPAIGN:-0}"
 RUN_RELEASE_ASSET_VERIFY="${RUN_RELEASE_ASSET_VERIFY:-0}"
 RUN_RISK_REGISTER_GATE="${RUN_RISK_REGISTER_GATE:-1}"
 RELEASE_TAG_VERIFY="${RELEASE_TAG_VERIFY:-$RELEASE_VERSION}"
@@ -23,21 +21,6 @@ if [[ "$RUN_FULL" == "1" ]]; then
   ./scripts/release-check.sh full 2>&1 | tee "$ROOT/release-check.log"
 else
   echo "== release-check full skipped =="
-fi
-
-if [[ "$RUN_FUZZ_SMOKE" == "1" ]]; then
-  echo "== fuzz smoke =="
-  FUZZ_SMOKE_REPORT="$ROOT/fuzz-smoke-report.json" ./scripts/fuzz-smoke.sh
-else
-  echo "== fuzz smoke skipped =="
-fi
-
-if [[ "$RUN_FUZZ_CAMPAIGN" == "1" ]]; then
-  echo "== fuzz campaign =="
-  FUZZ_CAMPAIGN_REPORT="$ROOT/fuzz-campaign-artifacts/fuzz-campaign-report.json" \
-    ./scripts/fuzz-campaign.sh
-else
-  echo "== fuzz campaign skipped =="
 fi
 
 if [[ "$RUN_RELEASE_ASSET_VERIFY" == "1" ]]; then

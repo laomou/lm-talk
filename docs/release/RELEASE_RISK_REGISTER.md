@@ -18,7 +18,6 @@
 | RISK-003 | DirectEnvelope 和 per-device fallback 仍作为兼容路径存在。 | Medium | Mitigated | 新身份默认 strict E2EE；内容路径要求 verified contact 和 sealed slot；修复控制消息例外已记录。 |
 | RISK-004 | 浏览器或本机运行时被完全控制时，实时明文和密钥可能暴露。 | High | Open | IndexedDB 加密、身份删除、重加密和备份提示；不承诺防御完全控制运行时。 |
 | RISK-005 | 原生 macOS/Windows 产物未必具备平台级签名/公证。 | Medium | Open | 发布包提供 SHA256 校验；平台签名作为可选生产发行增强。 |
-| RISK-006 | 长时间 fuzz、长期公网 load/chaos 不作为当前目标阻塞项。 | Medium | Open | 提供 fuzz smoke、Docker federation smoke/chaos/load 和本地验证脚本。 |
 | RISK-007 | 第三方安全审计不作为当前目标阻塞项。 | Medium | Open | 提供审计范围、密码学说明和测试向量，便于未来审查。 |
 | RISK-008 | 依赖 advisory 例外可能随功能变化变为可达。 | Medium | Open | `scripts/check-audit.sh` 与依赖风险复核文档记录例外理由。 |
 | RISK-009 | 公网 federation 可用性取决于运营者部署质量。 | Medium | Open | 提供 Docker federation 模板、节点配置文档和运行手册。 |

@@ -82,7 +82,6 @@
 以下内容可以作为未来生产发行、合规或商业分发目标，不再阻塞当前功能目标：
 
 - 第三方安全审计报告。
-- 长时间 fuzz campaign 产物与 crash triage。
 - 长时间公网 federation chaos/load 证据。
 - 真实公网部署报告。
 - macOS notarization / Windows code signing。
