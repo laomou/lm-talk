@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import UiIcon from './UiIcon.vue'
 
-defineProps<{
+const props = defineProps<{
   id: string
   name: string
   userId: string
@@ -12,6 +12,12 @@ const emit = defineEmits<{
   select: [id: string]
   remove: [id: string]
 }>()
+
+function removeIdentity(event: MouseEvent) {
+  event.preventDefault()
+  event.stopPropagation()
+  emit('remove', props.id)
+}
 </script>
 
 <template>
@@ -24,7 +30,7 @@ const emit = defineEmits<{
         <small>{{ userId }}</small>
       </span>
     </label>
-    <button class="icon-btn ui-identity-delete" type="button" title="删除本地身份" aria-label="删除本地身份" @click.prevent="emit('remove', id)">
+    <button class="icon-btn ui-identity-delete" type="button" title="删除本地身份" aria-label="删除本地身份" @click="removeIdentity">
       <UiIcon name="close" size="18" />
     </button>
   </div>
