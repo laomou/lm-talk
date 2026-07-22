@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import UiCard from './UiCard.vue'
 
 const props = defineProps<{ ctx: any }>()
 const diagnosticReport = ref('')
@@ -183,44 +184,44 @@ async function runDiagnostics() {
       </header>
 
       <section class="diagnostic-overview">
-        <div class="diagnostic-card">
+        <UiCard variant="compact" class="diagnostic-card">
           <span>当前账号</span>
           <b>{{ ctx.displayName.value || '未命名' }}</b>
           <small>{{ ctx.identity.value?.user_id }}</small>
-        </div>
-        <div class="diagnostic-card">
+        </UiCard>
+        <UiCard variant="compact" class="diagnostic-card">
           <span>消息同步</span>
           <b>{{ ctx.nodeEnabled.value ? '已开启' : '未开启' }}</b>
           <small>{{ ctx.nodeUrlList().length ? ctx.nodeUrlList().join('，') : '未配置同步服务' }}</small>
-        </div>
-        <div class="diagnostic-card">
+        </UiCard>
+        <UiCard variant="compact" class="diagnostic-card">
           <span>待发送</span>
           <b>{{ ctx.outbox.value.filter((x: any) => x.status !== 'sent').length }}</b>
           <small>总队列 {{ ctx.outbox.value.length }}</small>
-        </div>
-        <div class="diagnostic-card">
+        </UiCard>
+        <UiCard variant="compact" class="diagnostic-card">
           <span>新朋友</span>
           <b>{{ ctx.visibleFriendRequests.value.length }}</b>
           <small>群邀请 {{ ctx.groupInvites.value.length }}</small>
-        </div>
-        <div class="diagnostic-card">
+        </UiCard>
+        <UiCard variant="compact" class="diagnostic-card">
           <span>垃圾请求</span>
           <b>{{ ctx.quarantinedFriendRequests.value.length }}</b>
           <small>去重记录 {{ ctx.mailboxDedupeCount.value }}</small>
-        </div>
-        <div class="diagnostic-card">
+        </UiCard>
+        <UiCard variant="compact" class="diagnostic-card">
           <span>DHT 状态</span>
           <b>{{ ctx.nodePeerHealthRiskLevel.value === 'ok' ? '正常' : ctx.nodePeerHealthRiskLevel.value === 'warning' ? '警告' : '异常' }}</b>
           <small>{{ ctx.nodePeerHealthStatusText.value }}</small>
-        </div>
-        <div class="diagnostic-card">
+        </UiCard>
+        <UiCard variant="compact" class="diagnostic-card">
           <span>群聊严格 E2EE</span>
           <b>{{ ctx.groups.value.filter((g: any) => ctx.groupStrictE2eeRiskTextFor(g)).length }}</b>
           <small>风险群聊 / 总群聊 {{ ctx.groups.value.length }}</small>
-        </div>
+        </UiCard>
       </section>
 
-      <section class="home-card">
+      <UiCard>
         <h3>一键诊断</h3>
         <p class="hint">生成只包含状态摘要的诊断报告，不会导出提示词、身份私钥或消息明文。</p>
         <label class="check-row diagnostic-option">
@@ -238,15 +239,15 @@ async function runDiagnostics() {
           <button class="secondary" @click="ctx.syncNow">立即同步</button>
         </div>
         <textarea v-if="diagnosticReport && showDiagnosticReport" v-model="diagnosticReport" class="mono" rows="12" readonly />
-      </section>
+      </UiCard>
 
-      <section class="home-card">
+      <UiCard>
         <h3>最近记录</h3>
         <div v-if="ctx.log.value.length" class="diagnostic-log">
           <div v-for="line in ctx.log.value.slice(0, 8).map(diagnosticLogLine)" :key="line">{{ line }}</div>
         </div>
         <div v-else class="empty">暂无记录</div>
-      </section>
+      </UiCard>
     </div>
   </section>
 </template>

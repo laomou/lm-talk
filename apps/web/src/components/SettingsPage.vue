@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import UiPageHeader from './UiPageHeader.vue'
 import UiListRow from './UiListRow.vue'
 import UiStatusBadge from './UiStatusBadge.vue'
+import UiCard from './UiCard.vue'
 
 const props = defineProps<{ ctx: any }>()
 type MeView = 'home' | 'profile' | 'backup' | 'security' | 'sync' | 'settings' | 'about'
@@ -36,7 +37,7 @@ function backHome() {
           </div>
         </header>
 
-        <section class="home-card">
+        <UiCard>
           <div class="settings-rows product-me-rows">
             <UiListRow @click="view = 'profile'">个人资料</UiListRow>
             <UiListRow @click="view = 'backup'">身份备份</UiListRow>
@@ -48,16 +49,16 @@ function backHome() {
             <UiListRow @click="view = 'settings'">设置</UiListRow>
             <UiListRow @click="view = 'about'">关于</UiListRow>
           </div>
-        </section>
+        </UiCard>
 
-        <section class="home-card">
+        <UiCard>
           <UiListRow danger aria-label="退出登录" @click="ctx.logout">退出登录</UiListRow>
-        </section>
+        </UiCard>
       </template>
 
       <template v-else-if="view === 'profile'">
         <UiPageHeader title="个人资料" back-label="返回我" @back="backHome" />
-        <section class="home-card">
+        <UiCard>
           <h3>我的资料</h3>
           <label for="display-name-input">显示名</label>
           <div class="inline-field">
@@ -67,19 +68,19 @@ function backHome() {
           <div class="row compact">
             <button class="secondary" @click="ctx.showQr(ctx.myContactCardText.value, '我的名片')">我的名片</button>
           </div>
-        </section>
+        </UiCard>
       </template>
 
       <template v-else-if="view === 'backup'">
         <UiPageHeader title="身份备份" back-label="返回我" @back="backHome" />
-        <section class="home-card">
+        <UiCard>
           <div class="section-title-row">
             <h3>身份备份</h3>
             <button class="secondary" @click="ctx.showQr(ctx.backupText.value, '导出身份')">导出身份</button>
           </div>
           <small>身份文件和提示词缺一不可；任意一项丢失都无法恢复这个身份。</small>
-        </section>
-        <section class="home-card">
+        </UiCard>
+        <UiCard>
           <div class="section-title-row">
             <h3>完整数据备份</h3>
             <button class="secondary" @click="showDataBackupEditor = !showDataBackupEditor">{{ showDataBackupEditor ? '隐藏' : '显示备份' }}</button>
@@ -92,12 +93,12 @@ function backHome() {
             <button class="secondary danger" :disabled="!ctx.dataBackupText.value.trim()" @click="ctx.importFullDataBackup">导入覆盖</button>
           </div>
           <textarea v-if="showDataBackupEditor" v-model="ctx.dataBackupText.value" class="mono" rows="5" aria-label="完整数据备份文本" placeholder="点击生成备份，或粘贴 lm-data-backup-v1 文本后导入" />
-        </section>
+        </UiCard>
       </template>
 
       <template v-else-if="view === 'security'">
         <UiPageHeader title="安全与设备" back-label="返回我" @back="backHome" />
-        <section class="home-card sync-card">
+        <UiCard class="sync-card">
           <div class="section-title-row">
             <h3>严格 E2EE</h3>
             <UiStatusBadge :tone="ctx.strictE2eePolicyEnabled.value ? 'success' : 'neutral'">{{ ctx.strictE2eePolicyEnabled.value ? '已开启' : '未开启' }}</UiStatusBadge>
@@ -108,19 +109,19 @@ function backHome() {
             <button class="secondary" @click="ctx.showMyFingerprintQr">我的指纹核验码</button>
             <button class="secondary" @click="ctx.copyMyFingerprintProof">复制我的核验码</button>
           </div>
-        </section>
-        <section class="home-card sync-card">
+        </UiCard>
+        <UiCard class="sync-card">
           <h3>设备</h3>
           <small>当前设备：{{ ctx.myDeviceId.value || '未生成' }}</small>
           <small>{{ ctx.sealedSlotCoverageSummary.value }}</small>
-        </section>
+        </UiCard>
       </template>
 
       <template v-else-if="view === 'sync'">
         <UiPageHeader title="同步与安全" back-label="返回我" @back="backHome">
           <template #end><UiStatusBadge :tone="syncStatus === '正常' ? 'success' : 'warning'">{{ syncStatus }}</UiStatusBadge></template>
         </UiPageHeader>
-        <section class="home-card sync-card">
+        <UiCard class="sync-card">
           <div class="section-title-row">
             <h3>消息同步</h3>
             <UiStatusBadge :tone="ctx.nodeEnabled.value ? 'success' : 'neutral'">{{ ctx.nodeEnabled.value ? '已开启' : '未开启' }}</UiStatusBadge>
@@ -139,8 +140,8 @@ function backHome() {
             <button v-if="showSyncEditor" class="secondary" @click="ctx.saveNetworkSettings">保存</button>
             <button class="secondary" @click="ctx.syncNow">立即同步</button>
           </div>
-        </section>
-        <section class="home-card sync-card">
+        </UiCard>
+        <UiCard class="sync-card">
           <div class="section-title-row"><h3>待发送</h3><UiStatusBadge :tone="pendingOutboxCount ? 'warning' : 'neutral'">{{ pendingOutboxCount }}</UiStatusBadge></div>
           <small>失败：{{ failedOutboxCount }}</small>
           <small v-if="ctx.syncFailureSummaryText.value" class="danger-text">{{ ctx.syncFailureSummaryText.value }}</small>
@@ -148,32 +149,32 @@ function backHome() {
             <button class="secondary" :disabled="!pendingOutboxCount" @click="ctx.retryAllOutbox">全部重试</button>
             <button class="secondary" @click="ctx.recoverSyncFailures">修复同步失败</button>
           </div>
-        </section>
-        <section class="home-card sync-card">
+        </UiCard>
+        <UiCard class="sync-card">
           <div class="section-title-row"><h3>诊断</h3><button class="secondary" @click="ctx.goDiagnosticsPage">打开诊断工具</button></div>
           <small v-if="ctx.mailboxFailureSummaryText.value" class="danger-text">{{ ctx.mailboxFailureSummaryText.value }}</small>
           <small v-if="ctx.mailboxInboxErrorText.value" class="danger-text">{{ ctx.mailboxInboxErrorText.value }}</small>
           <small>{{ ctx.mailboxInboxStatus.value }}</small>
           <small>{{ ctx.mailboxQuotaStatusText.value }}</small>
-        </section>
+        </UiCard>
       </template>
 
       <template v-else-if="view === 'settings'">
         <UiPageHeader title="设置" back-label="返回我" @back="backHome" />
-        <section class="home-card sync-card">
+        <UiCard class="sync-card">
           <div class="section-title-row"><h3>PWA 应用</h3><button class="secondary" @click="ctx.refreshPwaStatus">刷新状态</button></div>
           <small>{{ ctx.pwaStatusText.value }}</small>
           <small>安全边界：PWA 只缓存静态应用壳；不会在 Service Worker 中保存身份密钥、解密消息、后台同步或发送队列。</small>
-        </section>
-        <section class="home-card"><UiListRow aria-label="清理浏览器缓存" @click="ctx.clearBrowserCaches">清理浏览器缓存</UiListRow></section>
+        </UiCard>
+        <UiCard><UiListRow aria-label="清理浏览器缓存" @click="ctx.clearBrowserCaches">清理浏览器缓存</UiListRow></UiCard>
       </template>
 
       <template v-else-if="view === 'about'">
         <UiPageHeader title="关于" back-label="返回我" @back="backHome" />
-        <section class="home-card about-card">
+        <UiCard class="about-card">
           <h2>LM Talk Web</h2>
           <p>{{ ctx.webVersionText }}</p>
-        </section>
+        </UiCard>
       </template>
     </div>
   </div>

@@ -676,6 +676,23 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 }
 .home-card h3 { margin-bottom: var(--sp-3); }
 .home-card summary { cursor: pointer; font-weight: 600; color: var(--c-ink); }
+.ui-card {
+  background: var(--c-surface);
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-lg);
+  padding: var(--sp-5);
+  box-shadow: var(--shadow-1);
+}
+.ui-card.compact { padding: var(--sp-4); }
+.ui-card.inset {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--c-surface-2);
+  box-shadow: none;
+}
+.ui-card h3 { margin-bottom: var(--sp-3); }
 
 /* ---- Contacts: master-detail -------------------------------------------- */
 .contacts-shell {
