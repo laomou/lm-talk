@@ -72,28 +72,28 @@ mod tests {
     }
 
     #[test]
-    fn hkdf_is_deterministic() {
+    fn hkdf_derivation_is_deterministic() {
         let a = hkdf_32(&[7u8; 32], b"info.v1").unwrap();
         let b = hkdf_32(&[7u8; 32], b"info.v1").unwrap();
         assert_eq!(a, b);
     }
 
     #[test]
-    fn hkdf_info_changes_output() {
+    fn hkdf_derivation_changes_with_info() {
         let a = hkdf_32(&[7u8; 32], b"info.a").unwrap();
         let b = hkdf_32(&[7u8; 32], b"info.b").unwrap();
         assert_ne!(a, b);
     }
 
     #[test]
-    fn hkdf_ikm_changes_output() {
+    fn hkdf_derivation_changes_with_input_key_material() {
         let a = hkdf_32(&[7u8; 32], b"info").unwrap();
         let b = hkdf_32(&[8u8; 32], b"info").unwrap();
         assert_ne!(a, b);
     }
 
     #[test]
-    fn hkdf_known_answer_is_stable() {
+    fn hkdf_derivation_matches_known_answer() {
         // Locks the HKDF-SHA256 (salt=None) output for a fixed input so an
         // accidental change to the algorithm/params is caught.
         let out = hkdf_32(&[0u8; 32], b"lm-talk.test.kat.v1").unwrap();
@@ -104,7 +104,7 @@ mod tests {
     }
 
     #[test]
-    fn aead_roundtrip() {
+    fn aead_encrypt_decrypt_roundtrip() {
         let key = [1u8; 32];
         let nonce = [2u8; 24];
         let plaintext = b"hello lm-talk";
@@ -116,7 +116,7 @@ mod tests {
     }
 
     #[test]
-    fn aead_wrong_key_fails() {
+    fn aead_decrypt_rejects_wrong_key() {
         let ct = xchacha20poly1305_encrypt(&[1u8; 32], &[2u8; 24], b"secret", b"").unwrap();
         assert_eq!(
             xchacha20poly1305_decrypt(&[9u8; 32], &[2u8; 24], &ct, b"").unwrap_err(),
@@ -125,7 +125,7 @@ mod tests {
     }
 
     #[test]
-    fn aead_wrong_nonce_fails() {
+    fn aead_decrypt_rejects_wrong_nonce() {
         let ct = xchacha20poly1305_encrypt(&[1u8; 32], &[2u8; 24], b"secret", b"").unwrap();
         assert_eq!(
             xchacha20poly1305_decrypt(&[1u8; 32], &[3u8; 24], &ct, b"").unwrap_err(),
@@ -134,7 +134,7 @@ mod tests {
     }
 
     #[test]
-    fn aead_wrong_aad_fails() {
+    fn aead_decrypt_rejects_wrong_aad() {
         let ct = xchacha20poly1305_encrypt(&[1u8; 32], &[2u8; 24], b"secret", b"aad-1").unwrap();
         assert_eq!(
             xchacha20poly1305_decrypt(&[1u8; 32], &[2u8; 24], &ct, b"aad-2").unwrap_err(),
@@ -143,7 +143,7 @@ mod tests {
     }
 
     #[test]
-    fn aead_tampered_ciphertext_fails() {
+    fn aead_decrypt_rejects_tampered_ciphertext() {
         let mut ct = xchacha20poly1305_encrypt(&[1u8; 32], &[2u8; 24], b"secret", b"").unwrap();
         ct[0] ^= 0xff;
         assert_eq!(

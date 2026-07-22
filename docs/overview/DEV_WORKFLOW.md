@@ -41,7 +41,6 @@ PATH="$PWD/.tools/node/bin:$PATH" npm --prefix apps/node-admin run test:e2e
 ./scripts/release-check.sh quick
 ```
 
-`quick` 覆盖 Rust 格式/测试、WASM/Web 构建、Web E2E、节点测试和 fuzz harness 编译检查。完整发布前可看 `docs/release/RELEASE_CHECKLIST.md`。
 
 ## 运行本地节点
 

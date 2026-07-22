@@ -338,7 +338,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn device_cert_roundtrip() {
+    fn device_certificate_roundtrip() {
         let (identity, _backup) = Identity::create_with_passphrase("alice").unwrap();
         let device = DeviceIdentity::random().unwrap();
         let cert = device.create_cert(&identity, Some("phone".into())).unwrap();
@@ -346,7 +346,7 @@ mod tests {
     }
 
     #[test]
-    fn device_revoke_roundtrip() {
+    fn device_revocation_roundtrip() {
         let (identity, _backup) = Identity::create_with_passphrase("alice").unwrap();
         let device = DeviceIdentity::random().unwrap();
         let revoke =
@@ -358,7 +358,7 @@ mod tests {
     }
 
     #[test]
-    fn tampered_device_revoke_fails() {
+    fn device_revocation_rejects_tampered_payload() {
         let (identity, _backup) = Identity::create_with_passphrase("alice").unwrap();
         let device = DeviceIdentity::random().unwrap();
         let mut revoke = DeviceRevoke::new(&identity, device.device_id().clone(), None).unwrap();
@@ -370,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn tampered_device_cert_fails() {
+    fn device_certificate_rejects_tampered_payload() {
         let (identity, _backup) = Identity::create_with_passphrase("alice").unwrap();
         let device = DeviceIdentity::random().unwrap();
         let mut cert = device.create_cert(&identity, Some("phone".into())).unwrap();

@@ -3176,7 +3176,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_capabilities_csv_works() {
+    fn capabilities_csv_parser_accepts_supported_values() {
         assert_eq!(
             parse_capabilities_csv("bootstrap,dht,mailbox").unwrap(),
             vec![

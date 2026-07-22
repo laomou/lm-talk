@@ -7,7 +7,7 @@ use lm_core::{
 use lm_node::{ControlRequest, NativeNode, NodeConfig, NodeStateSnapshot};
 
 #[test]
-fn node_prekey_sync_mailbox_ratchet_e2e() {
+fn prekey_sync_and_mailbox_delivery_support_ratchet_message() {
     let (alice, _) = Identity::create_with_passphrase("alice node e2e").unwrap();
     let (bob, _) = Identity::create_with_passphrase("bob node e2e").unwrap();
     let mut node_a = NativeNode::new(NodeConfig {
@@ -169,7 +169,7 @@ fn node_prekey_sync_mailbox_ratchet_e2e() {
 }
 
 #[test]
-fn mailbox_pressure_partial_ack_status_and_snapshot_recovery() {
+fn mailbox_partial_ack_and_snapshot_recovery_preserve_delivery_state() {
     let (alice, _) = Identity::create_with_passphrase("mailbox pressure alice").unwrap();
     let (bob, _) = Identity::create_with_passphrase("mailbox pressure bob").unwrap();
     let mut node = NativeNode::new(NodeConfig {
@@ -282,7 +282,38 @@ fn mailbox_pressure_partial_ack_status_and_snapshot_recovery() {
 }
 
 #[test]
-fn group_sender_key_fanout_via_mailbox() {
+fn mailbox_push_rejects_mismatched_sender_key() {
+    let (alice, _) = Identity::create_with_passphrase("alice mailbox signature").unwrap();
+    let (bob, _) = Identity::create_with_passphrase("bob mailbox signature").unwrap();
+    let mut node = NativeNode::new(NodeConfig {
+        peer_id: "mailbox-signature-node".into(),
+        ..Default::default()
+    });
+    let message = MailboxMessage::new(
+        &alice,
+        bob.user_id().clone(),
+        MailboxMessageKind::DirectEnvelope,
+        "ciphertext that must not be accepted with another sender key".into(),
+        3600,
+    )
+    .unwrap();
+
+    let rejected = node.handle_control_request(ControlRequest {
+        method: "POST".into(),
+        path: "/api/mailbox/push".into(),
+        body: serde_json::json!({
+            "message_text": message.to_export_text().unwrap(),
+            "from_identity_public_key": BASE64.encode(bob.identity_public_key()),
+        })
+        .to_string(),
+        headers: Vec::new(),
+    });
+    assert_eq!(rejected.status, 400, "{}", rejected.body);
+    assert_eq!(node.mailbox.pending_for(bob.user_id()), 0);
+}
+
+#[test]
+fn mailbox_fanout_delivers_group_sender_key_message() {
     // 1. Create 3 identities: Alice, Bob, Carol
     let (alice, _) = Identity::create_with_passphrase("alice group fanout").unwrap();
     let (bob, _) = Identity::create_with_passphrase("bob group fanout").unwrap();

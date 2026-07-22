@@ -723,7 +723,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn prekey_bundle_roundtrip_and_verify() {
+    fn prekey_bundle_roundtrip_validates_signature() {
         let (bob, _) = Identity::create_with_passphrase("bob").unwrap();
         let (bundle, private) = PreKeyBundle::new(&bob, 7, 3, 3600).unwrap();
         bundle.verify().unwrap();
@@ -736,7 +736,7 @@ mod tests {
     }
 
     #[test]
-    fn tampered_prekey_bundle_fails() {
+    fn prekey_bundle_rejects_tampered_payload() {
         let (bob, _) = Identity::create_with_passphrase("bob").unwrap();
         let (mut bundle, _) = PreKeyBundle::new(&bob, 7, 1, 3600).unwrap();
         bundle.signed_prekey_id = 8;
@@ -744,7 +744,7 @@ mod tests {
     }
 
     #[test]
-    fn signed_one_time_prekey_record_roundtrip_and_verify() {
+    fn signed_one_time_prekey_record_roundtrip_validates_signature() {
         let (bob, _) = Identity::create_with_passphrase("bob signed otpk").unwrap();
         let (bundle, _) = PreKeyBundle::new(&bob, 7, 2, 3600).unwrap();
         let one_time_prekey = bundle.one_time_prekeys[1].clone();
@@ -781,7 +781,7 @@ mod tests {
     }
 
     #[test]
-    fn tampered_signed_one_time_prekey_record_fails() {
+    fn signed_one_time_prekey_record_rejects_tampered_payload() {
         let (bob, _) = Identity::create_with_passphrase("bob signed otpk tamper").unwrap();
         let (bundle, _) = PreKeyBundle::new(&bob, 7, 1, 3600).unwrap();
         let mut record = SignedOneTimePreKeyRecord::new(
@@ -833,7 +833,7 @@ mod tests {
     }
 
     #[test]
-    fn x3dh_without_one_time_prekey_works() {
+    fn x3dh_without_one_time_prekey_derives_shared_secret() {
         let (alice, _) = Identity::create_with_passphrase("alice").unwrap();
         let (bob, _) = Identity::create_with_passphrase("bob").unwrap();
         let (bundle, private) = PreKeyBundle::new(&bob, 42, 0, 3600).unwrap();

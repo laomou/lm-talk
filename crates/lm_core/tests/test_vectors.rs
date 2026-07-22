@@ -84,7 +84,7 @@ fn backup_export_text_tamper_is_rejected() {
 }
 
 #[test]
-fn device_vectors_verify() {
+fn device_test_vectors_validate() {
     let v = fixture("device_v1.json");
     let identity = identity(7);
     let device = DeviceIdentity::from_seed(DeviceSeed::from_bytes([9u8; 32])).unwrap();
@@ -113,7 +113,7 @@ fn device_vectors_verify() {
 }
 
 #[test]
-fn contact_and_friend_vectors_verify() {
+fn contact_and_friend_test_vectors_validate() {
     let contact = fixture("contact_card_v1.json");
     let card =
         ContactCard::from_export_text(contact["contact_card_text"].as_str().unwrap()).unwrap();
@@ -133,7 +133,7 @@ fn contact_and_friend_vectors_verify() {
 }
 
 #[test]
-fn prekey_vectors_verify() {
+fn prekey_test_vectors_validate() {
     let v = fixture("prekey_v1.json");
     let id = identity(7);
     assert_eq!(v["identity_seed_hex"], hex(&[7u8; 32]));
@@ -188,7 +188,7 @@ fn prekey_vectors_verify() {
 }
 
 #[test]
-fn ratchet_vectors_verify() {
+fn ratchet_test_vectors_validate() {
     let v = fixture("ratchet_v1.json");
     let alice = identity(7);
     let bob = identity(8);
@@ -251,7 +251,7 @@ fn ratchet_vectors_verify() {
 }
 
 #[test]
-fn receipt_and_mailbox_vectors_verify() {
+fn receipt_and_mailbox_test_vectors_validate() {
     let v = fixture("receipt_mailbox_v1.json");
     let alice = identity(7);
     let bob = identity(8);
@@ -309,7 +309,7 @@ fn receipt_and_mailbox_vectors_verify() {
 }
 
 #[test]
-fn group_sender_key_vectors_verify() {
+fn group_sender_key_test_vectors_validate() {
     let v = fixture("group_sender_key_v1.json");
     let alice_card =
         ContactCard::from_export_text(v["alice_contact_card_text"].as_str().unwrap()).unwrap();
@@ -349,7 +349,7 @@ fn group_sender_key_vectors_verify() {
 }
 
 #[test]
-fn group_vectors_verify() {
+fn group_test_vectors_validate() {
     let v = fixture("group_v1.json");
     let alice_card =
         ContactCard::from_export_text(v["alice_contact_card_text"].as_str().unwrap()).unwrap();
@@ -392,7 +392,7 @@ fn group_vectors_verify() {
 }
 
 #[test]
-fn file_package_vectors_verify() {
+fn file_package_test_vectors_validate() {
     let v = fixture("file_package_v1.json");
     let alice = identity(7);
     let bob = identity(8);
@@ -434,7 +434,7 @@ fn file_package_vectors_verify() {
 }
 
 #[test]
-fn message_vector_decrypts_and_tamper_fails() {
+fn message_test_vector_decrypts_and_rejects_tampering() {
     let v = fixture("message_crypto_v1.json");
     let envelope: DirectEnvelope =
         serde_json::from_str(v["envelope_json"].as_str().unwrap()).unwrap();
@@ -582,7 +582,7 @@ fn vector_size_limits_reject_oversized_import_text() {
 }
 
 #[test]
-fn contact_card_dht_vector_verifies() {
+fn contact_card_dht_test_vector_validates() {
     let v = fixture("contact_card_dht_v1.json");
     let card_text = v["contact_card_text"].as_str().unwrap();
     let card = ContactCard::from_export_text(card_text).unwrap();
@@ -600,7 +600,7 @@ fn contact_card_dht_vector_verifies() {
 }
 
 #[test]
-fn public_peer_vector_verifies() {
+fn public_peer_test_vector_validates() {
     let v = fixture("public_peer_v1.json");
     let peer_text = v["public_peer_text"].as_str().unwrap();
     let announce = PublicPeerAnnounce::from_export_text(peer_text).unwrap();
@@ -620,7 +620,7 @@ fn public_peer_vector_verifies() {
 }
 
 #[test]
-fn wrong_key_decryption_fails() {
+fn decryption_rejects_wrong_key() {
     let (alice, _) = Identity::create_with_passphrase("alice").unwrap();
     let (bob, _) = Identity::create_with_passphrase("bob").unwrap();
     let (eve, _) = Identity::create_with_passphrase("eve").unwrap();
@@ -640,7 +640,7 @@ fn wrong_key_decryption_fails() {
 }
 
 #[test]
-fn cross_user_decryption_fails() {
+fn decryption_rejects_cross_user_key() {
     let (alice, _) = Identity::create_with_passphrase("alice").unwrap();
     let (bob, _) = Identity::create_with_passphrase("bob").unwrap();
 
@@ -659,7 +659,7 @@ fn cross_user_decryption_fails() {
 }
 
 #[test]
-fn tampered_ciphertext_decryption_fails() {
+fn decryption_rejects_tampered_ciphertext() {
     let (alice, _) = Identity::create_with_passphrase("alice").unwrap();
     let (bob, _) = Identity::create_with_passphrase("bob").unwrap();
 

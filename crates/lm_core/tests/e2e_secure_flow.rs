@@ -6,7 +6,7 @@ use lm_core::{
 };
 
 #[test]
-fn two_users_friend_x3dh_ratchet_message_roundtrip() {
+fn friend_x3dh_and_ratchet_support_bidirectional_messages() {
     let (alice, _) = Identity::create_with_passphrase("alice pineapple 2026").unwrap();
     let (bob, _) = Identity::create_with_passphrase("bob pineapple 2026").unwrap();
 
@@ -98,7 +98,7 @@ fn two_users_friend_x3dh_ratchet_message_roundtrip() {
 }
 
 #[test]
-fn exported_contact_and_prekey_text_roundtrip() {
+fn contact_card_and_prekey_exports_roundtrip() {
     let (alice, _) = Identity::create_with_passphrase("alice export").unwrap();
     let card = alice.export_contact_card(None, None, vec![]).unwrap();
     let card_text = card.to_export_text().unwrap();
@@ -111,4 +111,74 @@ fn exported_contact_and_prekey_text_roundtrip() {
     let text = prekey.to_export_text().unwrap();
     let imported = PreKeyBundle::from_export_text(&text).unwrap();
     assert_eq!(imported.user_id, *alice.user_id());
+}
+
+#[test]
+fn ratchet_rejects_replayed_message_after_bidirectional_exchange() {
+    let (alice, _) = Identity::create_with_passphrase("alice ratchet flow").unwrap();
+    let (bob, _) = Identity::create_with_passphrase("bob ratchet flow").unwrap();
+    let alice_dh = RatchetSessionState::generate_dh_keypair().unwrap();
+    let bob_dh = RatchetSessionState::generate_dh_keypair().unwrap();
+    let shared_secret = BASE64.encode([23u8; 32]);
+    let mut alice_state = RatchetSessionState::from_shared_secret_export(
+        alice.user_id().clone(),
+        bob.user_id().clone(),
+        RatchetRole::Initiator,
+        &shared_secret,
+        &alice_dh.private_key,
+        &bob_dh.public_key,
+    )
+    .unwrap();
+    let mut bob_state = RatchetSessionState::from_shared_secret_export(
+        bob.user_id().clone(),
+        alice.user_id().clone(),
+        RatchetRole::Responder,
+        &shared_secret,
+        &bob_dh.private_key,
+        &alice_dh.public_key,
+    )
+    .unwrap();
+
+    let first = RatchetEnvelope::encrypt_text(
+        &mut alice_state,
+        "conversation-ratchet-flow".into(),
+        "Alice 1".into(),
+    )
+    .unwrap();
+    assert_eq!(
+        first.decrypt(&mut bob_state).unwrap().body,
+        MessageBody::Text {
+            text: "Alice 1".into()
+        }
+    );
+
+    let reply = RatchetEnvelope::encrypt_text(
+        &mut bob_state,
+        "conversation-ratchet-flow".into(),
+        "Bob 1".into(),
+    )
+    .unwrap();
+    assert_eq!(
+        reply.decrypt(&mut alice_state).unwrap().body,
+        MessageBody::Text {
+            text: "Bob 1".into()
+        }
+    );
+
+    let second = RatchetEnvelope::encrypt_text(
+        &mut alice_state,
+        "conversation-ratchet-flow".into(),
+        "Alice 2".into(),
+    )
+    .unwrap();
+    assert_eq!(
+        second.decrypt(&mut bob_state).unwrap().body,
+        MessageBody::Text {
+            text: "Alice 2".into()
+        }
+    );
+    assert!(
+        first.decrypt(&mut bob_state).is_err(),
+        "replayed envelope must fail"
+    );
 }

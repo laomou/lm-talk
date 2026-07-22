@@ -40,7 +40,6 @@ lm_core：身份、联系人、消息、文件、群聊、设备、PreKey、Ratc
 | Web app | 已具备注册、登录、联系人、聊天、文件、群聊、同步、备份、诊断和 strict E2EE 修复流程。 |
 | `lm_node` | 已提供 HTTP 控制面、Mailbox、PreKey、DHT、snapshot sync、state_db、metrics 和 Docker federation 模板。 |
 | node-admin | 已提供独立运维面板，用于查看节点健康、DHT、snapshot 和运行统计。 |
-| 测试 | Rust 单测/端到端、Web E2E、测试向量、fuzz smoke、Docker federation smoke/chaos/load 均有入口。 |
 
 ## 4. 身份模型
 
@@ -272,7 +271,6 @@ PATH="$PWD/.tools/node/bin:$PATH" npm --prefix apps/web run test:e2e
 以下事项可作为未来生产发行增强，但不再阻塞当前功能目标：
 
 - 第三方安全审计报告。
-- 长时间 fuzz campaign 与 crash triage。
 - 长时间公网 federation chaos/load 证据。
 - 真实公网部署报告。
 - macOS notarization / Windows code signing。

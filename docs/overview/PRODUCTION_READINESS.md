@@ -1,6 +1,5 @@
 # 功能就绪看板
 
-本文档用于跟踪 LM Talk 作为**去中心化、端到端加密即时通讯应用**的功能完成度。当前目标不再把第三方审计、长时间 fuzz、公网长期压测、真实公网部署报告、macOS notarization / Windows code signing、风险登记签核作为完成阻塞项；这些仍可作为后续发布工程或商业分发工作单独维护。
 
 ## 总体状态
 
@@ -105,7 +104,6 @@
 以下事项可以后续另立发布/合规/商业分发目标，不再阻塞“去中心化 E2EE IM 功能目标”判断：
 
 - 第三方安全审计报告。
-- 长时间 fuzz campaign 产物与 crash triage。
 - 长时间公网 federation chaos/load 证据。
 - 真实公网部署报告。
 - macOS notarization / Windows code signing。
