@@ -848,7 +848,10 @@ pub(super) fn dht_record_key_from_find_value_query(
             let user_id = UserId::from_raw(value.to_string()).map_err(|err| err.to_string())?;
             Ok(lm_node::DhtRecordKey::for_mailbox_hint(&user_id))
         }
-        _ => Err("unsupported dht key kind; expected public-peer, prekey, mailbox-hint, or contact-card".into()),
+        _ => Err(
+            "unsupported dht key kind; expected public-peer, prekey, mailbox-hint, or contact-card"
+                .into(),
+        ),
     }
 }
 
