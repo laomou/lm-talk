@@ -43,6 +43,7 @@
 
 | 文档 | 内容 |
 | --- | --- |
+| [LAN_QUICKSTART.md](deploy/LAN_QUICKSTART.md) | 一条脚本命令启动局域网 Web 页面和同步服务。 |
 | [NODE_CONFIG.md](deploy/NODE_CONFIG.md) | `lm_node serve-control` 配置文件、字段和运维说明。 |
 | [PUBLIC_FEDERATION_RUNBOOK.md](deploy/PUBLIC_FEDERATION_RUNBOOK.md) | 公网联邦节点运行说明。 |
 | [PUBLIC_DEPLOYMENT_REPORT_TEMPLATE.md](deploy/PUBLIC_DEPLOYMENT_REPORT_TEMPLATE.md) | 可选公网部署报告模板。 |
