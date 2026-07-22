@@ -9056,11 +9056,22 @@ async function recoverSyncFailures() {
     }
     const pendingOutbox = outbox.value.filter((item) => item.status !== 'sent')
     if (pendingOutbox.length > 0) {
-      for (const item of pendingOutbox) item.next_retry_at = Date.now()
+      const messageIds = new Set(pendingOutbox.map((item) => item.message_id).filter(Boolean))
+      for (const item of pendingOutbox) {
+        item.status = 'queued'
+        item.next_retry_at = Date.now()
+        item.last_error = undefined
+        if (item.retry_count >= MAX_OUTBOX_RETRY_COUNT) item.retry_count = Math.max(0, MAX_OUTBOX_RETRY_COUNT - 1)
+      }
+      for (const message of messages.value) {
+        if (message.direction === 'out' && messageIds.has(message.id) && message.status === 'failed') message.status = 'queued'
+      }
       await retryDueOutbox()
       actions.push(`Outbox ${pendingOutbox.length} 条`)
       const remaining = outbox.value.filter((item) => item.status !== 'sent').length
-      results.push(`Outbox 已触发 ${pendingOutbox.length}，剩余 ${remaining}`)
+      results.push(remaining > 0
+        ? `待发送已重新排队 ${pendingOutbox.length} 条，剩余 ${remaining}`
+        : `待发送已完成 ${pendingOutbox.length} 条`)
     }
     if (/failed|失败/i.test(nodeSyncStatusText.value) && autoNodeSync.value && nodeSyncPeerUrl.value.trim()) {
       await autoPullSnapshotFromPeerNode()
@@ -9075,6 +9086,7 @@ async function recoverSyncFailures() {
     syncRecoveryStatusText.value = results.length ? results.join('；') : '没有需要重试的失败项'
     syncRecoveryHistory.value = [syncRecoveryStatusText.value, ...syncRecoveryHistory.value].slice(0, 5)
     appendLog(actions.length ? `已重试失败项：${actions.join('、')}` : '没有需要重试的失败项')
+    if (actions.length) toast(syncRecoveryStatusText.value, outbox.value.some((item) => item.status !== 'sent') ? 'info' : 'success')
     persist()
   })
 }
