@@ -1166,11 +1166,10 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 .icon-actions { justify-self: end; display: flex; gap: var(--sp-1); }
 .contact-directory {
   /*
-   * Align the directory item's outer edges with the “我” page cards.
-   * The row itself is the contact page's item surface, so it uses the
-   * same 640px content column rather than the card's inner text width.
+   * “我”页的设置 Item 位于 640px 卡片内：20px × 2 内边距和 1px × 2
+   * 边框后，实际 Item 宽度为 598px。通讯录行直接采用这一可见宽度。
    */
-  max-width: 640px;
+  max-width: 598px;
   margin: 0 auto;
   padding: var(--sp-3) 0 var(--sp-8);
 }
@@ -1204,7 +1203,7 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 .directory-main b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .directory-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .alpha-heading {
-  max-width: 640px;
+  max-width: 598px;
   margin: var(--sp-3) auto 0;
   padding: var(--sp-2) var(--sp-5);
   color: var(--c-ink-3);
