@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import UiPageHeader from './UiPageHeader.vue'
 import UiCard from './UiCard.vue'
 import UiActionGroup from './UiActionGroup.vue'
 
@@ -176,13 +177,8 @@ async function runDiagnostics() {
 <template>
   <section class="debug-page">
     <div class="debug-inner">
-      <header class="debug-header">
-        <div>
-          <h1>诊断工具</h1>
-          <p class="hint">用于排查登录、同步、消息收发和本地数据问题。日常聊天不需要打开。</p>
-        </div>
-        <button class="secondary" @click="ctx.goSettingsPage">返回</button>
-      </header>
+      <UiPageHeader title="诊断工具" back-label="返回" @back="ctx.goSettingsPage" />
+      <p class="hint diagnostic-page-hint">用于排查登录、同步、消息收发和本地数据问题。日常聊天不需要打开。</p>
 
       <section class="diagnostic-overview">
         <UiCard variant="compact" class="diagnostic-card">

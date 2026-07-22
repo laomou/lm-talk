@@ -780,15 +780,10 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 .danger-text { color: var(--c-danger); }
 
 /* ---- Diagnostics -------------------------------------------------------- */
-.debug-page { height: 100%; overflow: auto; padding: var(--sp-6); background: var(--c-canvas); }
-.debug-inner { max-width: 980px; margin: 0 auto; display: grid; gap: var(--sp-4); }
-.debug-header {
-  display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-4);
-  background: var(--c-surface); border: 1px solid var(--c-line); border-radius: var(--r-lg);
-  padding: var(--sp-5); box-shadow: var(--shadow-1);
-}
-.debug-header h1 { margin-bottom: var(--sp-1); }
-.debug-header .hint { line-height: 1.5; }
+.debug-page { height: 100%; overflow: auto; background: var(--c-canvas); }
+.debug-inner { max-width: 980px; margin: 0 auto; display: grid; gap: var(--sp-4); padding: 0 var(--sp-6) var(--sp-6); }
+.debug-inner > .ui-page-header { margin: 0 calc(var(--sp-6) * -1); }
+.diagnostic-page-hint { line-height: 1.5; margin-top: var(--sp-4); }
 .diagnostic-overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--sp-3); }
 .diagnostic-card { background: var(--c-surface); border: 1px solid var(--c-line); border-radius: var(--r-lg); padding: var(--sp-4); display: grid; gap: var(--sp-1); min-width: 0; box-shadow: var(--shadow-1); }
 .diagnostic-card span { color: var(--c-ink-3); font-size: 13px; }
@@ -1009,8 +1004,9 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .ui-action-group.full-width button { width: 100%; }
   .inline-field { grid-template-columns: 1fr; }
 
-  .me-page,
-  .debug-page { padding: var(--sp-3); }
+  .me-page { padding: var(--sp-3); }
+  .debug-inner { padding: 0 var(--sp-3) var(--sp-3); }
+  .debug-inner > .ui-page-header { margin: 0 calc(var(--sp-3) * -1); }
   .contact-directory,
   .alpha-heading { width: calc(100% - 24px); }
   .me-inner,
@@ -1018,8 +1014,6 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .me-hero { grid-template-columns: auto minmax(0, 1fr); padding: var(--sp-4); }
   .me-hero-actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
   .me-hero-actions button { min-width: 0; }
-  .debug-header { flex-direction: column; padding: var(--sp-4); }
-  .debug-header button { width: 100%; }
   .diagnostic-overview { grid-template-columns: 1fr; gap: var(--sp-2); }
   .dialog-mask { padding: var(--sp-3); }
   .dialog-card { padding: var(--sp-4); }
