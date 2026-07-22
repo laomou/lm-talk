@@ -129,8 +129,8 @@ const messagesEl = ref<HTMLElement | null>(null)
 function scrollToBottom() {
   const el = messagesEl.value
   if (!el) return
-  // Returning to “选择一个聊天” reuses the same scroll container. Reset the
-  // previous conversation's scroll position so the onboarding starts at top.
+  // Returning to the chat list reuses the same scroll container. Reset the
+  // previous conversation's scroll position so the empty state starts at top.
   if (!props.ctx.activePeerId?.value) {
     el.scrollTop = 0
     return
@@ -183,16 +183,13 @@ function sendAndClose() {
 
 <template>
   <section class="chat-main clean-chat-main">
-    <header class="chat-header clean-chat-header product-chat-header">
-      <button v-if="ctx.activeContact.value" class="back-btn chat-back-btn" aria-label="返回聊天列表" @click="ctx.goChatHome">‹</button>
-      <div v-if="ctx.activeContact.value" class="chat-title-block product-chat-title">
+    <header v-if="ctx.activeContact.value" class="chat-header clean-chat-header product-chat-header">
+      <button class="back-btn chat-back-btn" aria-label="返回聊天列表" @click="ctx.goChatHome">‹</button>
+      <div class="chat-title-block product-chat-title">
         <h2>{{ ctx.activeContact.value.display_name || '未命名联系人' }}</h2>
         <span class="trust-inline" :class="{ danger: !ctx.activeContact.value.fingerprint_verified_at }">{{ trustText(ctx.activeContact.value) }}</span>
       </div>
-      <div v-else class="chat-title-block product-chat-title empty-title">
-        <h2>聊天</h2>
-      </div>
-      <div v-if="ctx.activeContact.value" class="chat-header-actions product-chat-actions">
+      <div class="chat-header-actions product-chat-actions">
         <span v-if="activePendingOutboxCount" class="outbox-summary-inline">待发送 {{ activeQueuedOutboxCount }} · 失败 {{ activeFailedOutboxCount }}</span>
         <button v-if="activePendingOutboxCount" class="secondary" @click="ctx.flushOutboxForActive">重试</button>
         <button v-if="activePendingOutboxCount" class="secondary danger" @click="ctx.cancelOutboxForActive">取消</button>
