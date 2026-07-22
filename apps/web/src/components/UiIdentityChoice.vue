@@ -10,13 +10,13 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   select: [id: string]
-  remove: [id: string]
+  requestDelete: [id: string]
 }>()
 
-function removeIdentity(event: MouseEvent) {
+function requestDelete(event: MouseEvent) {
   event.preventDefault()
   event.stopPropagation()
-  emit('remove', props.id)
+  emit('requestDelete', props.id)
 }
 </script>
 
@@ -30,7 +30,14 @@ function removeIdentity(event: MouseEvent) {
         <small>{{ userId }}</small>
       </span>
     </label>
-    <button class="icon-btn ui-identity-delete" type="button" title="删除本地身份" aria-label="删除本地身份" @click="removeIdentity">
+    <button
+      class="icon-btn ui-identity-delete"
+      type="button"
+      title="删除本地身份"
+      aria-label="删除本地身份"
+      @pointerdown.stop
+      @click="requestDelete"
+    >
       <UiIcon name="close" size="18" />
     </button>
   </div>

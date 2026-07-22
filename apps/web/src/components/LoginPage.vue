@@ -111,7 +111,7 @@ function downloadRegisteredBackup() {
             :user-id="item.user_id"
             :selected="selectedIdentityId === item.id"
             @select="selectedIdentityId = $event"
-            @remove="emit('removeIdentity', $event)"
+            @request-delete="emit('removeIdentity', $event)"
           />
         </div>
         <UiEmptyState v-else title="还没有本机身份" description="注册新身份，或导入已有身份后再登录。" />
