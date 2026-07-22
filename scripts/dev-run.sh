@@ -40,28 +40,32 @@ Node options:
 USAGE
 }
 
-print_urls() {
+print_sync_addresses() {
   local bind="$1"
+  local token="$2"
   local port="${bind##*:}"
   port="${port//]/}"
   echo
-  echo "可在网页『我 → 消息同步 → 同步服务』填写："
+  echo "可在网页『我 → 同步与安全 → 编辑地址』填写："
+  echo "注意：以下地址包含访问令牌，请仅粘贴到可信设备，不要发送到公开渠道。"
+  local suffix=""
+  [[ -n "$token" ]] && suffix="|$token"
   case "$bind" in
-    127.0.0.1:*|localhost:*) echo "  http://127.0.0.1:$port"; return ;;
-    \[::*\]|:::*) echo "  http://[::1]:$port" ;;
-    0.0.0.0:*|*:*) echo "  http://127.0.0.1:$port" ;;
+    127.0.0.1:*|localhost:*) echo "  http://127.0.0.1:$port$suffix"; return ;;
+    \[::*\]|:::*) echo "  http://[::1]:$port$suffix" ;;
+    0.0.0.0:*|*:*) echo "  http://127.0.0.1:$port$suffix" ;;
   esac
   if command -v hostname >/dev/null 2>&1; then
     while read -r ip; do
       [[ -z "$ip" ]] && continue
-      [[ "$ip" == *:* ]] && echo "  http://[$ip]:$port" || echo "  http://$ip:$port"
+      [[ "$ip" == *:* ]] && echo "  http://[$ip]:$port$suffix" || echo "  http://$ip:$port$suffix"
     done < <(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v '^127\.' | grep -v '^$' || true)
   fi
   if command -v ip >/dev/null 2>&1; then
     while read -r ifname ip6 scope; do
       [[ -z "$ip6" ]] && continue
-      [[ "$scope" == "global" ]] && echo "  http://[$ip6]:$port"
-      [[ "$scope" == "link" ]] && echo "  http://[$ip6%25$ifname]:$port  (IPv6 链路本地)"
+      [[ "$scope" == "global" ]] && echo "  http://[$ip6]:$port$suffix"
+      [[ "$scope" == "link" ]] && echo "  http://[$ip6%25$ifname]:$port$suffix  (IPv6 链路本地)"
     done < <(ip -o -6 addr show scope global 2>/dev/null | awk '{split($4,a,"/"); print $2, a[1], "global"}'; ip -o -6 addr show scope link 2>/dev/null | awk '{split($4,a,"/"); print $2, a[1], "link"}')
   fi
 }
@@ -173,6 +177,19 @@ ERR
 
 validate_prd_run_security
 
+sync_address_token="$control_token"
+if [[ -z "$sync_address_token" && -n "$control_token_file" ]]; then
+  if [[ ! -r "$control_token_file" ]]; then
+    echo "无法读取控制令牌文件：$control_token_file" >&2
+    exit 2
+  fi
+  sync_address_token="$(tr -d '\r\n' < "$control_token_file")"
+  if [[ -z "$sync_address_token" ]]; then
+    echo "控制令牌文件为空：$control_token_file" >&2
+    exit 2
+  fi
+fi
+
 admin_dist="$ROOT/apps/node-admin/dist"
 need_web_admin_build=0
 if [[ "$skip_web_admin_build" != "1" && ! -f "$ROOT/node_admin.zip" && ! -f "$ROOT/target/release/node_admin.zip" ]]; then
@@ -222,13 +239,13 @@ if [[ -n "$sync_peer" && "$sync_interval_seconds" != "0" ]]; then
     echo "同步认证：Bearer token enabled"
   fi
 fi
+print_sync_addresses "$bind" "$sync_address_token"
 if [[ "$check_config" == "1" ]]; then
   echo "配置检查：OK"
   exit 0
 fi
 
 echo "构建：release binary"
-print_urls "$bind"
 echo
 echo "提示：PRD 禁止 cargo run，只执行 target/release/lm_node。公网部署请放在 TLS 反向代理后。"
 echo
