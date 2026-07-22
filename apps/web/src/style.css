@@ -1006,7 +1006,6 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .ui-section-actions { width: 100%; }
   .ui-action-group.full-width,
   .ui-action-group.full-width button { width: 100%; }
-  .row.compact button { flex: 1 1 auto; }
   .inline-field { grid-template-columns: 1fr; }
 
   .me-page,
