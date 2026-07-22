@@ -1,21 +1,20 @@
-# LM Talk Node container
+# LM Talk Node 容器镜像
 
-This directory builds the public `lm_node` HTTP service image.
+本目录包含公开 `lm_node` HTTP 服务的容器构建定义。
 
-Published image:
+发布镜像：
 
 ```text
 ghcr.io/laomou/lm-talk-node
 ```
 
-Release tags publish matching `linux/amd64` and `linux/arm64` images. Stable
-tags also update `:latest`.
+发布版本 tag 会同时提供 `linux/amd64` 与 `linux/arm64` 镜像；稳定版本还会更新
+`:latest`。
 
-## Run a published image
+## 使用发布镜像
 
-Create a `node.json` from the repository template
-`docs/examples/lm-node.config.example.json`, set a strong control token, and
-start the node:
+从仓库中的 `docs/examples/lm-node.config.example.json` 创建 `node.json`，配置
+高强度控制 token 后启动：
 
 ```bash
 docker run --rm \
@@ -26,24 +25,14 @@ docker run --rm \
   ghcr.io/laomou/lm-talk-node:latest
 ```
 
-Pin a release tag for a persistent deployment, for example
-`ghcr.io/laomou/lm-talk-node:0.1.0`.
+长期部署应固定版本，例如 `ghcr.io/laomou/lm-talk-node:0.1.0`，不要依赖
+`:latest`。
 
-The service stores its state under `/data`. Keep that volume persistent and
-protect the host disk at rest. Do not expose an unauthenticated control API;
-configure `control_token_file` (or `control_token`) in `node.json`.
+服务状态保存在 `/data`；请挂载持久卷，并在宿主机层保护磁盘数据。不要暴露未鉴权的
+控制面：必须在 `node.json` 中配置 `control_token_file`（或 `control_token`）。
 
-## Build locally
-
-Run from the repository root:
-
-```bash
-docker build -f docker/node/Dockerfile -t lm-talk-node:local .
-```
-
-The default container command is:
+容器默认执行：
 
 ```text
 lm_node serve-control --config-file /app/config.json
 ```
-

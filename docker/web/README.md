@@ -1,18 +1,18 @@
-# LM Talk Web container
+# LM Talk Web 容器镜像
 
-This directory builds the static browser application image. The final image
-uses Caddy to serve the compiled Web files on port `80`.
+本目录包含静态浏览器应用的容器构建定义。最终镜像使用 Caddy 在 `80` 端口提供
+编译后的 Web 文件。
 
-Published image:
+发布镜像：
 
 ```text
 ghcr.io/laomou/lm-talk-web
 ```
 
-Release tags publish matching `linux/amd64` and `linux/arm64` images. Stable
-tags also update `:latest`.
+发布版本 tag 会同时提供 `linux/amd64` 与 `linux/arm64` 镜像；稳定版本还会更新
+`:latest`。
 
-## Run a published image
+## 使用发布镜像
 
 ```bash
 docker run --rm \
@@ -21,25 +21,10 @@ docker run --rm \
   ghcr.io/laomou/lm-talk-web:latest
 ```
 
-Open `http://127.0.0.1:8080`. For a public deployment, put this container
-behind an HTTPS reverse proxy. The browser app needs a secure context for
-WebCrypto, so production deployments should use HTTPS.
+访问 `http://127.0.0.1:8080`。公网部署时，应将此容器置于 HTTPS 反向代理之后。
+浏览器应用依赖安全上下文中的 WebCrypto，因此正式部署必须使用 HTTPS。
 
-The sync service URL and token are configured in the Web application; the Web
-image does not bundle node credentials.
+同步服务地址和 token 在 Web 应用中配置；Web 镜像不包含节点凭据。
 
-## Build locally
-
-Run from the repository root:
-
-```bash
-docker build \
-  -f docker/web/Dockerfile \
-  --build-arg BUILD_REF=local \
-  -t lm-talk-web:local \
-  .
-```
-
-`BUILD_REF` is shown by the application as its build identifier. The release
-workflow sets it to the release tag.
-
+长期部署应固定版本，例如 `ghcr.io/laomou/lm-talk-web:0.1.0`，不要依赖
+`:latest`。
