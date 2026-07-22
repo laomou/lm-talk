@@ -1784,6 +1784,18 @@ function base64ToBytesRaw(value: string): Uint8Array {
   return out
 }
 
+function hexToBytes(value: string): number[] {
+  const hex = value.trim()
+  if (!/^[0-9a-fA-F]{64}$/.test(hex)) throw new Error('DHT key 格式无效')
+  const bytes: number[] = []
+  for (let i = 0; i < hex.length; i += 2) bytes.push(Number.parseInt(hex.slice(i, i + 2), 16))
+  return bytes
+}
+
+function dhtRecordStoreBody(record: { key: string; [key: string]: unknown }): string {
+  return JSON.stringify({ record: { ...record, key: hexToBytes(record.key) } })
+}
+
 async function localStorageCryptoKey(): Promise<CryptoKey | null> {
   if (!identity.value || !passphrase.value) return null
   const webCrypto = globalThis.crypto
@@ -8076,7 +8088,7 @@ async function publishAndCheckAllMyDht() {
     }
     await nodeFetchJson('/api/dht/record', {
       method: 'POST',
-      body: JSON.stringify({ record: mailboxRecord }),
+      body: dhtRecordStoreBody(mailboxRecord),
     })
     await runDhtFindValueForKey(mailboxRecord.key)
 
@@ -8099,7 +8111,7 @@ async function publishAndCheckAllMyDht() {
     }
     const store = await nodeFetchJson('/api/dht/record', {
       method: 'POST',
-      body: JSON.stringify({ record: publicPeerRecord }),
+      body: dhtRecordStoreBody(publicPeerRecord),
     })
     nodeClosestInfoText.value = JSON.stringify(store, null, 2)
     await runDhtFindValueForKey(publicPeerRecord.key)
@@ -8129,7 +8141,7 @@ async function publishPublicPeerDhtRecord(options: { recordHistory?: boolean } =
   }
   const store = await nodeFetchJson('/api/dht/record', {
     method: 'POST',
-    body: JSON.stringify({ record }),
+    body: dhtRecordStoreBody(record),
   })
   nodeClosestInfoText.value = JSON.stringify(store, null, 2)
   if (options.recordHistory !== false) recordDhtOperation(`PublicPeer 已发布到 DHT：${peerId}`)
@@ -8180,7 +8192,7 @@ async function publishMailboxHintDhtRecordFor(url: string, options: { recordHist
   }
   const store = await nodeFetchJson('/api/dht/record', {
     method: 'POST',
-    body: JSON.stringify({ record }),
+    body: dhtRecordStoreBody(record),
   })
   nodeClosestInfoText.value = JSON.stringify(store, null, 2)
   if (options.recordHistory !== false) recordDhtOperation(`MailboxHint 已发布到 DHT：${mailboxUrl}`)
@@ -8218,7 +8230,7 @@ async function publishContactCardDhtRecord(options: { recordHistory?: boolean } 
   }
   const store = await nodeFetchJson('/api/dht/record', {
     method: 'POST',
-    body: JSON.stringify({ record }),
+    body: dhtRecordStoreBody(record),
   })
   nodeClosestInfoText.value = JSON.stringify(store, null, 2)
   if (options.recordHistory !== false) recordDhtOperation(`ContactCard 已发布到 DHT：${record.key.slice(0, 12)}…`)
