@@ -11,78 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  release-check:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: apps/web/package-lock.json
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-          components: rustfmt
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            .
-            fuzz
-
-      - name: Install wasm-pack
-        uses: taiki-e/install-action@wasm-pack
-
-      - name: Install web dependencies
-        working-directory: apps/web
-        run: npm ci
-
-      - name: Release check quick
-        env:
-          RELEASE_CHECK_SKIP_CLIPPY: '1'
-        run: ./scripts/release-check.sh quick
-
-  web-e2e:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: apps/web/package-lock.json
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-
-      - name: Install wasm-pack
-        uses: taiki-e/install-action@wasm-pack
-
-      - name: Install web dependencies
-        working-directory: apps/web
-        run: npm ci
-
-      - name: Install Playwright browser
-        working-directory: apps/web
-        run: npx playwright install --with-deps chromium
-
-      - name: Run user auth flows
-        working-directory: apps/web
-        run: npm run test:e2e
-
-  clippy:
+  code:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -92,15 +21,125 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-          components: clippy
+          components: rustfmt, clippy
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: .
 
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Check format, lint, and core tests
+        run: |
+          cargo fmt --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test -p lm_core
+
+  node:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+
+      - name: Run lm_node tests and integration flows
+        run: |
+          cargo test -p lm_node --lib
+          cargo test -p lm_node --bin lm_node
+          cargo test -p lm_node --test e2e_node_flow
+          cargo test -p lm_node --test e2e_http_control_flow
+
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@wasm-pack
+
+      - name: Test bindings and build browser Wasm
+        run: |
+          cargo test -p lm_wasm
+          wasm-pack build crates/lm_wasm --target web --out-dir ../../apps/web/src/wasm --no-opt
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@wasm-pack
+
+      - name: Install web dependencies
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Build Wasm
+        working-directory: apps/web
+        run: npm run build:wasm
+
+      - name: Check types
+        working-directory: apps/web
+        run: npx vue-tsc --noEmit
+
+      - name: Build production web app
+        working-directory: apps/web
+        run: npx vite build
+
+      - name: Install Playwright browser
+        working-directory: apps/web
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser user flows
+        working-directory: apps/web
+        run: npm run test:e2e
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+
+      - name: Check fuzz harnesses compile
+        run: cargo check --manifest-path fuzz/Cargo.toml --bins --locked
 
   dependency-audit:
     runs-on: ubuntu-latest
