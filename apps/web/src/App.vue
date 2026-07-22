@@ -3356,7 +3356,7 @@ async function syncNow() {
     showAlert(
       '开启消息同步',
       '开启后可同步新的好友申请和离线消息。',
-      'warning',
+      'info',
       { actionLabel: '去开启', action: goSyncSettings },
     )
     return
