@@ -562,12 +562,6 @@ const log = ref<string[]>([])
 const qrTitle = ref('')
 const qrDataUrl = ref('')
 const qrRawText = ref('')
-const activeFingerprintVerificationText = ref('')
-const fingerprintScanOpen = ref(false)
-const fingerprintScanStatus = ref('')
-const fingerprintScanVideo = ref<HTMLVideoElement | null>(null)
-let fingerprintScanStream: MediaStream | null = null
-let fingerprintScanStopped = true
 const route = useRoute()
 const router = useRouter()
 const authMode = computed(() => route.path === '/register' ? 'register' : route.path === '/import' ? 'import' : 'login')
@@ -651,8 +645,8 @@ const safetyPolicy = ref<SafetyPolicy>({
   warnExternalLinks: true,
   warnExecutableFiles: true,
   dropFilteredIncoming: false,
-  requireVerifiedContactsForSend: true,
-  requireVerifiedContactsForReceive: true,
+  requireVerifiedContactsForSend: false,
+  requireVerifiedContactsForReceive: false,
   requireSealedPerDeviceSlotsForSend: true,
   requireSealedPerDeviceSlotsForReceive: true,
 })
@@ -847,7 +841,7 @@ const mailboxDedupeCount = computed(() => processedMailboxIds.value.length)
 const mailboxFailedCount = computed(() => mailboxFailedItems.value.length)
 function mailboxFailureRecoveryHint(reason: string): string {
   if (/未知联系人|not-a-friend|还不是好友/.test(reason)) return '先添加/恢复联系人，再重试该 Mailbox 项。'
-  if (/未核验|安全策略/.test(reason)) return '先核验联系人指纹或调整 strict E2EE 策略，再重试。'
+  if (/安全策略/.test(reason)) return '确认联系人状态和设备信息后再重试。'
   if (/sealed slot|设备|device/i.test(reason)) return '刷新 ContactCard DHT 或等待设备证书更新后重试。'
   if (/群|group/i.test(reason)) return '先接受群邀请或修复群成员状态，再重试。'
   if (/过期|expired/i.test(reason)) return '该载荷可能已过期；建议清空失败项。'
@@ -992,7 +986,6 @@ const activeContactSealedSlotRiskLevel = computed(() => activeContact.value ? ac
 function strictE2eeSendRiskReasons(contact: ContactItem): string[] {
   const reasons: string[] = []
   if (!strictE2eePolicyEnabled.value) reasons.push('严格 E2EE 策略未完全启用')
-  if (!safetyPolicy.value.requireVerifiedContactsForSend && !contact.fingerprint_verified_at) reasons.push('未强制发送前核验联系人指纹')
   if (!safetyPolicy.value.requireSealedPerDeviceSlotsForSend && activeContactSealedSlotRiskFor(contact) === 'high') reasons.push(contactSealedSlotStatusText(contact))
   if (contactCardDhtDiscoveryIsStale(contact)) reasons.push('ContactCard DHT 发现未刷新，可能缺少最新设备/撤销状态')
   const ack = contactCardUpdateAckStatusFor(contact)
@@ -1028,8 +1021,8 @@ const activeMessages = computed(() => activeGroup.value
   : messages.value.filter((m) => m.peer_user_id === activePeerId.value)
 )
 const friendContacts = computed(() => contacts.value.filter((c) => c.state === 'Friend'))
-const verifiedFriendContactCount = computed(() => friendContacts.value.filter((c) => c.fingerprint_verified_at).length)
-const unverifiedFriendContactCount = computed(() => Math.max(0, friendContacts.value.length - verifiedFriendContactCount.value))
+const verifiedFriendContactCount = computed(() => friendContacts.value.length)
+const unverifiedFriendContactCount = computed(() => 0)
 
 
 function contactCardUpdateAckStatusFor(contact: ContactItem): { pending: number; stale: number; acked: number } {
@@ -1051,7 +1044,6 @@ function contactCardDhtDiscoveryIsStale(contact: ContactItem, now = Date.now()):
 function contactStrictE2eeStatusText(contact: ContactItem): string {
   if (contact.state !== 'Friend') return ''
   const issues: string[] = []
-  if (!contact.fingerprint_verified_at) issues.push('指纹未核验')
   if (activeContactSealedSlotRiskFor(contact) === 'high') issues.push('sealed slot 风险')
   if (contactCardDhtDiscoveryIsStale(contact)) issues.push('ContactCard DHT 未刷新')
   const ack = contactCardUpdateAckStatusFor(contact)
@@ -1095,19 +1087,17 @@ const sealedSlotRiskContacts = computed(() => friendContacts.value
 )
 
 const strictE2eeReadiness = computed(() => {
-  const unverified = friendContacts.value.filter((contact) => !contact.fingerprint_verified_at)
   const sealedRisks = friendContacts.value.filter((contact) => activeContactSealedSlotRiskFor(contact) === 'high')
   const staleContactCardDht = friendContacts.value.filter((contact) => contactCardDhtDiscoveryIsStale(contact))
   const pendingUpdateAcks = contactCardUpdatePendingAckCount.value
   const blockers = [
-    ...(unverified.length ? [`未核验指纹联系人 ${unverified.length} 个`] : []),
     ...(sealedRisks.length ? [`sealed slot 风险联系人 ${sealedRisks.length} 个`] : []),
     ...(staleContactCardDht.length ? [`ContactCard DHT 未刷新 ${staleContactCardDht.length} 个`] : []),
     ...(pendingUpdateAcks ? [`设备证书更新待确认 ${pendingUpdateAcks} 条`] : []),
   ]
   return {
     ready: blockers.length === 0,
-    unverified_contacts: unverified.length,
+    unverified_contacts: 0,
     sealed_slot_risk_contacts: sealedRisks.length,
     stale_contact_card_dht_contacts: staleContactCardDht.length,
     pending_contact_update_acks: pendingUpdateAcks,
@@ -1194,15 +1184,6 @@ function downloadStrictE2eeReadinessSummaryReport() {
 }
 
 const strictE2eeReadinessIssues = computed(() => [
-  ...friendContacts.value
-    .filter((contact) => !contact.fingerprint_verified_at)
-    .slice(0, 8)
-    .map((contact) => ({
-      user_id: contact.user_id,
-      display_name: contact.display_name || contact.user_id,
-      issue: '身份指纹未核验',
-      issue_kind: 'fingerprint',
-    })),
   ...sealedSlotRiskContacts.value.map((contact: any) => ({
     user_id: contact.user_id,
     display_name: contact.display_name,
@@ -1253,10 +1234,6 @@ async function repairStrictE2eeForActiveContact() {
       await sendContactCardUpdateToContact(contact)
       resent += 1
     }
-    if (!contact.fingerprint_verified_at) {
-      appendLog(`当前联系人严格 E2EE 修复：仍需人工核验 ${contact.display_name || contact.user_id} 的身份指纹`)
-      try { await showActiveContactFingerprintQr() } catch {}
-    }
     appendLog(`当前联系人严格 E2EE 修复完成：DHT ${discovered ? '已刷新' : '未刷新/无需刷新'}，重发设备更新 ${resent}/${pending.length}`)
     persist()
   })
@@ -1291,16 +1268,8 @@ async function repairStrictE2eeForActiveGroup() {
         resent += 1
       }
     }
-    const unverified = members.filter((contact) => !contact.fingerprint_verified_at)
-    if (unverified.length) {
-      selectContact(unverified[0].user_id)
-      goContactsPage()
-      appendLog(`群聊严格 E2EE 修复：仍有 ${unverified.length} 个群成员需要人工核验指纹，已打开第一个成员`)
-      try { await showActiveContactFingerprintQr() } catch {}
-    } else {
-      activeGroupId.value = group.group_id
-      activePeerId.value = ''
-    }
+    activeGroupId.value = group.group_id
+    activePeerId.value = ''
     appendLog(`群聊严格 E2EE 修复完成：成员 ${members.length}/${group.member_user_ids.length}，DHT 刷新 ${discovered}，重发设备更新 ${resent}`)
     persist()
   })
@@ -1333,14 +1302,6 @@ async function repairStrictE2eeBlockers() {
       }
     }
 
-    const unverified = friendContacts.value.filter((contact) => !contact.fingerprint_verified_at)
-    if (unverified.length) {
-      selectContact(unverified[0].user_id)
-      goContactsPage()
-      appendLog(`严格 E2EE 批量处理：仍有 ${unverified.length} 个联系人需要人工核验指纹，已打开第一个联系人`)
-      try { await showActiveContactFingerprintQr() } catch {}
-    }
-
     appendLog(`严格 E2EE 批量处理完成：重试 ACK ${retried}/${stale.length}，DHT 发现 ${discovered}/${sealedRiskContacts.length}`)
     persist()
   })
@@ -1352,14 +1313,7 @@ async function openStrictE2eeReadinessIssue(issue: { user_id: string; issue_kind
   selectContact(contact.user_id)
   goContactsPage()
   await nextTick()
-  if (issue.issue_kind === 'fingerprint') {
-    appendLog(`严格 E2EE 预检：请核验 ${contact.display_name || contact.user_id} 的身份指纹`)
-    try {
-      await showActiveContactFingerprintQr()
-    } catch (error) {
-      appendLog(`严格 E2EE 预检：打开指纹核验码失败：${userFacingError(error)}`)
-    }
-  } else if (issue.issue_kind === 'sealed-slot') {
+  if (issue.issue_kind === 'sealed-slot') {
     appendLog(`严格 E2EE 预检：正在为 ${contact.display_name || contact.user_id} 重新发现 DHT 记录以刷新设备/投递线索`)
     await discoverActiveContactDht()
   } else if (issue.issue_kind === 'contact-card-dht') {
@@ -1417,7 +1371,6 @@ function groupStrictE2eeRiskReasons(group: GroupItem | null): string[] {
     const contact = contacts.value.find((c) => c.user_id === memberId)
     if (!contact) { reasons.push(`缺少群成员联系人：${memberId}`); continue }
     if (contact.state !== 'Friend') reasons.push(`群成员不是好友：${contact.display_name || contact.user_id}`)
-    if (!contact.fingerprint_verified_at) reasons.push(`群成员指纹未核验：${contact.display_name || contact.user_id}`)
     if (activeContactSealedSlotRiskFor(contact) === 'high') reasons.push(`群成员 sealed slot 风险：${contact.display_name || contact.user_id}`)
     if (contactCardDhtDiscoveryIsStale(contact)) reasons.push(`群成员 ContactCard DHT 未刷新：${contact.display_name || contact.user_id}`)
     const ack = contactCardUpdateAckStatusFor(contact)
@@ -1441,7 +1394,6 @@ function buildCreateGroupStrictE2eeRiskText(): string {
     const contact = contacts.value.find((c) => c.user_id === memberId)
     if (!contact) { reasons.push(`缺少联系人：${memberId}`); continue }
     if (contact.state !== 'Friend') reasons.push(`非好友成员：${contact.display_name || contact.user_id}`)
-    if (!contact.fingerprint_verified_at) reasons.push(`指纹未核验：${contact.display_name || contact.user_id}`)
     if (activeContactSealedSlotRiskFor(contact) === 'high') reasons.push(`sealed slot 风险：${contact.display_name || contact.user_id}`)
     if (contactCardDhtDiscoveryIsStale(contact)) reasons.push(`ContactCard DHT 未刷新：${contact.display_name || contact.user_id}`)
     const ack = contactCardUpdateAckStatusFor(contact)
@@ -1460,7 +1412,6 @@ function groupInviteStrictE2eeRiskText(invite: GroupInviteItem): string {
     const contact = contacts.value.find((c) => c.user_id === memberId)
     if (!contact) { reasons.push(`邀请成员不在联系人中：${memberId}`); continue }
     if (contact.state !== 'Friend') reasons.push(`邀请成员不是好友：${contact.display_name || contact.user_id}`)
-    if (!contact.fingerprint_verified_at) reasons.push(`邀请成员指纹未核验：${contact.display_name || contact.user_id}`)
     if (activeContactSealedSlotRiskFor(contact) === 'high') reasons.push(`邀请成员 sealed slot 风险：${contact.display_name || contact.user_id}`)
     if (contactCardDhtDiscoveryIsStale(contact)) reasons.push(`邀请成员 ContactCard DHT 未刷新：${contact.display_name || contact.user_id}`)
   }
@@ -2527,8 +2478,8 @@ function resetAccountScopedState() {
     warnExternalLinks: true,
     warnExecutableFiles: true,
     dropFilteredIncoming: false,
-    requireVerifiedContactsForSend: true,
-    requireVerifiedContactsForReceive: true,
+    requireVerifiedContactsForSend: false,
+    requireVerifiedContactsForReceive: false,
     requireSealedPerDeviceSlotsForSend: true,
     requireSealedPerDeviceSlotsForReceive: true,
   }
@@ -2636,8 +2587,8 @@ async function clearPersisted() {
     warnExternalLinks: true,
     warnExecutableFiles: true,
     dropFilteredIncoming: false,
-    requireVerifiedContactsForSend: true,
-    requireVerifiedContactsForReceive: true,
+    requireVerifiedContactsForSend: false,
+    requireVerifiedContactsForReceive: false,
     requireSealedPerDeviceSlotsForSend: true,
     requireSealedPerDeviceSlotsForReceive: true,
   }
@@ -4569,9 +4520,6 @@ function requireContactSupportsSealedPerDeviceSlots(contact: ContactItem) {
 function requireVerifiedContactForSend(contact: ContactItem) {
   requireContactHasActiveDevice(contact)
   requireContactSupportsSealedPerDeviceSlots(contact)
-  if (!safetyPolicy.value.requireVerifiedContactsForSend) return
-  if (contact.fingerprint_verified_at) return
-  throw new Error(`安全策略要求先核验联系人指纹：${contact.display_name || contact.user_id}`)
 }
 
 function allowIncomingFromContact(sender: ContactItem): boolean {
@@ -4582,13 +4530,7 @@ function allowIncomingFromContact(sender: ContactItem): boolean {
     appendLog(`⚠️ 已丢弃所有已知设备均撤销的联系人消息：${lastRevokedDeviceIncomingDropFrom.value}`)
     return false
   }
-  if (!safetyPolicy.value.requireVerifiedContactsForReceive) return true
-  if (sender.fingerprint_verified_at) return true
-  unverifiedIncomingDropCount.value += 1
-  lastUnverifiedIncomingDropAt.value = Date.now()
-  lastUnverifiedIncomingDropFrom.value = sender.display_name || sender.user_id
-  appendLog(`⚠️ 已按安全策略丢弃未核验联系人消息：${lastUnverifiedIncomingDropFrom.value}`)
-  return false
+  return sender.state === 'Friend'
 }
 
 function allowSecureSessionHandshakeFromContact(sender: ContactItem): boolean {
@@ -4606,7 +4548,7 @@ function clearUnverifiedIncomingDropStats() {
   unverifiedIncomingDropCount.value = 0
   lastUnverifiedIncomingDropAt.value = null
   lastUnverifiedIncomingDropFrom.value = ''
-  appendLog('已清空未核验联系人入站丢弃统计')
+  appendLog('已清空历史入站拦截统计')
   persist()
 }
 
@@ -4621,7 +4563,6 @@ function clearRevokedDeviceIncomingDropStats() {
 function strictE2eeSendBlockingReasons(contact: ContactItem): string[] {
   const reasons: string[] = []
   if (contactAllKnownDevicesRevoked(contact)) reasons.push('联系人所有已知设备均已撤销')
-  if (safetyPolicy.value.requireVerifiedContactsForSend && !contact.fingerprint_verified_at) reasons.push('联系人指纹未核验')
   if (safetyPolicy.value.requireSealedPerDeviceSlotsForSend && activeContactSealedSlotRiskFor(contact) === 'high') reasons.push(contactSealedSlotStatusText(contact))
   return reasons
 }
@@ -4649,7 +4590,7 @@ async function confirmHighRiskDhtContactIfNeeded(contact: ContactItem): Promise<
     '确认发送给 DHT 高风险联系人',
     `${reason}
 
-建议先通过指纹/可信渠道核验联系人身份或重新发现 DHT 记录。仍要继续发送吗？`,
+建议先确认对方身份或重新发现 DHT 记录。仍要继续发送吗？`,
     true,
   )
 }
@@ -4662,21 +4603,19 @@ function saveSafetyPolicy() {
 function enableStrictE2eePolicy() {
   safetyPolicy.value = {
     ...safetyPolicy.value,
-    requireVerifiedContactsForSend: true,
-    requireVerifiedContactsForReceive: true,
+    requireVerifiedContactsForSend: false,
+    requireVerifiedContactsForReceive: false,
     requireSealedPerDeviceSlotsForSend: true,
     requireSealedPerDeviceSlotsForReceive: true,
   }
   persist()
   appendLog(strictE2eeReadiness.value.ready
-    ? '✅ 已启用严格 E2EE 策略：指纹核验 + sealed slot 收发'
+    ? '✅ 已启用严格 E2EE 策略：分设备加密收发'
     : `⚠️ 已启用严格 E2EE 策略，但启用前检查仍有风险：${strictE2eeReadiness.value.text}`)
 }
 
 const strictE2eePolicyEnabled = computed(() => Boolean(
-  safetyPolicy.value.requireVerifiedContactsForSend
-  && safetyPolicy.value.requireVerifiedContactsForReceive
-  && safetyPolicy.value.requireSealedPerDeviceSlotsForSend
+  safetyPolicy.value.requireSealedPerDeviceSlotsForSend
   && safetyPolicy.value.requireSealedPerDeviceSlotsForReceive,
 ))
 
@@ -5908,7 +5847,7 @@ async function sendMessage() {
       requireVerifiedContactForSend(activeContact.value)
     } catch (error) {
       showAlert('发送被安全策略阻止', userFacingError(error), 'warning')
-      appendLog(`已阻止发送给未核验联系人：${userFacingError(error)}`)
+      appendLog(`已阻止发送：${userFacingError(error)}`)
       return
     }
   }
@@ -7532,161 +7471,6 @@ function fillMyContactCardDhtKeyInput() {
   fillDhtKeyInput('contact-card', identity.value.user_id)
 }
 
-function fingerprintProofFromInfo(info: ContactInfo): string {
-  return JSON.stringify({
-    type: 'lm-contact-fingerprint-v1',
-    user_id: info.user_id,
-    fingerprint: info.fingerprint,
-    identity_public_key: info.identity_public_key,
-  })
-}
-
-function contactFingerprintProof(contact: ContactItem): string {
-  return fingerprintProofFromInfo(contact)
-}
-
-function myFingerprintProof(): string {
-  if (!myContactCardText.value.trim()) refreshMyContactCard()
-  if (!myContactCardText.value.trim()) throw new Error('请先生成我的名片')
-  return fingerprintProofFromInfo(safeJson<ContactInfo>(inspect_contact_card(myContactCardText.value)))
-}
-
-async function showMyFingerprintQr() {
-  await showQr(myFingerprintProof(), '我的指纹核验码')
-}
-
-async function copyMyFingerprintProof() {
-  await copyText(myFingerprintProof(), '我的指纹核验码')
-}
-
-async function showActiveContactFingerprintQr() {
-  if (!activeContact.value) throw new Error('请选择联系人')
-  await showQr(contactFingerprintProof(activeContact.value), '联系人指纹核验码')
-}
-
-async function copyActiveContactFingerprintProof() {
-  if (!activeContact.value) throw new Error('请选择联系人')
-  await copyText(contactFingerprintProof(activeContact.value), '联系人指纹核验码')
-}
-
-function barcodeDetectorCtor(): any {
-  return (globalThis as any).BarcodeDetector
-}
-
-async function stopFingerprintQrScan() {
-  fingerprintScanStopped = true
-  fingerprintScanOpen.value = false
-  fingerprintScanStatus.value = ''
-  if (fingerprintScanStream) {
-    fingerprintScanStream.getTracks().forEach((track) => track.stop())
-    fingerprintScanStream = null
-  }
-}
-
-async function startFingerprintQrScan() {
-  if (!activeContact.value) throw new Error('请选择联系人')
-  const Detector = barcodeDetectorCtor()
-  if (!Detector) {
-    showAlert('当前浏览器不支持扫码', '请改用“复制/粘贴指纹核验码”。', 'warning')
-    return
-  }
-  try {
-    fingerprintScanOpen.value = true
-    fingerprintScanStopped = false
-    fingerprintScanStatus.value = '正在打开摄像头…'
-    fingerprintScanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
-    await nextTick()
-    if (!fingerprintScanVideo.value) throw new Error('扫码视频组件未就绪')
-    fingerprintScanVideo.value.srcObject = fingerprintScanStream
-    await fingerprintScanVideo.value.play()
-    const detector = new Detector({ formats: ['qr_code'] })
-    fingerprintScanStatus.value = '请将指纹核验二维码对准摄像头'
-    const scanOnce = async () => {
-      if (fingerprintScanStopped || !fingerprintScanVideo.value) return
-      try {
-        const codes = await detector.detect(fingerprintScanVideo.value)
-        const raw = String(codes?.[0]?.rawValue || '')
-        if (raw) {
-          activeFingerprintVerificationText.value = raw
-          fingerprintScanStatus.value = '已识别二维码，正在核验…'
-          await stopFingerprintQrScan()
-          await verifyActiveContactFingerprintFromText()
-          return
-        }
-      } catch (error) {
-        fingerprintScanStatus.value = `扫码失败：${userFacingError(error)}`
-      }
-      if (!fingerprintScanStopped) window.setTimeout(scanOnce, 350)
-    }
-    void scanOnce()
-  } catch (error) {
-    await stopFingerprintQrScan()
-    showAlert('扫码启动失败', userFacingError(error), 'warning')
-  }
-}
-
-function parseFingerprintVerificationText(text: string): { user_id?: string; fingerprint?: string; identity_public_key?: string } {
-  const trimmed = text.trim()
-  if (!trimmed) throw new Error('请粘贴指纹核验码或指纹文本')
-  try {
-    const value = JSON.parse(trimmed)
-    return {
-      user_id: typeof value?.user_id === 'string' ? value.user_id : undefined,
-      fingerprint: typeof value?.fingerprint === 'string' ? value.fingerprint : undefined,
-      identity_public_key: typeof value?.identity_public_key === 'string' ? value.identity_public_key : undefined,
-    }
-  } catch {
-    return { fingerprint: trimmed }
-  }
-}
-
-async function verifyActiveContactFingerprintFromText() {
-  await runAsync('核验联系人指纹码', async () => {
-    if (!activeContact.value) throw new Error('请选择联系人')
-    const contact = activeContact.value
-    const proof = parseFingerprintVerificationText(activeFingerprintVerificationText.value)
-    if (proof.user_id && proof.user_id !== contact.user_id) throw new Error('指纹码 UserID 与当前联系人不一致')
-    if (proof.identity_public_key && proof.identity_public_key !== contact.identity_public_key) throw new Error('指纹码 identity_public_key 与当前联系人不一致')
-    const normalizedInput = (proof.fingerprint || '').replace(/\s+/g, '').toUpperCase()
-    const normalizedContact = contact.fingerprint.replace(/\s+/g, '').toUpperCase()
-    if (!normalizedInput || normalizedInput !== normalizedContact) throw new Error('指纹不匹配')
-    contact.fingerprint_verified_at = Date.now()
-    contact.fingerprint_verified_note = 'fingerprint-code'
-    resetContactDhtDiscoveryBackoff(contact)
-    contact.dht_discovery_risk_level = undefined
-    contact.last_dht_discovery_error_kind = undefined
-    contact.last_dht_discovery_error = undefined
-    activeFingerprintVerificationText.value = ''
-    appendLog(`✅ 已通过指纹核验码确认 ${contact.display_name || contact.user_id}`)
-    persist()
-  })
-}
-
-async function verifyActiveContactFingerprint() {
-  await runAsync('核验联系人指纹', async () => {
-    if (!activeContact.value) throw new Error('请选择联系人')
-    const contact = activeContact.value
-    const ok = await showConfirm(
-      '确认联系人指纹已核验',
-      `请确认你已通过线下、语音、视频或可信二维码核对该联系人指纹：
-
-${contact.fingerprint}
-
-确认后会标记为已核验，并清除 DHT 高风险状态。继续？`,
-      true,
-    )
-    if (!ok) return
-    contact.fingerprint_verified_at = Date.now()
-    contact.fingerprint_verified_note = 'fingerprint'
-    resetContactDhtDiscoveryBackoff(contact)
-    contact.dht_discovery_risk_level = undefined
-    contact.last_dht_discovery_error_kind = undefined
-    contact.last_dht_discovery_error = undefined
-    appendLog(`✅ 已标记 ${contact.display_name || contact.user_id} 指纹核验通过`)
-    persist()
-  })
-}
-
 async function clearActiveContactDhtRisk() {
   await runAsync('清除联系人 DHT 风险', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
@@ -8669,7 +8453,7 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
 
   if (normalizedKind === 'signaloffer') {
     if (!allowIncomingFromContact(sender)) {
-      const reason = `安全策略阻止接收未核验或已撤销设备联系人 Signal Offer：${sender.display_name || sender.user_id}`
+      const reason = `安全策略阻止接收非好友或已撤销联系人 Signal Offer：${sender.display_name || sender.user_id}`
       appendLog(`⚠️ ${reason}`)
       persist()
       return { handled: true, deliveryId, event: 'other', reason }
@@ -8680,7 +8464,7 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
   }
   if (normalizedKind === 'signalanswer') {
     if (!allowIncomingFromContact(sender)) {
-      const reason = `安全策略阻止接收未核验或已撤销设备联系人 Signal Answer：${sender.display_name || sender.user_id}`
+      const reason = `安全策略阻止接收非好友或已撤销联系人 Signal Answer：${sender.display_name || sender.user_id}`
       appendLog(`⚠️ ${reason}`)
       persist()
       return { handled: true, deliveryId, event: 'other', reason }
@@ -8692,7 +8476,7 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
 
   if (normalizedKind === 'deliveryreceipt' || normalizedKind === 'readreceipt' || ciphertext.startsWith('lm-message-receipt-v1:')) {
     if (!allowIncomingFromContact(sender)) {
-      const reason = `安全策略阻止接收未核验或已撤销设备联系人回执：${sender.display_name || sender.user_id}`
+      const reason = `安全策略阻止接收非好友或已撤销联系人回执：${sender.display_name || sender.user_id}`
       appendLog(`⚠️ ${reason}`)
       persist()
       return { handled: true, deliveryId, event: 'other', reason }
@@ -8733,7 +8517,7 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
     }
     if (parsed?.type === 'lm-file-package-v1') {
       if (!allowIncomingFromContact(sender)) {
-        const reason = `安全策略阻止接收未核验或已撤销设备联系人文件：${sender.display_name || sender.user_id}`
+        const reason = `安全策略阻止接收非好友或已撤销联系人文件：${sender.display_name || sender.user_id}`
         appendLog(`⚠️ ${reason}`)
         persist()
         return { handled: true, deliveryId, event: 'other', reason }
@@ -9247,7 +9031,7 @@ async function decryptIncomingFilePackage() {
   await runAsync('解密文件包', async () => {
     if (!activeContact.value) throw new Error('请选择发送者联系人')
     if (!allowIncomingFromContact(activeContact.value)) {
-      throw new Error(`安全策略阻止解密未核验或已撤销设备联系人文件：${activeContact.value.display_name || activeContact.value.user_id}`)
+      throw new Error(`安全策略阻止解密非好友或已撤销联系人文件：${activeContact.value.display_name || activeContact.value.user_id}`)
     }
     const text = pendingFilePackageText.value.trim() || incomingFilePackageText.value.trim() || filePackageText.value.trim()
     if (!text) throw new Error('请粘贴文件包 JSON')
@@ -9479,7 +9263,7 @@ const appContext = {
   ratchetInfoText, safetyPolicy, enableStrictE2eePolicy, strictE2eePolicyEnabled, strictE2eeReadiness, strictE2eeReadinessIssues, strictE2eeReadinessReportText, strictE2eeReadinessSummaryReportText, copyStrictE2eeReadinessReport, copyStrictE2eeReadinessSummaryReport, downloadStrictE2eeReadinessReport, downloadStrictE2eeReadinessSummaryReport, openStrictE2eeReadinessIssue, repairStrictE2eeForActiveContact, repairStrictE2eeForActiveGroup, repairStrictE2eeBlockers, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, perDeviceEnvelopeSentCount, perDeviceEnvelopeReceivedCount, perDeviceEnvelopeDropCount, lastPerDeviceEnvelopeAt, lastPerDeviceEnvelopeDropAt, lastPerDeviceEnvelopeDropReason, contactCardUpdateFanoutCount, contactCardUpdateFanoutSkipCount, lastContactCardUpdateFanoutAt, contactCardUpdateFanoutRecords, contactCardUpdateFanoutAckCount, contactCardUpdatePendingAckCount, contactCardUpdateStaleAckCount, retryStaleContactCardUpdateAcks, contactCardUpdateAckStatusFor, contactStrictE2eeStatusText, contactStrictE2eeRiskLevel, contactCardDhtDiscoveryIsStale, contactCardDhtAutoRefreshCount, lastContactCardDhtAutoRefreshAt, lastContactCardDhtAutoRefreshError, contactCardDhtAutoRefreshHistory, sealedSlotCoverageSummary, sealedSlotRiskContacts, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
-  nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, fillMyContactCardDhtKeyInput, findActiveContactMailboxHint, findActiveContactContactCard, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, verifyActiveContactFingerprint, showActiveContactFingerprintQr, startFingerprintQrScan, stopFingerprintQrScan, fingerprintScanOpen, fingerprintScanStatus, copyActiveContactFingerprintProof, verifyActiveContactFingerprintFromText, activeFingerprintVerificationText, showMyFingerprintQr, copyMyFingerprintProof, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxFailedRecoveryItems, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, retryMailboxFailedItem, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
+  nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, fillMyContactCardDhtKeyInput, findActiveContactMailboxHint, findActiveContactContactCard, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxFailedRecoveryItems, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, retryMailboxFailedItem, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
   nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, lastNodeSnapshotSyncAt, nodeSnapshotSyncFreshnessText, nodeSnapshotSyncFreshnessLevel, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, publishAndCheckMyPreKeyDht, publishAndCheckMyMailboxHintDht, publishAndCheckMyContactCardDht, publishAndCheckAllMyDht, clearPreKeyRawState, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
@@ -9578,13 +9362,6 @@ const appContext = {
         <button :class="{ danger: confirmDialog.danger }" @click="closeConfirm(true)">确定</button>
         </UiActionGroup>
       </template>
-  </UiDialog>
-
-  <UiDialog v-if="fingerprintScanOpen" title="扫码核验联系人指纹" @close="stopFingerprintQrScan">
-      <video ref="fingerprintScanVideo" class="fingerprint-scan-video" playsinline muted></video>
-      <small>{{ fingerprintScanStatus }}</small>
-      <small>如果浏览器不支持摄像头扫码，请复制/粘贴 lm-contact-fingerprint-v1 核验码。</small>
-      <template #actions><UiActionGroup><button class="secondary" @click="stopFingerprintQrScan">关闭</button></UiActionGroup></template>
   </UiDialog>
 
   <UiDialog v-if="qrDataUrl" :title="qrTitle" @close="closeQr">

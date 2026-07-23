@@ -2,7 +2,6 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import UiPageHeader from './UiPageHeader.vue'
 import UiStatusBadge from './UiStatusBadge.vue'
-import UiNotice from './UiNotice.vue'
 import UiIcon from './UiIcon.vue'
 import UiEmptyState from './UiEmptyState.vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -150,7 +149,7 @@ function onComposerKeydown(e: KeyboardEvent) {
   props.ctx.sendMessage()
 }
 function trustText(contact: any) {
-  return contact?.fingerprint_verified_at ? '✓ 已核验' : '⚠️ 未核验'
+  return props.ctx.contactAllKnownDevicesRevoked(contact) ? '⚠️ 安全异常' : '✓ 已确认'
 }
 function appendEmoji(emoji: string) {
   const el = composerTextarea.value
@@ -187,7 +186,7 @@ function sendAndClose() {
       <button class="back-btn chat-back-btn" aria-label="返回聊天列表" @click="ctx.goChatHome"><UiIcon name="back" /></button>
       <div class="chat-title-block product-chat-title">
         <h2>{{ ctx.activeContact.value.display_name || '未命名联系人' }}</h2>
-        <UiStatusBadge :tone="ctx.activeContact.value.fingerprint_verified_at ? 'success' : 'warning'" compact>{{ trustText(ctx.activeContact.value) }}</UiStatusBadge>
+        <UiStatusBadge :tone="ctx.contactAllKnownDevicesRevoked(ctx.activeContact.value) ? 'warning' : 'success'" compact>{{ trustText(ctx.activeContact.value) }}</UiStatusBadge>
       </div>
       <div class="chat-header-actions product-chat-actions">
         <button
@@ -216,18 +215,6 @@ function sendAndClose() {
         </template>
       </div>
     </section>
-
-    <UiNotice v-if="!messageSearchOpen && !ctx.activeContact.value && !ctx.strictE2eePolicyEnabled.value">
-      <div class="notice-text">
-        <b>建议开启严格 E2EE</b>
-        <span>新身份建议先启用指纹核验和安全收发策略，再开始添加联系人和发送消息。</span>
-        <span>{{ ctx.strictE2eeReadiness.value.text }}</span>
-      </div>
-      <template #actions>
-        <button class="secondary" @click="ctx.enableStrictE2eePolicy">一键严格 E2EE</button>
-        <button class="secondary" @click="ctx.goSettingsPage">查看安全策略</button>
-      </template>
-    </UiNotice>
 
     <UiNotice v-if="!messageSearchOpen && ctx.activeContact.value && ctx.activeContact.value.state !== 'Friend'">
       <div v-if="ctx.activeContact.value.state === 'RequestSent'" class="notice-text">

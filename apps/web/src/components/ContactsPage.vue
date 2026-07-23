@@ -52,7 +52,7 @@ function contactInitial(contact: any) {
 }
 function trustText(contact: any) {
   if (contact.state !== 'Friend') return ''
-  return contact.fingerprint_verified_at ? '✓ 已核验' : '⚠️ 未核验'
+  return props.ctx.contactAllKnownDevicesRevoked(contact) ? '⚠️ 安全异常' : '✓ 已确认'
 }
 function shortId(value?: string) {
   if (!value) return ''
@@ -107,7 +107,7 @@ function addContact() {
                 <b>{{ c.display_name || '未命名' }}</b>
                 <small>{{ shortId(c.user_id) }}</small>
               </span>
-              <UiStatusBadge :tone="c.fingerprint_verified_at ? 'success' : 'warning'">{{ trustText(c) }}</UiStatusBadge>
+              <UiStatusBadge :tone="ctx.contactAllKnownDevicesRevoked(c) ? 'warning' : 'success'">{{ trustText(c) }}</UiStatusBadge>
               <span class="chevron">›</span>
             </button>
           </template>
@@ -161,7 +161,7 @@ function addContact() {
           <button v-for="c in visibleContacts" :key="c.user_id" class="directory-row contact-row" @click="openContact(c.user_id)">
             <span class="avatar" :style="{ background: avatarColor(c.user_id) }">{{ (c.display_name || c.user_id || '?').slice(0, 1).toUpperCase() }}</span>
             <span class="directory-main"><b>{{ c.display_name || '未命名' }}</b><small>{{ shortId(c.user_id) }}</small></span>
-            <UiStatusBadge :tone="c.fingerprint_verified_at ? 'success' : 'warning'">{{ trustText(c) }}</UiStatusBadge>
+            <UiStatusBadge :tone="ctx.contactAllKnownDevicesRevoked(c) ? 'warning' : 'success'">{{ trustText(c) }}</UiStatusBadge>
             <span class="chevron">›</span>
           </button>
           <UiEmptyState v-if="visibleContacts.length === 0" icon="search" title="没有匹配的联系人" description="换个名称或 ID 试试。" />
@@ -187,22 +187,16 @@ function addContact() {
           <span class="avatar large" :style="{ background: avatarColor(ctx.activeContact.value.user_id) }">{{ (ctx.activeContact.value.display_name || ctx.activeContact.value.user_id || '?').slice(0, 1).toUpperCase() }}</span>
           <div class="detail-hero-text">
             <h2>{{ ctx.activeContact.value.display_name || '未命名' }}</h2>
-            <UiStatusBadge v-if="ctx.activeContact.value.state === 'Friend'" :tone="ctx.activeContact.value.fingerprint_verified_at ? 'success' : 'warning'">{{ trustText(ctx.activeContact.value) }}</UiStatusBadge>
+            <UiStatusBadge v-if="ctx.activeContact.value.state === 'Friend'" :tone="ctx.contactAllKnownDevicesRevoked(ctx.activeContact.value) ? 'warning' : 'success'">{{ trustText(ctx.activeContact.value) }}</UiStatusBadge>
             <small>{{ shortId(ctx.activeContact.value.user_id) }}</small>
           </div>
         </div>
         <div class="detail-body narrow contact-detail-centered">
           <button class="primary-action" @click="ctx.goChatPage()">发消息</button>
-          <UiSection v-if="ctx.activeContact.value.state === 'Friend'" title="安全与设备">
-            <template #actions><UiStatusBadge :tone="ctx.activeContact.value.fingerprint_verified_at ? 'success' : 'warning'">{{ trustText(ctx.activeContact.value) }}</UiStatusBadge></template>
-            <small v-if="ctx.activeContact.value.fingerprint_verified_at">指纹已核验：{{ ctx.formatDateTime(ctx.activeContact.value.fingerprint_verified_at) }}</small>
-            <small v-else class="danger-text">指纹未核验。请通过可信渠道核对，确认对方就是本人。</small>
+          <UiSection v-if="ctx.activeContact.value.state === 'Friend'" title="安全状态">
+            <template #actions><UiStatusBadge :tone="ctx.contactAllKnownDevicesRevoked(ctx.activeContact.value) ? 'warning' : 'success'">{{ trustText(ctx.activeContact.value) }}</UiStatusBadge></template>
+            <small v-if="!ctx.contactAllKnownDevicesRevoked(ctx.activeContact.value)">已建立加密会话；对方安全信息发生变化时会在这里提示。</small>
             <small v-if="ctx.contactRevokedDeviceCount(ctx.activeContact.value)" class="danger-text">已撤销设备：{{ ctx.contactRevokedDeviceCount(ctx.activeContact.value) }}</small>
-            <UiActionGroup>
-              <button v-if="!ctx.activeContact.value.fingerprint_verified_at" class="secondary" @click="ctx.verifyActiveContactFingerprint">标记已核验</button>
-              <button class="secondary" @click="ctx.showActiveContactFingerprintQr">指纹核验码</button>
-              <button class="secondary" @click="ctx.copyActiveContactFingerprintProof">复制核验码</button>
-            </UiActionGroup>
           </UiSection>
           <UiCard>
             <UiListGroup>
