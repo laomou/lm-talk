@@ -17,7 +17,7 @@ use std::{
     net::{IpAddr, TcpListener, TcpStream, ToSocketAddrs},
     path::{Path, PathBuf},
     process,
-    sync::{Arc, Mutex},
+    sync::{Arc, Condvar, Mutex},
     time::{Duration, Instant},
 };
 
@@ -40,6 +40,11 @@ const MAX_CONTROL_PEER_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const CONTROL_PEER_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 const CONTROL_PEER_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const CONTROL_CLIENT_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
+// The control listener also drives periodic node maintenance. Keep its
+// nonblocking accept loop responsive enough for one-request-per-connection
+// browser traffic; 25 ms here made an otherwise local mailbox push take
+// roughly 50 ms before it even reached the handler.
+const CONTROL_ACCEPT_POLL_INTERVAL: Duration = Duration::from_millis(1);
 const DHT_PEER_FAILURE_BACKOFF_BASE_SECONDS: u64 = 30;
 const DHT_PEER_FAILURE_BACKOFF_MAX_SECONDS: u64 = 10 * 60;
 #[allow(dead_code)]
@@ -2901,9 +2906,15 @@ mod tests {
             headers: Vec::new(),
         };
         let polling_node = Arc::clone(&node);
+        let mailbox_wake_signal = Arc::new(super::control_server::MailboxWakeSignal::default());
+        let polling_wake_signal = Arc::clone(&mailbox_wake_signal);
         let poller = std::thread::spawn(move || {
-            super::control_server::handle_mailbox_take_long_poll(&polling_node, &take_request)
-                .unwrap()
+            super::control_server::handle_mailbox_take_long_poll(
+                &polling_node,
+                &take_request,
+                &polling_wake_signal,
+            )
+            .unwrap()
         });
         std::thread::sleep(Duration::from_millis(100));
         let message = MailboxMessage::new(
@@ -2925,6 +2936,7 @@ mod tests {
             headers: Vec::new(),
         });
         assert_eq!(response.status, 201, "{}", response.body);
+        mailbox_wake_signal.notify_push().unwrap();
         let response = poller.join().unwrap();
         assert_eq!(response.status, 200, "{}", response.body);
         let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
