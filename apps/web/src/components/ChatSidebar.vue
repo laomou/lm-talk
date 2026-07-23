@@ -40,11 +40,11 @@ function convName(it: any) {
 }
 function trustBadgeText(it: any) {
   if (it.type !== 'contact' || it.data.state !== 'Friend') return ''
-  return it.data.fingerprint_verified_at ? '✓' : '⚠️'
+  return props.ctx.contactAllKnownDevicesRevoked(it.data) ? '⚠️' : '✓'
 }
 function trustBadgeTitle(it: any) {
   if (it.type !== 'contact' || it.data.state !== 'Friend') return ''
-  return it.data.fingerprint_verified_at ? '指纹已核验' : '指纹未核验'
+  return props.ctx.contactAllKnownDevicesRevoked(it.data) ? '安全状态异常' : '已确认'
 }
 function convPreview(it: any) {
   if (it.last) {
@@ -101,7 +101,7 @@ function select(it: any) {
               <em
                 v-else-if="trustBadgeText(it)"
                 class="strict-badge"
-                :class="{ danger: !it.data.fingerprint_verified_at }"
+                :class="{ danger: props.ctx.contactAllKnownDevicesRevoked(it.data) }"
                 :title="trustBadgeTitle(it)"
               >{{ trustBadgeText(it) }}</em>
             </span>
@@ -139,7 +139,7 @@ function select(it: any) {
               <em
                 v-else-if="trustBadgeText(it)"
                 class="strict-badge"
-                :class="{ danger: !it.data.fingerprint_verified_at }"
+                :class="{ danger: props.ctx.contactAllKnownDevicesRevoked(it.data) }"
                 :title="trustBadgeTitle(it)"
               >{{ trustBadgeText(it) }}</em>
             </span>

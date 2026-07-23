@@ -143,13 +143,8 @@ function changeLocale(event: Event) {
 
       <template v-else-if="view === 'security'">
         <UiPageHeader title="安全与设备" back-label="返回我" @back="backHome" />
-        <UiSection class="sync-card" title="严格 E2EE" :description="ctx.strictE2eeReadiness.value.text">
-          <template #actions><UiStatusBadge :tone="ctx.strictE2eePolicyEnabled.value ? 'success' : 'neutral'">{{ ctx.strictE2eePolicyEnabled.value ? '已开启' : '未开启' }}</UiStatusBadge></template>
-          <UiActionGroup>
-            <button class="secondary" @click="ctx.enableStrictE2eePolicy">一键严格 E2EE</button>
-            <button class="secondary" @click="ctx.showMyFingerprintQr">我的指纹核验码</button>
-            <button class="secondary" @click="ctx.copyMyFingerprintProof">复制我的核验码</button>
-          </UiActionGroup>
+        <UiSection class="sync-card" title="安全状态" description="好友关系建立后会自动创建加密会话。对方设备被撤销或安全信息异常时，会在联系人和聊天中提示。">
+          <template #actions><UiStatusBadge tone="success">自动保护</UiStatusBadge></template>
         </UiSection>
         <UiSection class="sync-card" title="设备">
           <small>当前设备：{{ ctx.myDeviceId.value || '未生成' }}</small>
