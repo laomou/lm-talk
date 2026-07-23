@@ -156,3 +156,20 @@ export async function idbTableReplaceByPrefix<T>(table: TableName, prefix: strin
     tx.onerror = () => reject(tx.error)
   })
 }
+
+export async function idbTableApplyChanges<T>(
+  table: TableName,
+  puts: Array<[IDBValidKey, T]>,
+  deletes: IDBValidKey[],
+): Promise<void> {
+  if (puts.length === 0 && deletes.length === 0) return
+  const db = await openDb()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(table, 'readwrite')
+    const store = tx.objectStore(table)
+    for (const key of deletes) store.delete(key)
+    for (const [key, value] of puts) store.put(cloneForIdb(value), key)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}
