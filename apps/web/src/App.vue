@@ -34,9 +34,7 @@ import init, {
   decrypt_text_message,
   encrypt_text_message,
   export_contact_card,
-  export_data_backup,
   import_contact_as_json,
-  import_data_backup,
   inspect_contact_card,
   inspect_file_package,
   inspect_device_revoke,
@@ -1552,6 +1550,10 @@ onUnmounted(() => {
   stopMailboxLongPoll()
   stopWatchingPwaUpdate?.()
   stopPersistenceCryptoWorker()
+  backupCryptoWorker?.terminate()
+  backupCryptoWorker = null
+  for (const pending of backupCryptoRequests.values()) pending.reject(new Error('身份与安全备份 Worker 已停止'))
+  backupCryptoRequests.clear()
   fileCryptoWorker?.terminate()
   fileCryptoWorker = null
   for (const pending of fileCryptoRequests.values()) pending.reject(new Error('文件加密 Worker 已停止'))
@@ -2914,6 +2916,63 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`
 }
 
+type BackupCryptoWorkerResponse = {
+  id: number
+  ok: boolean
+  value?: string
+  error?: string
+}
+
+let backupCryptoWorker: Worker | null = null
+let nextBackupCryptoRequestId = 1
+const backupCryptoRequests = new Map<number, {
+  resolve: (value: string) => void
+  reject: (reason?: unknown) => void
+}>()
+
+function getBackupCryptoWorker(): Worker {
+  if (backupCryptoWorker) return backupCryptoWorker
+  const worker = new Worker(new URL('./backupCrypto.worker.ts', import.meta.url), { type: 'module' })
+  worker.onmessage = (event: MessageEvent<BackupCryptoWorkerResponse>) => {
+    const response = event.data
+    const pending = backupCryptoRequests.get(response.id)
+    if (!pending) return
+    backupCryptoRequests.delete(response.id)
+    if (response.ok && typeof response.value === 'string') pending.resolve(response.value)
+    else pending.reject(new Error(response.error || '身份与安全备份 Worker 处理失败'))
+  }
+  worker.onerror = (event) => {
+    const error = new Error(event.message || '身份与安全备份 Worker 已停止')
+    for (const pending of backupCryptoRequests.values()) pending.reject(error)
+    backupCryptoRequests.clear()
+    worker.terminate()
+    if (backupCryptoWorker === worker) backupCryptoWorker = null
+  }
+  backupCryptoWorker = worker
+  return worker
+}
+
+function runBackupCryptoWorker(payload: Record<string, string>): Promise<string> {
+  const id = nextBackupCryptoRequestId++
+  return new Promise((resolve, reject) => {
+    backupCryptoRequests.set(id, { resolve, reject })
+    try {
+      getBackupCryptoWorker().postMessage({ id, ...payload })
+    } catch (error) {
+      backupCryptoRequests.delete(id)
+      reject(error)
+    }
+  })
+}
+
+function exportIdentityAndSecurityBackupInWorker(backupText: string, passphrase: string, dataJson: string): Promise<string> {
+  return runBackupCryptoWorker({ type: 'export', backupText, passphrase, dataJson })
+}
+
+function importIdentityAndSecurityBackupInWorker(backupText: string, passphrase: string, dataBackupText: string): Promise<string> {
+  return runBackupCryptoWorker({ type: 'import', backupText, passphrase, dataBackupText })
+}
+
 function isDangerousFileName(name: string): boolean {
   return /\.(exe|bat|cmd|com|scr|ps1|vbs|js|jar|msi|apk|dmg|pkg|sh)$/i.test(name)
 }
@@ -2940,10 +2999,10 @@ async function warnIfLowStorageForFile(fileSize: number) {
   }
 }
 
-function exportFullDataBackup() {
-  run('导出身份与安全备份', () => {
+async function exportFullDataBackup() {
+  await runAsync('导出身份与安全备份', async () => {
     if (!backupText.value || !passphrase.value) throw new Error('需要当前身份备份包和提示词')
-    dataBackupText.value = export_data_backup(
+    dataBackupText.value = await exportIdentityAndSecurityBackupInWorker(
       backupText.value,
       passphrase.value,
       JSON.stringify(currentIdentityAndSecurityBackupState()),
@@ -2957,7 +3016,7 @@ async function pushFullDataBackupToOwnMailbox() {
   await runAsync('备份到自己的 Mailbox', async () => {
     if (!identity.value?.user_id) throw new Error('需要先登录身份')
     if (!nodeEnabled.value) throw new Error('节点未启用')
-    if (!dataBackupText.value.trim()) exportFullDataBackup()
+    if (!dataBackupText.value.trim()) await exportFullDataBackup()
     if (!dataBackupText.value.trim()) throw new Error('请先生成身份与安全备份')
     const msg = create_mailbox_message(
       backupText.value,
@@ -3375,7 +3434,7 @@ async function importFullDataBackup() {
       const ok = await showConfirm(t('appDialog.importFullDataBackupTitle'), t('appDialog.importFullDataBackupMessage'), true)
       if (!ok) return
     }
-    const json = import_data_backup(backupText.value, passphrase.value, dataBackupText.value)
+    const json = await importIdentityAndSecurityBackupInWorker(backupText.value, passphrase.value, dataBackupText.value)
     const state = JSON.parse(json) as PersistedState
     await writeStateToTables(state, { preserveConversationData: state.backupScope === 'identity-and-security-v1' })
     appendLog('✅ 已导入身份与安全备份')
@@ -3504,7 +3563,7 @@ async function importFullDataBackupMerge() {
   try {
     if (!backupText.value || !passphrase.value) throw new Error('需要当前身份备份包和提示词')
     if (!dataBackupText.value.trim()) throw new Error('请粘贴身份与安全备份')
-    const json = import_data_backup(backupText.value, passphrase.value, dataBackupText.value)
+    const json = await importIdentityAndSecurityBackupInWorker(backupText.value, passphrase.value, dataBackupText.value)
     const state = JSON.parse(json) as PersistedState
     const contactMerge = mergeUniqueBy(contacts.value, state.contacts ?? [], (x) => x.user_id)
     const requestMerge = mergeUniqueBy(friendRequests.value, state.friendRequests ?? [], (x) => x.request_id)
