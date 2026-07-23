@@ -2264,7 +2264,7 @@ async function persistStateTables() {
   ])
   persistTablesNeedCleanup = false
   if (!persistSchemaMarked) {
-    await idbSet('chat-state-schema-v2', true)
+    await idbSet('chat-state-schema-v1', true)
     persistSchemaMarked = true
   }
 }
@@ -2597,7 +2597,7 @@ function resetAccountScopedState() {
 async function clearPersisted() {
   resetPersistSnapshots()
   await idbDel('chat-state-v1')
-  await idbDel('chat-state-schema-v2')
+  await idbDel('chat-state-schema-v1')
   await Promise.all(Object.values(TABLES).map((table) => idbTableClear(table)))
   localStorage.removeItem('lm-talk-chat-state-v1')
   localStorage.removeItem(LOCAL_IDENTITIES_KEY)
