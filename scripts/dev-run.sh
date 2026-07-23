@@ -39,7 +39,6 @@ Web options:
   --public-url URL         HTTPS origin to serve (required unless --caddyfile is used)
   --caddyfile PATH         Existing Caddyfile to mount instead of generating one
   --caddy-data-dir PATH    Persistent Caddy data and generated config directory
-  --root-cert PATH         Export Caddy internal root certificate to this host path
   --node-container NAME    Node container Caddy proxies to (default: lm-talk-node)
   --container-name NAME    Docker container name (default: lm-talk-web)
   --network NAME           Docker network shared with Node (default: lm-talk-lan)
@@ -51,8 +50,7 @@ Web options:
 Example:
   ./scripts/dev-run.sh web \
     --public-url https://lm-talk.lan \
-    --caddy-data-dir /home/user/lm-talk-web/caddy-data \
-    --root-cert /home/user/lm-talk-web/lm-talk-local-root.crt
+    --caddy-data-dir /home/user/lm-talk-web/caddy-data
 USAGE
 }
 
@@ -97,7 +95,6 @@ run_web() {
   local public_url="${LM_TALK_PUBLIC_URL:-}"
   local caddyfile=""
   local caddy_data_dir="${LM_TALK_CADDY_DATA_DIR:-}"
-  local root_cert="${LM_TALK_ROOT_CERT:-}"
   local node_container="${LM_NODE_CONTAINER_NAME:-lm-talk-node}"
   local container_name="${LM_WEB_CONTAINER_NAME:-lm-talk-web}"
   local network_name="${LM_NODE_DOCKER_NETWORK:-lm-talk-lan}"
@@ -111,7 +108,6 @@ run_web() {
       --public-url) public_url="${2:?--public-url requires URL}"; shift 2 ;;
       --caddyfile) caddyfile="${2:?--caddyfile requires PATH}"; shift 2 ;;
       --caddy-data-dir) caddy_data_dir="${2:?--caddy-data-dir requires PATH}"; shift 2 ;;
-      --root-cert) root_cert="${2:?--root-cert requires PATH}"; shift 2 ;;
       --node-container) node_container="${2:?--node-container requires NAME}"; shift 2 ;;
       --container-name) container_name="${2:?--container-name requires NAME}"; shift 2 ;;
       --network) network_name="${2:?--network requires NAME}"; shift 2 ;;
@@ -140,11 +136,6 @@ run_web() {
   fi
   mkdir -p "$caddy_data_dir"
   caddy_data_dir="$(cd "$caddy_data_dir" && pwd)"
-  if [[ -z "$root_cert" ]]; then
-    root_cert="$(dirname "$caddy_data_dir")/lm-talk-local-root.crt"
-  fi
-  mkdir -p "$(dirname "$root_cert")"
-  root_cert="$(cd "$(dirname "$root_cert")" && pwd)/$(basename "$root_cert")"
   if [[ -z "$caddyfile" ]]; then
     caddyfile="$caddy_data_dir/Caddyfile"
     cat > "$caddyfile" <<EOF
@@ -183,7 +174,6 @@ EOF
   ensure_network "$network_name"
   echo "Caddyfile：$caddyfile"
   echo "Caddy 数据：$caddy_data_dir"
-  echo "根证书导出：$root_cert"
   echo "Docker 网络：$network_name"
   echo "容器名称：$container_name"
   [[ -n "$public_url" ]] && echo "HTTPS 来源：$public_url"
@@ -227,15 +217,9 @@ EOF
   fi
 
   echo "Web Docker 容器已启动：$container_name ($image_tag)"
-  if ! docker cp "$container_name:/data/caddy/pki/authorities/local/root.crt" "$root_cert"; then
-    echo "无法导出 Caddy 内部根证书，最近日志：" >&2
-    docker logs --tail 80 "$container_name" >&2 || true
-    exit 1
-  fi
-  chmod 0644 "$root_cert"
   if [[ -n "$public_url" ]]; then
     echo "打开：$public_url/"
-    echo "Caddy 内部根证书已导出：$root_cert"
+    echo "复用已挂载的 Caddy 数据目录中的现有 HTTPS 证书和 CA。"
   fi
   if [[ "$follow_logs" == "1" ]]; then
     exec docker logs -f "$container_name"

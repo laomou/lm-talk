@@ -69,20 +69,24 @@ https://<HTTPS-主机>/admin/
 ```bash
 ./scripts/dev-run.sh web \
   --public-url https://<HTTPS-主机> \
-  --caddy-data-dir /home/user/lm-talk-web/caddy-data \
-  --root-cert /home/user/lm-talk-web/lm-talk-local-root.crt
+  --caddy-data-dir /home/user/lm-talk-web/caddy-data
 ```
 
 脚本会构建 Web 镜像、启动 `lm-talk-web`、发布宿主机 `80/443`，并自动生成包含
-`/node/* → lm-talk-node:8787` 与 `/admin/` 管理前端的 Caddyfile，并从 Caddy 数据卷导出根证书：
+`/node/* → lm-talk-node:8787` 与 `/admin/` 管理前端的 Caddyfile。重复使用同一个
+`--caddy-data-dir`，Caddy 会复用其中已有的内部 CA 和 HTTPS 证书：
 
 ```text
-/home/user/lm-talk-web/lm-talk-local-root.crt
+/home/user/lm-talk-web/caddy-data
 ```
 
-不传 `--root-cert` 时，脚本默认也导出到 `caddy-data` 上一级的
-`lm-talk-local-root.crt`。把这个根证书导入局域网客户端的受信任根证书颁发机构。
-已有自定义 Caddyfile 时可挂载它：
+你当前已导入客户端的根证书可继续使用：
+
+```text
+/home/mourui/lm-talk-web/lm-talk-local-root.crt
+```
+
+脚本不会重新生成或覆盖它。已有自定义 Caddyfile 时可挂载它：
 
 ```bash
 ./scripts/dev-run.sh web \
