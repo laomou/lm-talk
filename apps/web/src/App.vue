@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import LoginPage from './components/LoginPage.vue'
 import ChatPage from './components/ChatPage.vue'
 import DiagnosticsPage from './components/DiagnosticsPage.vue'
@@ -577,6 +578,7 @@ const qrDataUrl = ref('')
 const qrRawText = ref('')
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 const authMode = computed(() => route.path === '/register' ? 'register' : route.path === '/import' ? 'import' : 'login')
 const isAppRoute = (path: string) => !['/', '/login', '/register', '/import'].includes(path)
 const loginReturnPath = ref(isAppRoute(route.path) ? route.fullPath : '/chat')
@@ -1655,12 +1657,12 @@ function runAlertAction() {
   action?.()
 }
 
-function showSyncEnableDialog(message = '开启后可同步新的好友申请和离线消息。') {
+function showSyncEnableDialog(message = t('appDialog.syncEnableMessage')) {
   showAlert(
-    '开启消息同步',
+    t('appDialog.syncEnableTitle'),
     message,
     'info',
-    { actionLabel: '去开启', action: goSyncSettings },
+    { actionLabel: t('appDialog.syncEnableAction'), action: goSyncSettings },
   )
 }
 
@@ -2779,7 +2781,7 @@ async function clearPersisted() {
 
 
 async function clearBrowserCaches() {
-  const ok = await showConfirm('清理浏览器缓存', '清理浏览器缓存并注销旧版 Service Worker？这不会删除身份、联系人或聊天数据。', true)
+  const ok = await showConfirm(t('appDialog.clearBrowserCachesTitle'), t('appDialog.clearBrowserCachesMessage'), true)
   if (!ok) return
   const cacheKeys = typeof caches !== 'undefined' ? await caches.keys().catch(() => []) : []
   await Promise.all(cacheKeys.map((key) => caches.delete(key)))
@@ -2787,7 +2789,7 @@ async function clearBrowserCaches() {
   const registrations = nav.serviceWorker?.getRegistrations ? await nav.serviceWorker.getRegistrations().catch(() => []) : []
   await Promise.all(registrations.map((registration) => registration.unregister()))
   appendLog(`已清理浏览器缓存：cache=${cacheKeys.length}, service_worker=${registrations.length}`)
-  toast('已清理浏览器缓存', 'success')
+  toast(t('appDialog.clearBrowserCachesSuccess'), 'success')
 }
 
 function formatBytes(bytes: number): string {
@@ -3260,14 +3262,14 @@ async function importFullDataBackup() {
     if (!dataBackupText.value.trim()) throw new Error('请粘贴完整数据备份')
     const hasLocalData = contacts.value.length + groups.value.length + messages.value.length + outbox.value.length > 0
     if (hasLocalData) {
-      const ok = await showConfirm('导入完整数据备份', '导入会覆盖当前身份的本地联系人、群聊、消息和待发送队列。继续导入？', true)
+      const ok = await showConfirm(t('appDialog.importFullDataBackupTitle'), t('appDialog.importFullDataBackupMessage'), true)
       if (!ok) return
     }
     const json = import_data_backup(backupText.value, passphrase.value, dataBackupText.value)
     const state = JSON.parse(json) as PersistedState
     await writeStateToTables(state)
     appendLog('✅ 已导入完整数据备份')
-    toast('完整数据备份已导入', 'success')
+    toast(t('appDialog.importFullDataBackupSuccess'), 'success')
   } catch (e) {
     appendLog(`❌ 导入完整数据备份失败：${String(e)}`)
   }
@@ -3460,7 +3462,7 @@ async function importFullDataBackupMerge() {
     toast(`完整数据备份已合并：新增 ${added}`, 'success')
   } catch (e) {
     appendLog(`❌ 合并完整数据备份失败：${String(e)}`)
-    showAlert('合并完整数据备份失败', userFacingError(e), 'error')
+    showAlert(t('appDialog.mergeFullDataBackupFailed'), userFacingError(e), 'error')
   }
 }
 
@@ -3716,7 +3718,7 @@ function saveNetworkSettings(): boolean {
   } catch (e) {
     const message = userFacingError(e)
     appendLog(`❌ 保存消息同步设置: ${message}`)
-    showAlert('保存消息同步设置', message, 'error')
+    showAlert(t('appDialog.saveSyncSettingsTitle'), message, 'error')
     return false
   }
 }
@@ -4184,8 +4186,8 @@ async function removeLocalIdentity(id: string) {
   const item = localIdentities.value.find((x) => x.id === id)
   if (!item) return
   const ok = await showConfirm(
-    '删除本地身份',
-    `删除本地身份「${item.display_name || item.user_id}」？这会删除本机保存的登录入口和该身份在本浏览器中的加密联系人、群聊、消息、待发送队列与设置。请确认你已保存身份文件和必要的数据备份。`,
+    t('appDialog.deleteLocalIdentityTitle'),
+    t('appDialog.deleteLocalIdentityMessage', { name: item.display_name || item.user_id }),
     true,
   )
   if (!ok) return
@@ -4195,7 +4197,7 @@ async function removeLocalIdentity(id: string) {
   if (lastRegisteredIdentity.value?.id === id) lastRegisteredIdentity.value = null
   saveLocalIdentityList()
   appendLog('✅ 已删除本地身份及本机加密数据')
-  toast('已删除本地身份及本机数据', 'success')
+  toast(t('appDialog.deleteLocalIdentitySuccess'), 'success')
 }
 
 function resetRegisterForm() {
@@ -4290,11 +4292,11 @@ function restoreAndEnter() {
       .catch((e) => {
         const message = userFacingError(e)
         appendLog(`❌ 登录失败：${message}`)
-        showAlert('登录失败', message, 'error')
+        showAlert(t('appDialog.loginFailed'), message, 'error')
       })
   }, (message) => {
     if (message === '提示词不正确，请重新输入。') {
-      showAlert('登录失败', message, 'error', { actionLabel: '重新输入', action: focusLoginPassphrase })
+      showAlert(t('appDialog.loginFailed'), message, 'error', { actionLabel: t('appDialog.retryInput'), action: focusLoginPassphrase })
       return true
     }
     return false
@@ -4615,9 +4617,9 @@ async function confirmOutgoingTextIfNeeded(text: string): Promise<boolean> {
   const action = evaluateLocalText(text)
   if (action === 'Allow') return true
   const reason = text.toLowerCase().includes('http://') || text.toLowerCase().includes('https://')
-    ? '消息中包含外部链接。请确认链接可信，避免钓鱼或泄露身份信息。'
-    : '消息中包含可执行/脚本文件名等高风险内容。请确认这是你想发送的内容。'
-  return showConfirm('发送风险内容', reason, filterRank(action) >= filterRank('Hide'))
+    ? t('appDialog.externalLinkRisk')
+    : t('appDialog.executableTextRisk')
+  return showConfirm(t('appDialog.riskyContentTitle'), reason, filterRank(action) >= filterRank('Hide'))
 }
 
 function contactRevokedDeviceIds(contact: ContactItem): string[] {
@@ -4643,8 +4645,8 @@ async function unmarkActiveContactRevokedDevice(deviceId: string) {
     if (!activeContact.value) throw new Error('请选择联系人')
     const contact = activeContact.value
     const ok = await showConfirm(
-      '解除设备撤销标记',
-      `仅在你确认该设备仍可信或撤销事件误操作时解除：${deviceId}。继续？`,
+      t('appDialog.unblockDeviceTitle'),
+      t('appDialog.unblockDeviceMessage', { deviceId }),
       true,
     )
     if (!ok) return
@@ -4753,7 +4755,7 @@ async function confirmStrictE2eeSendRiskIfNeeded(contact: ContactItem): Promise<
   const blockers = strictE2eeSendBlockingReasons(contact)
   if (blockers.length) {
     const text = `发送前阻塞：${blockers.join('；')}`
-    showAlert('无法发送', text, 'error')
+    showAlert(t('appDialog.cannotSend'), text, 'error')
     appendLog(`已阻止发送：${text}`)
     return false
   }
@@ -4769,10 +4771,8 @@ async function confirmHighRiskDhtContactIfNeeded(contact: ContactItem): Promise<
     ? `该联系人最近的 DHT 发现结果存在高风险：${contact.last_dht_discovery_error_kind}。${contact.last_dht_discovery_error || ''}`
     : '该联系人最近的 DHT 发现结果存在高风险。'
   return showConfirm(
-    '确认发送给 DHT 高风险联系人',
-    `${reason}
-
-建议先确认对方身份或重新发现 DHT 记录。仍要继续发送吗？`,
+    t('appDialog.highRiskDhtTitle'),
+    t('appDialog.highRiskDhtMessage', { reason }),
     true,
   )
 }
@@ -6468,8 +6468,8 @@ async function removeActiveContact() {
   const contact = activeContact.value
   const name = contact.display_name || contact.user_id
   const confirmed = await showConfirm(
-    '删除好友',
-    `删除好友「${name}」？这会同时删除本机保存的聊天记录和安全会话，无法恢复。`,
+    t('appDialog.deleteFriendTitle'),
+    t('appDialog.deleteFriendMessage', { name }),
     true,
   )
   if (!confirmed) return
@@ -6485,7 +6485,7 @@ async function removeActiveContact() {
 async function clearActiveConversation() {
   if (!activeContact.value && !activeGroup.value) return
   const name = activeGroup.value?.name || activeContact.value?.display_name || activeContact.value?.user_id || '当前聊天'
-  const confirmed = await showConfirm('删除会话', `删除「${name}」的本机会话记录？好友关系和安全会话不会删除，可从联系人详情再次发消息打开。`, true)
+  const confirmed = await showConfirm(t('appDialog.deleteConversationTitle'), t('appDialog.deleteConversationMessage', { name }), true)
   if (!confirmed) return
   if (activeGroup.value) {
     const groupId = activeGroup.value.group_id
@@ -9284,8 +9284,8 @@ async function readFileWithProgress(file: File): Promise<Uint8Array> {
 async function createFilePackageForActive(): Promise<boolean> {
   if (selectedFile.value && safetyPolicy.value.warnExecutableFiles && isDangerousFileName(selectedFile.value.name)) {
     const confirmed = await showConfirm(
-      '发送危险类型文件',
-      `文件「${selectedFile.value.name}」属于可执行/安装脚本等高风险类型。LM Talk 不会自动打开附件，但接收方下载后可能触发系统风险。确认继续发送？`,
+      t('appDialog.sendDangerousFileTitle'),
+      t('appDialog.sendDangerousFileMessage', { name: selectedFile.value.name }),
       true,
     )
     if (!confirmed) {
@@ -9365,8 +9365,8 @@ async function decryptIncomingFilePackage() {
     }
     if (manifestName && safetyPolicy.value.warnExecutableFiles && isDangerousFileName(manifestName)) {
       const confirmed = await showConfirm(
-        '解密危险类型文件',
-        `文件「${manifestName}」属于可执行/安装脚本等高风险类型。确认来源可信后再解密并生成下载链接。继续？`,
+        t('appDialog.decryptDangerousFileTitle'),
+        t('appDialog.decryptDangerousFileMessage', { name: manifestName }),
         true,
       )
       if (!confirmed) {
@@ -9655,14 +9655,14 @@ const appContext = {
     <div v-for="item in toasts" :key="item.id" class="toast" :class="item.kind">{{ item.text }}</div>
   </div>
 
-  <aside v-if="pwaUpdateAvailable" class="pwa-update-banner" role="status" aria-label="应用更新提示">
+  <aside v-if="pwaUpdateAvailable" class="pwa-update-banner" role="status" :aria-label="t('appDialog.pwaUpdateLabel')">
     <div>
-      <b>发现应用新版本</b>
-      <small>刷新后即可使用新版本；未刷新前不会中断当前操作。</small>
+      <b>{{ t('appDialog.pwaUpdateTitle') }}</b>
+      <small>{{ t('appDialog.pwaUpdateDescription') }}</small>
     </div>
     <div class="pwa-update-actions">
-      <button class="secondary" @click="deferPwaUpdate">稍后</button>
-      <button @click="refreshForPwaUpdate">立即刷新</button>
+      <button class="secondary" @click="deferPwaUpdate">{{ t('appDialog.pwaLater') }}</button>
+      <button @click="refreshForPwaUpdate">{{ t('appDialog.pwaRefreshNow') }}</button>
     </div>
   </aside>
 
@@ -9670,8 +9670,8 @@ const appContext = {
       <p>{{ alertDialog.message }}</p>
       <template #actions>
         <UiActionGroup>
-          <button v-if="alertDialog.actionLabel" class="secondary" @click="closeAlert">暂不</button>
-          <button @click="alertDialog.actionLabel ? runAlertAction() : closeAlert">{{ alertDialog.actionLabel || '知道了' }}</button>
+          <button v-if="alertDialog.actionLabel" class="secondary" @click="closeAlert">{{ t('appDialog.notNow') }}</button>
+          <button @click="alertDialog.actionLabel ? runAlertAction() : closeAlert">{{ alertDialog.actionLabel || t('appDialog.gotIt') }}</button>
         </UiActionGroup>
       </template>
   </UiDialog>
@@ -9680,8 +9680,8 @@ const appContext = {
       <p>{{ confirmDialog.message }}</p>
       <template #actions>
         <UiActionGroup>
-        <button class="secondary" @click="closeConfirm(false)">取消</button>
-        <button :class="{ danger: confirmDialog.danger }" @click="closeConfirm(true)">确定</button>
+        <button class="secondary" @click="closeConfirm(false)">{{ t('appDialog.cancel') }}</button>
+        <button :class="{ danger: confirmDialog.danger }" @click="closeConfirm(true)">{{ t('appDialog.confirm') }}</button>
         </UiActionGroup>
       </template>
   </UiDialog>
