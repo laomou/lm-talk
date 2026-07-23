@@ -11,22 +11,30 @@ const route = useRoute()
 const router = useRouter()
 const searchOpen = computed(() => route.path === '/chat/search')
 
-function lastMessageFor(pred: (m: any) => boolean) {
-  let last: any = null
-  for (const m of props.ctx.messages.value) {
-    if (!pred(m)) continue
-    if (!last || m.created_at > last.created_at) last = m
+const conversationStats = computed(() => {
+  const lastByUser = new Map<string, any>()
+  const unreadByUser = new Map<string, number>()
+  for (const message of props.ctx.messages.value) {
+    if (message.group_id) continue
+    const prev = lastByUser.get(message.peer_user_id)
+    if (!prev || message.created_at > prev.created_at || (message.created_at === prev.created_at && String(message.id) > String(prev.id))) {
+      lastByUser.set(message.peer_user_id, message)
+    }
+    if (message.direction === 'in' && !message.read_at) {
+      unreadByUser.set(message.peer_user_id, (unreadByUser.get(message.peer_user_id) ?? 0) + 1)
+    }
   }
-  return last
-}
+  return { lastByUser, unreadByUser }
+})
 
 const conversations = computed(() => {
   const items: any[] = []
   for (const c of props.ctx.contacts.value) {
-    const last = lastMessageFor((m) => !m.group_id && m.peer_user_id === c.user_id)
+    const last = conversationStats.value.lastByUser.get(c.user_id)
+    const unread = conversationStats.value.unreadByUser.get(c.user_id) ?? 0
     const isActive = c.user_id === props.ctx.activePeerId.value
     if (!last && !isActive) continue
-    items.push({ type: 'contact', id: c.user_id, data: c, last, ts: last?.created_at ?? 0 })
+    items.push({ type: 'contact', id: c.user_id, data: c, last, unread, ts: last?.created_at ?? 0 })
   }
   return items.sort((a, b) => b.ts - a.ts)
 })
@@ -73,7 +81,7 @@ function isActive(it: any) {
   return it.id === props.ctx.activePeerId.value
 }
 function unreadCount(it: any) {
-  return it.type === 'contact' ? props.ctx.unreadCountForPeer(it.id) : 0
+  return it.type === 'contact' ? Number(it.unread ?? 0) : 0
 }
 function select(it: any) {
   props.ctx.selectContact(it.id)
