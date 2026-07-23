@@ -1546,6 +1546,7 @@ onMounted(async () => {
 onUnmounted(() => {
   stopMailboxLongPoll()
   stopWatchingPwaUpdate?.()
+  stopPersistenceCryptoWorker()
   fileCryptoWorker?.terminate()
   fileCryptoWorker = null
   for (const pending of fileCryptoRequests.values()) pending.reject(new Error('文件加密 Worker 已停止'))
@@ -1818,6 +1819,74 @@ function base64ToBytesRaw(value: string): Uint8Array {
   return out
 }
 
+type PersistenceCryptoWorkerResponse = {
+  id: number
+  ok: boolean
+  value?: string | EncryptedStringV1
+  error?: string
+}
+
+let persistenceCryptoWorker: Worker | null = null
+let persistenceCryptoWorkerDisabled = false
+let nextPersistenceCryptoRequestId = 1
+const persistenceCryptoRequests = new Map<number, {
+  resolve: (value: string | EncryptedStringV1 | undefined) => void
+  reject: (reason?: unknown) => void
+}>()
+let persistenceCryptoWorkerKeys = new WeakMap<CryptoKey, string>()
+let nextPersistenceCryptoKeyId = 1
+
+function stopPersistenceCryptoWorker(error = new Error('本地存储加密 Worker 已停止')) {
+  persistenceCryptoWorker?.terminate()
+  persistenceCryptoWorker = null
+  for (const pending of persistenceCryptoRequests.values()) pending.reject(error)
+  persistenceCryptoRequests.clear()
+  persistenceCryptoWorkerKeys = new WeakMap<CryptoKey, string>()
+}
+
+function getPersistenceCryptoWorker(): Worker {
+  if (persistenceCryptoWorker) return persistenceCryptoWorker
+  const worker = new Worker(new URL('./persistenceCrypto.worker.ts', import.meta.url), { type: 'module' })
+  worker.onerror = (event) => {
+    persistenceCryptoWorkerDisabled = true
+    stopPersistenceCryptoWorker(new Error(event.message || '本地存储加密 Worker 发生错误'))
+  }
+  worker.onmessage = (event: MessageEvent<PersistenceCryptoWorkerResponse>) => {
+    const response = event.data
+    const pending = persistenceCryptoRequests.get(response.id)
+    if (!pending) return
+    persistenceCryptoRequests.delete(response.id)
+    if (response.ok) pending.resolve(response.value)
+    else pending.reject(new Error(response.error || '本地存储加密 Worker 处理失败'))
+  }
+  persistenceCryptoWorker = worker
+  return worker
+}
+
+function runPersistenceCryptoWorker(
+  payload: Record<string, unknown>,
+): Promise<string | EncryptedStringV1 | undefined> {
+  const id = nextPersistenceCryptoRequestId++
+  return new Promise((resolve, reject) => {
+    persistenceCryptoRequests.set(id, { resolve, reject })
+    try {
+      getPersistenceCryptoWorker().postMessage({ id, ...payload })
+    } catch (error) {
+      persistenceCryptoRequests.delete(id)
+      reject(error)
+    }
+  })
+}
+
+async function persistenceCryptoWorkerKeyId(key: CryptoKey): Promise<string> {
+  let keyId = persistenceCryptoWorkerKeys.get(key)
+  if (keyId) return keyId
+  keyId = `key-${nextPersistenceCryptoKeyId++}`
+  await runPersistenceCryptoWorker({ type: 'set-key', keyId, key })
+  persistenceCryptoWorkerKeys.set(key, keyId)
+  return keyId
+}
+
 function hexToBytes(value: string): number[] {
   const hex = value.trim()
   if (!/^[0-9a-fA-F]{64}$/.test(hex)) throw new Error('DHT key 格式无效')
@@ -1872,6 +1941,18 @@ async function encryptLocalString(value: string, key: CryptoKey | null): Promise
   if (!key || !value) return value
   const webCrypto = globalThis.crypto
   if (!webCrypto?.subtle) return value
+  if (!persistenceCryptoWorkerDisabled) {
+    try {
+      const keyId = await persistenceCryptoWorkerKeyId(key)
+      const encrypted = await runPersistenceCryptoWorker({ type: 'encrypt', keyId, value })
+      if (isEncryptedString(encrypted)) return encrypted
+      throw new Error('本地存储加密 Worker 返回无效结果')
+    } catch (error) {
+      persistenceCryptoWorkerDisabled = true
+      stopPersistenceCryptoWorker(error instanceof Error ? error : new Error(String(error)))
+      appendLog(`⚠️ 本地存储加密 Worker 不可用，已回退浏览器加密：${userFacingError(error)}`)
+    }
+  }
   const iv = webCrypto.getRandomValues(new Uint8Array(12))
   const ct = new Uint8Array(await webCrypto.subtle.encrypt(
     { name: 'AES-GCM', iv: iv as BufferSource },
@@ -1887,6 +1968,18 @@ async function decryptLocalString(value: unknown, key: CryptoKey | null): Promis
   if (!key) return value as any
   const webCrypto = globalThis.crypto
   if (!webCrypto?.subtle) return value as any
+  if (!persistenceCryptoWorkerDisabled) {
+    try {
+      const keyId = await persistenceCryptoWorkerKeyId(key)
+      const plain = await runPersistenceCryptoWorker({ type: 'decrypt', keyId, value })
+      if (typeof plain === 'string') return plain
+      throw new Error('本地存储解密 Worker 返回无效结果')
+    } catch (error) {
+      persistenceCryptoWorkerDisabled = true
+      stopPersistenceCryptoWorker(error instanceof Error ? error : new Error(String(error)))
+      appendLog(`⚠️ 本地存储解密 Worker 不可用，已回退浏览器解密：${userFacingError(error)}`)
+    }
+  }
   const plain = await webCrypto.subtle.decrypt(
     { name: 'AES-GCM', iv: base64ToBytesRaw(value.iv) as BufferSource },
     key,
