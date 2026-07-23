@@ -46,8 +46,6 @@ import init, {
   apply_group_policy_event,
   inspect_mailbox_message,
   inspect_message_receipt,
-  sign_identity_text,
-  verify_identity_text_signature,
   inspect_peer_announce,
   inspect_prekey_bundle,
   inspect_public_peer_announce,
@@ -1557,6 +1555,10 @@ onUnmounted(() => {
   deviceSlotCryptoWorker = null
   for (const pending of deviceSlotCryptoRequests.values()) pending.reject(new Error('分设备密文 Worker 已停止'))
   deviceSlotCryptoRequests.clear()
+  identitySignatureWorker?.terminate()
+  identitySignatureWorker = null
+  for (const pending of identitySignatureRequests.values()) pending.reject(new Error('身份签名 Worker 已停止'))
+  identitySignatureRequests.clear()
   ratchetEncryptWorker?.terminate()
   ratchetEncryptWorker = null
   for (const pending of ratchetEncryptRequests.values()) pending.reject(new Error('Ratchet 加密 Worker 已停止'))
@@ -3140,7 +3142,7 @@ function selfSyncRequestSigningPayload(pkg: SelfSyncRequestPackage): string {
   })
 }
 
-function currentSelfSyncRequestPackage(missingSyncId: string): SelfSyncRequestPackage {
+async function currentSelfSyncRequestPackage(missingSyncId: string): Promise<SelfSyncRequestPackage> {
   const pkg: SelfSyncRequestPackage = {
     type: 'lm-self-sync-request-v1',
     version: 1,
@@ -3151,7 +3153,7 @@ function currentSelfSyncRequestPackage(missingSyncId: string): SelfSyncRequestPa
     identity_public_key: identity.value?.identity_public_key || '',
     from_device_id: myDeviceId.value || undefined,
   }
-  pkg.signature = sign_identity_text(backupText.value, passphrase.value, selfSyncRequestSigningPayload(pkg))
+  pkg.signature = await signIdentityTextInWorker(backupText.value, passphrase.value, selfSyncRequestSigningPayload(pkg))
   return pkg
 }
 
@@ -3217,7 +3219,7 @@ function currentOutboxSyncSummary(): OutboxSyncSummary {
   }
 }
 
-function currentSelfSyncPackage(): SelfSyncPackage {
+async function currentSelfSyncPackage(): Promise<SelfSyncPackage> {
   const sequence = lastSelfSyncSequenceSent.value + 1
   const messageReceiptStates = currentMessageReceiptSyncItems()
   lastSelfSyncReceiptStatesSent.value = messageReceiptStates.length
@@ -3242,7 +3244,7 @@ function currentSelfSyncPackage(): SelfSyncPackage {
     unverifiedIncomingDropCount: unverifiedIncomingDropCount.value,
     revokedDeviceIncomingDropCount: revokedDeviceIncomingDropCount.value,
   }
-  pkg.signature = sign_identity_text(backupText.value, passphrase.value, selfSyncSigningPayload(pkg))
+  pkg.signature = await signIdentityTextInWorker(backupText.value, passphrase.value, selfSyncSigningPayload(pkg))
   return pkg
 }
 
@@ -3309,7 +3311,7 @@ async function pushSelfSyncPayloadToOwnMailbox(payload: string, label: string, k
   persist()
 }
 
-function applySelfSyncPackage(pkg: SelfSyncPackage) {
+async function applySelfSyncPackage(pkg: SelfSyncPackage) {
   if (pkg.version !== 1) throw new Error('self-sync version 不支持')
   if (!pkg.sync_id) throw new Error('self-sync 缺少 sync_id')
   const sequence = Number(pkg.sequence ?? 0)
@@ -3320,7 +3322,7 @@ function applySelfSyncPackage(pkg: SelfSyncPackage) {
   if (ageMs > 30 * 24 * 3600 * 1000) throw new Error('self-sync 已超过 30 天时间窗口')
   if (pkg.from_user_id !== identity.value?.user_id) throw new Error('self-sync user_id 与当前身份不匹配')
   if (pkg.identity_public_key !== identity.value?.identity_public_key) throw new Error('self-sync identity_public_key 与当前身份不匹配')
-  if (!pkg.signature || !verify_identity_text_signature(pkg.identity_public_key, selfSyncSigningPayload(pkg), pkg.signature)) throw new Error('self-sync 签名无效')
+  if (!pkg.signature || !await verifyIdentityTextSignatureInWorker(pkg.identity_public_key, selfSyncSigningPayload(pkg), pkg.signature)) throw new Error('self-sync 签名无效')
   if (pkg.from_device_id && myDeviceId.value && pkg.from_device_id === myDeviceId.value) {
     processedSelfSyncIds.value = [pkg.sync_id, ...processedSelfSyncIds.value.filter((id) => id !== pkg.sync_id)].slice(0, 100)
     selfSyncStatusText.value = `自同步：已跳过本设备包 ${pkg.sync_id}`
@@ -3407,7 +3409,7 @@ async function requestMissingSelfSyncPackage(missingSyncId: string) {
     { missing_sync_id: missingSyncId, requested_at: now },
     ...selfSyncMissingRequestRecords.value.filter((item) => item.missing_sync_id !== missingSyncId),
   ].slice(0, 100)
-  const pkg = currentSelfSyncRequestPackage(missingSyncId)
+  const pkg = await currentSelfSyncRequestPackage(missingSyncId)
   const payload = JSON.stringify(pkg)
   await pushSelfSyncPayloadToOwnMailbox(payload, `自同步：已请求缺失包 ${missingSyncId.slice(0, 8)}`, 'self-sync-request')
   selfSyncRequestSentCount.value += 1
@@ -3423,10 +3425,10 @@ async function applySelfSyncRequestPackage(pkg: SelfSyncRequestPackage) {
     persist()
     return
   }
-  processedSelfSyncRequestIds.value = [pkg.request_id, ...processedSelfSyncRequestIds.value.filter((id) => id !== pkg.request_id)].slice(0, 100)
   if (pkg.from_user_id !== identity.value?.user_id) throw new Error('self-sync request user_id 与当前身份不匹配')
   if (pkg.identity_public_key !== identity.value?.identity_public_key) throw new Error('self-sync request identity_public_key 与当前身份不匹配')
-  if (!pkg.signature || !verify_identity_text_signature(pkg.identity_public_key, selfSyncRequestSigningPayload(pkg), pkg.signature)) throw new Error('self-sync request 签名无效')
+  if (!pkg.signature || !await verifyIdentityTextSignatureInWorker(pkg.identity_public_key, selfSyncRequestSigningPayload(pkg), pkg.signature)) throw new Error('self-sync request 签名无效')
+  processedSelfSyncRequestIds.value = [pkg.request_id, ...processedSelfSyncRequestIds.value.filter((id) => id !== pkg.request_id)].slice(0, 100)
   if (pkg.from_device_id && myDeviceId.value && pkg.from_device_id === myDeviceId.value) {
     selfSyncStatusText.value = `自同步：已跳过本设备缺包请求 ${pkg.missing_sync_id.slice(0, 8)}`
     appendLog(selfSyncStatusText.value)
@@ -3462,7 +3464,7 @@ async function repairSelfSyncGapNow() {
 
 async function pushSelfSyncPackageToOwnMailbox() {
   await runAsync('同步状态到自己的 Mailbox', async () => {
-    const pkg = currentSelfSyncPackage()
+    const pkg = await currentSelfSyncPackage()
     const payload = JSON.stringify(pkg)
     rememberSelfSyncPackage(pkg, payload)
     lastSelfSyncSequenceSent.value = Math.max(lastSelfSyncSequenceSent.value, pkg.sequence)
@@ -6646,6 +6648,67 @@ type DeviceSlotCryptoWorkerResponse = {
   error?: string
 }
 
+type IdentitySignatureWorkerResponse = {
+  id: number
+  ok: boolean
+  value?: string | boolean
+  error?: string
+}
+
+let identitySignatureWorker: Worker | null = null
+let nextIdentitySignatureRequestId = 1
+const identitySignatureRequests = new Map<number, {
+  resolve: (value: string | boolean) => void
+  reject: (reason?: unknown) => void
+}>()
+
+function getIdentitySignatureWorker(): Worker {
+  if (identitySignatureWorker) return identitySignatureWorker
+  const worker = new Worker(new URL('./identitySignature.worker.ts', import.meta.url), { type: 'module' })
+  worker.onmessage = (event: MessageEvent<IdentitySignatureWorkerResponse>) => {
+    const response = event.data
+    const pending = identitySignatureRequests.get(response.id)
+    if (!pending) return
+    identitySignatureRequests.delete(response.id)
+    if (response.ok && (typeof response.value === 'string' || typeof response.value === 'boolean')) pending.resolve(response.value)
+    else pending.reject(new Error(response.error || '身份签名 Worker 处理失败'))
+  }
+  worker.onerror = (event) => {
+    const error = new Error(event.message || '身份签名 Worker 已停止')
+    for (const pending of identitySignatureRequests.values()) pending.reject(error)
+    identitySignatureRequests.clear()
+    worker.terminate()
+    if (identitySignatureWorker === worker) identitySignatureWorker = null
+  }
+  identitySignatureWorker = worker
+  return worker
+}
+
+function runIdentitySignatureWorker(payload: Record<string, string>): Promise<string | boolean> {
+  const id = nextIdentitySignatureRequestId++
+  return new Promise((resolve, reject) => {
+    identitySignatureRequests.set(id, { resolve, reject })
+    try {
+      getIdentitySignatureWorker().postMessage({ id, ...payload })
+    } catch (error) {
+      identitySignatureRequests.delete(id)
+      reject(error)
+    }
+  })
+}
+
+async function signIdentityTextInWorker(backupText: string, passphrase: string, payload: string): Promise<string> {
+  const value = await runIdentitySignatureWorker({ type: 'sign', backupText, passphrase, payload })
+  if (typeof value !== 'string') throw new Error('身份签名 Worker 返回无效结果')
+  return value
+}
+
+async function verifyIdentityTextSignatureInWorker(identityPublicKey: string, payload: string, signature: string): Promise<boolean> {
+  const value = await runIdentitySignatureWorker({ type: 'verify', identityPublicKey, payload, signature })
+  if (typeof value !== 'boolean') throw new Error('身份验签 Worker 返回无效结果')
+  return value
+}
+
 let deviceSlotCryptoWorker: Worker | null = null
 let nextDeviceSlotCryptoRequestId = 1
 const deviceSlotCryptoRequests = new Map<number, {
@@ -6741,7 +6804,7 @@ async function createPerDeviceEnvelopeDraft(contact: ContactItem, conversationId
     fallback_ciphertext: ciphertext,
     created_at: createdAt,
   }
-  draft.signature = sign_identity_text(backupText.value, passphrase.value, perDeviceEnvelopeSigningPayload(draft))
+  draft.signature = await signIdentityTextInWorker(backupText.value, passphrase.value, perDeviceEnvelopeSigningPayload(draft))
   return JSON.stringify(draft)
 }
 
@@ -6775,7 +6838,7 @@ async function unwrapPerDeviceEnvelopeForCurrentDevice(payloadText: string, send
   if (parsed.sender_user_id !== sender.user_id) recordDrop(`分设备 envelope 发送者不匹配：${parsed.sender_user_id || 'unknown'}`)
   const signature = parsed.signature
   if (!signature) return recordDrop('分设备 envelope 缺少身份签名')
-  if (!verify_identity_text_signature(sender.identity_public_key, perDeviceEnvelopeSigningPayload(parsed), signature)) {
+  if (!await verifyIdentityTextSignatureInWorker(sender.identity_public_key, perDeviceEnvelopeSigningPayload(parsed), signature)) {
     recordDrop('分设备 envelope 身份签名无效')
   }
   const targets = Array.isArray(parsed.target_devices) ? parsed.target_devices : []
@@ -9168,13 +9231,13 @@ async function handleMailboxPayload(item: any): Promise<{ handled: boolean; deli
   if (identity.value?.user_id && fromUserId === identity.value.user_id && normalizedKind === 'selfsyncrequest') {
     const pkg = JSON.parse(ciphertext) as SelfSyncRequestPackage
     if (pkg?.type !== 'lm-self-sync-request-v1') throw new Error('self-sync request 类型不匹配')
-    void applySelfSyncRequestPackage(pkg)
+    await applySelfSyncRequestPackage(pkg)
     return { handled: true, deliveryId, event: 'self-sync' }
   }
   if (identity.value?.user_id && fromUserId === identity.value.user_id && normalizedKind === 'selfsync') {
     const pkg = JSON.parse(ciphertext) as SelfSyncPackage
     if (pkg?.type !== 'lm-self-sync-v1') throw new Error('self-sync package 类型不匹配')
-    applySelfSyncPackage(pkg)
+    await applySelfSyncPackage(pkg)
     return { handled: true, deliveryId, event: 'self-sync' }
   }
   if (identity.value?.user_id && fromUserId === identity.value.user_id && (normalizedKind === 'databackup' || ciphertext.startsWith('lm-data-backup-v1:'))) {
