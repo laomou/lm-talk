@@ -10,7 +10,7 @@ import UiDialog from './components/UiDialog.vue'
 import UiActionGroup from './components/UiActionGroup.vue'
 import QRCode from 'qrcode'
 import { applyPwaUpdate, onPwaUpdateReady, readPwaStatus } from './pwa'
-import { TABLES, idbDel, idbGet, idbSet, idbTableClear, idbTableGet, idbTableGetAllByPrefix, idbTableReplaceByPrefix } from './idb'
+import { TABLES, idbDel, idbGet, idbSet, idbTableApplyChanges, idbTableClear, idbTableGet, idbTableGetAllByPrefix, idbTableReplaceByPrefix } from './idb'
 import init, {
   accept_friend_request,
   create_device_cert,
@@ -624,6 +624,7 @@ const passphrase = ref('')
 const newIdentityPassphrase = ref('')
 const backupText = ref('')
 let missingWebCryptoWarningShown = false
+let localStorageKeyCache: { owner: string; passphrase: string; key: CryptoKey } | null = null
 let keepBackupText = false
 const identity = ref<(IdentityOutput | RestoreOutput) | null>(null)
 const displayName = ref('Me')
@@ -1765,6 +1766,11 @@ function dhtRecordStoreBody(record: { key: string; [key: string]: unknown }): st
 
 async function localStorageCryptoKey(): Promise<CryptoKey | null> {
   if (!identity.value || !passphrase.value) return null
+  const owner = identity.value.user_id
+  const normalizedPassphrase = normalize_passphrase(passphrase.value)
+  if (localStorageKeyCache?.owner === owner && localStorageKeyCache.passphrase === normalizedPassphrase) {
+    return localStorageKeyCache.key
+  }
   const webCrypto = globalThis.crypto
   if (!webCrypto?.subtle) {
     if (!missingWebCryptoWarningShown) {
@@ -1775,15 +1781,15 @@ async function localStorageCryptoKey(): Promise<CryptoKey | null> {
   }
   const material = await webCrypto.subtle.importKey(
     'raw',
-    new TextEncoder().encode(normalize_passphrase(passphrase.value)),
+    new TextEncoder().encode(normalizedPassphrase),
     'PBKDF2',
     false,
     ['deriveKey'],
   )
-  return webCrypto.subtle.deriveKey(
+  const key = await webCrypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
-      salt: new TextEncoder().encode(`lm-talk-local-store-v1:${identity.value.user_id}`),
+      salt: new TextEncoder().encode(`lm-talk-local-store-v1:${owner}`),
       iterations: 210_000,
       hash: 'SHA-256',
     },
@@ -1792,6 +1798,8 @@ async function localStorageCryptoKey(): Promise<CryptoKey | null> {
     false,
     ['encrypt', 'decrypt'],
   )
+  localStorageKeyCache = { owner, passphrase: normalizedPassphrase, key }
+  return key
 }
 
 async function encryptLocalString(value: string, key: CryptoKey | null): Promise<string | EncryptedStringV1> {
@@ -2180,45 +2188,122 @@ function summarizePartialLoadFailures(failures: Array<[string, number]>) {
   toast('已跳过损坏的本地记录，其余数据已加载', 'warning')
 }
 
+type PersistTableSnapshot = Map<string, string>
+
+let persistedOwnerPrefix = ''
+let persistedMetaSnapshot = ''
+const persistedTableSnapshots = new Map<string, PersistTableSnapshot>()
+let persistTablesNeedCleanup = true
+let persistSchemaMarked = false
+
+function resetPersistSnapshots() {
+  persistedOwnerPrefix = ''
+  persistedMetaSnapshot = ''
+  persistedTableSnapshots.clear()
+  persistTablesNeedCleanup = true
+  persistSchemaMarked = false
+}
+
+function persistEntrySignature(value: unknown): string {
+  return JSON.stringify(value)
+}
+
+async function persistChangedTable<T>(
+  table: typeof TABLES[keyof typeof TABLES],
+  entries: Array<[string, T]>,
+  encode: (value: T) => Promise<any>,
+) {
+  const snapshot = persistedTableSnapshots.get(table) ?? new Map<string, string>()
+  const current = new Map(entries.map(([key, value]) => [key, persistEntrySignature(value)]))
+  if (persistTablesNeedCleanup) {
+    const storedEntries = await Promise.all(entries.map(async ([key, value]) => [key, await encode(value)] as [string, any]))
+    await idbTableReplaceByPrefix(table, ownerPrefix(), storedEntries)
+    persistedTableSnapshots.set(table, current)
+    return
+  }
+  const puts: Array<[string, any]> = []
+
+  for (const [key, value] of entries) {
+    if (snapshot.get(key) !== current.get(key)) puts.push([key, await encode(value)])
+  }
+  const deletes = [...snapshot.keys()].filter((key) => !current.has(key))
+  await idbTableApplyChanges(table, puts, deletes)
+  persistedTableSnapshots.set(table, current)
+}
+
 async function persistStateTables() {
   if (!identity.value) return
-  const key = await localStorageCryptoKey()
-  const storedContacts = await Promise.all(contacts.value.map((c) => encryptContactForStore(c, key)))
-  const storedFriendRequests = await Promise.all(friendRequests.value.map((r) => encryptFriendRequestForStore(r, key)))
-  const storedGroups = await Promise.all(groups.value.map((g) => encryptGroupForStore(g, key)))
-  const storedGroupInvites = await Promise.all(groupInvites.value.map((g) => encryptGroupInviteForStore(g, key)))
-  const storedGroupSenderKeys = await Promise.all(groupSenderKeys.value.map((g) => encryptGroupSenderKeyForStore(g, key)))
-  const storedMessages = await Promise.all(messages.value.map((m) => encryptMessageForStore(m, key)))
-  const storedOutbox = await Promise.all(outbox.value.map((o) => encryptOutboxForStore(o, key)))
-  const storedRatchets = await Promise.all(ratchetSessions.value.map((r) => encryptRatchetForStore(r, key)))
-  const storedMailboxFailedItems = await Promise.all(mailboxFailedItems.value.map((m) => encryptMailboxFailedItemForStore(m, key)))
-  const meta = persistedMeta()
-  meta.nodeControlUrl = await encryptLocalString(nodeControlUrl.value, key)
-  meta.prekeyPrivateBundleJson = await encryptLocalString(prekeyPrivateBundleJson.value, key)
-  meta.mailboxFailedItems = storedMailboxFailedItems
   const prefix = ownerPrefix()
-  await idbTableReplaceByPrefix(TABLES.meta, prefix, [[ownerKey('main'), meta]])
-  await idbTableReplaceByPrefix(TABLES.contacts, prefix, storedContacts.map((c) => [ownerKey(c.user_id), c]))
-  await idbTableReplaceByPrefix(TABLES.friendRequests, prefix, storedFriendRequests.map((r) => [ownerKey(r.request_id), r]))
-  await idbTableReplaceByPrefix(TABLES.groups, prefix, storedGroups.map((g) => [ownerKey(g.group_id), g]))
-  await idbTableReplaceByPrefix(TABLES.groupInvites, prefix, storedGroupInvites.map((g) => [ownerKey(g.invite_id), g]))
-  await idbTableReplaceByPrefix(TABLES.groupSenderKeys, prefix, storedGroupSenderKeys.map((k) => [ownerKey(k.key_id), k]))
-  await idbTableReplaceByPrefix(TABLES.messages, prefix, storedMessages.map((m) => [ownerKey(m.id), m]))
-  await idbTableReplaceByPrefix(TABLES.outbox, prefix, storedOutbox.map((o) => [ownerKey(o.id), o]))
-  await idbTableReplaceByPrefix(TABLES.ratchetSessions, prefix, storedRatchets.map((r) => [ownerKey(r.peer_user_id), r]))
-  await idbSet('chat-state-schema-v2', true)
+  if (persistedOwnerPrefix !== prefix) {
+    persistedOwnerPrefix = prefix
+    persistedMetaSnapshot = ''
+    persistedTableSnapshots.clear()
+    persistTablesNeedCleanup = true
+    persistSchemaMarked = false
+  }
+  const key = await localStorageCryptoKey()
+  const meta = persistedMeta()
+  const metaSnapshot = persistEntrySignature(meta)
+  if (metaSnapshot !== persistedMetaSnapshot) {
+    const storedMailboxFailedItems = await Promise.all(mailboxFailedItems.value.map((m) => encryptMailboxFailedItemForStore(m, key)))
+    meta.nodeControlUrl = await encryptLocalString(nodeControlUrl.value, key)
+    meta.prekeyPrivateBundleJson = await encryptLocalString(prekeyPrivateBundleJson.value, key)
+    meta.mailboxFailedItems = storedMailboxFailedItems
+    await idbTableApplyChanges(TABLES.meta, [[ownerKey('main'), meta]], [])
+    persistedMetaSnapshot = metaSnapshot
+  }
+  await Promise.all([
+    persistChangedTable(TABLES.contacts, contacts.value.map((c) => [ownerKey(c.user_id), c]), (c) => encryptContactForStore(c, key)),
+    persistChangedTable(TABLES.friendRequests, friendRequests.value.map((r) => [ownerKey(r.request_id), r]), (r) => encryptFriendRequestForStore(r, key)),
+    persistChangedTable(TABLES.groups, groups.value.map((g) => [ownerKey(g.group_id), g]), (g) => encryptGroupForStore(g, key)),
+    persistChangedTable(TABLES.groupInvites, groupInvites.value.map((g) => [ownerKey(g.invite_id), g]), (g) => encryptGroupInviteForStore(g, key)),
+    persistChangedTable(TABLES.groupSenderKeys, groupSenderKeys.value.map((g) => [ownerKey(g.key_id), g]), (g) => encryptGroupSenderKeyForStore(g, key)),
+    persistChangedTable(TABLES.messages, messages.value.map((m) => [ownerKey(m.id), m]), (m) => encryptMessageForStore(m, key)),
+    persistChangedTable(TABLES.outbox, outbox.value.map((o) => [ownerKey(o.id), o]), (o) => encryptOutboxForStore(o, key)),
+    persistChangedTable(TABLES.ratchetSessions, ratchetSessions.value.map((r) => [ownerKey(r.peer_user_id), r]), (r) => encryptRatchetForStore(r, key)),
+  ])
+  persistTablesNeedCleanup = false
+  if (!persistSchemaMarked) {
+    await idbSet('chat-state-schema-v1', true)
+    persistSchemaMarked = true
+  }
 }
 
 let persistChain: Promise<void> = Promise.resolve()
+let persistTimer: number | undefined
+let persistPending = false
 
 function persist() {
-  persistChain = persistChain
-    .catch(() => undefined)
-    .then(() => persistStateTables())
-    .catch((e) => appendLog(`❌ IndexedDB 保存失败：${String(e)}`))
+  persistPending = true
+  if (persistTimer !== undefined) return
+  persistTimer = window.setTimeout(() => {
+    persistTimer = undefined
+    persistChain = persistChain
+      .catch(() => undefined)
+      .then(async () => {
+        while (persistPending) {
+          persistPending = false
+          await persistStateTables()
+        }
+      })
+      .catch((e) => appendLog(`❌ IndexedDB 保存失败：${String(e)}`))
+  }, 120)
 }
 
 async function flushPersistForTests() {
+  if (persistTimer !== undefined) {
+    window.clearTimeout(persistTimer)
+    persistTimer = undefined
+    persistChain = persistChain
+      .catch(() => undefined)
+      .then(async () => {
+        while (persistPending) {
+          persistPending = false
+          await persistStateTables()
+        }
+      })
+      .catch((e) => appendLog(`❌ IndexedDB 保存失败：${String(e)}`))
+  }
   await persistChain
 }
 
@@ -2236,6 +2321,7 @@ if (typeof window !== 'undefined') {
 }
 
 async function writeStateToTables(state: PersistedState) {
+  resetPersistSnapshots()
   backupText.value = state.backupText ?? ''
   const key = await localStorageCryptoKey()
   contacts.value = await Promise.all((state.contacts ?? []).map((c: any) => decryptContactFromStore(c, key)))
@@ -2509,8 +2595,9 @@ function resetAccountScopedState() {
 }
 
 async function clearPersisted() {
+  resetPersistSnapshots()
   await idbDel('chat-state-v1')
-  await idbDel('chat-state-schema-v2')
+  await idbDel('chat-state-schema-v1')
   await Promise.all(Object.values(TABLES).map((table) => idbTableClear(table)))
   localStorage.removeItem('lm-talk-chat-state-v1')
   localStorage.removeItem(LOCAL_IDENTITIES_KEY)
