@@ -42,7 +42,6 @@ import init, {
   inspect_friend_response,
   inspect_group_invite,
   inspect_group_event,
-  group_sender_decrypt_text,
   group_sender_encrypt_text,
   import_group_sender_key,
   apply_group_policy_event,
@@ -1551,6 +1550,10 @@ onUnmounted(() => {
   persistenceSnapshotWorker = null
   for (const pending of persistenceSnapshotRequests.values()) pending.reject(new Error('本地存储快照 Worker 已停止'))
   persistenceSnapshotRequests.clear()
+  groupSenderCryptoWorker?.terminate()
+  groupSenderCryptoWorker = null
+  for (const pending of groupSenderCryptoRequests.values()) pending.reject(new Error('Sender Key 解密 Worker 已停止'))
+  groupSenderCryptoRequests.clear()
   deviceSlotCryptoWorker?.terminate()
   deviceSlotCryptoWorker = null
   for (const pending of deviceSlotCryptoRequests.values()) pending.reject(new Error('分设备密文 Worker 已停止'))
@@ -5450,7 +5453,61 @@ function encryptGroupSenderText(group: GroupItem, text: string): string | null {
   return out.envelope_json
 }
 
-function tryDecryptGroupSenderEnvelope(envelopeText: string): { text: string; group_id: string; sender_user_id: string } | null {
+type GroupSenderCryptoWorkerResponse = {
+  id: number
+  ok: boolean
+  state_json?: string
+  plain_json?: string
+  error?: string
+}
+
+let groupSenderCryptoWorker: Worker | null = null
+let nextGroupSenderCryptoRequestId = 1
+const groupSenderCryptoRequests = new Map<number, {
+  resolve: (value: { stateText: string; plainJson: string }) => void
+  reject: (reason?: unknown) => void
+}>()
+const groupSenderDecryptChains = new Map<string, Promise<unknown>>()
+
+function getGroupSenderCryptoWorker(): Worker {
+  if (groupSenderCryptoWorker) return groupSenderCryptoWorker
+  const worker = new Worker(new URL('./groupSenderCrypto.worker.ts', import.meta.url), { type: 'module' })
+  worker.onmessage = (event: MessageEvent<GroupSenderCryptoWorkerResponse>) => {
+    const response = event.data
+    const pending = groupSenderCryptoRequests.get(response.id)
+    if (!pending) return
+    groupSenderCryptoRequests.delete(response.id)
+    if (response.ok && response.state_json !== undefined && response.plain_json !== undefined) {
+      pending.resolve({ stateText: response.state_json, plainJson: response.plain_json })
+    } else {
+      pending.reject(new Error(response.error || 'Sender Key 解密 Worker 处理失败'))
+    }
+  }
+  worker.onerror = (event) => {
+    const error = new Error(event.message || 'Sender Key 解密 Worker 已停止')
+    for (const pending of groupSenderCryptoRequests.values()) pending.reject(error)
+    groupSenderCryptoRequests.clear()
+    worker.terminate()
+    if (groupSenderCryptoWorker === worker) groupSenderCryptoWorker = null
+  }
+  groupSenderCryptoWorker = worker
+  return worker
+}
+
+function decryptGroupSenderEnvelopeInWorker(stateText: string, envelopeText: string): Promise<{ stateText: string; plainJson: string }> {
+  const id = nextGroupSenderCryptoRequestId++
+  return new Promise((resolve, reject) => {
+    groupSenderCryptoRequests.set(id, { resolve, reject })
+    try {
+      getGroupSenderCryptoWorker().postMessage({ id, stateText, envelopeText })
+    } catch (error) {
+      groupSenderCryptoRequests.delete(id)
+      reject(error)
+    }
+  })
+}
+
+async function tryDecryptGroupSenderEnvelope(envelopeText: string): Promise<{ text: string; group_id: string; sender_user_id: string } | null> {
   let parsed: any = null
   try { parsed = JSON.parse(envelopeText) } catch { return null }
   if (parsed?.type !== 'lm-group-sender-envelope-v1') return null
@@ -5460,20 +5517,34 @@ function tryDecryptGroupSenderEnvelope(envelopeText: string): { text: string; gr
     rememberGroupSenderKeyError(String(parsed.group_id), reason)
     throw new Error(reason)
   }
-  let out: { state_json: string; plain_json: string }
+  const chainKey = key.key_id
+  const previous = groupSenderDecryptChains.get(chainKey) ?? Promise.resolve()
+  const task = previous
+    .catch(() => undefined)
+    .then(async () => {
+      const current = getGroupSenderKey(String(parsed.group_id), String(parsed.sender_user_id))
+      if (!current) throw new Error(`缺少 ${parsed.sender_user_id} 的 Sender Key Distribution`)
+      const out = await decryptGroupSenderEnvelopeInWorker(current.state_json, envelopeText)
+      current.state_json = out.stateText
+      current.updated_at = Date.now()
+      const plain = JSON.parse(out.plainJson) as { text: string; group_id: string; sender_user_id: string }
+      groupSenderPlainText.value = JSON.stringify(plain, null, 2)
+      appendLog('🔓 已用 Sender Key 解密群消息')
+      return plain
+    })
+  groupSenderDecryptChains.set(chainKey, task)
+  void task.then(() => {
+    if (groupSenderDecryptChains.get(chainKey) === task) groupSenderDecryptChains.delete(chainKey)
+  }, () => {
+    if (groupSenderDecryptChains.get(chainKey) === task) groupSenderDecryptChains.delete(chainKey)
+  })
   try {
-    out = JSON.parse(group_sender_decrypt_text(key.state_json, envelopeText)) as { state_json: string; plain_json: string }
-  } catch (e) {
-    const reason = userFacingError(e)
+    return await task as { text: string; group_id: string; sender_user_id: string }
+  } catch (error) {
+    const reason = userFacingError(error)
     rememberGroupSenderKeyError(String(parsed.group_id), `解密失败：${reason}`)
-    throw e
+    throw error
   }
-  key.state_json = out.state_json
-  key.updated_at = Date.now()
-  const plain = JSON.parse(out.plain_json) as { text: string; group_id: string; sender_user_id: string }
-  groupSenderPlainText.value = JSON.stringify(plain, null, 2)
-  appendLog('🔓 已用 Sender Key 解密群消息')
-  return plain
 }
 
 function groupSenderEncryptDebug() {
@@ -5485,10 +5556,10 @@ function groupSenderEncryptDebug() {
   })
 }
 
-function groupSenderDecryptDebug() {
-  run('Sender Key 解密调试', () => {
+async function groupSenderDecryptDebug() {
+  await runAsync('Sender Key 解密调试', async () => {
     if (!groupSenderEnvelopeText.value.trim()) throw new Error('请粘贴 Sender Envelope')
-    const plain = tryDecryptGroupSenderEnvelope(groupSenderEnvelopeText.value)
+    const plain = await tryDecryptGroupSenderEnvelope(groupSenderEnvelopeText.value)
     if (!plain) throw new Error('不是 Sender Key Envelope')
     persist()
   })
@@ -6737,7 +6808,7 @@ async function receiveEnvelopeWithContact(envelopeText: string, sender: ContactI
   }
   const innerEnvelopeText = unwrappedEnvelope.envelopeText
   ensureUiTextSize('Inner Envelope', innerEnvelopeText, MAX_SIGNAL_BYTES)
-  const groupSenderPlain = tryDecryptGroupSenderEnvelope(innerEnvelopeText)
+  const groupSenderPlain = await tryDecryptGroupSenderEnvelope(innerEnvelopeText)
   if (groupSenderPlain) {
     const filtered = applyLocalTextFilter(groupSenderPlain.text, 'in')
     if (!filtered.allow) { persist(); return true }
