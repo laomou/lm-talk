@@ -16,8 +16,10 @@ export default {
   },
   me: {
     profile: 'Profile', backup: 'Identity backup', security: 'Security & devices', sync: 'Sync & security', settings: 'Settings', about: 'About', logout: 'Sign out',
-    language: 'Language', languageDescription: 'Choose the display language. The change applies immediately and is stored only on this device.',
+    securityStatus: { normal: 'Security status normal', abnormal: 'Security status abnormal' },
+  language: 'Language', languageDescription: 'Choose the display language. The change applies immediately and is stored only on this device.',
   },
+  securityStatus: { normal: 'Security status normal', abnormal: 'Security status abnormal' },
   language: { zhCN: 'Simplified Chinese', enUS: 'English' },
   common: { save: 'Save', cancel: 'Cancel', close: 'Close', backToMe: 'Back to Me' },
 } as const

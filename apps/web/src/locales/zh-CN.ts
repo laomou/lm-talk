@@ -16,8 +16,10 @@ export default {
   },
   me: {
     profile: '个人资料', backup: '身份备份', security: '安全与设备', sync: '同步与安全', settings: '设置', about: '关于', logout: '退出登录',
-    language: '语言', languageDescription: '选择界面显示语言。修改后立即生效，并仅保存在本机。',
+    securityStatus: { normal: '安全状态正常', abnormal: '安全状态异常' },
+  language: '语言', languageDescription: '选择界面显示语言。修改后立即生效，并仅保存在本机。',
   },
+  securityStatus: { normal: '安全状态正常', abnormal: '安全状态异常' },
   language: { zhCN: '简体中文', enUS: 'English' },
   common: { save: '保存', cancel: '取消', close: '关闭', backToMe: '返回我' },
 } as const
