@@ -505,6 +505,14 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 .bubble small { display: block; margin-top: var(--sp-1); color: var(--c-ink-3); font-size: 11px; }
 .bubble small.bubble-sender { margin-top: 0; }
 .bubble.out small { color: rgba(0, 0, 0, .45); }
+.bubble-meta { display: flex !important; align-items: center; justify-content: flex-end; gap: 5px; min-height: 16px; }
+.message-status { display: inline-flex; align-items: center; gap: 2px; color: rgba(0, 0, 0, .42); white-space: nowrap; }
+.message-status .ui-icon { flex: none; }
+.message-status.is-pending { color: var(--c-ink-3); }
+.message-status.is-sent,
+.message-status.is-delivered { color: rgba(0, 0, 0, .42); }
+.message-status.is-read { color: var(--c-primary-ink); }
+.message-status.is-failed { color: var(--c-danger); font-weight: 600; }
 .bubble-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-top: var(--sp-2); flex-wrap: wrap; font-size: 11px; color: var(--c-ink-3); }
 .bubble-actions .outbox-error { max-width: 240px; margin: 0; }
 .bubble-actions button { padding: 3px 8px; font-size: 11px; }

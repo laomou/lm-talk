@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import UiPageHeader from './UiPageHeader.vue'
-import UiStatusBadge from './UiStatusBadge.vue'
 import UiIcon from './UiIcon.vue'
 import UiEmptyState from './UiEmptyState.vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -16,6 +15,7 @@ const composerPanel = ref<'none' | 'attach' | 'emoji'>('none')
 const fileInput = ref<HTMLInputElement | null>(null)
 const composerTextarea = ref<HTMLTextAreaElement | null>(null)
 const emojis = ['😀', '😃', '😄', '😁', '🙂', '😉', '😊', '😍', '👍', '👏', '🙏', '💪', '🎉', '❤️', '🔥', '✅']
+type MessageStatusIcon = 'info' | 'check' | 'alert'
 
 function hmTime(ts: number) {
   return new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(ts))
@@ -30,25 +30,27 @@ function dayLabel(ts: number) {
   if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}月${d.getDate()}日`
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
 }
-function messageStatusClass(message: any) {
-  if (message.status === 'failed') return 'danger'
-  if (message.status === 'queued' || message.status === 'copied') return 'warning'
-  if (message.status === 'mailbox' || message.status === 'delivered') return 'info'
-  if (message.status === 'read' || message.status === 'sent' || message.status === 'received') return 'ok'
-  return 'info'
-}
-function messageStatusShortText(message: any) {
-  if (message.direction === 'in') return message.status === 'received' ? '已接收' : props.ctx.statusLabel(message.status)
+function outgoingMessageStatus(message: any) {
   switch (message.status) {
-    case 'queued': return '待发送'
-    case 'copied': return '待发送'
-    case 'mailbox': return '待收取'
-    case 'sent': return '已发送'
-    case 'delivered': return '已送达'
-    case 'read': return '已读'
-    case 'failed': return '失败'
-    default: return props.ctx.statusLabel(message.status)
+    case 'queued':
+    case 'copied':
+      return { text: '待发送', icon: 'info', tone: 'pending' }
+    case 'mailbox':
+      return { text: '待收取', icon: 'check', tone: 'pending' }
+    case 'sent':
+      return { text: '已发送', icon: 'check', tone: 'sent' }
+    case 'delivered':
+      return { text: '已送达', icon: 'check', tone: 'delivered' }
+    case 'read':
+      return { text: '已读', icon: 'check', tone: 'read' }
+    case 'failed':
+      return { text: '发送失败', icon: 'alert', tone: 'failed' }
+    default:
+      return { text: props.ctx.statusLabel(message.status), icon: 'info', tone: 'pending' }
   }
+}
+function outgoingMessageStatusIcon(message: any): MessageStatusIcon {
+  return outgoingMessageStatus(message).icon as MessageStatusIcon
 }
 function filePreviewLabel(name?: string, mime?: string) {
   const value = `${name || ''} ${mime || ''}`.toLowerCase()
@@ -83,7 +85,8 @@ function canManageMessageOutbox(message: any) {
 }
 
 function messageStatusDetailText(message: any) {
-  const parts = [messageStatusShortText(message)]
+  if (message.direction === 'in') return ''
+  const parts = [outgoingMessageStatus(message).text]
   if (message.read_at) parts.push(`已读 ${props.ctx.formatDateTime(message.read_at)}`)
   else if (message.delivered_at) parts.push(`送达 ${props.ctx.formatDateTime(message.delivered_at)}`)
   if (message.file_downloaded_at) parts.push(`已下载 ${props.ctx.formatDateTime(message.file_downloaded_at)}`)
@@ -248,10 +251,16 @@ function sendAndClose() {
           <div v-else class="bubble" :class="item.m.direction">
             <div class="text">{{ item.m.text }}</div>
             <small class="bubble-meta">
-              <UiStatusBadge :tone="messageStatusClass(item.m)" compact :title="messageStatusDetailText(item.m)">{{ messageStatusShortText(item.m) }}</UiStatusBadge>
               <span>{{ hmTime(item.m.created_at) }}</span>
-              <span v-if="item.m.read_at"> · 已读 {{ ctx.formatDateTime(item.m.read_at) }}</span>
-              <span v-else-if="item.m.delivered_at"> · 送达 {{ ctx.formatDateTime(item.m.delivered_at) }}</span>
+              <span
+                v-if="item.m.direction === 'out'"
+                class="message-status"
+                :class="`is-${outgoingMessageStatus(item.m).tone}`"
+                :title="messageStatusDetailText(item.m)"
+              >
+                <UiIcon :name="outgoingMessageStatusIcon(item.m)" size="12" />
+                {{ outgoingMessageStatus(item.m).text }}
+              </span>
               <span v-if="item.m.file_downloaded_at"> · 已下载 {{ ctx.formatDateTime(item.m.file_downloaded_at) }}</span>
             </small>
             <div v-if="canManageMessageOutbox(item.m)" class="bubble-actions">
