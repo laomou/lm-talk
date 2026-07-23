@@ -5,7 +5,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
   cat <<'USAGE'
-Usage: ./scripts/dev-run.sh node [options]
+Usage:
+  ./scripts/dev-run.sh node [options]
+  ./scripts/dev-run.sh web [options]
 
 Build the current lm_node release binary, package it into a local Docker image,
 and restart the Node container. HTTPS is provided by the lm-talk-web Caddy
@@ -32,16 +34,195 @@ Example:
 The Caddy container must be on the same Docker network and proxy /node/* to
 lm-talk-node:8787. --public-url is deployment-specific: it must exactly match
 the HTTPS host configured in Caddy and included in cors_allow_origins.
+
+Web options:
+  --public-url URL         HTTPS origin to serve (required unless --caddyfile is used)
+  --caddyfile PATH         Existing Caddyfile to mount instead of generating one
+  --caddy-data-dir PATH    Persistent Caddy data and generated config directory
+  --node-container NAME    Node container Caddy proxies to (default: lm-talk-node)
+  --container-name NAME    Docker container name (default: lm-talk-web)
+  --network NAME           Docker network shared with Node (default: lm-talk-lan)
+  --image-tag TAG          Local image tag (default: lm-talk-web:dev)
+  --no-build               Reuse the current local image; only recreate the container
+  --logs                   Follow Caddy logs after startup
+  --check-config           Validate local prerequisites and exit
+
+Example:
+  ./scripts/dev-run.sh web \
+    --public-url https://lm-talk.lan \
+    --caddy-data-dir /home/user/lm-talk-web/caddy-data
 USAGE
 }
 
 cmd="${1:-help}"
 shift || true
 case "$cmd" in
-  node) ;;
+  node|web) ;;
   -h|--help|help) usage; exit 0 ;;
   *) usage >&2; exit 2 ;;
 esac
+
+require_docker() {
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "未找到 docker，请先安装并启动 Docker。" >&2
+    exit 2
+  fi
+  if ! docker info >/dev/null 2>&1; then
+    echo "Docker daemon 不可用，请确认 Docker 正在运行。" >&2
+    exit 2
+  fi
+}
+
+ensure_network() {
+  local name="$1"
+  if ! docker network inspect "$name" >/dev/null 2>&1; then
+    echo "创建 Docker 网络：$name"
+    docker network create "$name" >/dev/null
+  fi
+}
+
+normalize_public_url() {
+  local value="$1"
+  value="${value%/}"
+  if [[ ! "$value" =~ ^https://[^/]+$ ]]; then
+    echo "--public-url 必须是 HTTPS origin，例如 https://lm-talk.lan 或 https://10.0.0.8。" >&2
+    exit 2
+  fi
+  printf '%s' "$value"
+}
+
+run_web() {
+  local public_url="${LM_TALK_PUBLIC_URL:-}"
+  local caddyfile=""
+  local caddy_data_dir="${LM_TALK_CADDY_DATA_DIR:-}"
+  local node_container="${LM_NODE_CONTAINER_NAME:-lm-talk-node}"
+  local container_name="${LM_WEB_CONTAINER_NAME:-lm-talk-web}"
+  local network_name="${LM_NODE_DOCKER_NETWORK:-lm-talk-lan}"
+  local image_tag="${LM_WEB_IMAGE_TAG:-lm-talk-web:dev}"
+  local build_image=1
+  local follow_logs=0
+  local check_config=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --public-url) public_url="${2:?--public-url requires URL}"; shift 2 ;;
+      --caddyfile) caddyfile="${2:?--caddyfile requires PATH}"; shift 2 ;;
+      --caddy-data-dir) caddy_data_dir="${2:?--caddy-data-dir requires PATH}"; shift 2 ;;
+      --node-container) node_container="${2:?--node-container requires NAME}"; shift 2 ;;
+      --container-name) container_name="${2:?--container-name requires NAME}"; shift 2 ;;
+      --network) network_name="${2:?--network requires NAME}"; shift 2 ;;
+      --image-tag) image_tag="${2:?--image-tag requires TAG}"; shift 2 ;;
+      --no-build) build_image=0; shift ;;
+      --logs) follow_logs=1; shift ;;
+      --check-config) check_config=1; shift ;;
+      -h|--help) usage; exit 0 ;;
+      *) echo "unknown web option: $1" >&2; usage >&2; exit 2 ;;
+    esac
+  done
+
+  if [[ -z "$caddyfile" && -z "$public_url" ]]; then
+    echo "web 启动需要 --public-url URL，或提供已有的 --caddyfile PATH。" >&2
+    exit 2
+  fi
+  if [[ -n "$public_url" ]]; then
+    public_url="$(normalize_public_url "$public_url")"
+  fi
+  if [[ -n "$caddyfile" && ! -f "$caddyfile" ]]; then
+    echo "Caddyfile 不存在：$caddyfile" >&2
+    exit 2
+  fi
+  if [[ -z "$caddy_data_dir" ]]; then
+    caddy_data_dir="$ROOT/.local/lm-talk-web/caddy-data"
+  fi
+  mkdir -p "$caddy_data_dir"
+  caddy_data_dir="$(cd "$caddy_data_dir" && pwd)"
+  if [[ -z "$caddyfile" ]]; then
+    caddyfile="$caddy_data_dir/Caddyfile"
+    cat > "$caddyfile" <<EOF
+{
+  servers {
+    protocols h1 h2
+  }
+}
+
+$public_url {
+  tls internal
+
+  handle_path /node/* {
+    reverse_proxy $node_container:8787
+  }
+
+  handle {
+    root * /srv
+    encode zstd gzip
+    try_files {path} /index.html
+    file_server
+  }
+}
+EOF
+  fi
+  caddyfile="$(cd "$(dirname "$caddyfile")" && pwd)/$(basename "$caddyfile")"
+
+  require_docker
+  ensure_network "$network_name"
+  echo "Caddyfile：$caddyfile"
+  echo "Caddy 数据：$caddy_data_dir"
+  echo "Docker 网络：$network_name"
+  echo "容器名称：$container_name"
+  [[ -n "$public_url" ]] && echo "HTTPS 来源：$public_url"
+  if [[ "$check_config" == "1" ]]; then
+    echo "配置检查：OK"
+    exit 0
+  fi
+
+  if [[ "$build_image" == "1" ]]; then
+    local build_ref
+    build_ref="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo container)"
+    echo "构建 Web Docker 镜像"
+    docker build \
+      -f "$ROOT/docker/web/Dockerfile" \
+      --build-arg "BUILD_REF=$build_ref" \
+      -t "$image_tag" \
+      "$ROOT"
+  fi
+  if ! docker image inspect "$image_tag" >/dev/null 2>&1; then
+    echo "本地镜像不存在：$image_tag；请移除 --no-build 后重试。" >&2
+    exit 2
+  fi
+
+  docker rm -f "$container_name" >/dev/null 2>&1 || true
+  docker run -d \
+    --name "$container_name" \
+    --restart unless-stopped \
+    --network "$network_name" \
+    -p 80:80 \
+    -p 443:443 \
+    -p 443:443/udp \
+    -v "$caddyfile:/etc/caddy/Caddyfile:ro" \
+    -v "$caddy_data_dir:/data" \
+    "$image_tag" >/dev/null
+
+  sleep 1
+  if [[ "$(docker inspect -f '{{.State.Running}}' "$container_name")" != "true" ]]; then
+    echo "Web/Caddy 容器启动失败，最近日志：" >&2
+    docker logs --tail 80 "$container_name" >&2 || true
+    exit 1
+  fi
+
+  echo "Web Docker 容器已启动：$container_name ($image_tag)"
+  if [[ -n "$public_url" ]]; then
+    echo "打开：$public_url/"
+    echo "Caddy 内部根证书：$caddy_data_dir/caddy/pki/authorities/local/root.crt"
+  fi
+  if [[ "$follow_logs" == "1" ]]; then
+    exec docker logs -f "$container_name"
+  fi
+}
+
+if [[ "$cmd" == "web" ]]; then
+  run_web "$@"
+  exit 0
+fi
 
 config_file="${LM_NODE_CONFIG_FILE:-}"
 data_dir="${LM_NODE_DATA_DIR:-}"

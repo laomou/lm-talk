@@ -47,6 +47,31 @@ https://<HTTPS-主机> {
 
 Node 不发布 `8787` 到宿主机；它只通过 `lm-talk-web` 的 Caddy 接收请求。
 
+## 从源码启动 Web / Caddy
+
+首次部署或更新 Web 时执行：
+
+```bash
+./scripts/dev-run.sh web \
+  --public-url https://<HTTPS-主机> \
+  --caddy-data-dir /home/user/lm-talk-web/caddy-data
+```
+
+脚本会构建 Web 镜像、启动 `lm-talk-web`、发布宿主机 `80/443`，并自动生成包含
+`/node/* → lm-talk-node:8787` 的 Caddyfile。根证书会持久化在：
+
+```text
+/home/user/lm-talk-web/caddy-data/caddy/pki/authorities/local/root.crt
+```
+
+把这个根证书导入局域网客户端的受信任根证书颁发机构。已有自定义 Caddyfile 时可挂载它：
+
+```bash
+./scripts/dev-run.sh web \
+  --caddyfile /home/user/lm-talk-web/Caddyfile \
+  --caddy-data-dir /home/user/lm-talk-web/caddy-data
+```
+
 ## 从源码更新 Node
 
 ```bash
