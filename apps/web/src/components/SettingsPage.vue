@@ -26,12 +26,6 @@ const mailboxInboxErrorLines = computed(() => props.ctx.mailboxInboxErrorText.va
   .map((line: string) => line.trim())
   .filter(Boolean))
 const syncStatus = computed(() => {
-  if (props.ctx.fullDataBackupFreshnessLevel.value !== 'ok') {
-    return {
-      text: props.ctx.fullDataBackupFreshnessLevel.value === 'danger' ? '需备份' : '建议备份',
-      tone: 'warning' as const,
-    }
-  }
   if (!props.ctx.nodeEnabled.value) return { text: '未开启', tone: 'neutral' as const }
   if (props.ctx.nodeMissingRemoteTokenCount.value > 0) return { text: '需配置', tone: 'warning' as const }
   const hasOutbox = props.ctx.outbox.value.some((item: any) => item.status !== 'sent')
@@ -40,6 +34,11 @@ const syncStatus = computed(() => {
   return hasOutbox || hasMailboxIssue || hasSyncIssue
     ? { text: '需处理', tone: 'warning' as const }
     : { text: '正常', tone: 'success' as const }
+})
+const backupStatus = computed(() => {
+  if (props.ctx.fullDataBackupFreshnessLevel.value === 'danger') return { text: '需备份', tone: 'warning' as const }
+  if (props.ctx.fullDataBackupFreshnessLevel.value === 'warning') return { text: '建议备份', tone: 'warning' as const }
+  return { text: '已备份', tone: 'success' as const }
 })
 const pendingOutboxCount = computed(() => props.ctx.outbox.value.filter((item: any) => item.status !== 'sent').length)
 const failedOutboxCount = computed(() => props.ctx.outbox.value.filter((item: any) => item.status === 'failed').length)
@@ -89,7 +88,10 @@ function changeLocale(event: Event) {
         <UiCard>
           <UiListGroup class="product-me-rows">
             <UiListRow @click="view = 'profile'">{{ t('me.profile') }}</UiListRow>
-            <UiListRow @click="view = 'backup'">{{ t('me.backup') }}</UiListRow>
+            <UiListRow @click="view = 'backup'">
+              {{ t('me.backup') }}
+              <template #end><UiStatusBadge compact :tone="backupStatus.tone">{{ backupStatus.text }}</UiStatusBadge><span class="chevron">›</span></template>
+            </UiListRow>
             <UiListRow @click="view = 'security'">{{ t('me.security') }}</UiListRow>
             <UiListRow @click="view = 'sync'">
               {{ t('me.sync') }}
