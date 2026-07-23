@@ -69,7 +69,6 @@ import init, {
   ratchet_next_sending_key,
   ratchet_dh_step,
   ratchet_encrypt_text_message,
-  ratchet_decrypt_text_message,
   reencrypt_identity_backup,
   restore_identity,
 } from './wasm/lm_wasm.js'
@@ -1554,6 +1553,10 @@ onUnmounted(() => {
   backupCryptoWorker = null
   for (const pending of backupCryptoRequests.values()) pending.reject(new Error('身份与安全备份 Worker 已停止'))
   backupCryptoRequests.clear()
+  ratchetCryptoWorker?.terminate()
+  ratchetCryptoWorker = null
+  for (const pending of ratchetCryptoRequests.values()) pending.reject(new Error('Ratchet 解密 Worker 已停止'))
+  ratchetCryptoRequests.clear()
   fileCryptoWorker?.terminate()
   fileCryptoWorker = null
   for (const pending of fileCryptoRequests.values()) pending.reject(new Error('文件加密 Worker 已停止'))
@@ -6072,19 +6075,89 @@ function encryptEnvelopeForContact(contact: ContactItem, conversationId: string,
   )
 }
 
-function decryptEnvelopeForContact(envelopeText: string, sender: ContactItem): any {
+type RatchetCryptoWorkerResponse = {
+  id: number
+  ok: boolean
+  state_text?: string
+  plain_json?: string
+  error?: string
+}
+
+let ratchetCryptoWorker: Worker | null = null
+let nextRatchetCryptoRequestId = 1
+const ratchetCryptoRequests = new Map<number, {
+  resolve: (value: { stateText: string; plainJson: string }) => void
+  reject: (reason?: unknown) => void
+}>()
+const ratchetDecryptChains = new Map<string, Promise<unknown>>()
+
+function getRatchetCryptoWorker(): Worker {
+  if (ratchetCryptoWorker) return ratchetCryptoWorker
+  const worker = new Worker(new URL('./ratchetCrypto.worker.ts', import.meta.url), { type: 'module' })
+  worker.onmessage = (event: MessageEvent<RatchetCryptoWorkerResponse>) => {
+    const response = event.data
+    const pending = ratchetCryptoRequests.get(response.id)
+    if (!pending) return
+    ratchetCryptoRequests.delete(response.id)
+    if (response.ok && response.state_text !== undefined && response.plain_json !== undefined) {
+      pending.resolve({ stateText: response.state_text, plainJson: response.plain_json })
+    } else {
+      pending.reject(new Error(response.error || 'Ratchet 解密 Worker 处理失败'))
+    }
+  }
+  worker.onerror = (event) => {
+    const error = new Error(event.message || 'Ratchet 解密 Worker 已停止')
+    for (const pending of ratchetCryptoRequests.values()) pending.reject(error)
+    ratchetCryptoRequests.clear()
+    worker.terminate()
+    if (ratchetCryptoWorker === worker) ratchetCryptoWorker = null
+  }
+  ratchetCryptoWorker = worker
+  return worker
+}
+
+function decryptRatchetEnvelopeInWorker(stateText: string, envelopeText: string): Promise<{ stateText: string; plainJson: string }> {
+  const id = nextRatchetCryptoRequestId++
+  return new Promise((resolve, reject) => {
+    ratchetCryptoRequests.set(id, { resolve, reject })
+    try {
+      getRatchetCryptoWorker().postMessage({ id, stateText, envelopeText })
+    } catch (error) {
+      ratchetCryptoRequests.delete(id)
+      reject(error)
+    }
+  })
+}
+
+function decryptRatchetEnvelopeForContact(sender: ContactItem, envelopeText: string): Promise<any> {
+  const previous = ratchetDecryptChains.get(sender.user_id) ?? Promise.resolve()
+  const task = previous
+    .catch(() => undefined)
+    .then(async () => {
+      const session = ratchetSessionFor(sender.user_id)
+      if (!session) {
+        recoverSecureSessionForContact(sender)
+        throw new Error('收到加密消息，但本地安全会话尚未建立；正在自动恢复，请稍后请对方重发这条消息')
+      }
+      const out = await decryptRatchetEnvelopeInWorker(session.state_text, envelopeText)
+      saveRatchetSession(sender.user_id, out.stateText)
+      appendLog(`🔓 已用 Double Ratchet 解密 ${sender.display_name || sender.user_id}`)
+      return safeJson<any>(out.plainJson)
+  })
+  ratchetDecryptChains.set(sender.user_id, task)
+  void task.then(() => {
+    if (ratchetDecryptChains.get(sender.user_id) === task) ratchetDecryptChains.delete(sender.user_id)
+  }, () => {
+    if (ratchetDecryptChains.get(sender.user_id) === task) ratchetDecryptChains.delete(sender.user_id)
+  })
+  return task
+}
+
+async function decryptEnvelopeForContact(envelopeText: string, sender: ContactItem): Promise<any> {
   let parsed: any = null
   try { parsed = JSON.parse(envelopeText) } catch {}
   if (parsed?.crypto === 'x3dh-double-ratchet-v1') {
-    const session = ratchetSessionFor(sender.user_id)
-    if (!session) {
-      recoverSecureSessionForContact(sender)
-      throw new Error('收到加密消息，但本地安全会话尚未建立；正在自动恢复，请稍后请对方重发这条消息')
-    }
-    const out = JSON.parse(ratchet_decrypt_text_message(session.state_text, envelopeText)) as { state_text: string; plain_json: string }
-    saveRatchetSession(sender.user_id, out.state_text)
-    appendLog(`🔓 已用 Double Ratchet 解密 ${sender.display_name || sender.user_id}`)
-    return safeJson<any>(out.plain_json)
+    return decryptRatchetEnvelopeForContact(sender, envelopeText)
   }
   return safeJson<any>(decrypt_text_message(
     backupText.value,
@@ -6448,7 +6521,7 @@ function unwrapPerDeviceEnvelopeForCurrentDevice(payloadText: string, sender: Co
   return recordDrop('当前设备没有 device_id，无法选择分设备 envelope 密文')
 }
 
-function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, mailboxDeliveryId?: string): boolean {
+async function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, mailboxDeliveryId?: string): Promise<boolean> {
   if (sender.state === 'Blocked') throw new Error('发送者已被拉黑')
   if (!allowIncomingFromContact(sender)) { persist(); return false }
   ensureUiTextSize('Envelope', envelopeText, MAX_SIGNAL_BYTES)
@@ -6484,7 +6557,7 @@ function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, m
     persist()
     return true
   }
-  const plain = decryptEnvelopeForContact(innerEnvelopeText, sender)
+  const plain = await decryptEnvelopeForContact(innerEnvelopeText, sender)
   const rawText = plain.body?.Text?.text ?? JSON.stringify(plain.body)
   if (typeof rawText === 'string' && rawText.startsWith(GROUP_SENDER_KEY_PAYLOAD_PREFIX)) {
     const distribution = rawText.slice(GROUP_SENDER_KEY_PAYLOAD_PREFIX.length)
@@ -6590,10 +6663,10 @@ function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, m
   return true
 }
 
-function receiveEnvelope() {
-  run('解密收到的 Envelope', () => {
+async function receiveEnvelope() {
+  await runAsync('解密收到的 Envelope', async () => {
     if (!activeContact.value) throw new Error('请选择发送者联系人')
-    receiveEnvelopeWithContact(inboundEnvelopeText.value, activeContact.value)
+    await receiveEnvelopeWithContact(inboundEnvelopeText.value, activeContact.value)
     inboundEnvelopeText.value = ''
   })
 }
@@ -6903,7 +6976,7 @@ function handleRtcText(value: string) {
 
   inboundEnvelopeText.value = value
   appendLog('收到 WebRTC 消息，自动尝试解密')
-  receiveEnvelope()
+  void receiveEnvelope()
 }
 
 async function waitIceGatheringComplete(peer: RTCPeerConnection) {
@@ -7448,17 +7521,14 @@ function ratchetEncryptEnvelopeText() {
   })
 }
 
-function ratchetDecryptEnvelopeText() {
-  run('Ratchet 解密消息', () => {
+async function ratchetDecryptEnvelopeText() {
+  await runAsync('Ratchet 解密消息', async () => {
     if (!ratchetStateText.value.trim()) throw new Error('请先准备本端 Ratchet State')
     if (!ratchetEnvelopeText.value.trim()) throw new Error('请粘贴 Ratchet Envelope JSON')
-    const out = JSON.parse(ratchet_decrypt_text_message(ratchetStateText.value, ratchetEnvelopeText.value)) as {
-      state_text: string
-      plain_json: string
-    }
-    ratchetStateText.value = out.state_text
-    if (activeContact.value) saveRatchetSession(activeContact.value.user_id, out.state_text)
-    ratchetPlainText.value = JSON.stringify(JSON.parse(out.plain_json), null, 2)
+    const out = await decryptRatchetEnvelopeInWorker(ratchetStateText.value, ratchetEnvelopeText.value)
+    ratchetStateText.value = out.stateText
+    if (activeContact.value) saveRatchetSession(activeContact.value.user_id, out.stateText)
+    ratchetPlainText.value = JSON.stringify(JSON.parse(out.plainJson), null, 2)
     inspectRatchetStateText()
   })
 }
@@ -8788,7 +8858,7 @@ function unwrapMailboxDelivery(item: any): { deliveryId?: string; message: any }
 
 type MailboxEventKind = 'message' | 'file' | 'friend-request' | 'friend-response' | 'group-invite' | 'delivery-ack' | 'read-receipt' | 'device-revoke' | 'contact-update' | 'secure-session' | 'data-backup' | 'self-sync' | 'other'
 
-function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: string; event?: MailboxEventKind; reason?: string } {
+async function handleMailboxPayload(item: any): Promise<{ handled: boolean; deliveryId?: string; event?: MailboxEventKind; reason?: string }> {
   const { deliveryId, message } = unwrapMailboxDelivery(item)
   const kind = typeof message.kind === 'string' ? message.kind : ''
   const normalizedKind = kind.replace(/[-_]/g, '').toLowerCase()
@@ -8846,7 +8916,7 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
 
   if (normalizedKind === 'directenvelope' || normalizedKind === 'groupfanout') {
     try {
-      const accepted = receiveEnvelopeWithContact(ciphertext, sender, deliveryId)
+      const accepted = await receiveEnvelopeWithContact(ciphertext, sender, deliveryId)
       if (!accepted) return { handled: true, deliveryId, event: 'other' }
       appendLog(`✅ 已自动解密 mailbox ${kind}`)
       return { handled: true, deliveryId, event: 'message' }
@@ -9099,7 +9169,7 @@ async function processMailboxMessages(messagesFromNode: any[]): Promise<string[]
       rememberProcessedMailboxIds(dedupeIds)
       continue
     }
-    const result = handleMailboxPayload(item)
+    const result = await handleMailboxPayload(item)
     if (result.handled) {
       handled += 1
       if (result.event) events.push(result.event)
@@ -9136,7 +9206,7 @@ async function retryFailedMailboxItemsNow() {
   const failureReasons: string[] = []
   for (const failedItem of items) {
     failedItem.retry_count += 1
-    const result = handleMailboxPayload({
+    const result = await handleMailboxPayload({
       delivery_id: failedItem.delivery_id,
       message: failedItem.message,
     })
@@ -9173,7 +9243,7 @@ async function retryMailboxFailedItem(id: string) {
     const item = mailboxFailedItems.value.find((failed) => failed.id === id)
     if (!item) throw new Error('失败项不存在或已处理')
     item.retry_count += 1
-    const result = handleMailboxPayload({ delivery_id: item.delivery_id, message: item.message })
+    const result = await handleMailboxPayload({ delivery_id: item.delivery_id, message: item.message })
     if (result.handled) {
       const dedupeIds = mailboxDedupeIds(item.delivery_id || result.deliveryId, item.message_id)
       rememberProcessedMailboxIds(dedupeIds)
