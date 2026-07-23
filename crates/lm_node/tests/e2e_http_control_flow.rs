@@ -10,6 +10,7 @@ use std::{
     net::{TcpListener, TcpStream},
     path::PathBuf,
     process::{Child, Command, Stdio},
+    sync::{Arc, Barrier},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -258,6 +259,190 @@ fn http_control_plane_syncs_prekeys_and_mailbox_between_nodes() {
     assert_eq!(take_again.status, 200);
     let take_again_body: serde_json::Value = serde_json::from_str(&take_again.body).unwrap();
     assert_eq!(take_again_body["messages"].as_array().unwrap().len(), 0);
+}
+
+/// Manual baseline for the real lm_node HTTP control path.
+///
+/// This intentionally does not run in normal CI: latency and throughput depend
+/// on the runner, CPU governor and local network stack. It measures node HTTP
+/// handling only (no browser crypto, Caddy/TLS or LAN transport).
+///
+/// Run with:
+/// `cargo test -p lm_node --test e2e_http_control_flow mailbox_http_performance_baseline -- --ignored --nocapture`
+#[test]
+#[ignore = "manual lm_node performance baseline; run explicitly with --ignored"]
+fn mailbox_http_performance_baseline() {
+    const DEFAULT_MESSAGES: usize = 500;
+    const DEFAULT_CONCURRENCY: usize = 8;
+    const DEFAULT_LONG_POLLS: usize = 20;
+
+    let messages = benchmark_env_usize("LM_NODE_BENCH_MESSAGES", DEFAULT_MESSAGES, 1, 20_000);
+    let concurrency =
+        benchmark_env_usize("LM_NODE_BENCH_CONCURRENCY", DEFAULT_CONCURRENCY, 1, 64).min(messages);
+    let long_polls = benchmark_env_usize("LM_NODE_BENCH_LONG_POLLS", DEFAULT_LONG_POLLS, 1, 200);
+
+    let base = format!("127.0.0.1:{}", free_port());
+    let _node = spawn_node_with_args(
+        &base,
+        "http-mailbox-performance-baseline",
+        &[
+            "--rate-limit-window-seconds",
+            "0",
+            "--rate-limit-max-requests",
+            "0",
+        ],
+    );
+    wait_for_health(&base);
+
+    let (sender, _) = Identity::create_with_passphrase("node benchmark sender").unwrap();
+    let (recipient, _) = Identity::create_with_passphrase("node benchmark recipient").unwrap();
+    let recipient_user_id = recipient.user_id().to_string();
+    let sender_public_key = BASE64.encode(sender.identity_public_key());
+
+    let sequential_payloads = (0..messages)
+        .map(|index| mailbox_push_body(&sender, &recipient, &sender_public_key, index))
+        .collect::<Vec<_>>();
+    let mut sequential_latencies = Vec::with_capacity(messages);
+    for body in sequential_payloads {
+        let started = Instant::now();
+        let response = http_json(&base, "POST", "/api/mailbox/push", body);
+        assert_eq!(response.status, 201, "{}", response.body);
+        sequential_latencies.push(started.elapsed());
+    }
+
+    let take_started = Instant::now();
+    let take = http_request(
+        &base,
+        "GET",
+        &format!("/api/mailbox/take?user_id={recipient_user_id}&limit=64"),
+        "",
+    );
+    let take_elapsed = take_started.elapsed();
+    assert_eq!(take.status, 200, "{}", take.body);
+    let take_body: serde_json::Value = serde_json::from_str(&take.body).unwrap();
+    let delivery_ids = take_body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|delivery| delivery["delivery_id"].as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(delivery_ids.len(), messages.min(64));
+
+    let ack_started = Instant::now();
+    let ack = http_json(
+        &base,
+        "POST",
+        "/api/mailbox/ack",
+        json!({
+            "user_id": recipient_user_id,
+            "delivery_ids": delivery_ids,
+        }),
+    );
+    let ack_elapsed = ack_started.elapsed();
+    assert_eq!(ack.status, 200, "{}", ack.body);
+    drain_mailbox(&base, &recipient_user_id);
+
+    let concurrent_payloads = (0..messages)
+        .map(|index| mailbox_push_body(&sender, &recipient, &sender_public_key, messages + index))
+        .collect::<Vec<_>>();
+    let barrier = Arc::new(Barrier::new(concurrency + 1));
+    let mut workers = Vec::with_capacity(concurrency);
+    for (worker, payloads) in split_benchmark_work(concurrent_payloads, concurrency)
+        .into_iter()
+        .enumerate()
+    {
+        let base = base.clone();
+        let barrier = Arc::clone(&barrier);
+        workers.push(thread::spawn(move || {
+            barrier.wait();
+            payloads
+                .into_iter()
+                .map(|body| {
+                    let started = Instant::now();
+                    let response = http_json(&base, "POST", "/api/mailbox/push", body);
+                    assert_eq!(response.status, 201, "worker {worker}: {}", response.body);
+                    started.elapsed()
+                })
+                .collect::<Vec<_>>()
+        }));
+    }
+    let concurrent_started = Instant::now();
+    barrier.wait();
+    let concurrent_latencies = workers
+        .into_iter()
+        .flat_map(|worker| worker.join().expect("benchmark worker panicked"))
+        .collect::<Vec<_>>();
+    let concurrent_elapsed = concurrent_started.elapsed();
+    assert_eq!(concurrent_latencies.len(), messages);
+    drain_mailbox(&base, &recipient_user_id);
+
+    let mut long_poll_wake_latencies = Vec::with_capacity(long_polls);
+    for index in 0..long_polls {
+        let poll_base = base.clone();
+        let poll_user_id = recipient.user_id().to_string();
+        let receiver = thread::spawn(move || {
+            let response = http_request(
+                &poll_base,
+                "GET",
+                &format!("/api/mailbox/take?user_id={poll_user_id}&limit=1&wait_seconds=1"),
+                "",
+            );
+            (Instant::now(), response)
+        });
+        // Give the server thread time to register the long poll before push.
+        thread::sleep(Duration::from_millis(30));
+        let push_started = Instant::now();
+        let response = http_json(
+            &base,
+            "POST",
+            "/api/mailbox/push",
+            mailbox_push_body(
+                &sender,
+                &recipient,
+                &sender_public_key,
+                messages.saturating_mul(2) + index,
+            ),
+        );
+        assert_eq!(response.status, 201, "{}", response.body);
+        let (received_at, response) = receiver.join().expect("long poll worker panicked");
+        assert_eq!(response.status, 200, "{}", response.body);
+        let response_body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(response_body["returned"], 1, "{}", response.body);
+        let delivery_id = response_body["messages"][0]["delivery_id"]
+            .as_str()
+            .unwrap();
+        let ack = http_json(
+            &base,
+            "POST",
+            "/api/mailbox/ack",
+            json!({
+                "user_id": recipient_user_id,
+                "delivery_ids": [delivery_id],
+            }),
+        );
+        assert_eq!(ack.status, 200, "{}", ack.body);
+        long_poll_wake_latencies.push(received_at.duration_since(push_started));
+    }
+
+    println!(
+        "lm_node mailbox HTTP baseline \
+messages={messages} concurrency={concurrency} long_polls={long_polls}\n\
+push sequential: {}\n\
+take batch({}): {}\n\
+ack batch({}): {}\n\
+push concurrent: {}\n\
+push concurrent total: {} ({:.1} msg/s)\n\
+long-poll push→take: {}",
+        benchmark_latency_summary(&sequential_latencies),
+        delivery_ids.len(),
+        benchmark_duration(take_elapsed),
+        delivery_ids.len(),
+        benchmark_duration(ack_elapsed),
+        benchmark_latency_summary(&concurrent_latencies),
+        benchmark_duration(concurrent_elapsed),
+        messages as f64 / concurrent_elapsed.as_secs_f64(),
+        benchmark_latency_summary(&long_poll_wake_latencies),
+    );
 }
 
 #[test]
@@ -923,6 +1108,102 @@ fn free_port() -> u16 {
         .local_addr()
         .unwrap()
         .port()
+}
+
+fn benchmark_env_usize(name: &str, default: usize, min: usize, max: usize) -> usize {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(default)
+        .clamp(min, max)
+}
+
+fn mailbox_push_body(
+    sender: &Identity,
+    recipient: &Identity,
+    sender_public_key: &str,
+    index: usize,
+) -> serde_json::Value {
+    let mailbox = MailboxMessage::new(
+        sender,
+        recipient.user_id().clone(),
+        MailboxMessageKind::DirectEnvelope,
+        format!("mailbox-performance-envelope-{index}"),
+        3600,
+    )
+    .unwrap();
+    json!({
+        "message_text": mailbox.to_export_text().unwrap(),
+        "from_identity_public_key": sender_public_key,
+    })
+}
+
+fn split_benchmark_work<T>(items: Vec<T>, workers: usize) -> Vec<Vec<T>> {
+    let mut batches = (0..workers).map(|_| Vec::new()).collect::<Vec<_>>();
+    for (index, item) in items.into_iter().enumerate() {
+        batches[index % workers].push(item);
+    }
+    batches
+}
+
+fn drain_mailbox(addr: &str, user_id: &str) {
+    loop {
+        let take = http_request(
+            addr,
+            "GET",
+            &format!("/api/mailbox/take?user_id={user_id}&limit=64"),
+            "",
+        );
+        assert_eq!(take.status, 200, "{}", take.body);
+        let body: serde_json::Value = serde_json::from_str(&take.body).unwrap();
+        let delivery_ids = body["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|delivery| delivery["delivery_id"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>();
+        if delivery_ids.is_empty() {
+            return;
+        }
+        let ack = http_json(
+            addr,
+            "POST",
+            "/api/mailbox/ack",
+            json!({
+                "user_id": user_id,
+                "delivery_ids": delivery_ids,
+            }),
+        );
+        assert_eq!(ack.status, 200, "{}", ack.body);
+    }
+}
+
+fn benchmark_duration(duration: Duration) -> String {
+    format!("{:.2} ms", duration.as_secs_f64() * 1_000.0)
+}
+
+fn benchmark_latency_summary(samples: &[Duration]) -> String {
+    assert!(!samples.is_empty(), "benchmark needs at least one sample");
+    let mut micros = samples
+        .iter()
+        .map(|duration| duration.as_micros() as u64)
+        .collect::<Vec<_>>();
+    micros.sort_unstable();
+    let count = micros.len();
+    let total = micros.iter().sum::<u64>();
+    let percentile = |numerator: usize, denominator: usize| {
+        let index = ((count * numerator).div_ceil(denominator)).saturating_sub(1);
+        micros[index]
+    };
+    let micros_text = |value: u64| format!("{:.2} ms", value as f64 / 1_000.0);
+    format!(
+        "n={count} avg={} p50={} p95={} p99={} max={}",
+        micros_text(total / count as u64),
+        micros_text(percentile(50, 100)),
+        micros_text(percentile(95, 100)),
+        micros_text(percentile(99, 100)),
+        micros_text(*micros.last().unwrap()),
+    )
 }
 
 fn wait_for_health(addr: &str) {

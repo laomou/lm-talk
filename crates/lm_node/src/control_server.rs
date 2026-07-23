@@ -100,6 +100,31 @@ impl ControlSecurityConfig {
     }
 }
 
+#[derive(Debug, Default)]
+pub(super) struct MailboxWakeSignal {
+    generation: Mutex<u64>,
+    ready: Condvar,
+}
+
+impl MailboxWakeSignal {
+    fn current_generation(&self) -> Result<u64, Box<dyn std::error::Error>> {
+        Ok(*self
+            .generation
+            .lock()
+            .map_err(|_| "mailbox wake signal mutex poisoned")?)
+    }
+
+    pub(super) fn notify_push(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut generation = self
+            .generation
+            .lock()
+            .map_err(|_| "mailbox wake signal mutex poisoned")?;
+        *generation = generation.wrapping_add(1);
+        self.ready.notify_all();
+        Ok(())
+    }
+}
+
 pub(super) fn status_for_request_error(error: &str) -> u16 {
     if error.contains("request body too large") {
         413
@@ -149,6 +174,7 @@ pub(super) fn serve_control(
     let listener = TcpListener::bind(bind)?;
     listener.set_nonblocking(true)?;
     let node = Arc::new(Mutex::new(node));
+    let mailbox_wake_signal = Arc::new(MailboxWakeSignal::default());
     let rate_limiter = Arc::new(Mutex::new(RateLimiter::default()));
     let runtime_stats = Arc::new(Mutex::new(ControlRuntimeStats::new(
         current_unix_timestamp(),
@@ -433,6 +459,7 @@ pub(super) fn serve_control(
         match listener.accept() {
             Ok((mut stream, _addr)) => {
                 let node = Arc::clone(&node);
+                let mailbox_wake_signal = Arc::clone(&mailbox_wake_signal);
                 let rate_limiter = Arc::clone(&rate_limiter);
                 let runtime_stats = Arc::clone(&runtime_stats);
                 let security = security.clone();
@@ -444,6 +471,7 @@ pub(super) fn serve_control(
                     match handle_stream(
                         &mut stream,
                         &node,
+                        &mailbox_wake_signal,
                         &security,
                         &rate_limiter,
                         rate_limit,
@@ -489,7 +517,7 @@ pub(super) fn serve_control(
                 });
             }
             Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
-                std::thread::sleep(Duration::from_millis(25));
+                std::thread::sleep(CONTROL_ACCEPT_POLL_INTERVAL);
             }
             Err(err) => logger.error(
                 "control.connection_error",
@@ -504,6 +532,7 @@ pub(super) fn serve_control(
 pub(super) fn handle_stream(
     stream: &mut TcpStream,
     node: &Mutex<NativeNode>,
+    mailbox_wake_signal: &MailboxWakeSignal,
     security: &ControlSecurityConfig,
     rate_limiter: &Mutex<RateLimiter>,
     rate_limit: RateLimitConfig,
@@ -602,7 +631,7 @@ pub(super) fn handle_stream(
             "请检查 Bearer token 或同步服务地址后的 |令牌。",
         )
     } else if is_mailbox_long_poll {
-        handle_mailbox_take_long_poll(node, &request)?
+        handle_mailbox_take_long_poll(node, &request, mailbox_wake_signal)?
     } else if request.method == "GET" && request.path.starts_with("/api/control/stats") {
         let mut node = node.lock().map_err(|_| "native node mutex poisoned")?;
         let runtime_stats = runtime_stats
@@ -685,6 +714,12 @@ pub(super) fn handle_stream(
         let mut node = node.lock().map_err(|_| "native node mutex poisoned")?;
         ControlHttpResponse::from_control(node.handle_control_request(request))
     };
+    if method == "POST"
+        && path.split('?').next() == Some("/api/mailbox/push")
+        && response.status == 201
+    {
+        mailbox_wake_signal.notify_push()?;
+    }
     let duration = started_at.elapsed();
     let mut runtime_stats = runtime_stats
         .lock()
@@ -752,10 +787,15 @@ pub(super) fn mailbox_take_wait_seconds(request: &ControlRequest) -> Option<u64>
 pub(super) fn handle_mailbox_take_long_poll(
     node: &Mutex<NativeNode>,
     request: &ControlRequest,
+    mailbox_wake_signal: &MailboxWakeSignal,
 ) -> Result<ControlHttpResponse, Box<dyn std::error::Error>> {
     let wait_seconds = mailbox_take_wait_seconds(request).unwrap_or(0);
     let deadline = Instant::now() + Duration::from_secs(wait_seconds);
     loop {
+        // Capture a generation before reading the mailbox. A push between this
+        // read and the Condvar wait increments it, so the waiter rechecks
+        // immediately rather than sleeping until its timeout.
+        let observed_generation = mailbox_wake_signal.current_generation()?;
         let response = {
             let mut node = node.lock().map_err(|_| "native node mutex poisoned")?;
             ControlHttpResponse::from_control(node.handle_control_request(request.clone()))
@@ -767,7 +807,18 @@ pub(super) fn handle_mailbox_take_long_poll(
         if returned > 0 || Instant::now() >= deadline || response.status != 200 {
             return Ok(response);
         }
-        std::thread::sleep(Duration::from_millis(100));
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let generation = mailbox_wake_signal
+            .generation
+            .lock()
+            .map_err(|_| "mailbox wake signal mutex poisoned")?;
+        if *generation != observed_generation {
+            continue;
+        }
+        let _ = mailbox_wake_signal
+            .ready
+            .wait_timeout(generation, remaining)
+            .map_err(|_| "mailbox wake signal mutex poisoned")?;
     }
 }
 
