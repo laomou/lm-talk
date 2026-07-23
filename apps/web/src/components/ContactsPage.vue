@@ -11,6 +11,7 @@ import UiField from './UiField.vue'
 import UiSection from './UiSection.vue'
 import UiActionGroup from './UiActionGroup.vue'
 import UiListGroup from './UiListGroup.vue'
+import QrScanner from './QrScanner.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 
@@ -21,6 +22,7 @@ const router = useRouter()
 const { t } = useI18n()
 type View = 'home' | 'friends' | 'search' | 'add' | 'detail'
 const view = ref<View>('home')
+const scannerOpen = ref(false)
 const isSearchPage = computed(() => route.path === '/contacts/search')
 
 const requestCount = computed(() => props.ctx.visibleFriendRequests.value.length)
@@ -73,6 +75,15 @@ function backHome() {
 function addContact() {
   props.ctx.addContact()
   if (!props.ctx.addContactText.value.trim() && props.ctx.activePeerId.value) view.value = 'detail'
+}
+function onQrScanned(value: string) {
+  scannerOpen.value = false
+  if (value.startsWith('lm-contact-card-v1:')) {
+    props.ctx.addContactText.value = value
+    addContact()
+  } else {
+    props.ctx.showAlert('扫码结果', '无法识别为名片二维码。', 'warning')
+  }
 }
 </script>
 
@@ -181,7 +192,7 @@ function addContact() {
             </UiField>
             <UiActionGroup><button @click="addContact">{{ t('contactsView.addFriend') }}</button></UiActionGroup>
           </UiSection>
-          <UiListRow class="mobile-only-row" :aria-label="t('contactsView.scanAdd')" @click="ctx.showAlert(t('contactsView.scanAdd'), t('contactsView.scanAddComing'), 'info')">{{ t('contactsView.scanAdd') }}</UiListRow>
+          <UiListRow class="mobile-only-row" :aria-label="t('contactsView.scanAdd')" @click="scannerOpen = true">{{ t('contactsView.scanAdd') }}</UiListRow>
         </div>
       </section>
 
@@ -213,5 +224,6 @@ function addContact() {
         </div>
       </section>
     </main>
+    <QrScanner v-if="scannerOpen" @scanned="onQrScanned" @close="scannerOpen = false" />
   </div>
 </template>
