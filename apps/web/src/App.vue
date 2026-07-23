@@ -1549,6 +1549,10 @@ onUnmounted(() => {
   stopMailboxLongPoll()
   stopWatchingPwaUpdate?.()
   stopPersistenceCryptoWorker()
+  ratchetEncryptWorker?.terminate()
+  ratchetEncryptWorker = null
+  for (const pending of ratchetEncryptRequests.values()) pending.reject(new Error('Ratchet 加密 Worker 已停止'))
+  ratchetEncryptRequests.clear()
   backupCryptoWorker?.terminate()
   backupCryptoWorker = null
   for (const pending of backupCryptoRequests.values()) pending.reject(new Error('身份与安全备份 Worker 已停止'))
@@ -6056,6 +6060,81 @@ function recordSecureSessionError(contact: ContactItem, error: unknown, logPrefi
   appendLog(`${logPrefix}：${message}`)
 }
 
+type RatchetEncryptWorkerResponse = {
+  id: number
+  ok: boolean
+  state_text?: string
+  envelope_json?: string
+  error?: string
+}
+
+let ratchetEncryptWorker: Worker | null = null
+let nextRatchetEncryptRequestId = 1
+const ratchetEncryptRequests = new Map<number, {
+  resolve: (value: { stateText: string; envelopeJson: string }) => void
+  reject: (reason?: unknown) => void
+}>()
+const ratchetEncryptChains = new Map<string, Promise<unknown>>()
+
+function getRatchetEncryptWorker(): Worker {
+  if (ratchetEncryptWorker) return ratchetEncryptWorker
+  const worker = new Worker(new URL('./ratchetEncrypt.worker.ts', import.meta.url), { type: 'module' })
+  worker.onmessage = (event: MessageEvent<RatchetEncryptWorkerResponse>) => {
+    const response = event.data
+    const pending = ratchetEncryptRequests.get(response.id)
+    if (!pending) return
+    ratchetEncryptRequests.delete(response.id)
+    if (response.ok && response.state_text !== undefined && response.envelope_json !== undefined) {
+      pending.resolve({ stateText: response.state_text, envelopeJson: response.envelope_json })
+    } else {
+      pending.reject(new Error(response.error || 'Ratchet 加密 Worker 处理失败'))
+    }
+  }
+  worker.onerror = (event) => {
+    const error = new Error(event.message || 'Ratchet 加密 Worker 已停止')
+    for (const pending of ratchetEncryptRequests.values()) pending.reject(error)
+    ratchetEncryptRequests.clear()
+    worker.terminate()
+    if (ratchetEncryptWorker === worker) ratchetEncryptWorker = null
+  }
+  ratchetEncryptWorker = worker
+  return worker
+}
+
+function encryptRatchetEnvelopeInWorker(stateText: string, conversationId: string, text: string): Promise<{ stateText: string; envelopeJson: string }> {
+  const id = nextRatchetEncryptRequestId++
+  return new Promise((resolve, reject) => {
+    ratchetEncryptRequests.set(id, { resolve, reject })
+    try {
+      getRatchetEncryptWorker().postMessage({ id, stateText, conversationId, text })
+    } catch (error) {
+      ratchetEncryptRequests.delete(id)
+      reject(error)
+    }
+  })
+}
+
+function encryptRatchetEnvelopeForContact(contact: ContactItem, conversationId: string, text: string): Promise<string> {
+  const previous = ratchetEncryptChains.get(contact.user_id) ?? Promise.resolve()
+  const task = previous
+    .catch(() => undefined)
+    .then(async () => {
+      const session = ratchetSessionFor(contact.user_id)
+      if (!session) throw new Error('Ratchet 会话不存在')
+      const out = await encryptRatchetEnvelopeInWorker(session.state_text, conversationId, text)
+      saveRatchetSession(contact.user_id, out.stateText)
+      appendLog(`🔐 使用 Double Ratchet 加密给 ${contact.display_name || contact.user_id}`)
+      return out.envelopeJson
+    })
+  ratchetEncryptChains.set(contact.user_id, task)
+  void task.then(() => {
+    if (ratchetEncryptChains.get(contact.user_id) === task) ratchetEncryptChains.delete(contact.user_id)
+  }, () => {
+    if (ratchetEncryptChains.get(contact.user_id) === task) ratchetEncryptChains.delete(contact.user_id)
+  })
+  return task
+}
+
 function encryptEnvelopeForContact(contact: ContactItem, conversationId: string, text: string): string {
   requireContactHasActiveDevice(contact)
   const session = ratchetSessionFor(contact.user_id)
@@ -6065,6 +6144,19 @@ function encryptEnvelopeForContact(contact: ContactItem, conversationId: string,
     appendLog(`🔐 使用 Double Ratchet 加密给 ${contact.display_name || contact.user_id}`)
     return out.envelope_json
   }
+  appendLog(`⚠️ 未找到 Ratchet 会话，回退 MVP 加密：${contact.display_name || contact.user_id}`)
+  return encrypt_text_message(
+    backupText.value,
+    passphrase.value,
+    contact.contact_card_text,
+    conversationId,
+    text,
+  )
+}
+
+async function encryptEnvelopeForOutgoingContact(contact: ContactItem, conversationId: string, text: string): Promise<string> {
+  requireContactHasActiveDevice(contact)
+  if (ratchetSessionFor(contact.user_id)) return encryptRatchetEnvelopeForContact(contact, conversationId, text)
   appendLog(`⚠️ 未找到 Ratchet 会话，回退 MVP 加密：${contact.display_name || contact.user_id}`)
   return encrypt_text_message(
     backupText.value,
@@ -6243,7 +6335,7 @@ async function processOutgoingMessageJob(job: OutgoingMessageJob) {
     return
   }
   try {
-    const envelope = encryptEnvelopeForContact(contact, job.conversation_id, job.text)
+    const envelope = await encryptEnvelopeForOutgoingContact(contact, job.conversation_id, job.text)
     const targetDeviceIds = contactActiveDeviceIds(contact)
     const perDeviceEnvelope = createPerDeviceEnvelopeDraft(contact, job.conversation_id, envelope)
     if (perDeviceEnvelope) {
@@ -7505,18 +7597,15 @@ function createRatchetFromSharedSecretText() {
   })
 }
 
-function ratchetEncryptEnvelopeText() {
-  run('Ratchet 加密消息', () => {
+async function ratchetEncryptEnvelopeText() {
+  await runAsync('Ratchet 加密消息', async () => {
     if (!ratchetStateText.value.trim()) throw new Error('请先准备本端 Ratchet State')
     if (!composerText.value.trim()) throw new Error('请输入聊天内容')
     const conv = activeContact.value?.user_id || activeGroup.value?.group_id || 'debug'
-    const out = JSON.parse(ratchet_encrypt_text_message(ratchetStateText.value, conv, composerText.value)) as {
-      state_text: string
-      envelope_json: string
-    }
-    ratchetStateText.value = out.state_text
-    if (activeContact.value) saveRatchetSession(activeContact.value.user_id, out.state_text)
-    ratchetEnvelopeText.value = JSON.stringify(JSON.parse(out.envelope_json), null, 2)
+    const out = await encryptRatchetEnvelopeInWorker(ratchetStateText.value, conv, composerText.value)
+    ratchetStateText.value = out.stateText
+    if (activeContact.value) saveRatchetSession(activeContact.value.user_id, out.stateText)
+    ratchetEnvelopeText.value = JSON.stringify(JSON.parse(out.envelopeJson), null, 2)
     inspectRatchetStateText()
   })
 }
