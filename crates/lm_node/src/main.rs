@@ -17,6 +17,7 @@ use std::{
     net::{IpAddr, TcpListener, TcpStream, ToSocketAddrs},
     path::{Path, PathBuf},
     process,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -420,7 +421,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 dht_peer_quarantine_consecutive_failures;
             serve_control(
                 &bind,
-                &mut node,
+                node,
                 state_db.as_deref(),
                 sync_peers,
                 sync_interval_seconds,
@@ -954,13 +955,14 @@ mod tests {
     use libp2p::swarm::SwarmEvent;
     use lm_core::{Identity, MailboxMessage, MailboxMessageKind, PreKeyBundle};
     use lm_node::{
-        DhtRecord, DhtRecordKey, DhtRecordKind, DhtRecordRejectStats, DhtRpcRequest,
-        DhtRpcResponse, MailboxPushRejectStats, NativeNode, NodeConfig, NodeSyncStatus,
+        ControlRequest, DhtRecord, DhtRecordKey, DhtRecordKind, DhtRecordRejectStats,
+        DhtRpcRequest, DhtRpcResponse, MailboxPushRejectStats, NativeNode, NodeConfig,
+        NodeSyncStatus,
     };
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
     use std::sync::{
-        Barrier, Mutex,
+        Arc, Barrier, Mutex,
         atomic::{AtomicUsize, Ordering},
     };
     use std::time::Duration;
@@ -2850,6 +2852,87 @@ mod tests {
         );
         drop(stream);
         server.join().unwrap();
+    }
+
+    #[test]
+    fn mailbox_take_wait_seconds_accepts_and_caps_wait_parameter() {
+        let request = |path: &str| ControlRequest {
+            method: "GET".into(),
+            path: path.into(),
+            body: String::new(),
+            headers: Vec::new(),
+        };
+        assert_eq!(
+            super::control_server::mailbox_take_wait_seconds(&request("/api/mailbox/take")),
+            None
+        );
+        assert_eq!(
+            super::control_server::mailbox_take_wait_seconds(&request(
+                "/api/mailbox/take?wait_seconds=4"
+            )),
+            Some(4)
+        );
+        assert_eq!(
+            super::control_server::mailbox_take_wait_seconds(&request(
+                "/api/mailbox/take?wait_seconds=999"
+            )),
+            Some(25)
+        );
+        assert_eq!(
+            super::control_server::mailbox_take_wait_seconds(&request(
+                "/api/mailbox/take-extra?wait_seconds=4"
+            )),
+            None
+        );
+    }
+
+    #[test]
+    fn mailbox_long_poll_returns_when_a_concurrent_push_arrives() {
+        let (alice, _) = Identity::create_with_passphrase("long poll alice").unwrap();
+        let (bob, _) = Identity::create_with_passphrase("long poll bob").unwrap();
+        let node = Arc::new(Mutex::new(NativeNode::new(NodeConfig::default())));
+        let take_request = ControlRequest {
+            method: "GET".into(),
+            path: format!(
+                "/api/mailbox/take?user_id={}&limit=10&wait_seconds=1",
+                bob.user_id()
+            ),
+            body: String::new(),
+            headers: Vec::new(),
+        };
+        let polling_node = Arc::clone(&node);
+        let poller = std::thread::spawn(move || {
+            super::control_server::handle_mailbox_take_long_poll(&polling_node, &take_request)
+                .unwrap()
+        });
+        std::thread::sleep(Duration::from_millis(100));
+        let message = MailboxMessage::new(
+            &alice,
+            bob.user_id().clone(),
+            MailboxMessageKind::DirectEnvelope,
+            "long-poll-ciphertext".into(),
+            3600,
+        )
+        .unwrap();
+        let response = node.lock().unwrap().handle_control_request(ControlRequest {
+            method: "POST".into(),
+            path: "/api/mailbox/push".into(),
+            body: serde_json::json!({
+                "message_text": message.to_export_text().unwrap(),
+                "from_identity_public_key": BASE64.encode(alice.identity_public_key()),
+            })
+            .to_string(),
+            headers: Vec::new(),
+        });
+        assert_eq!(response.status, 201, "{}", response.body);
+        let response = poller.join().unwrap();
+        assert_eq!(response.status, 200, "{}", response.body);
+        let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(body["returned"], 1);
+        assert_eq!(
+            body["messages"][0]["message"]["ciphertext"],
+            "long-poll-ciphertext"
+        );
     }
 
     #[test]

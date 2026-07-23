@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import LoginPage from './components/LoginPage.vue'
 import ChatPage from './components/ChatPage.vue'
@@ -625,6 +625,8 @@ const MAX_FILE_BYTES = 16 * 1024 * 1024
 const MAX_RTC_TEXT_BYTES = MAX_FILE_BYTES * 3
 const MAX_OUTBOX_RETRY_COUNT = 5
 const NODE_FETCH_TIMEOUT_MS = 10_000
+const MAILBOX_LONG_POLL_WAIT_SECONDS = 25
+const MAILBOX_LONG_POLL_TIMEOUT_MS = 35_000
 
 function nodeFetchTimeoutMs(): number {
   const override = typeof window !== 'undefined' ? Number((window as any).nodeFetchTimeoutMsForTests) : 0
@@ -709,7 +711,7 @@ const pwaUpdateAvailable = ref(false)
 let stopWatchingPwaUpdate: (() => void) | undefined
 const inAppRuntimePolicyText = computed(() => {
   const visibility = document.visibilityState === 'visible' ? '前台可见' : '后台可能被浏览器暂停'
-  const mailbox = autoMailboxTake.value ? '自动收取已开启，切回前台最多 30 秒触发一次' : '自动收取已关闭，需要手动同步'
+  const mailbox = autoMailboxTake.value ? '自动收取已开启，前台保持长轮询，后台暂停' : '自动收取已关闭，需要手动同步'
   return `${visibility}；${mailbox}；只使用页面内提示、红点和日志，不请求系统通知权限。`
 })
 const activePeerId = ref('')
@@ -811,7 +813,10 @@ const autoNodeSync = ref(false)
 const autoSelfMailboxSync = ref(false)
 let nodeSyncTimer: number | undefined
 let selfSyncTimer: number | undefined
-let lastVisibilityMailboxTakeAt = 0
+let mailboxLongPollController: AbortController | null = null
+let mailboxLongPollTimer: number | undefined
+let mailboxLongPollRunning = false
+let mailboxLongPollFailures = 0
 const nodeControlStatus = ref('未连接')
 const nodeHealthSummaryText = ref('节点健康：尚未检查')
 const nodeStateDbSecurityText = ref('state_db：尚未查询')
@@ -838,7 +843,7 @@ const nodeMailboxTakeInfoText = ref('')
 const syncTriggerPolicyText = computed(() => {
   const parts = ['立即同步优先执行']
   if (autoPublishPreKey.value) parts.push('登录/手动同步先检查 PreKey')
-  if (autoMailboxTake.value) parts.push('登录/切回前台收取 Mailbox，前台触发 30 秒节流')
+  if (autoMailboxTake.value) parts.push('登录后立即收取 Mailbox，前台保持长轮询、后台暂停')
   else parts.push('Mailbox 自动收取关闭')
   parts.push(autoReadReceipts.value ? '当前会话可见时自动发送已读回执' : '已读回执关闭')
   parts.push('Outbox 每 30 秒重试到期项')
@@ -853,6 +858,11 @@ const mailboxInboxErrorText = ref('')
 const mailboxFailureSummaryText = ref('')
 const mailboxDedupeCount = computed(() => processedMailboxIds.value.length)
 const mailboxFailedCount = computed(() => mailboxFailedItems.value.length)
+
+watch([loggedIn, nodeEnabled, autoMailboxTake], () => {
+  if (shouldMailboxLongPoll()) startMailboxLongPoll()
+  else stopMailboxLongPoll()
+})
 function mailboxFailureRecoveryHint(reason: string): string {
   if (/未知联系人|not-a-friend|还不是好友/.test(reason)) return '先添加/恢复联系人，再重试该 Mailbox 项。'
   if (/安全策略/.test(reason)) return '确认联系人状态和设备信息后再重试。'
@@ -1479,24 +1489,27 @@ onMounted(async () => {
     startSelfSyncLoop()
     document.addEventListener('visibilitychange', () => {
       refreshRuntimeStatus()
-      if (document.visibilityState === 'visible' && loggedIn.value && nodeEnabled.value && autoMailboxTake.value) {
-        const now = Date.now()
-        if (now - lastVisibilityMailboxTakeAt >= 30_000) {
-          lastVisibilityMailboxTakeAt = now
-          void takeMailboxFromNode()
-        }
-      }
+      if (document.visibilityState === 'visible') startMailboxLongPoll()
+      else stopMailboxLongPoll()
     })
-    window.addEventListener('online', refreshRuntimeStatus)
-    window.addEventListener('offline', refreshRuntimeStatus)
+    window.addEventListener('online', () => {
+      void refreshRuntimeStatus()
+      startMailboxLongPoll()
+    })
+    window.addEventListener('offline', () => {
+      void refreshRuntimeStatus()
+      stopMailboxLongPoll()
+    })
     void refreshRuntimeStatus()
     ready.value = true
+    startMailboxLongPoll()
   } catch (e) {
     appendLog(`WASM 初始化失败：${String(e)}`)
   }
 })
 
 onUnmounted(() => {
+  stopMailboxLongPoll()
   stopWatchingPwaUpdate?.()
 })
 
@@ -3452,7 +3465,10 @@ async function afterLoginAutomation() {
   await ensureOwnMailboxHintDhtRecord()
   await ensureOwnContactCardDhtRecord()
   await ensureOwnPublicPeerDhtRecord()
-  if (autoMailboxTake.value) await takeMailboxFromNode()
+  if (autoMailboxTake.value) {
+    await takeMailboxFromNode()
+    startMailboxLongPoll()
+  }
 }
 
 async function syncNow() {
@@ -3676,7 +3692,12 @@ function toggleNodeEnabled() {
     nodeEnabled.value = !nodeEnabled.value
     return
   }
-  if (nodeEnabled.value) void checkNodeHealth()
+  if (nodeEnabled.value) {
+    void checkNodeHealth()
+    startMailboxLongPoll()
+  } else {
+    stopMailboxLongPoll()
+  }
 }
 
 async function autoPublishPreKeyIfEnabled() {
@@ -7312,11 +7333,11 @@ function nodeControlEndpoint(path: string, baseUrl = primaryNodeUrl()): string {
   return `${baseUrl.replace(/\/$/, '')}${path}`
 }
 
-async function fetchNodeOnce(baseUrl: string, path: string, init?: RequestInit): Promise<any> {
+async function fetchNodeOnce(baseUrl: string, path: string, init?: RequestInit, timeoutMs = nodeFetchTimeoutMs()): Promise<any> {
   const token = nodeTokenFor(baseUrl)
   const endpoint = nodeControlEndpoint(path, baseUrl)
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(new DOMException('同步服务请求超时', 'AbortError')), nodeFetchTimeoutMs())
+  const timeout = window.setTimeout(() => controller.abort(new DOMException('同步服务请求超时', 'AbortError')), timeoutMs)
   let res: Response
   try {
     res = await fetch(endpoint, {
@@ -7329,6 +7350,7 @@ async function fetchNodeOnce(baseUrl: string, path: string, init?: RequestInit):
       },
     })
   } catch (e) {
+    if (init?.signal?.aborted) throw e
     throw new NodeRequestError(userFacingError(e), undefined, baseUrl)
   } finally {
     window.clearTimeout(timeout)
@@ -7351,13 +7373,13 @@ async function fetchNodeOnce(baseUrl: string, path: string, init?: RequestInit):
   return body
 }
 
-async function nodeFetchJson(path: string, init?: RequestInit): Promise<any> {
+async function nodeFetchJson(path: string, init?: RequestInit, timeoutMs?: number): Promise<any> {
   const entries = nodeEntries()
   if (entries.length === 0) throw new Error('请先填写同步节点')
   const errors: string[] = []
   for (const entry of entries) {
     try {
-      const body = await fetchNodeOnce(entry.url, path, init)
+      const body = await fetchNodeOnce(entry.url, path, init, timeoutMs)
       // 把可用节点移到最前，保留其令牌
       const current = nodeEntries()
       if (current[0]?.url !== entry.url) {
@@ -7366,6 +7388,7 @@ async function nodeFetchJson(path: string, init?: RequestInit): Promise<any> {
       }
       return body
     } catch (e) {
+      if (init?.signal?.aborted || isAbortError(e)) throw e
       errors.push(`${entry.url}: ${userFacingError(e)}`)
     }
   }
@@ -9000,46 +9023,129 @@ function processMailboxTakeInfoText() {
   })
 }
 
-async function takeMailboxFromNode() {
-  await runAsync('从 lm_node 领取 mailbox', async () => {
-    const userId = nodeMailboxTakeUserId.value.trim() || identity.value?.user_id
-    if (!userId) throw new Error('需要 UserID')
-    const pages: any[] = []
-    let totalMessages = 0
-    let totalAcked = 0
-    const pageLimit = 50
-    const maxPages = 20
-    let hasMoreAfterMaxPages = false
-    for (let page = 0; page < maxPages; page += 1) {
-      const body = await nodeFetchJson(`/api/mailbox/take?user_id=${encodeURIComponent(userId)}&limit=${pageLimit}`)
-      pages.push(body)
-      updateMailboxQuotaStatus(body)
-      const messages = Array.isArray(body.messages) ? body.messages : []
-      if (messages.length === 0) break
-      totalMessages += messages.length
-      const ackIds = processMailboxMessages(messages)
-      if (ackIds.length > 0) {
-        await ackMailboxToNode(userId, ackIds)
-        totalAcked += ackIds.length
-      }
-      if (!body.more || ackIds.length === 0) break
-      hasMoreAfterMaxPages = page === maxPages - 1 && Boolean(body.more)
+type MailboxTakeOptions = {
+  waitSeconds?: number
+  signal?: AbortSignal
+  quietEmpty?: boolean
+}
+
+function shouldMailboxLongPoll(): boolean {
+  return loggedIn.value
+    && nodeEnabled.value
+    && autoMailboxTake.value
+    && navigator.onLine
+    && document.visibilityState === 'visible'
+    && Boolean(identity.value?.user_id)
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError'
+    || normalizeErrorText(error).includes('AbortError')
+}
+
+function stopMailboxLongPoll() {
+  if (mailboxLongPollTimer !== undefined) {
+    window.clearTimeout(mailboxLongPollTimer)
+    mailboxLongPollTimer = undefined
+  }
+  mailboxLongPollController?.abort()
+  mailboxLongPollController = null
+}
+
+function startMailboxLongPoll() {
+  if (!shouldMailboxLongPoll() || mailboxLongPollRunning || mailboxLongPollTimer !== undefined) return
+  mailboxLongPollTimer = window.setTimeout(() => {
+    mailboxLongPollTimer = undefined
+    void runMailboxLongPoll()
+  }, 0)
+}
+
+async function runMailboxLongPoll() {
+  if (!shouldMailboxLongPoll() || mailboxLongPollRunning) return
+  mailboxLongPollRunning = true
+  const controller = new AbortController()
+  mailboxLongPollController = controller
+  try {
+    await takeMailboxFromNodeNow({
+      waitSeconds: MAILBOX_LONG_POLL_WAIT_SECONDS,
+      signal: controller.signal,
+      quietEmpty: true,
+    })
+    mailboxLongPollFailures = 0
+  } catch (error) {
+    if (!isAbortError(error)) {
+      mailboxLongPollFailures += 1
+      appendLog(`⚠️ Mailbox 自动收取失败：${userFacingError(error)}`)
     }
-    const lastPage = pages[pages.length - 1]
-    if (lastPage) updateMailboxQuotaStatus(lastPage)
-    nodeMailboxTakeInfoText.value = JSON.stringify(pages.length === 1 ? pages[0] : { pages }, null, 2)
-    if (totalMessages === 0) {
+  } finally {
+    if (mailboxLongPollController === controller) mailboxLongPollController = null
+    mailboxLongPollRunning = false
+    if (shouldMailboxLongPoll()) {
+      const delay = mailboxLongPollFailures > 0
+        ? Math.min(30_000, 1_000 * 2 ** Math.min(mailboxLongPollFailures, 5))
+        : 50
+      mailboxLongPollTimer = window.setTimeout(() => {
+        mailboxLongPollTimer = undefined
+        void runMailboxLongPoll()
+      }, delay)
+    }
+  }
+}
+
+async function takeMailboxFromNodeNow(options: MailboxTakeOptions = {}) {
+  const userId = nodeMailboxTakeUserId.value.trim() || identity.value?.user_id
+  if (!userId) throw new Error('需要 UserID')
+  const pages: any[] = []
+  let totalMessages = 0
+  let totalAcked = 0
+  const pageLimit = 50
+  const maxPages = 20
+  let hasMoreAfterMaxPages = false
+  for (let page = 0; page < maxPages; page += 1) {
+    const waitSeconds = page === 0 ? Math.max(0, Math.min(MAILBOX_LONG_POLL_WAIT_SECONDS, options.waitSeconds ?? 0)) : 0
+    const waitQuery = waitSeconds > 0 ? `&wait_seconds=${waitSeconds}` : ''
+    const body = await nodeFetchJson(
+      `/api/mailbox/take?user_id=${encodeURIComponent(userId)}&limit=${pageLimit}${waitQuery}`,
+      options.signal ? { signal: options.signal } : undefined,
+      waitSeconds > 0 ? MAILBOX_LONG_POLL_TIMEOUT_MS : undefined,
+    )
+    pages.push(body)
+    updateMailboxQuotaStatus(body)
+    const messages = Array.isArray(body.messages) ? body.messages : []
+    if (messages.length === 0) break
+    totalMessages += messages.length
+    const ackIds = processMailboxMessages(messages)
+    if (ackIds.length > 0) {
+      await ackMailboxToNode(userId, ackIds)
+      totalAcked += ackIds.length
+    }
+    if (!body.more || ackIds.length === 0) break
+    hasMoreAfterMaxPages = page === maxPages - 1 && Boolean(body.more)
+  }
+  const lastPage = pages[pages.length - 1]
+  if (lastPage) updateMailboxQuotaStatus(lastPage)
+  nodeMailboxTakeInfoText.value = JSON.stringify(pages.length === 1 ? pages[0] : { pages }, null, 2)
+  if (totalMessages === 0) {
+    if (!options.quietEmpty) {
       mailboxInboxStatus.value = '没有新消息'
       appendLog('mailbox 没有新消息')
       persist()
-    } else if (pages.length > 1 || hasMoreAfterMaxPages) {
-      const moreText = hasMoreAfterMaxPages ? '，仍有更多，请再次同步' : ''
-      mailboxInboxStatus.value = `${mailboxInboxStatus.value}，分页 ${pages.length}，已 ack ${totalAcked}${moreText}`
-      appendLog(`mailbox 分页收取完成：${totalMessages} 条，分页 ${pages.length}，ack ${totalAcked}${moreText}`)
-      if (hasMoreAfterMaxPages) toast('Mailbox 仍有待收取内容：本次同步已达到分页上限，请再次同步继续收取。', 'warning')
-      persist()
     }
+  } else if (pages.length > 1 || hasMoreAfterMaxPages) {
+    const moreText = hasMoreAfterMaxPages ? '，仍有更多，请再次同步' : ''
+    mailboxInboxStatus.value = `${mailboxInboxStatus.value}，分页 ${pages.length}，已 ack ${totalAcked}${moreText}`
+    appendLog(`mailbox 分页收取完成：${totalMessages} 条，分页 ${pages.length}，ack ${totalAcked}${moreText}`)
+    if (hasMoreAfterMaxPages) toast('Mailbox 仍有待收取内容：本次同步已达到分页上限，请再次同步继续收取。', 'warning')
+    persist()
+  }
+}
+
+async function takeMailboxFromNode() {
+  stopMailboxLongPoll()
+  await runAsync('从 lm_node 领取 mailbox', async () => {
+    await takeMailboxFromNodeNow()
   })
+  startMailboxLongPoll()
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -9391,6 +9497,7 @@ function goDiagnosticsBack() {
 }
 
 function logout() {
+  stopMailboxLongPoll()
   loggedIn.value = false
   identity.value = null
   passphrase.value = ''
