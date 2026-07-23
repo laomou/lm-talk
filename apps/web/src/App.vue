@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, toRaw, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import LoginPage from './components/LoginPage.vue'
@@ -1549,6 +1549,10 @@ onUnmounted(() => {
   stopMailboxLongPoll()
   stopWatchingPwaUpdate?.()
   stopPersistenceCryptoWorker()
+  persistenceSnapshotWorker?.terminate()
+  persistenceSnapshotWorker = null
+  for (const pending of persistenceSnapshotRequests.values()) pending.reject(new Error('本地存储快照 Worker 已停止'))
+  persistenceSnapshotRequests.clear()
   ratchetEncryptWorker?.terminate()
   ratchetEncryptWorker = null
   for (const pending of ratchetEncryptRequests.values()) pending.reject(new Error('Ratchet 加密 Worker 已停止'))
@@ -2403,8 +2407,54 @@ function resetPersistSnapshots() {
   persistSchemaMarked = false
 }
 
-function persistEntrySignature(value: unknown): string {
-  return JSON.stringify(value)
+type PersistenceSnapshotWorkerResponse = {
+  id: number
+  ok: boolean
+  signatures?: Array<[string, string]>
+  error?: string
+}
+
+let persistenceSnapshotWorker: Worker | null = null
+let nextPersistenceSnapshotRequestId = 1
+const persistenceSnapshotRequests = new Map<number, {
+  resolve: (value: Map<string, string>) => void
+  reject: (reason?: unknown) => void
+}>()
+
+function getPersistenceSnapshotWorker(): Worker {
+  if (persistenceSnapshotWorker) return persistenceSnapshotWorker
+  const worker = new Worker(new URL('./persistenceSnapshot.worker.ts', import.meta.url), { type: 'module' })
+  worker.onmessage = (event: MessageEvent<PersistenceSnapshotWorkerResponse>) => {
+    const response = event.data
+    const pending = persistenceSnapshotRequests.get(response.id)
+    if (!pending) return
+    persistenceSnapshotRequests.delete(response.id)
+    if (response.ok && response.signatures) pending.resolve(new Map(response.signatures))
+    else pending.reject(new Error(response.error || '本地存储快照 Worker 处理失败'))
+  }
+  worker.onerror = (event) => {
+    const error = new Error(event.message || '本地存储快照 Worker 已停止')
+    for (const pending of persistenceSnapshotRequests.values()) pending.reject(error)
+    persistenceSnapshotRequests.clear()
+    worker.terminate()
+    if (persistenceSnapshotWorker === worker) persistenceSnapshotWorker = null
+  }
+  persistenceSnapshotWorker = worker
+  return worker
+}
+
+function persistEntrySignatures(entries: Array<[string, unknown]>): Promise<Map<string, string>> {
+  const id = nextPersistenceSnapshotRequestId++
+  const plainEntries = entries.map(([key, value]) => [key, toRaw(value)] as [string, unknown])
+  return new Promise((resolve, reject) => {
+    persistenceSnapshotRequests.set(id, { resolve, reject })
+    try {
+      getPersistenceSnapshotWorker().postMessage({ id, entries: plainEntries })
+    } catch (error) {
+      persistenceSnapshotRequests.delete(id)
+      reject(error)
+    }
+  })
 }
 
 async function persistChangedTable<T>(
@@ -2413,7 +2463,7 @@ async function persistChangedTable<T>(
   encode: (value: T) => Promise<any>,
 ) {
   const snapshot = persistedTableSnapshots.get(table) ?? new Map<string, string>()
-  const current = new Map(entries.map(([key, value]) => [key, persistEntrySignature(value)]))
+  const current = await persistEntrySignatures(entries)
   if (persistTablesNeedCleanup) {
     const storedEntries = await Promise.all(entries.map(async ([key, value]) => [key, await encode(value)] as [string, any]))
     await idbTableReplaceByPrefix(table, ownerPrefix(), storedEntries)
@@ -2442,7 +2492,7 @@ async function persistStateTables() {
   }
   const key = await localStorageCryptoKey()
   const meta = persistedMeta()
-  const metaSnapshot = persistEntrySignature(meta)
+  const metaSnapshot = (await persistEntrySignatures([['main', meta]])).get('main') ?? ''
   if (metaSnapshot !== persistedMetaSnapshot) {
     const storedMailboxFailedItems = await Promise.all(mailboxFailedItems.value.map((m) => encryptMailboxFailedItemForStore(m, key)))
     const storedPendingSecureSessionOffers = await Promise.all(pendingSecureSessionOffers.value.map((item) => encryptPendingSecureSessionOfferForStore(item, key)))
