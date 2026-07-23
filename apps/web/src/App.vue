@@ -13,8 +13,6 @@ import QRCode from 'qrcode'
 import { applyPwaUpdate, onPwaUpdateReady, readPwaStatus } from './pwa'
 import { TABLES, idbDel, idbGet, idbSet, idbTableApplyChanges, idbTableClear, idbTableGet, idbTableGetAllByPrefix, idbTableReplaceByPrefix } from './idb'
 import init, {
-  create_device_cert,
-  create_device_revoke,
   create_identity,
   create_mailbox_message,
   create_message_receipt,
@@ -22,11 +20,7 @@ import init, {
   create_public_peer_announce,
   decrypt_text_message,
   encrypt_text_message,
-  export_contact_card,
-  import_contact_as_json,
-  inspect_contact_card,
   inspect_file_package,
-  inspect_device_revoke,
   inspect_mailbox_message,
   inspect_message_receipt,
   inspect_peer_announce,
@@ -1244,7 +1238,7 @@ async function repairStrictE2eeForActiveContact() {
   const contact = activeContact.value
   await runAsync('修复当前联系人严格 E2EE', async () => {
     enableStrictE2eePolicy()
-    ensureOwnDeviceCertForStrict('当前联系人严格 E2EE 修复')
+    await ensureOwnDeviceCertForStrict('当前联系人严格 E2EE 修复')
     let discovered = false
     if (activeContactSealedSlotRiskFor(contact) === 'high' || contactCardDhtDiscoveryIsStale(contact)) {
       try {
@@ -1272,7 +1266,7 @@ async function repairStrictE2eeForActiveGroup() {
   const group = activeGroup.value
   await runAsync('修复当前群聊严格 E2EE', async () => {
     enableStrictE2eePolicy()
-    ensureOwnDeviceCertForStrict('当前群聊严格 E2EE 修复')
+    await ensureOwnDeviceCertForStrict('当前群聊严格 E2EE 修复')
     let discovered = 0
     let resent = 0
     const members = group.member_user_ids
@@ -1349,7 +1343,7 @@ async function openStrictE2eeReadinessIssue(issue: { user_id: string; issue_kind
     await findActiveContactContactCard()
   } else if (issue.issue_kind === 'contact-update-ack') {
     appendLog(`严格 E2EE 预检：正在重新向 ${contact.display_name || contact.user_id} 分发设备证书更新`)
-    if (!myContactCardText.value.trim()) refreshMyContactCard()
+    if (!myContactCardText.value.trim()) await refreshMyContactCard()
     await sendContactCardUpdateToContact(contact)
     persist()
   }
@@ -1541,6 +1535,10 @@ onUnmounted(() => {
   secureSessionCryptoWorker = null
   for (const pending of secureSessionCryptoRequests.values()) pending.reject(new Error('安全会话 Worker 已停止'))
   secureSessionCryptoRequests.clear()
+  contactCardCryptoWorker?.terminate()
+  contactCardCryptoWorker = null
+  for (const pending of contactCardCryptoRequests.values()) pending.reject(new Error('联系人 Worker 已停止'))
+  contactCardCryptoRequests.clear()
   ratchetEncryptWorker?.terminate()
   ratchetEncryptWorker = null
   for (const pending of ratchetEncryptRequests.values()) pending.reject(new Error('Ratchet 加密 Worker 已停止'))
@@ -2739,7 +2737,7 @@ async function loadStateFromTables(): Promise<boolean> {
   ])
   if (backupText.value && myContactCardText.value) {
     try {
-      const info = safeJson<ContactInfo>(inspect_contact_card(myContactCardText.value))
+      const info = await inspectContactCardInWorker<ContactInfo>(myContactCardText.value)
       rememberLocalIdentity(info.user_id, info.display_name || displayName.value, backupText.value)
     } catch { /* ignore old/incomplete local identity */ }
   }
@@ -3231,7 +3229,7 @@ async function currentSelfSyncPackage(): Promise<SelfSyncPackage> {
 }
 
 
-function mergeOwnDeviceCertsFromSelfSync(pkg: SelfSyncPackage): boolean {
+async function mergeOwnDeviceCertsFromSelfSync(pkg: SelfSyncPackage): Promise<boolean> {
   if (!identity.value?.user_id) return false
   const incomingCerts = [
     ...(pkg.myContactCardText ? contactCardDeviceCerts(pkg.myContactCardText) : []),
@@ -3247,7 +3245,7 @@ function mergeOwnDeviceCertsFromSelfSync(pkg: SelfSyncPackage): boolean {
   }
   for (const cert of incomingCerts) byId.set(cert.device_id, cert)
   const certJson = JSON.stringify([...byId.values()])
-  myContactCardText.value = export_contact_card(backupText.value, passphrase.value, displayName.value || undefined, certJson)
+  myContactCardText.value = await exportContactCardInWorker(backupText.value, passphrase.value, displayName.value || undefined, certJson)
   const changed = myContactCardText.value !== before
   appendLog(`✅ 自同步已合并自己的设备证书：${incomingCerts.length} 个新增/更新来源`)
   return changed
@@ -3339,7 +3337,7 @@ async function applySelfSyncPackage(pkg: SelfSyncPackage) {
   lastSelfSyncOutboxSummary.value = pkg.outboxSummary ?? null
   lastSelfSyncReceiptStatesMerged.value = receiptStatesMerged
   totalSelfSyncReceiptStatesMerged.value += receiptStatesMerged
-  const ownDeviceCertsChanged = mergeOwnDeviceCertsFromSelfSync(pkg)
+  const ownDeviceCertsChanged = await mergeOwnDeviceCertsFromSelfSync(pkg)
   nodeDhtOperationHistory.value = [...new Set([...(pkg.dhtOperationHistory ?? []), ...nodeDhtOperationHistory.value])].slice(0, DHT_OPERATION_HISTORY_MAX_RECORDS)
   unverifiedIncomingDropCount.value = Math.max(unverifiedIncomingDropCount.value, Number(pkg.unverifiedIncomingDropCount ?? 0))
   revokedDeviceIncomingDropCount.value = Math.max(revokedDeviceIncomingDropCount.value, Number(pkg.revokedDeviceIncomingDropCount ?? 0))
@@ -3710,7 +3708,7 @@ function clearSyncRecoveryHistory() {
 
 
 async function afterLoginAutomation() {
-  ensureOwnDeviceCertForStrict('登录后的严格 E2EE 默认策略')
+  await ensureOwnDeviceCertForStrict('登录后的严格 E2EE 默认策略')
   if (!nodeEnabled.value) return
   if (autoPublishPreKey.value) await ensurePreKeyInventory()
   await ensureOwnMailboxHintDhtRecord()
@@ -3723,7 +3721,7 @@ async function afterLoginAutomation() {
 }
 
 async function syncNow() {
-  ensureOwnDeviceCertForStrict('消息同步前的严格 E2EE 默认策略')
+  await ensureOwnDeviceCertForStrict('消息同步前的严格 E2EE 默认策略')
   if (!nodeEnabled.value) {
     appendLog('⚠️ 消息同步未开启')
     showSyncEnableDialog()
@@ -4454,19 +4452,19 @@ function importIdentityOnly() {
   })
 }
 
-function createIdentityAndEnter() {
-  run('注册身份', () => {
+async function createIdentityAndEnter() {
+  await runAsync('注册身份', async () => {
     if (!passphrase.value.trim()) throw new Error('请输入提示词')
     const registerName = displayName.value.trim() || 'Me'
     displayName.value = registerName
     const out = safeJson<IdentityOutput>(create_identity(passphrase.value))
     identity.value = out
     backupText.value = out.backup_text
-    const device = safeJson<DeviceOutput>(create_device_cert(backupText.value, passphrase.value, 'Web Browser'))
+    const device = await createDeviceCertInWorker(backupText.value, passphrase.value, 'Web Browser')
     myDeviceId.value = device.device_id
     myDeviceCertJson.value = device.device_cert_json
     myDeviceBackupText.value = device.device_backup_text ?? ''
-    myContactCardText.value = export_contact_card(
+    myContactCardText.value = await exportContactCardInWorker(
       backupText.value,
       passphrase.value,
       displayName.value || undefined,
@@ -4494,9 +4492,9 @@ function restoreAndEnter() {
     backupText.value = loginBackup
     displayName.value = loginName
     void loadPersistedState()
-      .then(() => {
+      .then(async () => {
         loggedIn.value = true
-        if (!myContactCardText.value) exportMyCard()
+        if (!myContactCardText.value) await exportMyCard()
         resumeQueuedOutgoingMessages()
         rememberLocalIdentity(out.user_id, displayName.value, backupText.value)
         persist()
@@ -4517,7 +4515,7 @@ function restoreAndEnter() {
   })
 }
 
-function exportMyCard() {
+async function exportMyCard() {
   const certById = new Map<string, DeviceCertItem>()
   for (const cert of contactCardDeviceCerts(myContactCardText.value || '')) certById.set(cert.device_id, cert)
   if (myDeviceCertJson.value) {
@@ -4525,13 +4523,13 @@ function exportMyCard() {
     if (cert?.device_id) certById.set(cert.device_id, cert)
   }
   const certs = certById.size ? JSON.stringify([...certById.values()]) : undefined
-  myContactCardText.value = export_contact_card(backupText.value, passphrase.value, displayName.value || undefined, certs)
+  myContactCardText.value = await exportContactCardInWorker(backupText.value, passphrase.value, displayName.value || undefined, certs)
 }
 
-function refreshMyContactCard() {
-  run('更新我的 Contact Card', () => {
+async function refreshMyContactCard() {
+  await runAsync('更新我的 Contact Card', async () => {
     if (!backupText.value || !passphrase.value) throw new Error('请先登录')
-    exportMyCard()
+    await exportMyCard()
     if (identity.value) rememberLocalIdentity(identity.value.user_id, displayName.value || 'Me', backupText.value)
     persist()
     appendLog('✅ 我的 Contact Card 已更新，可重新发布/发送给好友')
@@ -4582,11 +4580,11 @@ function mergeContactCard(existing: ContactItem | undefined, info: ContactInfo, 
 
 
 
-function installOwnDeviceCert(out: DeviceOutput) {
+async function installOwnDeviceCert(out: DeviceOutput) {
   myDeviceId.value = out.device_id
   myDeviceCertJson.value = out.device_cert_json
   myDeviceBackupText.value = out.device_backup_text ?? ''
-  myContactCardText.value = export_contact_card(
+  myContactCardText.value = await exportContactCardInWorker(
     backupText.value,
     passphrase.value,
     displayName.value || undefined,
@@ -4594,11 +4592,11 @@ function installOwnDeviceCert(out: DeviceOutput) {
   )
 }
 
-function ensureOwnDeviceCertForStrict(reason = 'strict E2EE') {
+async function ensureOwnDeviceCertForStrict(reason = 'strict E2EE') {
   if (!backupText.value || !passphrase.value) return false
   if (myDeviceCertJson.value && myDeviceBackupText.value && contactCardDeviceCerts(myContactCardText.value || '').some((cert) => cert.device_id === myDeviceId.value && cert.device_box_public_key)) return false
-  const out = safeJson<DeviceOutput>(create_device_cert(backupText.value, passphrase.value, 'Web Browser'))
-  installOwnDeviceCert(out)
+  const out = await createDeviceCertInWorker(backupText.value, passphrase.value, 'Web Browser')
+  await installOwnDeviceCert(out)
   appendLog(`✅ 已为 ${reason} 自动生成本设备 sealed slot 证书`)
   if (friendContacts.value.length) {
     appendLog(`正在向 ${friendContacts.value.length} 个好友分发自动修复后的设备证书`)
@@ -4608,10 +4606,10 @@ function ensureOwnDeviceCertForStrict(reason = 'strict E2EE') {
   return true
 }
 
-function createMyDeviceCert() {
-  run('创建设备证书', () => {
-    const out = safeJson<DeviceOutput>(create_device_cert(backupText.value, passphrase.value, 'Web Browser'))
-    installOwnDeviceCert(out)
+async function createMyDeviceCert() {
+  await runAsync('创建设备证书', async () => {
+    const out = await createDeviceCertInWorker(backupText.value, passphrase.value, 'Web Browser')
+    await installOwnDeviceCert(out)
     persist()
     if (friendContacts.value.length) {
       appendLog(`正在自动向 ${friendContacts.value.length} 个好友分发新的设备证书更新`)
@@ -4621,10 +4619,10 @@ function createMyDeviceCert() {
   })
 }
 
-function createDeviceRevokeText() {
-  run('生成设备撤销事件', () => {
+async function createDeviceRevokeText() {
+  await runAsync('生成设备撤销事件', async () => {
     if (!revokeDeviceId.value.trim()) throw new Error('请输入 device_id')
-    deviceRevokeText.value = create_device_revoke(
+    deviceRevokeText.value = await createDeviceRevokeInWorker(
       backupText.value,
       passphrase.value,
       revokeDeviceId.value.trim(),
@@ -4635,7 +4633,7 @@ function createDeviceRevokeText() {
 
 async function fanoutDeviceRevokeToFriends() {
   await runAsync('向好友分发设备撤销事件', async () => {
-    if (!deviceRevokeText.value.trim()) createDeviceRevokeText()
+    if (!deviceRevokeText.value.trim()) await createDeviceRevokeText()
     if (!deviceRevokeText.value.trim()) throw new Error('请先生成设备撤销事件')
     let sent = 0
     let queued = 0
@@ -4652,7 +4650,7 @@ async function fanoutDeviceRevokeToFriends() {
 
 
 async function sendContactCardUpdateToContact(contact: ContactItem): Promise<'sent' | 'mailbox' | 'queued' | 'failed'> {
-  if (!myContactCardText.value.trim()) refreshMyContactCard()
+  if (!myContactCardText.value.trim()) await refreshMyContactCard()
   if (!myContactCardText.value.trim()) throw new Error('请先生成我的联系人名片')
   const updateId = contactCardUpdateId(myContactCardText.value)
   const result = await deliverPayloadToContact(contact, myContactCardText.value, '联系人设备证书更新', 'contact-update')
@@ -4691,7 +4689,7 @@ async function retryStaleContactCardUpdateAcks() {
 
 async function fanoutMyContactCardUpdateToFriends(options: { force?: boolean } = {}) {
   await runAsync('向好友分发联系人设备证书更新', async () => {
-    if (!myContactCardText.value.trim()) refreshMyContactCard()
+    if (!myContactCardText.value.trim()) await refreshMyContactCard()
     if (!myContactCardText.value.trim()) throw new Error('请先生成我的联系人名片')
     const now = Date.now()
     if (!options.force && lastContactCardUpdateFanoutAt.value && now - lastContactCardUpdateFanoutAt.value < 5 * 60_000) {
@@ -4714,11 +4712,11 @@ async function fanoutMyContactCardUpdateToFriends(options: { force?: boolean } =
   })
 }
 
-function applyContactCardUpdateFromMailbox(cardText: string, sender: ContactItem) {
+async function applyContactCardUpdateFromMailbox(cardText: string, sender: ContactItem) {
   ensureUiTextSize('联系人设备证书更新', cardText, MAX_CONTACT_CARD_BYTES)
-  const info = safeJson<ContactInfo>(inspect_contact_card(cardText))
+  const info = await inspectContactCardInWorker<ContactInfo>(cardText)
   if (info.user_id !== sender.user_id) throw new Error('联系人更新 user_id 与发送者不匹配')
-  import_contact_as_json(cardText, 'MailboxContactUpdate')
+  await importContactInWorker(cardText, 'MailboxContactUpdate')
   const index = contacts.value.findIndex((c) => c.user_id === info.user_id)
   const existing = index >= 0 ? contacts.value[index] : sender
   const merged = mergeContactCard(existing, info, cardText)
@@ -4728,13 +4726,13 @@ function applyContactCardUpdateFromMailbox(cardText: string, sender: ContactItem
   persist()
 }
 
-function applyDeviceRevokeToActiveContact() {
-  run('应用设备撤销事件', () => {
+async function applyDeviceRevokeToActiveContact() {
+  await runAsync('应用设备撤销事件', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
-    const info = safeJson<DeviceRevokeInfo>(inspect_device_revoke(
+    const info = await inspectDeviceRevokeInWorker<DeviceRevokeInfo>(
       incomingDeviceRevokeText.value,
       activeContact.value.identity_public_key,
-    ))
+    )
     if (info.user_id !== activeContact.value.user_id) throw new Error('撤销事件 user_id 与当前联系人不匹配')
     const list = new Set(activeContact.value.revoked_device_ids ?? [])
     list.add(info.device_id)
@@ -5086,11 +5084,11 @@ function closeQr() {
 }
 
 
-function addContact() {
-  run('添加好友', () => {
+async function addContact() {
+  await runAsync('添加好友', async () => {
     ensureUiTextSize('名片', addContactText.value, MAX_CONTACT_CARD_BYTES)
-    const info = safeJson<ContactInfo>(inspect_contact_card(addContactText.value))
-    import_contact_as_json(addContactText.value, 'LinkImported')
+    const info = await inspectContactCardInWorker<ContactInfo>(addContactText.value)
+    await importContactInWorker(addContactText.value, 'LinkImported')
     const index = contacts.value.findIndex((c) => c.user_id === info.user_id)
     const existing = index >= 0 ? contacts.value[index] : undefined
     const item = mergeContactCard(existing, info, addContactText.value)
@@ -5131,7 +5129,7 @@ async function acceptInboxRequest(req: FriendRequestItem) {
   await runAsync('接受好友请求', async () => {
     const response = await acceptFriendRequestInWorker(backupText.value, passphrase.value, req.request_text)
     friendResponseText.value = response
-    const info = safeJson<ContactInfo>(inspect_contact_card(req.from_contact_card_text))
+    const info = await inspectContactCardInWorker<ContactInfo>(req.from_contact_card_text)
     const index = contacts.value.findIndex((c) => c.user_id === info.user_id)
     const contact: ContactItem = { ...mergeContactCard(index >= 0 ? contacts.value[index] : undefined, info, req.from_contact_card_text), state: 'Friend' }
     if (index >= 0) contacts.value[index] = contact
@@ -5176,13 +5174,13 @@ function rejectAllInboxRequests() {
   })
 }
 
-function blockAllInboxRequests() {
-  run('拉黑全部好友请求来源', () => {
+async function blockAllInboxRequests() {
+  await runAsync('拉黑全部好友请求来源', async () => {
     const requests = [...visibleFriendRequests.value]
     if (requests.length === 0) throw new Error('没有好友请求')
     let blocked = 0
     for (const req of requests) {
-      const info = contactInfoFromCardText(req.from_contact_card_text)
+      const info = await contactInfoFromCardText(req.from_contact_card_text)
       if (!info) continue
       const index = contacts.value.findIndex((c) => c.user_id === info.user_id)
       const contact = mergeContactCard(index >= 0 ? contacts.value[index] : undefined, info, req.from_contact_card_text)
@@ -6091,7 +6089,7 @@ async function leaveActiveGroupWithNotice() {
 async function createFriendRequestForActiveLocalOnly() {
   await runAsync('生成好友请求', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
-    if (!myContactCardText.value) exportMyCard()
+    if (!myContactCardText.value) await exportMyCard()
     const created = await createFriendRequestInWorker(
       backupText.value,
       passphrase.value,
@@ -6111,7 +6109,7 @@ async function createFriendRequestForActiveLocalOnly() {
 async function createFriendRequestForActive() {
   await runAsync('发送好友请求', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
-    if (!myContactCardText.value) exportMyCard()
+    if (!myContactCardText.value) await exportMyCard()
     const created = await createFriendRequestInWorker(
       backupText.value,
       passphrase.value,
@@ -6931,6 +6929,95 @@ function runSecureSessionCryptoWorker(payload: Record<string, string>): Promise<
 
 async function runSecureSessionCryptoJson<T = any>(payload: Record<string, string>): Promise<T> {
   return JSON.parse(await runSecureSessionCryptoWorker(payload)) as T
+}
+
+type ContactCardCryptoWorkerResponse = {
+  id: number
+  ok: boolean
+  value?: string
+  error?: string
+}
+
+let contactCardCryptoWorker: Worker | null = null
+let nextContactCardCryptoRequestId = 1
+const contactCardCryptoRequests = new Map<number, {
+  resolve: (value: string) => void
+  reject: (reason?: unknown) => void
+}>()
+
+function getContactCardCryptoWorker(): Worker {
+  if (contactCardCryptoWorker) return contactCardCryptoWorker
+  const worker = new Worker(new URL('./contactCardCrypto.worker.ts', import.meta.url), { type: 'module' })
+  worker.onmessage = (event: MessageEvent<ContactCardCryptoWorkerResponse>) => {
+    const response = event.data
+    const pending = contactCardCryptoRequests.get(response.id)
+    if (!pending) return
+    contactCardCryptoRequests.delete(response.id)
+    if (response.ok && typeof response.value === 'string') pending.resolve(response.value)
+    else pending.reject(new Error(response.error || '联系人 Worker 处理失败'))
+  }
+  worker.onerror = (event) => {
+    const error = new Error(event.message || '联系人 Worker 已停止')
+    for (const pending of contactCardCryptoRequests.values()) pending.reject(error)
+    contactCardCryptoRequests.clear()
+    worker.terminate()
+    if (contactCardCryptoWorker === worker) contactCardCryptoWorker = null
+  }
+  contactCardCryptoWorker = worker
+  return worker
+}
+
+function runContactCardCryptoWorker(payload: Record<string, string>): Promise<string> {
+  const id = nextContactCardCryptoRequestId++
+  return new Promise((resolve, reject) => {
+    contactCardCryptoRequests.set(id, { resolve, reject })
+    try {
+      getContactCardCryptoWorker().postMessage({ id, ...payload })
+    } catch (error) {
+      contactCardCryptoRequests.delete(id)
+      reject(error)
+    }
+  })
+}
+
+async function runContactCardCryptoJson<T = any>(payload: Record<string, string>): Promise<T> {
+  return JSON.parse(await runContactCardCryptoWorker(payload)) as T
+}
+
+async function inspectContactCardInWorker<T = ContactInfo>(cardText: string): Promise<T> {
+  return runContactCardCryptoJson<T>({ operation: 'inspectContactCard', cardText })
+}
+
+function importContactInWorker(cardText: string, state: string): Promise<string> {
+  return runContactCardCryptoWorker({ operation: 'importContact', cardText, state })
+}
+
+function exportContactCardInWorker(backupText: string, passphrase: string, displayName: string | undefined, deviceCertsJson: string | undefined): Promise<string> {
+  return runContactCardCryptoWorker({
+    operation: 'exportContactCard',
+    backupText,
+    passphrase,
+    displayName: displayName ?? '',
+    deviceCertsJson: deviceCertsJson ?? '',
+  })
+}
+
+async function createDeviceCertInWorker(backupText: string, passphrase: string, label: string): Promise<DeviceOutput> {
+  return runContactCardCryptoJson<DeviceOutput>({ operation: 'createDeviceCert', backupText, passphrase, label })
+}
+
+function createDeviceRevokeInWorker(backupText: string, passphrase: string, deviceId: string, reason: string | undefined): Promise<string> {
+  return runContactCardCryptoWorker({
+    operation: 'createDeviceRevoke',
+    backupText,
+    passphrase,
+    deviceId,
+    reason: reason ?? '',
+  })
+}
+
+async function inspectDeviceRevokeInWorker<T = DeviceRevokeInfo>(revokeText: string, identityPublicKey: string): Promise<T> {
+  return runContactCardCryptoJson<T>({ operation: 'inspectDeviceRevoke', revokeText, identityPublicKey })
 }
 
 let deviceSlotCryptoWorker: Worker | null = null
@@ -8816,7 +8903,7 @@ async function applyDhtFindValueRecord(body: any): Promise<boolean> {
     }
   } else if (record.kind === 'ContactCard') {
     try {
-      const info = safeJson<ContactInfo>(inspect_contact_card(record.value))
+      const info = await inspectContactCardInWorker<ContactInfo>(record.value)
       const index = contacts.value.findIndex((c) => c.user_id === info.user_id)
       const existing = index >= 0 ? contacts.value[index] : undefined
       const merged = mergeContactCard(existing, info, record.value)
@@ -9158,7 +9245,7 @@ async function ensureOwnMailboxHintDhtRecord() {
 
 async function publishContactCardDhtRecord(options: { recordHistory?: boolean } = {}): Promise<{ key: string; store: any }> {
   if (!identity.value?.user_id) throw new Error('需要先登录身份')
-  if (!myContactCardText.value.trim()) refreshMyContactCard()
+  if (!myContactCardText.value.trim()) await refreshMyContactCard()
   if (!myContactCardText.value.trim()) throw new Error('请先生成我的联系人名片')
   fillDhtKeyInput('contact-card', identity.value.user_id)
   const keyPayload = await deriveDhtKeyPayload()
@@ -9496,9 +9583,9 @@ function startSelfSyncLoop() {
 function contactByUserId(userId: string): ContactItem | null {
   return contacts.value.find((c) => c.user_id === userId) ?? null
 }
-function contactInfoFromCardText(cardText: string): ContactInfo | null {
+async function contactInfoFromCardText(cardText: string): Promise<ContactInfo | null> {
   try {
-    return safeJson<ContactInfo>(inspect_contact_card(cardText))
+    return await inspectContactCardInWorker<ContactInfo>(cardText)
   } catch {
     return null
   }
@@ -9544,7 +9631,7 @@ async function handleMailboxPayload(item: any): Promise<{ handled: boolean; deli
   if (!sender && ciphertext.startsWith('lm-friend-request-v1:')) {
     try {
       const info = await inspectFriendRequestInWorker<Omit<FriendRequestItem, 'request_text'>>(ciphertext)
-      const cardInfo = contactInfoFromCardText(info.from_contact_card_text)
+      const cardInfo = await contactInfoFromCardText(info.from_contact_card_text)
       const contact: ContactItem | null = cardInfo ? { ...mergeContactCard(undefined, cardInfo, info.from_contact_card_text), state: 'RequestReceived' } : null
       if (contact) {
         contacts.value.push(contact)
@@ -9565,7 +9652,7 @@ async function handleMailboxPayload(item: any): Promise<{ handled: boolean; deli
     return { handled: false, deliveryId, reason }
   }
   if (normalizedKind === 'contactupdate' || ciphertext.startsWith('lm-contact-card-v1:')) {
-    applyContactCardUpdateFromMailbox(ciphertext, sender)
+    await applyContactCardUpdateFromMailbox(ciphertext, sender)
     void sendDeliveryAck(sender, contactCardUpdateId(ciphertext), `contact-update-${sender.user_id}`, deliveryId)
     return { handled: true, deliveryId, event: 'contact-update' }
   }
@@ -9645,7 +9732,7 @@ async function handleMailboxPayload(item: any): Promise<{ handled: boolean; deli
     }
     if (parsed?.type === 'lm-device-revoke-v1') {
       incomingDeviceRevokeText.value = ciphertext
-      applyDeviceRevokeToActiveContact()
+      await applyDeviceRevokeToActiveContact()
       return { handled: true, deliveryId, event: 'device-revoke' }
     }
     if (parsed?.type === 'lm-file-package-v1') {
