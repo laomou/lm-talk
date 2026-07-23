@@ -8657,7 +8657,7 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
       throw new Error('这个好友请求不是发给当前身份的')
     }
     const item = upsertFriendRequestWithLocalRateLimit({ ...info, request_text: ciphertext })
-    toast(item.quarantined ? '好友请求已隔离' : '收到新的好友请求', item.quarantined ? 'warning' : 'info')
+    if (item.quarantined) toast('好友请求已隔离', 'warning')
     return { handled: true, deliveryId, event: 'friend-request' }
   }
   if (ciphertext.startsWith('lm-friend-response-v1:')) {
@@ -8869,7 +8869,6 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
   mailboxInboxErrorText.value = failureReasons.slice(0, 3).join('\n')
   mailboxFailureSummaryText.value = summarizeMailboxFailures(failureReasons)
   appendLog(`mailbox 自动处理完成：${mailboxInboxStatus.value}`)
-  if (events.length > 0) toast(`收到新内容：${mailboxEventSummaryText(events)}`, 'success')
   persist()
   return ackIds
 }
