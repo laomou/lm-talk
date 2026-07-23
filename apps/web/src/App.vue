@@ -3713,22 +3713,13 @@ async function discoverMailboxHintForContact(contact: ContactItem): Promise<stri
   return undefined
 }
 
-async function prepareContactDhtForSend(contact: ContactItem, options: { prekey?: boolean } = {}) {
+async function prepareContactDhtForSend(contact: ContactItem) {
   if (!nodeEnabled.value || contact.state !== 'Friend') return
-  const errors: string[] = []
-  if (options.prekey && !ratchetSessionFor(contact.user_id)) {
-    try {
-      await ensureRatchetSessionFromNode(contact)
-    } catch (error) {
-      errors.push(`PreKey：${userFacingError(error)}`)
-    }
-  }
   try {
     await discoverMailboxHintForContact(contact)
   } catch (error) {
-    errors.push(`MailboxHint：${userFacingError(error)}`)
+    appendLog(`⚠️ 发送前 MailboxHint 预发现失败：${userFacingError(error)}`)
   }
-  if (errors.length) appendLog(`⚠️ 发送前 DHT 预发现未完全成功：${errors.join('；')}`)
 }
 
 async function pushMailboxPayload(to: ContactItem, kind: string, payload: string): Promise<string> {
@@ -4015,7 +4006,7 @@ async function deliverPayloadToContact(contact: ContactItem, payload: string, la
       return 'sent'
     }
     if (nodeEnabled.value) {
-      await prepareContactDhtForSend(contact, { prekey: kind === 'direct-envelope' })
+      await prepareContactDhtForSend(contact)
       await pushMailboxPayload(contact, mailboxKindForOutboxKind(kind), payload)
       return 'mailbox'
     }
@@ -4029,7 +4020,7 @@ async function deliverPayloadToContact(contact: ContactItem, payload: string, la
 
 async function tryMailboxDeliveryForMessage(contact: ContactItem, envelope: string, msg: ChatMessage) {
   try {
-    await prepareContactDhtForSend(contact, { prekey: true })
+    await prepareContactDhtForSend(contact)
     const deliveryId = await pushMailboxPayload(contact, 'direct-envelope', envelope)
     msg.status = 'mailbox'
     if (deliveryId) msg.mailbox_delivery_id = deliveryId
@@ -4044,79 +4035,6 @@ async function tryMailboxDeliveryForMessage(contact: ContactItem, envelope: stri
     persist()
   }
 }
-
-async function ensureRatchetSessionFromNode(contact: ContactItem): Promise<boolean> {
-  requireContactHasActiveDevice(contact)
-  if (!nodeEnabled.value || ratchetSessionFor(contact.user_id)) return Boolean(ratchetSessionFor(contact.user_id))
-  let body = await nodeFetchJson(`/api/prekey/get?user_id=${encodeURIComponent(contact.user_id)}&consume=true`)
-  nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
-  if (!body.found || !body.prekey_bundle_text) {
-    try {
-      if (shouldSkipAutoContactDhtDiscovery(contact)) return false
-      markContactDhtDiscoveryAttempt(contact)
-      nodeDhtKeyKind.value = 'prekey'
-      nodeDhtKeyValue.value = contact.user_id
-      const dht = await nodeFetchJson(`/api/dht/find-value?kind=prekey&value=${encodeURIComponent(contact.user_id)}&limit=8&max_peers=8&alpha=3`)
-      if (applyDhtFindValueRecord(dht) && dht?.record?.kind === 'PreKey' && typeof dht.record.value === 'string') {
-        body = { found: true, prekey_bundle_text: dht.record.value }
-        markContactDhtDiscoverySuccess(contact, 'prekey')
-        nodePreKeyStatusText.value = JSON.stringify({ found: true, source: 'dht', record: dht.record }, null, 2)
-        appendLog(`✅ 已通过 DHT 发现 ${contact.display_name || contact.user_id} 的 PreKey`)
-      }
-    } catch (error) {
-      markContactDhtDiscoveryError(contact, error)
-      appendLog(`⚠️ DHT 查找联系人 PreKey 失败：${userFacingError(error)}`)
-    }
-  }
-  if (!body.found || !body.prekey_bundle_text) return false
-  prekeyBundleText.value = body.prekey_bundle_text
-  selectedOneTimePreKeyId.value = typeof body.selected_one_time_prekey_id === 'number' ? body.selected_one_time_prekey_id : null
-  selectedSignedOneTimePreKeyRecordText.value = typeof body.selected_signed_one_time_prekey_record_text === 'string' ? body.selected_signed_one_time_prekey_record_text : ''
-  const init = JSON.parse(selectedSignedOneTimePreKeyRecordText.value
-    ? create_x3dh_initial_message_with_one_time_prekey_record(
-      backupText.value,
-      passphrase.value,
-      body.prekey_bundle_text,
-      selectedSignedOneTimePreKeyRecordText.value,
-    )
-    : create_x3dh_initial_message_with_one_time_prekey_id(
-      backupText.value,
-      passphrase.value,
-      body.prekey_bundle_text,
-      selectedOneTimePreKeyId.value ?? undefined,
-    )) as { initial_message_json: string; shared_secret: string }
-  const pair = JSON.parse(create_ratchet_dh_keypair()) as { private_key: string; public_key: string }
-  const ratchetPair = JSON.parse(create_ratchet_session_from_shared_secret(
-    identity.value!.user_id,
-    contact.user_id,
-    init.shared_secret,
-  )) as { local_state_text: string; remote_state_text: string }
-  saveRatchetSession(contact.user_id, ratchetPair.local_state_text)
-  contact.last_secure_session_success_at = Date.now()
-  const response: SecureSessionResponse = {
-    type: 'lm-secure-session-response-v1',
-    version: 1,
-    from_user_id: identity.value!.user_id,
-    to_user_id: contact.user_id,
-    initial_message_json: init.initial_message_json,
-    ratchet_dh_public_key: pair.public_key,
-    created_at: Date.now(),
-  }
-  secureSessionResponseText.value = JSON.stringify(response, null, 2)
-  try {
-    await pushMailboxPayload(contact, 'other', secureSessionResponseText.value)
-    contact.last_secure_session_error = undefined
-    contact.secure_session_failure_count = 0
-  } catch (e) {
-    recordSecureSessionError(contact, e, '⚠️ 安全会话 Response 发送失败')
-    throw e
-  }
-  appendLog(`✅ 已从节点拉取 PreKey 并为 ${contact.display_name || contact.user_id} 建立会话初始化消息`)
-  persist()
-  return true
-}
-
-
 
 async function removeLocalIdentity(id: string) {
   const item = localIdentities.value.find((x) => x.id === id)
@@ -4662,6 +4580,17 @@ function allowIncomingFromContact(sender: ContactItem): boolean {
   return false
 }
 
+function allowSecureSessionHandshakeFromContact(sender: ContactItem): boolean {
+  if (contactAllKnownDevicesRevoked(sender)) {
+    revokedDeviceIncomingDropCount.value += 1
+    lastRevokedDeviceIncomingDropAt.value = Date.now()
+    lastRevokedDeviceIncomingDropFrom.value = sender.display_name || sender.user_id
+    appendLog(`⚠️ 已丢弃已撤销联系人发来的安全会话握手：${lastRevokedDeviceIncomingDropFrom.value}`)
+    return false
+  }
+  return sender.state === 'Friend'
+}
+
 function clearUnverifiedIncomingDropStats() {
   unverifiedIncomingDropCount.value = 0
   lastUnverifiedIncomingDropAt.value = null
@@ -4831,7 +4760,6 @@ function addContact() {
     addContactText.value = ''
     persist()
     if (nodeEnabled.value && item.state === 'LocalOnly') createFriendRequestForActive()
-    void ensureRatchetSessionFromNode(item).catch((e) => appendLog(`⚠️ 自动建链失败：${String(e)}`))
   })
 }
 
@@ -8807,8 +8735,8 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
       return { handled: true, deliveryId, event: 'file' }
     }
     if (parsed?.type === 'lm-secure-session-response-v1') {
-      if (!allowIncomingFromContact(sender)) {
-        const reason = `安全策略阻止接收未核验或已撤销设备联系人安全会话响应：${sender.display_name || sender.user_id}`
+      if (!allowSecureSessionHandshakeFromContact(sender)) {
+        const reason = `安全策略阻止接收非好友或已撤销联系人安全会话响应：${sender.display_name || sender.user_id}`
         appendLog(`⚠️ ${reason}`)
         persist()
         return { handled: true, deliveryId, event: 'other', reason }
@@ -8818,8 +8746,8 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
       return { handled: true, deliveryId, event: 'secure-session' }
     }
     if (parsed?.type === 'lm-secure-session-offer-v1') {
-      if (!allowIncomingFromContact(sender)) {
-        const reason = `安全策略阻止接收未核验或已撤销设备联系人安全会话邀请：${sender.display_name || sender.user_id}`
+      if (!allowSecureSessionHandshakeFromContact(sender)) {
+        const reason = `安全策略阻止接收非好友或已撤销联系人安全会话邀请：${sender.display_name || sender.user_id}`
         appendLog(`⚠️ ${reason}`)
         persist()
         return { handled: true, deliveryId, event: 'other', reason }
