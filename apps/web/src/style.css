@@ -1400,3 +1400,31 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   line-height: 18px;
   text-align: center;
 }
+.conversation-avatar-wrap {
+  position: relative;
+  display: inline-grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+}
+.conversation-avatar-badge {
+  position: absolute;
+  top: -5px;
+  right: -7px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border: 2px solid var(--c-surface-2);
+  border-radius: var(--r-pill);
+  background: var(--c-danger);
+  color: #fff;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 14px;
+  text-align: center;
+}
+@media (max-width: 640px) {
+  .conversation-avatar-wrap { width: 34px; height: 34px; }
+  .conversation-avatar-badge { top: -6px; right: -8px; }
+}

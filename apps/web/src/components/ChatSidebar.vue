@@ -96,7 +96,10 @@ function select(it: any) {
         :aria-current="isActive(it) ? 'true' : undefined"
         @click="select(it)"
       >
-        <span class="avatar" :style="{ background: avatarColor(it.id) }">{{ (convName(it) || '?').slice(0, 1).toUpperCase() }}</span>
+        <span class="conversation-avatar-wrap">
+          <span class="avatar" :style="{ background: avatarColor(it.id) }">{{ (convName(it) || '?').slice(0, 1).toUpperCase() }}</span>
+          <em v-if="unreadCount(it)" class="conversation-avatar-badge">{{ props.ctx.badgeCountText(unreadCount(it)) }}</em>
+        </span>
         <span class="contact-main">
           <b>
             <span class="conv-name">
@@ -137,7 +140,10 @@ function select(it: any) {
         :aria-current="isActive(it) ? 'true' : undefined"
         @click="select(it)"
       >
-        <span class="avatar" :style="{ background: avatarColor(it.id) }">{{ (convName(it) || '?').slice(0, 1).toUpperCase() }}</span>
+        <span class="conversation-avatar-wrap">
+          <span class="avatar" :style="{ background: avatarColor(it.id) }">{{ (convName(it) || '?').slice(0, 1).toUpperCase() }}</span>
+          <em v-if="unreadCount(it)" class="conversation-avatar-badge">{{ props.ctx.badgeCountText(unreadCount(it)) }}</em>
+        </span>
         <span class="contact-main">
           <b>
             <span class="conv-name">
