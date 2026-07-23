@@ -8657,7 +8657,7 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
       throw new Error('这个好友请求不是发给当前身份的')
     }
     const item = upsertFriendRequestWithLocalRateLimit({ ...info, request_text: ciphertext })
-    toast(item.quarantined ? '好友请求已隔离' : '收到新的好友请求', item.quarantined ? 'warning' : 'info')
+    if (item.quarantined) toast('好友请求已隔离', 'warning')
     return { handled: true, deliveryId, event: 'friend-request' }
   }
   if (ciphertext.startsWith('lm-friend-response-v1:')) {
@@ -8739,6 +8739,22 @@ function mailboxEventSummaryText(events: MailboxEventKind[]): string {
     ['回执', count('delivery-ack') + count('read-receipt')],
   ].filter(([, n]) => Number(n) > 0).map(([label, n]) => `${label} ${n}`)
   return parts.length ? parts.join('，') : `已处理 ${events.length} 条`
+}
+
+function mailboxNotificationText(events: MailboxEventKind[], activePeerBeforeSync: string): string {
+  const count = (kind: MailboxEventKind) => events.filter((event) => event === kind).length
+  const messages = count('message')
+  const files = count('file')
+  const friendRequests = count('friend-request')
+  const groupInvites = count('group-invite')
+  const inOpenConversation = currentPage.value === 'chat' && Boolean(activePeerBeforeSync)
+
+  const parts: string[] = []
+  if (messages > 0 && !inOpenConversation) parts.push(messages === 1 ? '收到一条新消息' : `收到 ${messages} 条新消息`)
+  if (files > 0) parts.push(files === 1 ? '收到一个文件' : `收到 ${files} 个文件`)
+  if (friendRequests > 0) parts.push(friendRequests === 1 ? '收到新的好友请求' : `收到 ${friendRequests} 个好友请求`)
+  if (groupInvites > 0) parts.push(groupInvites === 1 ? '收到群聊邀请' : `收到 ${groupInvites} 个群聊邀请`)
+  return parts.join('，')
 }
 
 function mailboxDedupeIds(deliveryId?: string, messageId?: string): string[] {
@@ -8842,6 +8858,7 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
   const failureReasons: string[] = []
   const events: MailboxEventKind[] = []
   const ackIds: string[] = []
+  const activePeerBeforeSync = activePeerId.value
   for (const item of messagesFromNode) {
     const { deliveryId, message } = unwrapMailboxDelivery(item)
     const messageId = String(message?.message_id ?? '')
@@ -8869,7 +8886,8 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
   mailboxInboxErrorText.value = failureReasons.slice(0, 3).join('\n')
   mailboxFailureSummaryText.value = summarizeMailboxFailures(failureReasons)
   appendLog(`mailbox 自动处理完成：${mailboxInboxStatus.value}`)
-  if (events.length > 0) toast(`收到新内容：${mailboxEventSummaryText(events)}`, 'success')
+  const notification = mailboxNotificationText(events, activePeerBeforeSync)
+  if (notification) toast(notification, 'info')
   persist()
   return ackIds
 }
