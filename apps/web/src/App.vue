@@ -1015,10 +1015,13 @@ const activeSecureSessionOutboxCount = computed(() => {
     && /"lm-secure-session-(offer|response)-v1"/.test(item.envelope_json || '')
   ).length
 })
-const activeMessages = computed(() => activeGroup.value
-  ? messages.value.filter((m) => m.group_id === activeGroup.value?.group_id)
-  : messages.value.filter((m) => m.peer_user_id === activePeerId.value)
-)
+const activeMessages = computed(() => {
+  const conversationMessages = activeGroup.value
+    ? messages.value.filter((m) => m.group_id === activeGroup.value?.group_id)
+    : messages.value.filter((m) => m.peer_user_id === activePeerId.value)
+  return conversationMessages.slice().sort((a, b) =>
+    Number(a.created_at || 0) - Number(b.created_at || 0) || a.id.localeCompare(b.id))
+})
 const friendContacts = computed(() => contacts.value.filter((c) => c.state === 'Friend'))
 const verifiedFriendContactCount = computed(() => friendContacts.value.length)
 const unverifiedFriendContactCount = computed(() => 0)
