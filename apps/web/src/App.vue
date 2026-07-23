@@ -15,9 +15,6 @@ import { TABLES, idbDel, idbGet, idbSet, idbTableApplyChanges, idbTableClear, id
 import init, {
   create_device_cert,
   create_device_revoke,
-  create_group_invite,
-  create_group_event,
-  create_group_policy_state,
   create_identity,
   create_mailbox_message,
   create_message_receipt,
@@ -35,9 +32,6 @@ import init, {
   inspect_contact_card,
   inspect_file_package,
   inspect_device_revoke,
-  inspect_group_invite,
-  inspect_group_event,
-  apply_group_policy_event,
   inspect_mailbox_message,
   inspect_message_receipt,
   inspect_peer_announce,
@@ -1557,6 +1551,10 @@ onUnmounted(() => {
   friendRequestCryptoWorker = null
   for (const pending of friendRequestCryptoRequests.values()) pending.reject(new Error('好友请求 Worker 已停止'))
   friendRequestCryptoRequests.clear()
+  groupEventCryptoWorker?.terminate()
+  groupEventCryptoWorker = null
+  for (const pending of groupEventCryptoRequests.values()) pending.reject(new Error('群邀请与事件 Worker 已停止'))
+  groupEventCryptoRequests.clear()
   ratchetEncryptWorker?.terminate()
   ratchetEncryptWorker = null
   for (const pending of ratchetEncryptRequests.values()) pending.reject(new Error('Ratchet 加密 Worker 已停止'))
@@ -5605,8 +5603,8 @@ async function groupSenderDecryptDebug() {
   })
 }
 
-function createGroup() {
-  run('创建群组', () => {
+async function createGroup() {
+  await runAsync('创建群组', async () => {
     const riskText = createGroupStrictE2eeRiskText.value
     if (riskText) {
       if (strictE2eePolicyEnabled.value) throw new Error(`严格 E2EE 策略阻止创建风险群聊：${riskText}`)
@@ -5627,7 +5625,9 @@ ${riskText}
       name: newGroupName.value.trim(),
       member_user_ids: allMembers.filter((id) => id !== identity.value?.user_id),
       admin_user_ids: adminIds,
-      policy_state_json: identity.value ? create_group_policy_state(groupId, newGroupName.value.trim(), identity.value.user_id, JSON.stringify(allMembers)) : undefined,
+      policy_state_json: identity.value
+        ? await createGroupPolicyStateInWorker(groupId, newGroupName.value.trim(), identity.value.user_id, JSON.stringify(allMembers))
+        : undefined,
       created_at: Date.now(),
       sequence: 0,
     }
@@ -5642,10 +5642,10 @@ ${riskText}
 }
 
 
-function groupInviteFor(group: GroupItem): string {
+async function groupInviteFor(group: GroupItem): Promise<string> {
   const memberIds = [...group.member_user_ids]
   if (identity.value && !memberIds.includes(identity.value.user_id)) memberIds.push(identity.value.user_id)
-  return create_group_invite(
+  return createGroupInviteInWorker(
     backupText.value,
     passphrase.value,
     group.group_id,
@@ -5654,16 +5654,16 @@ function groupInviteFor(group: GroupItem): string {
   )
 }
 
-function createInviteForActiveGroup() {
-  run('生成群邀请', () => {
+async function createInviteForActiveGroup() {
+  await runAsync('生成群邀请', async () => {
     if (!activeGroup.value) throw new Error('请选择群组')
-    groupInviteText.value = groupInviteFor(activeGroup.value)
+    groupInviteText.value = await groupInviteFor(activeGroup.value)
   })
 }
 
 async function sendGroupInviteToMembers(group: GroupItem) {
   if (!nodeEnabled.value) return
-  const invite = groupInviteFor(group)
+  const invite = await groupInviteFor(group)
   groupInviteText.value = invite
   let sent = 0
   let failed = 0
@@ -5701,84 +5701,84 @@ function ensureActiveGroupAdmin(actionLabel: string) {
   throw new Error(reason)
 }
 
-function createRenameGroupEvent() {
-  run('生成群改名事件', () => {
+async function createRenameGroupEvent() {
+  await runAsync('生成群改名事件', async () => {
     if (!activeGroup.value) throw new Error('请选择群组')
     ensureActiveGroupAdmin('修改群名')
     const name = groupRenameText.value.trim()
     if (!name) throw new Error('请输入新群名')
     const sequence = nextGroupSequence(activeGroup.value)
-    groupEventText.value = create_group_event(
+    groupEventText.value = await createGroupEventInWorker(
       backupText.value,
       passphrase.value,
       activeGroup.value.group_id,
-      BigInt(sequence),
+      sequence,
       JSON.stringify({ Rename: { name } }),
     )
   })
 }
 
-function createAddMemberGroupEvent(userId: string) {
-  run('生成加人事件', () => {
+async function createAddMemberGroupEvent(userId: string) {
+  await runAsync('生成加人事件', async () => {
     if (!activeGroup.value) throw new Error('请选择群组')
     ensureActiveGroupAdmin('添加成员')
     const sequence = nextGroupSequence(activeGroup.value)
-    groupEventText.value = create_group_event(
+    groupEventText.value = await createGroupEventInWorker(
       backupText.value,
       passphrase.value,
       activeGroup.value.group_id,
-      BigInt(sequence),
+      sequence,
       JSON.stringify({ AddMember: { user_id: userId } }),
     )
   })
 }
 
-function createRemoveMemberGroupEventText(userId: string) {
+async function createRemoveMemberGroupEventText(userId: string) {
   if (!activeGroup.value) throw new Error('请选择群组')
   if (!identity.value) throw new Error('请先登录')
   if (userId !== identity.value.user_id) throw new Error('群成员只能生成自己的退群事件，不能移除其他成员')
   const sequence = nextGroupSequence(activeGroup.value)
-  groupEventText.value = create_group_event(
+  groupEventText.value = await createGroupEventInWorker(
     backupText.value,
     passphrase.value,
     activeGroup.value.group_id,
-    BigInt(sequence),
+    sequence,
     JSON.stringify({ RemoveMember: { user_id: userId } }),
   )
 }
 
-function createRemoveMemberGroupEvent(userId: string) {
-  run('生成退群事件', () => {
-    createRemoveMemberGroupEventText(userId)
+async function createRemoveMemberGroupEvent(userId: string) {
+  await runAsync('生成退群事件', async () => {
+    await createRemoveMemberGroupEventText(userId)
   })
 }
 
 
-function createPromoteAdminGroupEvent(userId: string) {
-  run('生成提升管理员事件', () => {
+async function createPromoteAdminGroupEvent(userId: string) {
+  await runAsync('生成提升管理员事件', async () => {
     if (!activeGroup.value) throw new Error('请选择群组')
     ensureActiveGroupAdmin('提升管理员')
     const sequence = nextGroupSequence(activeGroup.value)
-    groupEventText.value = create_group_event(
+    groupEventText.value = await createGroupEventInWorker(
       backupText.value,
       passphrase.value,
       activeGroup.value.group_id,
-      BigInt(sequence),
+      sequence,
       JSON.stringify({ PromoteAdmin: { user_id: userId } }),
     )
   })
 }
 
-function createDemoteAdminGroupEvent(userId: string) {
-  run('生成取消管理员事件', () => {
+async function createDemoteAdminGroupEvent(userId: string) {
+  await runAsync('生成取消管理员事件', async () => {
     if (!activeGroup.value) throw new Error('请选择群组')
     ensureActiveGroupAdmin('取消管理员')
     const sequence = nextGroupSequence(activeGroup.value)
-    groupEventText.value = create_group_event(
+    groupEventText.value = await createGroupEventInWorker(
       backupText.value,
       passphrase.value,
       activeGroup.value.group_id,
-      BigInt(sequence),
+      sequence,
       JSON.stringify({ DemoteAdmin: { user_id: userId } }),
     )
   })
@@ -5811,13 +5811,13 @@ function groupEventRecoveryHint(group: GroupItem, eventSequence?: number): strin
   return '请确认事件发起者、群成员和本地群状态后重试。'
 }
 
-function groupIdFromEventText(text: string, actorId: string): string | undefined {
+async function groupIdFromEventText(text: string, actorId: string): Promise<string | undefined> {
   const actor = actorId === identity.value?.user_id
     ? { contact_card_text: myContactCardText.value }
     : contacts.value.find((c) => c.user_id === actorId)
   if (!actor?.contact_card_text) return undefined
   try {
-    const info = JSON.parse(inspect_group_event(text, actor.contact_card_text)) as { group_id?: string }
+    const info = await inspectGroupEventInWorker<{ group_id?: string }>(text, actor.contact_card_text)
     return info.group_id
   } catch {
     return undefined
@@ -5834,19 +5834,19 @@ function clearActiveGroupEventError() {
   })
 }
 
-function applyGroupEventRaw(text: string, actorId: string): { group_id: string; summary: string } {
+async function applyGroupEventRaw(text: string, actorId: string): Promise<{ group_id: string; summary: string }> {
   if (!text) throw new Error('请粘贴群事件')
   if (!actorId) throw new Error('需要事件发起者 UserID')
   const actor = actorId === identity.value?.user_id
     ? { contact_card_text: myContactCardText.value }
     : contacts.value.find((c) => c.user_id === actorId)
   if (!actor?.contact_card_text) throw new Error('找不到发起者 Contact Card')
-  const info = JSON.parse(inspect_group_event(text, actor.contact_card_text)) as {
+  const info = await inspectGroupEventInWorker<{
     group_id: string
     actor_user_id: string
     sequence: number
     action: any
-  }
+  }>(text, actor.contact_card_text)
   const group = groups.value.find((g) => g.group_id === info.group_id)
   if (!group) throw new Error(`本地没有这个群：${info.group_id}；可能尚未接受邀请或已仅本机退出`)
   if (info.sequence > (group.sequence ?? 0) + 1) {
@@ -5858,7 +5858,7 @@ function applyGroupEventRaw(text: string, actorId: string): { group_id: string; 
     throw new Error(`群事件 sequence 已过期或重复：当前 ${group.sequence ?? 0}，收到 ${info.sequence}`)
   }
   if (group.policy_state_json) {
-    group.policy_state_json = apply_group_policy_event(group.policy_state_json, text, actor.contact_card_text)
+    group.policy_state_json = await applyGroupPolicyEventInWorker(group.policy_state_json, text, actor.contact_card_text)
     const policy = JSON.parse(group.policy_state_json) as { name: string; members: string[]; admins: string[]; sequence: number }
     group.name = policy.name
     group.member_user_ids = policy.members.filter((id) => id !== identity.value?.user_id)
@@ -5933,13 +5933,13 @@ function applyGroupEventRaw(text: string, actorId: string): { group_id: string; 
   return { group_id: group.group_id, summary }
 }
 
-function applyGroupEventText() {
-  run('应用群事件', () => {
+async function applyGroupEventText() {
+  await runAsync('应用群事件', async () => {
     const text = incomingGroupEventText.value.trim() || groupEventText.value.trim()
     const actorId = groupEventActorUserId.value.trim() || activeContact.value?.user_id || identity.value?.user_id || ''
     let result: { group_id: string; summary: string }
     try {
-      result = applyGroupEventRaw(text, actorId)
+      result = await applyGroupEventRaw(text, actorId)
     } catch (e) {
       const reason = userFacingError(e)
       rememberGroupEventError(activeGroup.value?.group_id, reason)
@@ -5989,24 +5989,28 @@ function createGroupEventFanoutRaw(enforceStrictPolicy = true) {
   appendLog(`✅ 已为 ${fanout.length} 个群成员生成群事件 fanout`)
 }
 
-function addIncomingGroupInvite() {
-  run('加入群邀请收件箱', () => {
+async function addIncomingGroupInviteRaw(inviteText: string, inviter: ContactItem) {
+  const info = await inspectGroupInviteInWorker<Omit<GroupInviteItem, 'invite_text'>>(inviteText, inviter.contact_card_text)
+  if (identity.value && !info.member_user_ids.includes(identity.value.user_id)) {
+    throw new Error('该群邀请成员列表不包含当前身份')
+  }
+  const item: GroupInviteItem = { ...info, invite_text: inviteText }
+  const index = groupInvites.value.findIndex((g) => g.invite_id === item.invite_id)
+  if (index >= 0) groupInvites.value[index] = item
+  else groupInvites.value.unshift(item)
+  persist()
+}
+
+async function addIncomingGroupInvite() {
+  await runAsync('加入群邀请收件箱', async () => {
     if (!activeContact.value) throw new Error('请先选择邀请者联系人')
-    const info = JSON.parse(inspect_group_invite(incomingGroupInviteText.value, activeContact.value.contact_card_text)) as Omit<GroupInviteItem, 'invite_text'>
-    if (identity.value && !info.member_user_ids.includes(identity.value.user_id)) {
-      throw new Error('该群邀请成员列表不包含当前身份')
-    }
-    const item: GroupInviteItem = { ...info, invite_text: incomingGroupInviteText.value }
-    const index = groupInvites.value.findIndex((g) => g.invite_id === item.invite_id)
-    if (index >= 0) groupInvites.value[index] = item
-    else groupInvites.value.unshift(item)
+    await addIncomingGroupInviteRaw(incomingGroupInviteText.value, activeContact.value)
     incomingGroupInviteText.value = ''
-    persist()
   })
 }
 
-function acceptGroupInvite(invite: GroupInviteItem) {
-  run('接受群邀请', () => {
+async function acceptGroupInvite(invite: GroupInviteItem) {
+  await runAsync('接受群邀请', async () => {
     const riskText = groupInviteStrictE2eeRiskText(invite)
     if (riskText) {
       if (strictE2eePolicyEnabled.value) throw new Error(`严格 E2EE 策略阻止接受风险群邀请：${riskText}`)
@@ -6021,7 +6025,7 @@ ${riskText}
       name: invite.group_name,
       member_user_ids: invite.member_user_ids.filter((id) => id !== identity.value?.user_id),
       admin_user_ids: [invite.inviter_user_id],
-      policy_state_json: create_group_policy_state(invite.group_id, invite.group_name, invite.inviter_user_id, JSON.stringify(invite.member_user_ids)),
+      policy_state_json: await createGroupPolicyStateInWorker(invite.group_id, invite.group_name, invite.inviter_user_id, JSON.stringify(invite.member_user_ids)),
       created_at: Date.now(),
       sequence: 0,
       last_event_summary: '已接受群邀请；历史消息不会自动同步',
@@ -6063,7 +6067,7 @@ async function leaveActiveGroupWithNotice() {
   const ok = await showConfirm('通知退群', `生成并发送「${group.name}」退群通知，然后删除本地群消息和群密钥？`, true)
   if (!ok) return
   try {
-    createRemoveMemberGroupEventText(identity.value.user_id)
+    await createRemoveMemberGroupEventText(identity.value.user_id)
     createGroupEventFanoutRaw(false)
   } catch (e) {
     const message = userFacingError(e)
@@ -6813,6 +6817,79 @@ async function inspectFriendResponseInWorker<T = any>(responseText: string, cont
   return JSON.parse(response.info_json) as T
 }
 
+type GroupEventCryptoWorkerResponse = {
+  id: number
+  ok: boolean
+  value?: string
+  error?: string
+}
+
+let groupEventCryptoWorker: Worker | null = null
+let nextGroupEventCryptoRequestId = 1
+const groupEventCryptoRequests = new Map<number, {
+  resolve: (value: string) => void
+  reject: (reason?: unknown) => void
+}>()
+
+function getGroupEventCryptoWorker(): Worker {
+  if (groupEventCryptoWorker) return groupEventCryptoWorker
+  const worker = new Worker(new URL('./groupEventCrypto.worker.ts', import.meta.url), { type: 'module' })
+  worker.onmessage = (event: MessageEvent<GroupEventCryptoWorkerResponse>) => {
+    const response = event.data
+    const pending = groupEventCryptoRequests.get(response.id)
+    if (!pending) return
+    groupEventCryptoRequests.delete(response.id)
+    if (response.ok && typeof response.value === 'string') pending.resolve(response.value)
+    else pending.reject(new Error(response.error || '群邀请与事件 Worker 处理失败'))
+  }
+  worker.onerror = (event) => {
+    const error = new Error(event.message || '群邀请与事件 Worker 已停止')
+    for (const pending of groupEventCryptoRequests.values()) pending.reject(error)
+    groupEventCryptoRequests.clear()
+    worker.terminate()
+    if (groupEventCryptoWorker === worker) groupEventCryptoWorker = null
+  }
+  groupEventCryptoWorker = worker
+  return worker
+}
+
+function runGroupEventCryptoWorker(payload: Record<string, string>): Promise<string> {
+  const id = nextGroupEventCryptoRequestId++
+  return new Promise((resolve, reject) => {
+    groupEventCryptoRequests.set(id, { resolve, reject })
+    try {
+      getGroupEventCryptoWorker().postMessage({ id, ...payload })
+    } catch (error) {
+      groupEventCryptoRequests.delete(id)
+      reject(error)
+    }
+  })
+}
+
+function createGroupInviteInWorker(backupText: string, passphrase: string, groupId: string, groupName: string, memberIdsJson: string): Promise<string> {
+  return runGroupEventCryptoWorker({ type: 'createInvite', backupText, passphrase, groupId, groupName, memberIdsJson })
+}
+
+async function inspectGroupInviteInWorker<T = any>(inviteText: string, inviterContactCardText: string): Promise<T> {
+  return JSON.parse(await runGroupEventCryptoWorker({ type: 'inspectInvite', inviteText, inviterContactCardText })) as T
+}
+
+function createGroupEventInWorker(backupText: string, passphrase: string, groupId: string, sequence: number, actionJson: string): Promise<string> {
+  return runGroupEventCryptoWorker({ type: 'createEvent', backupText, passphrase, groupId, sequence: String(sequence), actionJson })
+}
+
+async function inspectGroupEventInWorker<T = any>(eventText: string, actorContactCardText: string): Promise<T> {
+  return JSON.parse(await runGroupEventCryptoWorker({ type: 'inspectEvent', eventText, actorContactCardText })) as T
+}
+
+function applyGroupPolicyEventInWorker(policyStateJson: string, eventText: string, actorContactCardText: string): Promise<string> {
+  return runGroupEventCryptoWorker({ type: 'applyPolicyEvent', policyStateJson, eventText, actorContactCardText })
+}
+
+function createGroupPolicyStateInWorker(groupId: string, groupName: string, inviterUserId: string, memberIdsJson: string): Promise<string> {
+  return runGroupEventCryptoWorker({ type: 'createPolicyState', groupId, groupName, inviterUserId, memberIdsJson })
+}
+
 let deviceSlotCryptoWorker: Worker | null = null
 let nextDeviceSlotCryptoRequestId = 1
 const deviceSlotCryptoRequests = new Map<number, {
@@ -7062,9 +7139,9 @@ async function receiveEnvelopeWithContact(envelopeText: string, sender: ContactI
     const eventText = rawText.slice(GROUP_EVENT_PAYLOAD_PREFIX.length)
     let result: { group_id: string; summary: string }
     try {
-      result = applyGroupEventRaw(eventText, sender.user_id)
+      result = await applyGroupEventRaw(eventText, sender.user_id)
     } catch (e) {
-      const groupId = groupIdFromEventText(eventText, sender.user_id)
+      const groupId = await groupIdFromEventText(eventText, sender.user_id)
       rememberGroupEventError(groupId, userFacingError(e))
       throw e
     }
@@ -9449,7 +9526,7 @@ async function handleMailboxPayload(item: any): Promise<{ handled: boolean; deli
   }
   if (ciphertext.startsWith('lm-group-invite-v1:')) {
     incomingGroupInviteText.value = ciphertext
-    addIncomingGroupInvite()
+    await addIncomingGroupInviteRaw(ciphertext, sender)
     return { handled: true, deliveryId, event: 'group-invite' }
   }
   try {
