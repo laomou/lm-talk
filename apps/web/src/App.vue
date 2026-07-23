@@ -3813,9 +3813,21 @@ async function discoverMailboxHintForContact(contact: ContactItem): Promise<stri
   return undefined
 }
 
+const MAILBOX_HINT_BACKGROUND_REFRESH_DELAY_MS = 5_000
+const scheduledMailboxHintRefreshes = new Set<string>()
+
 function refreshMailboxHintInBackground(contact: ContactItem) {
   if (!nodeEnabled.value || contact.state !== 'Friend' || contact.mailbox_hint_url?.trim()) return
-  void discoverMailboxHintForContact(contact)
+  // DHT discovery may take the lm_node control lock while it talks to peers.
+  // It is a routing optimisation, never a prerequisite for the current
+  // delivery: defer it until that delivery has already been accepted.
+  if (scheduledMailboxHintRefreshes.has(contact.user_id)) return
+  scheduledMailboxHintRefreshes.add(contact.user_id)
+  window.setTimeout(() => {
+    scheduledMailboxHintRefreshes.delete(contact.user_id)
+    if (!nodeEnabled.value || contact.state !== 'Friend' || contact.mailbox_hint_url?.trim()) return
+    void discoverMailboxHintForContact(contact)
+  }, MAILBOX_HINT_BACKGROUND_REFRESH_DELAY_MS)
 }
 
 async function pushMailboxPayload(to: ContactItem, kind: string, payload: string): Promise<string> {
@@ -3839,7 +3851,6 @@ async function pushMailboxPayload(to: ContactItem, kind: string, payload: string
   // The configured sync node is immediately usable; a discovered MailboxHint
   // only changes the preferred target for later sends.
   const preferredMailboxUrl = to.mailbox_hint_url?.trim().replace(/\/$/, '')
-  refreshMailboxHintInBackground(to)
   let body: any
   if (preferredMailboxUrl && /^https?:\/\//i.test(preferredMailboxUrl)) {
     try {
@@ -3851,6 +3862,7 @@ async function pushMailboxPayload(to: ContactItem, kind: string, payload: string
   if (!body) body = await nodeFetchJson('/api/mailbox/push', init)
   nodeControlStatus.value = JSON.stringify(body, null, 2)
   updateMailboxQuotaStatus(body)
+  refreshMailboxHintInBackground(to)
   return String(body.delivery_id ?? '')
 }
 
