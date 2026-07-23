@@ -1,31 +1,33 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import UiPageHeader from './UiPageHeader.vue'
 import UiSection from './UiSection.vue'
 import UiActionGroup from './UiActionGroup.vue'
 import UiStatusBadge from './UiStatusBadge.vue'
 
 const props = defineProps<{ ctx: any }>()
+const { t } = useI18n()
 const diagnosticReport = ref('')
 const redactDiagnosticReport = ref(false)
 const diagnosticSummaryOnly = ref(false)
 const showDiagnosticReport = ref(false)
 
 function redacted(value: string) {
-  return value ? '[已脱敏]' : ''
+  return value ? t('diagnosticsView.redacted') : ''
 }
 
 function sanitizeDiagnosticText(value: string) {
   return value
-    .replace(/Bearer\s+[A-Za-z0-9._~+\/=:-]+/gi, 'Bearer [已脱敏]')
-    .replace(/(https?:\/\/[^\s|]+)\|[^\s，；,]+/gi, '$1|[已脱敏]')
-    .replace(/\b(lm-[a-z0-9-]+-v\d+):[^\s\"'，；,]+/gi, '$1:[已脱敏]')
-    .replace(/"(backupText|backup_text|private_key|identity_seed|seed|ciphertext|envelope_json|message_text|contact_card_text)"\s*:\s*"[^"]{16,}"/gi, '"$1":"[已脱敏]"')
+    .replace(/Bearer\s+[A-Za-z0-9._~+\/=:-]+/gi, `Bearer ${t('diagnosticsView.redacted')}`)
+    .replace(/(https?:\/\/[^\s|]+)\|[^\s，；,]+/gi, `$1|${t('diagnosticsView.redacted')}`)
+    .replace(/\b(lm-[a-z0-9-]+-v\d+):[^\s\"'，；,]+/gi, `$1:${t('diagnosticsView.redacted')}`)
+    .replace(/"(backupText|backup_text|private_key|identity_seed|seed|ciphertext|envelope_json|message_text|contact_card_text)"\s*:\s*"[^"]{16,}"/gi, `"$1":"${t('diagnosticsView.redacted')}"`)
 }
 
 function diagnosticLogLine(value: string) {
   const sanitized = sanitizeDiagnosticText(value)
-  return sanitized.length > 160 ? `${sanitized.slice(0, 160)}…[已截断]` : sanitized
+  return sanitized.length > 160 ? `${sanitized.slice(0, 160)}…${t('diagnosticsView.truncated')}` : sanitized
 }
 
 async function runDiagnostics() {
@@ -46,7 +48,7 @@ async function runDiagnostics() {
     },
     sync: {
       enabled: props.ctx.nodeEnabled.value,
-      services: redactDiagnosticReport.value ? props.ctx.nodeUrlList().map(() => '[已脱敏]') : props.ctx.nodeUrlList(),
+      services: redactDiagnosticReport.value ? props.ctx.nodeUrlList().map(() => t('diagnosticsView.redacted')) : props.ctx.nodeUrlList(),
       token_count: props.ctx.nodeTokenCount.value,
       missing_remote_token_count: props.ctx.nodeMissingRemoteTokenCount.value,
       status: sanitizeDiagnosticText(props.ctx.nodeControlStatus.value),
@@ -178,65 +180,65 @@ async function runDiagnostics() {
 <template>
   <section class="debug-page">
     <div class="debug-inner">
-      <UiPageHeader title="诊断工具" back-label="返回" @back="ctx.goDiagnosticsBack" />
-      <p class="hint diagnostic-page-hint">用于排查登录、同步、消息收发和本地数据问题。日常聊天不需要打开。</p>
+      <UiPageHeader :title="t('diagnosticsView.title')" :back-label="t('diagnosticsView.back')" @back="ctx.goDiagnosticsBack" />
+      <p class="hint diagnostic-page-hint">{{ t('diagnosticsView.hint') }}</p>
 
-      <UiSection title="运行状态">
+      <UiSection :title="t('diagnosticsView.runtimeStatus')">
         <div class="diagnostic-list">
           <div class="diagnostic-row">
-            <span><b>当前账号</b><small>{{ ctx.identity.value?.user_id }}</small></span>
-            <strong>{{ ctx.displayName.value || '未命名' }}</strong>
+            <span><b>{{ t('diagnosticsView.currentAccount') }}</b><small>{{ ctx.identity.value?.user_id }}</small></span>
+            <strong>{{ ctx.displayName.value || t('diagnosticsView.unnamed') }}</strong>
           </div>
           <div class="diagnostic-row">
-            <span><b>消息同步</b><small>{{ ctx.nodeUrlList().length ? ctx.nodeUrlList().join('，') : '未配置同步服务' }}</small></span>
-            <UiStatusBadge :tone="ctx.nodeEnabled.value ? 'success' : 'neutral'">{{ ctx.nodeEnabled.value ? '已开启' : '未开启' }}</UiStatusBadge>
+            <span><b>{{ t('diagnosticsView.messageSync') }}</b><small>{{ ctx.nodeUrlList().length ? ctx.nodeUrlList().join('，') : t('diagnosticsView.syncNotConfigured') }}</small></span>
+            <UiStatusBadge :tone="ctx.nodeEnabled.value ? 'success' : 'neutral'">{{ ctx.nodeEnabled.value ? t('diagnosticsView.enabled') : t('diagnosticsView.disabled') }}</UiStatusBadge>
           </div>
           <div class="diagnostic-row">
-            <span><b>待发送</b><small>总队列 {{ ctx.outbox.value.length }}</small></span>
+            <span><b>{{ t('diagnosticsView.outbox') }}</b><small>{{ t('diagnosticsView.totalQueue', { count: ctx.outbox.value.length }) }}</small></span>
             <strong>{{ ctx.outbox.value.filter((x: any) => x.status !== 'sent').length }}</strong>
           </div>
           <div class="diagnostic-row">
-            <span><b>新的朋友</b><small>群邀请 {{ ctx.groupInvites.value.length }}</small></span>
+            <span><b>{{ t('diagnosticsView.newFriends') }}</b><small>{{ t('diagnosticsView.groupInvites', { count: ctx.groupInvites.value.length }) }}</small></span>
             <strong>{{ ctx.visibleFriendRequests.value.length }}</strong>
           </div>
           <div class="diagnostic-row">
-            <span><b>垃圾请求</b><small>去重记录 {{ ctx.mailboxDedupeCount.value }}</small></span>
+            <span><b>{{ t('diagnosticsView.junkRequests') }}</b><small>{{ t('diagnosticsView.dedupeRecords', { count: ctx.mailboxDedupeCount.value }) }}</small></span>
             <strong>{{ ctx.quarantinedFriendRequests.value.length }}</strong>
           </div>
           <div class="diagnostic-row">
-            <span><b>DHT 状态</b><small>{{ ctx.nodePeerHealthStatusText.value }}</small></span>
-            <UiStatusBadge :tone="ctx.nodePeerHealthRiskLevel.value === 'ok' ? 'success' : ctx.nodePeerHealthRiskLevel.value === 'warning' ? 'warning' : 'danger'">{{ ctx.nodePeerHealthRiskLevel.value === 'ok' ? '正常' : ctx.nodePeerHealthRiskLevel.value === 'warning' ? '警告' : '异常' }}</UiStatusBadge>
+            <span><b>{{ t('diagnosticsView.dhtStatus') }}</b><small>{{ ctx.nodePeerHealthStatusText.value }}</small></span>
+            <UiStatusBadge :tone="ctx.nodePeerHealthRiskLevel.value === 'ok' ? 'success' : ctx.nodePeerHealthRiskLevel.value === 'warning' ? 'warning' : 'danger'">{{ ctx.nodePeerHealthRiskLevel.value === 'ok' ? t('diagnosticsView.normal') : ctx.nodePeerHealthRiskLevel.value === 'warning' ? t('diagnosticsView.warning') : t('diagnosticsView.abnormal') }}</UiStatusBadge>
           </div>
           <div class="diagnostic-row">
-            <span><b>群聊严格 E2EE</b><small>风险群聊 / 总群聊 {{ ctx.groups.value.length }}</small></span>
+            <span><b>{{ t('diagnosticsView.groupStrictE2ee') }}</b><small>{{ t('diagnosticsView.groupRiskSummary', { count: ctx.groups.value.length }) }}</small></span>
             <strong>{{ ctx.groups.value.filter((g: any) => ctx.groupStrictE2eeRiskTextFor(g)).length }}</strong>
           </div>
         </div>
       </UiSection>
 
-      <UiSection title="诊断报告" description="生成只包含状态摘要的诊断报告，不会导出提示词、身份私钥或消息明文。">
+      <UiSection :title="t('diagnosticsView.reportTitle')" :description="t('diagnosticsView.reportDescription')">
         <label class="check-row diagnostic-option">
           <input v-model="redactDiagnosticReport" type="checkbox" />
-          脱敏账号和同步服务地址
+          {{ t('diagnosticsView.redactAccountAndServices') }}
         </label>
         <label class="check-row diagnostic-option">
           <input v-model="diagnosticSummaryOnly" type="checkbox" />
-          只生成摘要报告
+          {{ t('diagnosticsView.summaryOnly') }}
         </label>
         <UiActionGroup>
-          <button @click="runDiagnostics">生成诊断报告</button>
-          <button class="secondary" :disabled="!diagnosticReport" @click="ctx.copyText(diagnosticReport, '诊断报告')">复制报告</button>
-          <button class="secondary" :disabled="!diagnosticReport" @click="showDiagnosticReport = !showDiagnosticReport">{{ showDiagnosticReport ? '隐藏预览' : '显示预览' }}</button>
-          <button class="secondary" @click="ctx.syncNow">立即同步</button>
+          <button @click="runDiagnostics">{{ t('diagnosticsView.generateReport') }}</button>
+          <button class="secondary" :disabled="!diagnosticReport" @click="ctx.copyText(diagnosticReport, t('diagnosticsView.reportTitle'))">{{ t('diagnosticsView.copyReport') }}</button>
+          <button class="secondary" :disabled="!diagnosticReport" @click="showDiagnosticReport = !showDiagnosticReport">{{ showDiagnosticReport ? t('diagnosticsView.hidePreview') : t('diagnosticsView.showPreview') }}</button>
+          <button class="secondary" @click="ctx.syncNow">{{ t('diagnosticsView.syncNow') }}</button>
         </UiActionGroup>
         <textarea v-if="diagnosticReport && showDiagnosticReport" v-model="diagnosticReport" class="mono" rows="12" readonly />
       </UiSection>
 
-      <UiSection title="最近记录">
+      <UiSection :title="t('diagnosticsView.recentRecords')">
         <div v-if="ctx.log.value.length" class="diagnostic-log">
           <div v-for="(line, index) in ctx.log.value.slice(0, 8).map(diagnosticLogLine)" :key="`${index}-${line}`">{{ line }}</div>
         </div>
-        <div v-else class="empty">暂无记录</div>
+        <div v-else class="empty">{{ t('diagnosticsView.noRecords') }}</div>
       </UiSection>
     </div>
   </section>

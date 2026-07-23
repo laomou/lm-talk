@@ -16,7 +16,16 @@ export default {
   },
   me: {
     profile: 'Profile', backup: 'Identity backup', security: 'Security & devices', sync: 'Sync & security', settings: 'Settings', about: 'About', logout: 'Sign out',
-    language: 'Language', languageDescription: 'Choose the display language. The change applies immediately and is stored only on this device.',
+    diagnosticsView: {
+    redacted: '[redacted]', truncated: '[truncated]',
+    title: 'Diagnostics', back: 'Back', hint: 'Use this to troubleshoot sign-in, sync, messaging, and local data issues. Normal chats do not require it.',
+    runtimeStatus: 'Runtime status', currentAccount: 'Current account', unnamed: 'Unnamed', messageSync: 'Message sync', syncNotConfigured: 'No sync service configured', enabled: 'On', disabled: 'Off',
+    outbox: 'Outbox', totalQueue: 'Total queue {count}', newFriends: 'New friends', groupInvites: 'Group invites {count}', junkRequests: 'Junk requests', dedupeRecords: 'Dedupe records {count}',
+    dhtStatus: 'DHT status', normal: 'Normal', warning: 'Warning', abnormal: 'Abnormal', groupStrictE2ee: 'Group strict E2EE', groupRiskSummary: 'Risky groups / total groups {count}',
+    reportTitle: 'Diagnostic report', reportDescription: 'Generate a status-summary report only. It will not export passphrases, identity private keys, or message plaintext.', redactAccountAndServices: 'Redact account and sync service addresses', summaryOnly: 'Summary report only',
+    generateReport: 'Generate diagnostic report', copyReport: 'Copy report', hidePreview: 'Hide preview', showPreview: 'Show preview', syncNow: 'Sync now', recentRecords: 'Recent records', noRecords: 'No records',
+  },
+  language: 'Language', languageDescription: 'Choose the display language. The change applies immediately and is stored only on this device.',
   },
   settingsView: {
     unnamed: 'Unnamed',
