@@ -232,6 +232,7 @@ jobs:
       - name: Download release packages
         uses: actions/download-artifact@v8
         with:
+          pattern: lm_node-*
           path: release-dist
           merge-multiple: true
 
