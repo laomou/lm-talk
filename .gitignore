@@ -16,5 +16,6 @@ lm-node-state.prd.json
 /apps/web/test-results/
 /apps/node-admin/test-results/
 /test-results/
+/artifacts/perf/
 /node_admin.zip
 __pycache__/
