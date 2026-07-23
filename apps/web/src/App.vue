@@ -13,10 +13,8 @@ import QRCode from 'qrcode'
 import { applyPwaUpdate, onPwaUpdateReady, readPwaStatus } from './pwa'
 import { TABLES, idbDel, idbGet, idbSet, idbTableApplyChanges, idbTableClear, idbTableGet, idbTableGetAllByPrefix, idbTableReplaceByPrefix } from './idb'
 import init, {
-  accept_friend_request,
   create_device_cert,
   create_device_revoke,
-  create_friend_request,
   create_group_invite,
   create_group_event,
   create_group_policy_state,
@@ -37,8 +35,6 @@ import init, {
   inspect_contact_card,
   inspect_file_package,
   inspect_device_revoke,
-  inspect_friend_request,
-  inspect_friend_response,
   inspect_group_invite,
   inspect_group_event,
   apply_group_policy_event,
@@ -1557,6 +1553,10 @@ onUnmounted(() => {
   identitySignatureWorker = null
   for (const pending of identitySignatureRequests.values()) pending.reject(new Error('身份签名 Worker 已停止'))
   identitySignatureRequests.clear()
+  friendRequestCryptoWorker?.terminate()
+  friendRequestCryptoWorker = null
+  for (const pending of friendRequestCryptoRequests.values()) pending.reject(new Error('好友请求 Worker 已停止'))
+  friendRequestCryptoRequests.clear()
   ratchetEncryptWorker?.terminate()
   ratchetEncryptWorker = null
   for (const pending of ratchetEncryptRequests.values()) pending.reject(new Error('Ratchet 加密 Worker 已停止'))
@@ -5121,14 +5121,14 @@ function addContact() {
     activePeerId.value = item.user_id
     addContactText.value = ''
     persist()
-    if (nodeEnabled.value && item.state === 'LocalOnly') createFriendRequestForActive()
+    if (nodeEnabled.value && item.state === 'LocalOnly') void createFriendRequestForActive()
   })
 }
 
 
-function addIncomingFriendRequest() {
-  run('加入好友请求收件箱', () => {
-    const info = safeJson<Omit<FriendRequestItem, 'request_text'>>(inspect_friend_request(incomingFriendRequestText.value))
+async function addIncomingFriendRequest() {
+  await runAsync('加入好友请求收件箱', async () => {
+    const info = await inspectFriendRequestInWorker<Omit<FriendRequestItem, 'request_text'>>(incomingFriendRequestText.value)
     if (identity.value && info.to_user_id !== identity.value.user_id) {
       throw new Error('这个好友请求不是发给当前身份的')
     }
@@ -5143,9 +5143,9 @@ function addIncomingFriendRequest() {
   })
 }
 
-function acceptInboxRequest(req: FriendRequestItem) {
-  run('接受好友请求', () => {
-    const response = accept_friend_request(backupText.value, passphrase.value, req.request_text)
+async function acceptInboxRequest(req: FriendRequestItem) {
+  await runAsync('接受好友请求', async () => {
+    const response = await acceptFriendRequestInWorker(backupText.value, passphrase.value, req.request_text)
     friendResponseText.value = response
     const info = safeJson<ContactInfo>(inspect_contact_card(req.from_contact_card_text))
     const index = contacts.value.findIndex((c) => c.user_id === info.user_id)
@@ -6098,18 +6098,19 @@ async function leaveActiveGroupWithNotice() {
 }
 
 
-function createFriendRequestForActiveLocalOnly() {
-  run('生成好友请求', () => {
+async function createFriendRequestForActiveLocalOnly() {
+  await runAsync('生成好友请求', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
     if (!myContactCardText.value) exportMyCard()
-    friendRequestText.value = create_friend_request(
+    const created = await createFriendRequestInWorker(
       backupText.value,
       passphrase.value,
       myContactCardText.value,
       activeContact.value.contact_card_text,
       '你好，我想添加你',
     )
-    const req = safeJson<any>(inspect_friend_request(friendRequestText.value))
+    friendRequestText.value = created.requestText
+    const req = created.info
     activeContact.value.state = 'RequestSent'
     activeContact.value.pending_request_id = req.request_id
     activeContact.value.last_friend_request_error = undefined
@@ -6117,18 +6118,19 @@ function createFriendRequestForActiveLocalOnly() {
   })
 }
 
-function createFriendRequestForActive() {
-  run('发送好友请求', () => {
+async function createFriendRequestForActive() {
+  await runAsync('发送好友请求', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
     if (!myContactCardText.value) exportMyCard()
-    friendRequestText.value = create_friend_request(
+    const created = await createFriendRequestInWorker(
       backupText.value,
       passphrase.value,
       myContactCardText.value,
       activeContact.value.contact_card_text,
       '你好，我想添加你',
     )
-    const req = safeJson<any>(inspect_friend_request(friendRequestText.value))
+    friendRequestText.value = created.requestText
+    const req = created.info
     if (!nodeEnabled.value) {
       showSyncEnableDialog('发送好友请求需要开启消息同步。开启后可自动发送好友请求和接收回应。')
       return
@@ -6723,6 +6725,94 @@ async function verifyIdentityTextSignatureInWorker(identityPublicKey: string, pa
   return value
 }
 
+type FriendRequestCryptoWorkerResponse = {
+  id: number
+  ok: boolean
+  request_text?: string
+  response_text?: string
+  info_json?: string
+  error?: string
+}
+
+let friendRequestCryptoWorker: Worker | null = null
+let nextFriendRequestCryptoRequestId = 1
+const friendRequestCryptoRequests = new Map<number, {
+  resolve: (value: FriendRequestCryptoWorkerResponse) => void
+  reject: (reason?: unknown) => void
+}>()
+
+function getFriendRequestCryptoWorker(): Worker {
+  if (friendRequestCryptoWorker) return friendRequestCryptoWorker
+  const worker = new Worker(new URL('./friendRequestCrypto.worker.ts', import.meta.url), { type: 'module' })
+  worker.onmessage = (event: MessageEvent<FriendRequestCryptoWorkerResponse>) => {
+    const response = event.data
+    const pending = friendRequestCryptoRequests.get(response.id)
+    if (!pending) return
+    friendRequestCryptoRequests.delete(response.id)
+    if (response.ok) pending.resolve(response)
+    else pending.reject(new Error(response.error || '好友请求 Worker 处理失败'))
+  }
+  worker.onerror = (event) => {
+    const error = new Error(event.message || '好友请求 Worker 已停止')
+    for (const pending of friendRequestCryptoRequests.values()) pending.reject(error)
+    friendRequestCryptoRequests.clear()
+    worker.terminate()
+    if (friendRequestCryptoWorker === worker) friendRequestCryptoWorker = null
+  }
+  friendRequestCryptoWorker = worker
+  return worker
+}
+
+function runFriendRequestCryptoWorker(payload: Record<string, string>): Promise<FriendRequestCryptoWorkerResponse> {
+  const id = nextFriendRequestCryptoRequestId++
+  return new Promise((resolve, reject) => {
+    friendRequestCryptoRequests.set(id, { resolve, reject })
+    try {
+      getFriendRequestCryptoWorker().postMessage({ id, ...payload })
+    } catch (error) {
+      friendRequestCryptoRequests.delete(id)
+      reject(error)
+    }
+  })
+}
+
+async function createFriendRequestInWorker(
+  backupText: string,
+  passphrase: string,
+  myContactCardText: string,
+  peerContactCardText: string,
+  message: string,
+): Promise<{ requestText: string; info: any }> {
+  const response = await runFriendRequestCryptoWorker({
+    type: 'create',
+    backupText,
+    passphrase,
+    myContactCardText,
+    peerContactCardText,
+    message,
+  })
+  if (!response.request_text || !response.info_json) throw new Error('好友请求 Worker 返回无效结果')
+  return { requestText: response.request_text, info: JSON.parse(response.info_json) }
+}
+
+async function inspectFriendRequestInWorker<T = any>(requestText: string): Promise<T> {
+  const response = await runFriendRequestCryptoWorker({ type: 'inspectRequest', requestText })
+  if (!response.info_json) throw new Error('好友请求解析 Worker 返回无效结果')
+  return JSON.parse(response.info_json) as T
+}
+
+async function acceptFriendRequestInWorker(backupText: string, passphrase: string, requestText: string): Promise<string> {
+  const response = await runFriendRequestCryptoWorker({ type: 'accept', backupText, passphrase, requestText })
+  if (!response.response_text) throw new Error('好友请求接受 Worker 返回无效结果')
+  return response.response_text
+}
+
+async function inspectFriendResponseInWorker<T = any>(responseText: string, contactCardText: string): Promise<T> {
+  const response = await runFriendRequestCryptoWorker({ type: 'inspectResponse', responseText, contactCardText })
+  if (!response.info_json) throw new Error('好友响应解析 Worker 返回无效结果')
+  return JSON.parse(response.info_json) as T
+}
+
 let deviceSlotCryptoWorker: Worker | null = null
 let nextDeviceSlotCryptoRequestId = 1
 const deviceSlotCryptoRequests = new Map<number, {
@@ -7052,36 +7142,40 @@ async function receiveEnvelope() {
 }
 
 
-function applyFriendResponse() {
-  run('应用好友响应', () => {
-    const candidates = activeContact.value ? [activeContact.value, ...contacts.value.filter((c) => c.user_id !== activeContact.value?.user_id)] : contacts.value
-    let matchedContact: ContactItem | null = null
-    let info: any = null
-    let lastError: unknown = null
-    for (const contact of candidates) {
-      try {
-        const parsed = safeJson<any>(inspect_friend_response(incomingFriendResponseText.value, contact.contact_card_text))
-        if (parsed.from_user_id === contact.user_id) {
-          matchedContact = contact
-          info = parsed
-          break
-        }
-      } catch (e) {
-        lastError = e
+async function applyFriendResponseRaw(responseText = incomingFriendResponseText.value) {
+  const candidates = activeContact.value ? [activeContact.value, ...contacts.value.filter((c) => c.user_id !== activeContact.value?.user_id)] : contacts.value
+  let matchedContact: ContactItem | null = null
+  let info: any = null
+  let lastError: unknown = null
+  for (const contact of candidates) {
+    try {
+      const parsed = await inspectFriendResponseInWorker<any>(responseText, contact.contact_card_text)
+      if (parsed.from_user_id === contact.user_id) {
+        matchedContact = contact
+        info = parsed
+        break
       }
+    } catch (e) {
+      lastError = e
     }
-    if (!matchedContact || !info) throw lastError instanceof Error ? lastError : new Error('找不到这个好友响应对应的联系人')
-    if (identity.value && info.to_user_id !== identity.value.user_id) {
-      throw new Error('这个好友响应不是发给当前身份的')
-    }
-    if (matchedContact.pending_request_id && info.request_id !== matchedContact.pending_request_id) {
-      throw new Error('响应 request_id 与待确认请求不匹配')
-    }
-    matchedContact.state = info.accepted ? 'Friend' : 'Rejected'
-    activePeerId.value = matchedContact.user_id
-    activeGroupId.value = ''
-    incomingFriendResponseText.value = ''
-    persist()
+  }
+  if (!matchedContact || !info) throw lastError instanceof Error ? lastError : new Error('找不到这个好友响应对应的联系人')
+  if (identity.value && info.to_user_id !== identity.value.user_id) {
+    throw new Error('这个好友响应不是发给当前身份的')
+  }
+  if (matchedContact.pending_request_id && info.request_id !== matchedContact.pending_request_id) {
+    throw new Error('响应 request_id 与待确认请求不匹配')
+  }
+  matchedContact.state = info.accepted ? 'Friend' : 'Rejected'
+  activePeerId.value = matchedContact.user_id
+  activeGroupId.value = ''
+  incomingFriendResponseText.value = ''
+  persist()
+}
+
+async function applyFriendResponse() {
+  await runAsync('应用好友响应', async () => {
+    await applyFriendResponseRaw()
   })
 }
 
@@ -9264,7 +9358,7 @@ async function handleMailboxPayload(item: any): Promise<{ handled: boolean; deli
   }
   if (!sender && ciphertext.startsWith('lm-friend-request-v1:')) {
     try {
-      const info = safeJson<Omit<FriendRequestItem, 'request_text'>>(inspect_friend_request(ciphertext))
+      const info = await inspectFriendRequestInWorker<Omit<FriendRequestItem, 'request_text'>>(ciphertext)
       const cardInfo = contactInfoFromCardText(info.from_contact_card_text)
       const contact: ContactItem | null = cardInfo ? { ...mergeContactCard(undefined, cardInfo, info.from_contact_card_text), state: 'RequestReceived' } : null
       if (contact) {
@@ -9340,7 +9434,7 @@ async function handleMailboxPayload(item: any): Promise<{ handled: boolean; deli
   }
 
   if (ciphertext.startsWith('lm-friend-request-v1:')) {
-    const info = safeJson<Omit<FriendRequestItem, 'request_text'>>(inspect_friend_request(ciphertext))
+    const info = await inspectFriendRequestInWorker<Omit<FriendRequestItem, 'request_text'>>(ciphertext)
     if (identity.value && info.to_user_id !== identity.value.user_id) {
       throw new Error('这个好友请求不是发给当前身份的')
     }
@@ -9350,7 +9444,7 @@ async function handleMailboxPayload(item: any): Promise<{ handled: boolean; deli
   }
   if (ciphertext.startsWith('lm-friend-response-v1:')) {
     incomingFriendResponseText.value = ciphertext
-    applyFriendResponse()
+    await applyFriendResponseRaw(ciphertext)
     return { handled: true, deliveryId, event: 'friend-response' }
   }
   if (ciphertext.startsWith('lm-group-invite-v1:')) {
