@@ -682,6 +682,7 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 .detail-body.narrow { max-width: 520px; }
 .contact-detail-centered { width: 100%; margin-inline: auto; }
 .friend-requests-body { width: 100%; margin-inline: auto; }
+.add-page-body { width: 100%; margin-inline: auto; }
 .detail-actions { margin: 0; }
 .detail-empty { flex: 1 1 auto; display: grid; place-content: center; color: var(--c-ink-3); font-size: 14px; }
 
