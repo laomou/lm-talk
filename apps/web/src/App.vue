@@ -863,6 +863,9 @@ watch([loggedIn, nodeEnabled, autoMailboxTake], () => {
   if (shouldMailboxLongPoll()) startMailboxLongPoll()
   else stopMailboxLongPoll()
 })
+watch([currentPage, activePeerId], () => {
+  if (currentPage.value === 'chat' && activePeerId.value) markPeerConversationRead(activePeerId.value)
+})
 function mailboxFailureRecoveryHint(reason: string): string {
   if (/未知联系人|not-a-friend|还不是好友/.test(reason)) return '先添加/恢复联系人，再重试该 Mailbox 项。'
   if (/安全策略/.test(reason)) return '确认联系人状态和设备信息后再重试。'
@@ -1047,6 +1050,38 @@ const activeMessages = computed(() => {
   return conversationMessages.slice().sort((a, b) =>
     Number(a.created_at || 0) - Number(b.created_at || 0) || a.id.localeCompare(b.id))
 })
+function unreadCountForPeer(userId: string): number {
+  return messages.value.filter((m) => !m.group_id && m.peer_user_id === userId && m.direction === 'in' && !m.read_at).length
+}
+const totalUnreadCount = computed(() => messages.value.filter((m) => !m.group_id && m.direction === 'in' && !m.read_at).length)
+function badgeCountText(count: number): string {
+  return count > 99 ? '99+' : String(count)
+}
+const totalUnreadBadgeText = computed(() => badgeCountText(totalUnreadCount.value))
+function markPeerConversationRead(userId: string) {
+  if (!userId) return
+  const contact = contacts.value.find((item) => item.user_id === userId)
+  const now = Date.now()
+  let changed = false
+  const receipts: Array<{ protocolMessageId?: string; conversationId?: string; mailboxDeliveryId?: string }> = []
+  for (const message of messages.value) {
+    if (message.group_id || message.peer_user_id !== userId || message.direction !== 'in' || message.read_at) continue
+    message.read_at = now
+    changed = true
+    if (message.protocol_message_id) receipts.push({
+      protocolMessageId: message.protocol_message_id,
+      conversationId: message.conversation_id,
+      mailboxDeliveryId: message.mailbox_delivery_id,
+    })
+  }
+  if (!changed) return
+  if (contact) {
+    for (const receipt of receipts) {
+      void sendReadReceipt(contact, receipt.protocolMessageId, receipt.conversationId, receipt.mailboxDeliveryId)
+    }
+  }
+  persist()
+}
 const friendContacts = computed(() => contacts.value.filter((c) => c.state === 'Friend'))
 const verifiedFriendContactCount = computed(() => friendContacts.value.length)
 const unverifiedFriendContactCount = computed(() => 0)
@@ -5000,6 +5035,7 @@ function clearFriendRequestRateRecords() {
 function selectContact(userId: string) {
   activePeerId.value = userId
   activeGroupId.value = ''
+  if (currentPage.value === 'chat') markPeerConversationRead(userId)
 }
 
 function selectGroup(groupId: string) {
@@ -6356,7 +6392,8 @@ function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, m
       appendLog(`收到未知群组消息：${groupId}，已按普通密文保存`)
     }
   }
-  messages.value.push({
+  const protocolMessageId = messageProtocolIdFromEnvelope(innerEnvelopeText)
+  const receivedMessage: ChatMessage = {
     id: newId(),
     conversation_id: conversationId,
     peer_user_id: sender.user_id,
@@ -6367,13 +6404,17 @@ function receiveEnvelopeWithContact(envelopeText: string, sender: ContactItem, m
     per_device_envelope_json: unwrappedEnvelope.perDeviceEnvelopeJson,
     per_device_envelope_version: unwrappedEnvelope.perDeviceEnvelopeJson ? 1 : undefined,
     target_device_ids: unwrappedEnvelope.targetDeviceIds,
-    protocol_message_id: messageProtocolIdFromEnvelope(innerEnvelopeText),
+    protocol_message_id: protocolMessageId,
+    mailbox_delivery_id: mailboxDeliveryId,
     status: 'received',
     created_at: Date.now(),
-  })
-  const protocolMessageId = messageProtocolIdFromEnvelope(innerEnvelopeText)
+  }
+  if (!groupId && currentPage.value === 'chat' && activePeerId.value === sender.user_id) {
+    receivedMessage.read_at = Date.now()
+  }
+  messages.value.push(receivedMessage)
   void sendDeliveryAck(sender, protocolMessageId, conversationId, mailboxDeliveryId)
-  if (!groupId && activePeerId.value === sender.user_id) {
+  if (receivedMessage.read_at) {
     void sendReadReceipt(sender, protocolMessageId, conversationId, mailboxDeliveryId)
   }
   persist()
@@ -9527,7 +9568,7 @@ const appContext = {
   newGroupName, friendContacts, selectedGroupMembers, createGroup, groups, activeGroupId,
   selectGroup, activeContact, activeGroup, activeRatchetSession, activeRatchetStatusText, activeContactSealedSlotStatusText, activeContactSealedSlotRiskLevel, activeStrictE2eeSendRiskText, activeStrictE2eeSendBlockingText, activeSecureSessionOutboxCount, activeGroupMembers, activeGroupWarningText, activeGroupStrictE2eeRiskText, groupStrictE2eeRiskTextFor, createGroupStrictE2eeRiskText, groupInviteStrictE2eeRiskText, blockReason, blockActiveContact, readReceiptsEnabledFor, setActiveContactReadReceipts,
   unblockActiveContact, removeActiveContact, clearActiveConversation, createFriendRequestForActive, clearActiveFriendRequestError, createInviteForActiveGroup, groupInviteText, groupFanoutJson,
-  removeActiveGroup, leaveActiveGroupWithNotice, messages, activeMessages, formatTime, formatDateTime, statusLabel, copyMessageEnvelope, perDeviceEnvelopeTargetCount, composerText,
+  removeActiveGroup, leaveActiveGroupWithNotice, messages, activeMessages, unreadCountForPeer, totalUnreadCount, totalUnreadBadgeText, badgeCountText, formatTime, formatDateTime, statusLabel, copyMessageEnvelope, perDeviceEnvelopeTargetCount, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
   flushOutboxForActive, retryOutboxForMessage, retryAllOutbox, cancelOutboxForActive, cancelOutboxForMessage, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
@@ -9587,6 +9628,7 @@ const appContext = {
       <button class="rail-item" :class="{ active: currentPage === 'chat' }" :aria-current="currentPage === 'chat' ? 'page' : undefined" :aria-label="$t('nav.openChat')" @click="goChatHome">
         <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.9-.9L3 21l1.9-5.6A8.5 8.5 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5z"/></svg>
         <span>{{ $t('nav.chat') }}</span>
+        <em v-if="totalUnreadCount" class="rail-badge">{{ totalUnreadBadgeText }}</em>
       </button>
       <button class="rail-item" :class="{ active: currentPage === 'contacts' }" :aria-current="currentPage === 'contacts' ? 'page' : undefined" :aria-label="$t('nav.openContacts')" @click="goContactsPage">
         <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
