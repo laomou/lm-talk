@@ -83,6 +83,23 @@ ensure_network() {
   fi
 }
 
+wait_for_caddy_root_cert() {
+  local container_name="$1"
+  local attempts=30
+  while (( attempts > 0 )); do
+    if docker cp "$container_name:/data/caddy/pki/authorities/local/root.crt" "$root_cert" 2>/dev/null; then
+      chmod 0644 "$root_cert"
+      return 0
+    fi
+    if [[ "$(docker inspect -f '{{.State.Running}}' "$container_name" 2>/dev/null || echo false)" != "true" ]]; then
+      return 1
+    fi
+    sleep 1
+    ((attempts -= 1))
+  done
+  return 1
+}
+
 normalize_public_url() {
   local value="$1"
   value="${value%/}"
@@ -235,12 +252,11 @@ EOF
   if [[ -n "$root_cert" ]]; then
     # This only copies the root CA Caddy is actively using from the mounted
     # data directory. It does not create or rotate a CA by itself.
-    if ! docker cp "$container_name:/data/caddy/pki/authorities/local/root.crt" "$root_cert"; then
-      echo "无法导出当前 Caddy 根证书，最近日志：" >&2
+    if ! wait_for_caddy_root_cert "$container_name"; then
+      echo "等待 Caddy 生成当前根证书超时（30 秒），最近日志：" >&2
       docker logs --tail 80 "$container_name" >&2 || true
       exit 1
     fi
-    chmod 0644 "$root_cert"
     echo "当前 Caddy 根证书已导出：$root_cert"
   fi
   if [[ -n "$public_url" ]]; then

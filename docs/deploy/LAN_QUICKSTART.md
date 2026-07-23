@@ -81,10 +81,10 @@ https://<HTTPS-主机>/admin/
 /home/user/lm-talk-web/caddy-data
 ```
 
-你当前已导入客户端的根证书可继续使用：
+已导入客户端的根证书可继续使用，例如：
 
 ```text
-/home/mourui/lm-talk-web/lm-talk-local-root.crt
+/home/user/lm-talk-web/lm-talk-local-root.crt
 ```
 
 `--root-cert` 只是把 Caddy 当前正在使用的根 CA 复制到这个方便分发的路径；它不会
