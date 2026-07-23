@@ -8906,7 +8906,11 @@ function summarizeMailboxFailures(reasons: string[]): string {
   return [...counts.entries()].map(([reason, count]) => `${reason} ${count}`).join('，')
 }
 
-function processMailboxMessages(messagesFromNode: any[]): string[] {
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, 0))
+}
+
+async function processMailboxMessages(messagesFromNode: any[]): Promise<string[]> {
   let handled = 0
   let duplicate = 0
   let duplicateAckResent = 0
@@ -8914,7 +8918,8 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
   const failureReasons: string[] = []
   const events: MailboxEventKind[] = []
   const ackIds: string[] = []
-  for (const item of messagesFromNode) {
+  let nextYieldAt = performance.now() + 8
+  for (const [index, item] of messagesFromNode.entries()) {
     const { deliveryId, message } = unwrapMailboxDelivery(item)
     const messageId = String(message?.message_id ?? '')
     const dedupeIds = mailboxDedupeIds(deliveryId, messageId)
@@ -8935,6 +8940,10 @@ function processMailboxMessages(messagesFromNode: any[]): string[] {
       failed += 1
       if (result.reason) failureReasons.push(result.reason)
       if (result.reason) rememberFailedMailboxItem(item, result.reason)
+    }
+    if (index < messagesFromNode.length - 1 && performance.now() >= nextYieldAt) {
+      await yieldToBrowser()
+      nextYieldAt = performance.now() + 8
     }
   }
   mailboxInboxStatus.value = `收到 ${messagesFromNode.length}，已处理 ${handled}，重复 ${duplicate}${duplicateAckResent ? `，补发回执 ${duplicateAckResent}` : ''}，失败 ${failed}`
@@ -9065,10 +9074,10 @@ async function recoverSyncFailures() {
   })
 }
 
-function processMailboxTakeInfoText() {
-  run('处理 mailbox JSON', () => {
+async function processMailboxTakeInfoText() {
+  await runAsync('处理 mailbox JSON', async () => {
     const parsed = JSON.parse(nodeMailboxTakeInfoText.value || '{"messages":[]}') as { messages?: any[] }
-    processMailboxMessages(Array.isArray(parsed.messages) ? parsed.messages : [])
+    await processMailboxMessages(Array.isArray(parsed.messages) ? parsed.messages : [])
   })
 }
 
@@ -9163,7 +9172,7 @@ async function takeMailboxFromNodeNow(options: MailboxTakeOptions = {}) {
     const messages = Array.isArray(body.messages) ? body.messages : []
     if (messages.length === 0) break
     totalMessages += messages.length
-    const ackIds = processMailboxMessages(messages)
+    const ackIds = await processMailboxMessages(messages)
     if (ackIds.length > 0) {
       await ackMailboxToNode(userId, ackIds)
       totalAcked += ackIds.length
