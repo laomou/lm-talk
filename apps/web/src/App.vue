@@ -15,7 +15,6 @@ import { TABLES, idbDel, idbGet, idbSet, idbTableApplyChanges, idbTableClear, id
 import init, {
   decrypt_text_message,
   encrypt_text_message,
-  inspect_file_package,
   normalize_passphrase,
   ratchet_encrypt_text_message,
 } from './wasm/lm_wasm.js'
@@ -1552,6 +1551,10 @@ onUnmounted(() => {
   fileCryptoWorker = null
   for (const pending of fileCryptoRequests.values()) pending.reject(new Error('文件加密 Worker 已停止'))
   fileCryptoRequests.clear()
+  fileMetadataCryptoWorker?.terminate()
+  fileMetadataCryptoWorker = null
+  for (const pending of fileMetadataCryptoRequests.values()) pending.reject(new Error('文件元数据 Worker 已停止'))
+  fileMetadataCryptoRequests.clear()
 })
 
 function appendLog(line: string) {
@@ -7818,8 +7821,8 @@ async function handleRtcText(value: string) {
     if (parsed?.type === 'lm-file-package-v1') {
       incomingFilePackageText.value = value
       appendLog('收到 WebRTC 文件包，自动解析并尝试解密')
-      inspectIncomingFilePackage()
-      decryptIncomingFilePackage()
+      await inspectIncomingFilePackage()
+      await decryptIncomingFilePackage()
       return
     }
   } catch {
@@ -9909,7 +9912,7 @@ async function handleMailboxPayload(item: any): Promise<{ handled: boolean; deli
       }
       pendingFilePackageText.value = ciphertext
       incomingFilePackageText.value = ciphertext
-      inspectIncomingFilePackage()
+      await inspectIncomingFilePackage()
       fileTransferPhase.value = '待解密'
       rtcFileStatus.value = '收到文件包，点击后解密'
       return { handled: true, deliveryId, event: 'file' }
@@ -10452,6 +10455,64 @@ async function decryptFilePackageInWorker(options: {
   return runFileCryptoWorker<FileCryptoDecryptResult>({ type: 'decrypt', ...options })
 }
 
+type FileMetadataCryptoWorkerResponse = {
+  id: number
+  ok: boolean
+  value?: string
+  error?: string
+}
+
+let fileMetadataCryptoWorker: Worker | null = null
+let nextFileMetadataCryptoRequestId = 1
+const fileMetadataCryptoRequests = new Map<number, {
+  resolve: (value: string) => void
+  reject: (reason?: unknown) => void
+}>()
+
+function getFileMetadataCryptoWorker(): Worker {
+  if (fileMetadataCryptoWorker) return fileMetadataCryptoWorker
+  const worker = new Worker(new URL('./fileMetadataCrypto.worker.ts', import.meta.url), { type: 'module' })
+  worker.onmessage = (event: MessageEvent<FileMetadataCryptoWorkerResponse>) => {
+    const response = event.data
+    const pending = fileMetadataCryptoRequests.get(response.id)
+    if (!pending) return
+    fileMetadataCryptoRequests.delete(response.id)
+    if (response.ok && typeof response.value === 'string') pending.resolve(response.value)
+    else pending.reject(new Error(response.error || '文件元数据 Worker 处理失败'))
+  }
+  worker.onerror = (event) => {
+    const error = new Error(event.message || '文件元数据 Worker 已停止')
+    for (const pending of fileMetadataCryptoRequests.values()) pending.reject(error)
+    fileMetadataCryptoRequests.clear()
+    worker.terminate()
+    if (fileMetadataCryptoWorker === worker) fileMetadataCryptoWorker = null
+  }
+  fileMetadataCryptoWorker = worker
+  return worker
+}
+
+function inspectFilePackageInWorker<T = any>(filePackageText: string): Promise<T> {
+  const id = nextFileMetadataCryptoRequestId++
+  return new Promise<T>((resolve, reject) => {
+    fileMetadataCryptoRequests.set(id, {
+      resolve: (value) => {
+        try {
+          resolve(JSON.parse(value) as T)
+        } catch (error) {
+          reject(error)
+        }
+      },
+      reject,
+    })
+    try {
+      getFileMetadataCryptoWorker().postMessage({ id, filePackageText })
+    } catch (error) {
+      fileMetadataCryptoRequests.delete(id)
+      reject(error)
+    }
+  })
+}
+
 function filePreviewKind(name: string, mime: string): string {
   const lower = name.toLowerCase()
   if (mime.startsWith('image/')) return '图片预览'
@@ -10562,7 +10623,7 @@ async function createFilePackageForActive(): Promise<boolean> {
       bytes: bytes.buffer as ArrayBuffer,
     })
     filePackageText.value = workerResult.filePackageText
-    filePackageInfoText.value = JSON.stringify(JSON.parse(inspect_file_package(filePackageText.value)), null, 2)
+    filePackageInfoText.value = JSON.stringify(await inspectFilePackageInWorker(filePackageText.value), null, 2)
     fileTransferPhase.value = '待发送'
     fileProgressText.value = `封装完成 · ${formatBytes(fileByteLength)}`
     rtcFileStatus.value = '文件包已生成，可复制或 WebRTC 发送'
@@ -10573,12 +10634,12 @@ async function createFilePackageForActive(): Promise<boolean> {
   return ok
 }
 
-function inspectIncomingFilePackage() {
-  run('解析文件包', () => {
+async function inspectIncomingFilePackage() {
+  await runAsync('解析文件包', async () => {
     const text = incomingFilePackageText.value.trim() || filePackageText.value.trim()
     if (!text) throw new Error('请粘贴文件包 JSON')
     ensureUiTextSize('文件包', text, MAX_RTC_TEXT_BYTES)
-    const info = JSON.parse(inspect_file_package(text)) as { manifest?: { name?: string; mime_type?: string; size?: number } }
+    const info = await inspectFilePackageInWorker<{ manifest?: { name?: string; mime_type?: string; size?: number } }>(text)
     filePackageInfoText.value = JSON.stringify(info, null, 2)
     const manifest = info.manifest
     if (manifest) {
@@ -10600,7 +10661,7 @@ async function decryptIncomingFilePackage() {
     ensureUiTextSize('文件包', text, MAX_RTC_TEXT_BYTES)
     let manifestName = ''
     try {
-      const info = JSON.parse(inspect_file_package(text)) as { manifest?: { name?: string } }
+      const info = await inspectFilePackageInWorker<{ manifest?: { name?: string } }>(text)
       manifestName = info.manifest?.name || ''
     } catch {
       // The Worker will surface the authoritative parse/decrypt error below.
@@ -10669,12 +10730,12 @@ function markReceivedFileDownloaded() {
   persist()
 }
 
-function sendFilePackageOverRtc() {
-  run('发送文件包', () => {
+async function sendFilePackageOverRtc() {
+  await runAsync('发送文件包', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
     requireVerifiedContactForSend(activeContact.value)
     if (!filePackageText.value.trim()) throw new Error('请先生成文件包')
-    const info = JSON.parse(inspect_file_package(filePackageText.value)) as { manifest: { name: string; size: number } }
+    const info = await inspectFilePackageInWorker<{ manifest: { name: string; size: number } }>(filePackageText.value)
     const msg: ChatMessage = {
       id: newId(),
       conversation_id: `conv-${activeContact.value.user_id}`,
@@ -10732,7 +10793,7 @@ async function sendSelectedFile() {
     appendLog('已取消发送文件：严格 E2EE 风险未确认')
     return
   }
-  if (await createFilePackageForActive()) sendFilePackageOverRtc()
+  if (await createFilePackageForActive()) await sendFilePackageOverRtc()
 }
 
 async function copySignal(value: string) {
