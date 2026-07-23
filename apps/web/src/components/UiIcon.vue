@@ -1,6 +1,6 @@
 <script setup lang="ts">
 defineProps<{
-  name: 'search' | 'add' | 'back' | 'next' | 'more' | 'close' | 'send' | 'smile' | 'info' | 'alert' | 'check'
+  name: 'search' | 'add' | 'back' | 'next' | 'more' | 'close' | 'send' | 'smile' | 'info' | 'alert' | 'check' | 'lock'
   size?: number | string
 }>()
 </script>
@@ -28,6 +28,7 @@ defineProps<{
     <template v-else-if="name === 'smile'"><circle cx="12" cy="12" r="8.5" /><path d="M8.5 14.5s1.2 2 3.5 2 3.5-2 3.5-2M9 9.5h.01M15 9.5h.01" /></template>
     <template v-else-if="name === 'info'"><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5M12 8h.01" /></template>
     <template v-else-if="name === 'alert'"><path d="M10.3 4.1 2.2 18a2 2 0 0 0 1.7 3h16.2a2 2 0 0 0 1.7-3L13.7 4.1a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4M12 17h.01" /></template>
+    <template v-else-if="name === 'lock'"><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></template>
     <template v-else><path d="m5 12 4 4L19 6" /></template>
   </svg>
 </template>

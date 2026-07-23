@@ -48,13 +48,12 @@ const filtered = computed(() => {
 function convName(it: any) {
   return it.data.display_name || '未命名'
 }
-function trustBadgeText(it: any) {
-  if (it.type !== 'contact' || it.data.state !== 'Friend') return ''
-  return props.ctx.contactAllKnownDevicesRevoked(it.data) ? '⚠️' : '✓'
+function trustBadgeIcon(it: any): 'alert' | 'lock' {
+  return props.ctx.contactAllKnownDevicesRevoked(it.data) ? 'alert' : 'lock'
 }
 function trustBadgeTitle(it: any) {
   if (it.type !== 'contact' || it.data.state !== 'Friend') return ''
-  return props.ctx.contactAllKnownDevicesRevoked(it.data) ? '安全状态异常' : '已确认'
+  return props.ctx.contactAllKnownDevicesRevoked(it.data) ? '安全状态异常' : '安全状态正常'
 }
 function convPreview(it: any) {
   if (it.last) {
@@ -115,11 +114,11 @@ function select(it: any) {
               <em v-if="it.data.state === 'RequestSent'">等待通过</em>
               <em v-else-if="it.data.state === 'Blocked'">已拉黑</em>
               <em
-                v-else-if="trustBadgeText(it)"
+                v-else-if="it.type === 'contact' && it.data.state === 'Friend'"
                 class="strict-badge"
                 :class="{ danger: props.ctx.contactAllKnownDevicesRevoked(it.data) }"
                 :title="trustBadgeTitle(it)"
-              >{{ trustBadgeText(it) }}</em>
+              ><UiIcon :name="trustBadgeIcon(it)" size="12" /></em>
             </span>
             <span v-if="it.ts" class="conv-time">{{ convTime(it.ts) }}</span>
           </b>
@@ -159,11 +158,11 @@ function select(it: any) {
               <em v-if="it.data.state === 'RequestSent'">等待通过</em>
               <em v-else-if="it.data.state === 'Blocked'">已拉黑</em>
               <em
-                v-else-if="trustBadgeText(it)"
+                v-else-if="it.type === 'contact' && it.data.state === 'Friend'"
                 class="strict-badge"
                 :class="{ danger: props.ctx.contactAllKnownDevicesRevoked(it.data) }"
                 :title="trustBadgeTitle(it)"
-              >{{ trustBadgeText(it) }}</em>
+              ><UiIcon :name="trustBadgeIcon(it)" size="12" /></em>
             </span>
             <span v-if="it.ts" class="conv-time">{{ convTime(it.ts) }}</span>
           </b>

@@ -50,9 +50,11 @@ function contactInitial(contact: any) {
   const first = name[0]?.toUpperCase()
   return first && /[A-Z]/.test(first) ? first : '#'
 }
-function trustText(contact: any) {
-  if (contact.state !== 'Friend') return ''
-  return props.ctx.contactAllKnownDevicesRevoked(contact) ? '⚠️ 安全异常' : '✓ 已确认'
+function trustIconName(contact: any) {
+  return props.ctx.contactAllKnownDevicesRevoked(contact) ? 'alert' : 'lock'
+}
+function trustTitle(contact: any) {
+  return props.ctx.contactAllKnownDevicesRevoked(contact) ? '安全状态异常' : '安全状态正常'
 }
 function shortId(value?: string) {
   if (!value) return ''
@@ -107,7 +109,7 @@ function addContact() {
                 <b>{{ c.display_name || '未命名' }}</b>
                 <small>{{ shortId(c.user_id) }}</small>
               </span>
-              <UiStatusBadge :tone="ctx.contactAllKnownDevicesRevoked(c) ? 'warning' : 'success'">{{ trustText(c) }}</UiStatusBadge>
+              <UiStatusBadge :tone="ctx.contactAllKnownDevicesRevoked(c) ? 'warning' : 'success'" :title="trustTitle(c)" :aria-label="trustTitle(c)"><UiIcon :name="trustIconName(c)" size="13" /></UiStatusBadge>
               <span class="chevron">›</span>
             </button>
           </template>
@@ -161,7 +163,7 @@ function addContact() {
           <button v-for="c in visibleContacts" :key="c.user_id" class="directory-row contact-row" @click="openContact(c.user_id)">
             <span class="avatar" :style="{ background: avatarColor(c.user_id) }">{{ (c.display_name || c.user_id || '?').slice(0, 1).toUpperCase() }}</span>
             <span class="directory-main"><b>{{ c.display_name || '未命名' }}</b><small>{{ shortId(c.user_id) }}</small></span>
-            <UiStatusBadge :tone="ctx.contactAllKnownDevicesRevoked(c) ? 'warning' : 'success'">{{ trustText(c) }}</UiStatusBadge>
+            <UiStatusBadge :tone="ctx.contactAllKnownDevicesRevoked(c) ? 'warning' : 'success'" :title="trustTitle(c)" :aria-label="trustTitle(c)"><UiIcon :name="trustIconName(c)" size="13" /></UiStatusBadge>
             <span class="chevron">›</span>
           </button>
           <UiEmptyState v-if="visibleContacts.length === 0" icon="search" title="没有匹配的联系人" description="换个名称或 ID 试试。" />
@@ -187,14 +189,14 @@ function addContact() {
           <span class="avatar large" :style="{ background: avatarColor(ctx.activeContact.value.user_id) }">{{ (ctx.activeContact.value.display_name || ctx.activeContact.value.user_id || '?').slice(0, 1).toUpperCase() }}</span>
           <div class="detail-hero-text">
             <h2>{{ ctx.activeContact.value.display_name || '未命名' }}</h2>
-            <UiStatusBadge v-if="ctx.activeContact.value.state === 'Friend'" :tone="ctx.contactAllKnownDevicesRevoked(ctx.activeContact.value) ? 'warning' : 'success'">{{ trustText(ctx.activeContact.value) }}</UiStatusBadge>
+            <UiStatusBadge v-if="ctx.activeContact.value.state === 'Friend'" :tone="ctx.contactAllKnownDevicesRevoked(ctx.activeContact.value) ? 'warning' : 'success'" :title="trustTitle(ctx.activeContact.value)" :aria-label="trustTitle(ctx.activeContact.value)"><UiIcon :name="trustIconName(ctx.activeContact.value)" size="13" /></UiStatusBadge>
             <small>{{ shortId(ctx.activeContact.value.user_id) }}</small>
           </div>
         </div>
         <div class="detail-body narrow contact-detail-centered">
           <button class="primary-action" @click="ctx.selectContact(ctx.activeContact.value.user_id); ctx.goChatPage()">发消息</button>
           <UiSection v-if="ctx.activeContact.value.state === 'Friend'" title="安全状态">
-            <template #actions><UiStatusBadge :tone="ctx.contactAllKnownDevicesRevoked(ctx.activeContact.value) ? 'warning' : 'success'">{{ trustText(ctx.activeContact.value) }}</UiStatusBadge></template>
+            <template #actions><UiStatusBadge :tone="ctx.contactAllKnownDevicesRevoked(ctx.activeContact.value) ? 'warning' : 'success'" :title="trustTitle(ctx.activeContact.value)" :aria-label="trustTitle(ctx.activeContact.value)"><UiIcon :name="trustIconName(ctx.activeContact.value)" size="13" /></UiStatusBadge></template>
             <small v-if="!ctx.contactAllKnownDevicesRevoked(ctx.activeContact.value)">已建立加密会话；对方安全信息发生变化时会在这里提示。</small>
             <small v-if="ctx.contactRevokedDeviceCount(ctx.activeContact.value)" class="danger-text">已撤销设备：{{ ctx.contactRevokedDeviceCount(ctx.activeContact.value) }}</small>
           </UiSection>

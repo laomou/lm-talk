@@ -1428,3 +1428,8 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .conversation-avatar-wrap { width: 34px; height: 34px; }
   .conversation-avatar-badge { top: -6px; right: -8px; }
 }
+.strict-badge .ui-icon,
+.ui-status-badge .ui-icon {
+  width: 13px;
+  height: 13px;
+}
