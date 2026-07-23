@@ -5,12 +5,22 @@ type SetKeyRequest = {
   key: CryptoKey
 }
 
+type DeriveKeyRequest = {
+  id: number
+  type: 'derive-key'
+  keyId: string
+  owner: string
+  passphrase: string
+}
+
 type CryptoRequest = {
   id: number
   type: 'encrypt' | 'decrypt'
   keyId: string
   value: string | { iv: string; ct: string }
 }
+
+type PersistenceCryptoRequest = SetKeyRequest | DeriveKeyRequest | CryptoRequest
 
 const keys = new Map<string, CryptoKey>()
 
@@ -29,12 +39,37 @@ function base64ToBytes(value: string): Uint8Array {
   return out
 }
 
-self.onmessage = async (event: MessageEvent<SetKeyRequest | CryptoRequest>) => {
+self.onmessage = async (event: MessageEvent<PersistenceCryptoRequest>) => {
   const request = event.data
   try {
     if (request.type === 'set-key') {
       keys.set(request.keyId, request.key)
       self.postMessage({ id: request.id, ok: true })
+      return
+    }
+    if (request.type === 'derive-key') {
+      const normalizedPassphrase = request.passphrase.normalize('NFKC').trim().replace(/\s+/gu, ' ')
+      const material = await crypto.subtle.importKey(
+        'raw',
+        new TextEncoder().encode(normalizedPassphrase),
+        'PBKDF2',
+        false,
+        ['deriveKey'],
+      )
+      const key = await crypto.subtle.deriveKey(
+        {
+          name: 'PBKDF2',
+          salt: new TextEncoder().encode(`lm-talk-local-store-v1:${request.owner}`),
+          iterations: 210_000,
+          hash: 'SHA-256',
+        },
+        material,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt'],
+      )
+      keys.set(request.keyId, key)
+      self.postMessage({ id: request.id, ok: true, value: request.keyId })
       return
     }
     const key = keys.get(request.keyId)
