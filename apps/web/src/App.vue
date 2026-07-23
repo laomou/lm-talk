@@ -299,6 +299,14 @@ type RatchetSessionItem = {
   updated_at: number
 }
 
+type PendingSecureSessionOfferItem = {
+  offer_id: string
+  peer_user_id: string
+  prekey_private_bundle_json: string
+  ratchet_dh_private_key: string
+  created_at: number
+}
+
 type OutboxItem = {
   id: string
   peer_user_id: string
@@ -365,6 +373,7 @@ type PersistedState = {
   messages: ChatMessage[]
   outbox: OutboxItem[]
   ratchetSessions?: RatchetSessionItem[]
+  pendingSecureSessionOffers?: PendingSecureSessionOfferItem[]
   myContactCardText: string
   myDeviceCertJson?: string
   myDeviceBackupText?: string
@@ -439,6 +448,10 @@ type PersistedMeta = {
   prekeyBundleText?: string
   prekeyPrivateBundleJson?: string | EncryptedStringV1
   prekeySignedOneTimeRecordTexts?: string[]
+  pendingSecureSessionOffers?: Array<Omit<PendingSecureSessionOfferItem, 'prekey_private_bundle_json' | 'ratchet_dh_private_key'> & {
+    prekey_private_bundle_json: string | EncryptedStringV1
+    ratchet_dh_private_key: string | EncryptedStringV1
+  }>
   safetyPolicy?: SafetyPolicy
   nodeControlUrl?: string | EncryptedStringV1
   nodeEnabled?: boolean
@@ -682,6 +695,7 @@ const outbox = ref<OutboxItem[]>([])
 const outgoingMessageQueue: OutgoingMessageJob[] = []
 let outgoingMessageQueueRunning = false
 const ratchetSessions = ref<RatchetSessionItem[]>([])
+const pendingSecureSessionOffers = ref<PendingSecureSessionOfferItem[]>([])
 const processedMailboxIds = ref<ProcessedMailboxRecord[]>([])
 const mailboxFailedItems = ref<MailboxFailedItem[]>([])
 const CONTACT_CARD_UPDATE_ACK_STALE_MS = 24 * 60 * 60 * 1000
@@ -1988,6 +2002,22 @@ async function decryptRatchetFromStore(item: any, key: CryptoKey | null): Promis
   return { ...item, state_text: await decryptLocalString(item.state_text, key) }
 }
 
+async function encryptPendingSecureSessionOfferForStore(item: PendingSecureSessionOfferItem, key: CryptoKey | null): Promise<any> {
+  return {
+    ...item,
+    prekey_private_bundle_json: await encryptLocalString(item.prekey_private_bundle_json, key),
+    ratchet_dh_private_key: await encryptLocalString(item.ratchet_dh_private_key, key),
+  }
+}
+
+async function decryptPendingSecureSessionOfferFromStore(item: any, key: CryptoKey | null): Promise<PendingSecureSessionOfferItem> {
+  return {
+    ...item,
+    prekey_private_bundle_json: await decryptLocalString(item.prekey_private_bundle_json, key),
+    ratchet_dh_private_key: await decryptLocalString(item.ratchet_dh_private_key, key),
+  }
+}
+
 async function decryptSensitiveStateInMemory() {
   const key = await localStorageCryptoKey()
   if (!key) return
@@ -2000,6 +2030,7 @@ async function decryptSensitiveStateInMemory() {
   outbox.value = await Promise.all(outbox.value.map((o: any) => decryptOutboxFromStore(o, key)))
   mailboxFailedItems.value = await Promise.all(mailboxFailedItems.value.map((m: any) => decryptMailboxFailedItemFromStore(m, key)))
   ratchetSessions.value = await Promise.all(ratchetSessions.value.map((r: any) => decryptRatchetFromStore(r, key)))
+  pendingSecureSessionOffers.value = await Promise.all(pendingSecureSessionOffers.value.map((r: any) => decryptPendingSecureSessionOfferFromStore(r, key)))
 }
 
 function currentPersistedState(): PersistedState {
@@ -2013,6 +2044,7 @@ function currentPersistedState(): PersistedState {
     messages: messages.value,
     outbox: outbox.value,
     ratchetSessions: ratchetSessions.value,
+    pendingSecureSessionOffers: pendingSecureSessionOffers.value,
     myContactCardText: myContactCardText.value,
     myDeviceCertJson: myDeviceCertJson.value,
     myDeviceBackupText: myDeviceBackupText.value,
@@ -2246,8 +2278,10 @@ async function persistStateTables() {
   const metaSnapshot = persistEntrySignature(meta)
   if (metaSnapshot !== persistedMetaSnapshot) {
     const storedMailboxFailedItems = await Promise.all(mailboxFailedItems.value.map((m) => encryptMailboxFailedItemForStore(m, key)))
+    const storedPendingSecureSessionOffers = await Promise.all(pendingSecureSessionOffers.value.map((item) => encryptPendingSecureSessionOfferForStore(item, key)))
     meta.nodeControlUrl = await encryptLocalString(nodeControlUrl.value, key)
     meta.prekeyPrivateBundleJson = await encryptLocalString(prekeyPrivateBundleJson.value, key)
+    meta.pendingSecureSessionOffers = storedPendingSecureSessionOffers
     meta.mailboxFailedItems = storedMailboxFailedItems
     await idbTableApplyChanges(TABLES.meta, [[ownerKey('main'), meta]], [])
     persistedMetaSnapshot = metaSnapshot
@@ -2332,6 +2366,7 @@ async function writeStateToTables(state: PersistedState) {
   messages.value = await Promise.all((state.messages ?? []).map((m: any) => decryptMessageFromStore(m, key)))
   outbox.value = await Promise.all((state.outbox ?? []).map((o: any) => decryptOutboxFromStore(o, key)))
   ratchetSessions.value = await Promise.all((state.ratchetSessions ?? []).map((r: any) => decryptRatchetFromStore(r, key)))
+  pendingSecureSessionOffers.value = await Promise.all((state.pendingSecureSessionOffers ?? []).map((item: any) => decryptPendingSecureSessionOfferFromStore(item, key)))
   myContactCardText.value = state.myContactCardText ?? ''
   myDeviceCertJson.value = state.myDeviceCertJson ?? ''
   myDeviceBackupText.value = state.myDeviceBackupText ?? ''
@@ -2411,6 +2446,7 @@ async function loadStateFromTables(): Promise<boolean> {
   prekeyBundleText.value = meta.prekeyBundleText ?? ''
   prekeyPrivateBundleJson.value = meta.prekeyPrivateBundleJson ? await decryptLocalString(meta.prekeyPrivateBundleJson, key) : ''
   prekeySignedOneTimeRecordTexts.value = meta.prekeySignedOneTimeRecordTexts ?? []
+  pendingSecureSessionOffers.value = await Promise.all((meta.pendingSecureSessionOffers ?? []).map((item: any) => decryptPendingSecureSessionOfferFromStore(item, key)))
   safetyPolicy.value = { ...safetyPolicy.value, ...(meta.safetyPolicy ?? {}) }
   nodeControlUrl.value = meta.nodeControlUrl ? await decryptLocalString(meta.nodeControlUrl, key) : nodeControlUrl.value
   nodeEnabled.value = meta.nodeEnabled ?? false
@@ -2543,6 +2579,7 @@ function resetAccountScopedState() {
   messages.value = []
   outbox.value = []
   ratchetSessions.value = []
+  pendingSecureSessionOffers.value = []
   processedMailboxIds.value = []
   mailboxFailedItems.value = []
   contactCardUpdateFanoutRecords.value = []
@@ -2614,6 +2651,7 @@ async function clearPersisted() {
   messages.value = []
   outbox.value = []
   ratchetSessions.value = []
+  pendingSecureSessionOffers.value = []
   processedMailboxIds.value = []
   mailboxFailedItems.value = []
   contactCardUpdateFanoutRecords.value = []
@@ -5750,6 +5788,26 @@ function saveRatchetSession(userId: string, stateText: string) {
 
 function removeRatchetSession(userId: string) {
   ratchetSessions.value = ratchetSessions.value.filter((r) => r.peer_user_id !== userId)
+  pendingSecureSessionOffers.value = pendingSecureSessionOffers.value.filter((item) => item.peer_user_id !== userId)
+}
+
+function pendingSecureSessionOfferFor(peerUserId: string, offerId?: string): PendingSecureSessionOfferItem | null {
+  const candidates = pendingSecureSessionOffers.value
+    .filter((item) => item.peer_user_id === peerUserId)
+    .sort((a, b) => b.created_at - a.created_at)
+  if (offerId) return candidates.find((item) => item.offer_id === offerId) ?? null
+  return candidates[0] ?? null
+}
+
+function savePendingSecureSessionOffer(item: PendingSecureSessionOfferItem) {
+  pendingSecureSessionOffers.value = [
+    ...pendingSecureSessionOffers.value.filter((current) => current.offer_id !== item.offer_id),
+    item,
+  ].sort((a, b) => b.created_at - a.created_at).slice(0, 40)
+}
+
+function removePendingSecureSessionOffer(offerId: string) {
+  pendingSecureSessionOffers.value = pendingSecureSessionOffers.value.filter((item) => item.offer_id !== offerId)
 }
 
 function recordSecureSessionError(contact: ContactItem, error: unknown, logPrefix: string) {
@@ -5784,7 +5842,10 @@ function decryptEnvelopeForContact(envelopeText: string, sender: ContactItem): a
   try { parsed = JSON.parse(envelopeText) } catch {}
   if (parsed?.crypto === 'x3dh-double-ratchet-v1') {
     const session = ratchetSessionFor(sender.user_id)
-    if (!session) throw new Error('收到 Ratchet Envelope，但本地没有该联系人的 Ratchet Session')
+    if (!session) {
+      recoverSecureSessionForContact(sender)
+      throw new Error('收到加密消息，但本地安全会话尚未建立；正在自动恢复，请稍后请对方重发这条消息')
+    }
     const out = JSON.parse(ratchet_decrypt_text_message(session.state_text, envelopeText)) as { state_text: string; plain_json: string }
     saveRatchetSession(sender.user_id, out.state_text)
     appendLog(`🔓 已用 Double Ratchet 解密 ${sender.display_name || sender.user_id}`)
@@ -6745,6 +6806,7 @@ function inspectPublicPeerAnnounceText() {
 type SecureSessionOffer = {
   type: 'lm-secure-session-offer-v1'
   version: 1
+  offer_id?: string
   from_user_id: string
   to_user_id: string
   prekey_bundle_text: string
@@ -6756,6 +6818,7 @@ type SecureSessionOffer = {
 type SecureSessionResponse = {
   type: 'lm-secure-session-response-v1'
   version: 1
+  offer_id?: string
   from_user_id: string
   to_user_id: string
   initial_message_json: string
@@ -6765,16 +6828,22 @@ type SecureSessionResponse = {
 
 function buildSecureSessionOfferForContact(contact: ContactItem): string {
   if (!identity.value) throw new Error('请先登录')
+  // The current UI also exposes a remote PreKey bundle for diagnostics. Always
+  // regenerate our own bundle before offering, so a previously received bundle
+  // can never be paired with this account's private state.
+  createMyPreKeyBundleText()
   if (!prekeyBundleText.value.trim() || !prekeyPrivateBundleJson.value.trim()) {
-    createMyPreKeyBundleText()
+    throw new Error('无法创建本端安全会话材料')
   }
   const pair = JSON.parse(create_ratchet_dh_keypair()) as { private_key: string; public_key: string }
+  const offerId = newId()
   ratchetLocalDhKeyPairJson.value = JSON.stringify(pair, null, 2)
   ratchetRemoteDhPublicKeyForInit.value = ''
   ratchetInitRole.value = 'Responder'
   const offer: SecureSessionOffer = {
     type: 'lm-secure-session-offer-v1',
     version: 1,
+    offer_id: offerId,
     from_user_id: identity.value.user_id,
     to_user_id: contact.user_id,
     prekey_bundle_text: prekeyBundleText.value,
@@ -6782,6 +6851,13 @@ function buildSecureSessionOfferForContact(contact: ContactItem): string {
     ratchet_dh_public_key: pair.public_key,
     created_at: Date.now(),
   }
+  savePendingSecureSessionOffer({
+    offer_id: offerId,
+    peer_user_id: contact.user_id,
+    prekey_private_bundle_json: prekeyPrivateBundleJson.value,
+    ratchet_dh_private_key: pair.private_key,
+    created_at: offer.created_at,
+  })
   secureSessionOfferText.value = JSON.stringify(offer, null, 2)
   secureSessionStatusText.value = '已创建 Offer：把它发给对方；对方应用后会返回 Response。Private PreKey 和 DH private_key 已留在本机。'
   persist()
@@ -6803,6 +6879,19 @@ async function sendSecureSessionOfferToContact(contact: ContactItem) {
   }
   appendLog(`✅ 已向 ${contact.display_name || contact.user_id} 发送安全会话 Offer`)
   persist()
+}
+
+function recoverSecureSessionForContact(contact: ContactItem) {
+  if (!nodeEnabled.value || contact.state !== 'Friend') return
+  if (pendingSecureSessionOfferFor(contact.user_id)) return
+  void sendSecureSessionOfferToContact(contact)
+    .then(() => {
+      appendLog(`🔄 已向 ${contact.display_name || contact.user_id} 发起安全会话恢复`)
+      persist()
+    })
+    .catch((e) => {
+      recordSecureSessionError(contact, e, '⚠️ 自动恢复安全会话失败')
+    })
 }
 
 function retrySecureSessionForActiveContact() {
@@ -6860,11 +6949,8 @@ function applySecureSessionOfferText() {
     activePeerId.value = contact.user_id
     activeGroupId.value = ''
 
-    prekeyBundleText.value = offer.prekey_bundle_text
-    prekeySignedOneTimeRecordTexts.value = offer.signed_one_time_prekey_record_texts ?? []
-    inspectPreKeyBundleText()
-    const signedRecord = prekeySignedOneTimeRecordTexts.value[0] || ''
-    selectedSignedOneTimePreKeyRecordText.value = signedRecord
+    const signedRecords = offer.signed_one_time_prekey_record_texts ?? []
+    const signedRecord = signedRecords[0] || ''
     const init = JSON.parse(signedRecord
       ? create_x3dh_initial_message_with_one_time_prekey_record(
         backupText.value,
@@ -6903,6 +6989,7 @@ function applySecureSessionOfferText() {
     const response: SecureSessionResponse = {
       type: 'lm-secure-session-response-v1',
       version: 1,
+      offer_id: offer.offer_id,
       from_user_id: identity.value.user_id,
       to_user_id: offer.from_user_id,
       initial_message_json: init.initial_message_json,
@@ -6941,20 +7028,19 @@ function applySecureSessionResponseText() {
     if (response.to_user_id !== identity.value.user_id) throw new Error('Response 不是发给当前身份')
     const contact = contacts.value.find((c) => c.user_id === response.from_user_id)
     if (!contact || contact.state !== 'Friend') throw new Error('Response 发送者不是 Friend 联系人')
-    if (!prekeyPrivateBundleJson.value.trim()) throw new Error('缺少创建 Offer 时保存的 Private PreKey Bundle')
-    if (!ratchetLocalDhKeyPairJson.value.trim()) throw new Error('缺少创建 Offer 时保存的本端 Ratchet DH keypair')
+    const pendingOffer = pendingSecureSessionOfferFor(response.from_user_id, response.offer_id)
+    if (!pendingOffer) throw new Error('找不到这次安全建链的本地记录；请在联系人详情中重试安全建链')
     activePeerId.value = contact.user_id
     activeGroupId.value = ''
 
     const derived = JSON.parse(derive_x3dh_responder_secret(
       backupText.value,
       passphrase.value,
-      prekeyPrivateBundleJson.value,
+      pendingOffer.prekey_private_bundle_json,
       response.initial_message_json,
     )) as { shared_secret: string }
     x3dhInitialMessageJson.value = JSON.stringify(JSON.parse(response.initial_message_json), null, 2)
     x3dhSharedSecretText.value = derived.shared_secret
-    const localPair = JSON.parse(ratchetLocalDhKeyPairJson.value) as { private_key: string; public_key: string }
     ratchetRemoteDhPublicKeyForInit.value = response.ratchet_dh_public_key
     ratchetInitRole.value = 'Responder'
     const stateText = create_ratchet_session_from_shared_secret_with_keys(
@@ -6962,11 +7048,12 @@ function applySecureSessionResponseText() {
       response.from_user_id,
       'Responder',
       derived.shared_secret,
-      localPair.private_key,
+      pendingOffer.ratchet_dh_private_key,
       response.ratchet_dh_public_key,
     )
     ratchetStateText.value = stateText
     saveRatchetSession(response.from_user_id, stateText)
+    removePendingSecureSessionOffer(pendingOffer.offer_id)
     contact.last_secure_session_error = undefined
     contact.last_secure_session_success_at = Date.now()
     contact.secure_session_failure_count = 0

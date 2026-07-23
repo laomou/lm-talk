@@ -594,6 +594,109 @@ fn ratchet_supports_bidirectional_state_updates() {
 }
 
 #[test]
+fn secure_session_offer_response_establishes_bidirectional_ratchet() {
+    let alice: Value =
+        serde_json::from_str(&create_identity("alice secure-session").unwrap()).unwrap();
+    let bob: Value = serde_json::from_str(&create_identity("bob secure-session").unwrap()).unwrap();
+    let alice_backup = alice["backup_text"].as_str().unwrap();
+    let bob_backup = bob["backup_text"].as_str().unwrap();
+    let alice_user_id = alice["user_id"].as_str().unwrap();
+    let bob_user_id = bob["user_id"].as_str().unwrap();
+
+    // Alice creates the Offer: a PreKey bundle and an explicit Ratchet DH keypair.
+    let alice_prekey: Value = serde_json::from_str(
+        &create_prekey_bundle(alice_backup, "alice secure-session", 1, 1, 604_800).unwrap(),
+    )
+    .unwrap();
+    let alice_dh: Value = serde_json::from_str(&create_ratchet_dh_keypair().unwrap()).unwrap();
+
+    // Bob accepts the Offer and creates the Response initial message plus its DH keypair.
+    let signed_record = alice_prekey["signed_one_time_prekey_record_texts"][0]
+        .as_str()
+        .unwrap();
+    let bob_initial: Value = serde_json::from_str(
+        &create_x3dh_initial_message_with_one_time_prekey_record(
+            bob_backup,
+            "bob secure-session",
+            alice_prekey["prekey_bundle_text"].as_str().unwrap(),
+            Some(signed_record.to_string()),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let bob_dh: Value = serde_json::from_str(&create_ratchet_dh_keypair().unwrap()).unwrap();
+    let bob_state = create_ratchet_session_from_shared_secret_with_keys(
+        bob_user_id,
+        alice_user_id,
+        "Initiator",
+        bob_initial["shared_secret"].as_str().unwrap(),
+        bob_dh["private_key"].as_str().unwrap(),
+        alice_dh["public_key"].as_str().unwrap(),
+    )
+    .unwrap();
+
+    // Alice consumes the Response using the private state retained for that exact Offer.
+    let alice_derived: Value = serde_json::from_str(
+        &derive_x3dh_responder_secret(
+            alice_backup,
+            "alice secure-session",
+            alice_prekey["private_bundle_json"].as_str().unwrap(),
+            bob_initial["initial_message_json"].as_str().unwrap(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(bob_initial["shared_secret"], alice_derived["shared_secret"]);
+    let alice_state = create_ratchet_session_from_shared_secret_with_keys(
+        alice_user_id,
+        bob_user_id,
+        "Responder",
+        alice_derived["shared_secret"].as_str().unwrap(),
+        alice_dh["private_key"].as_str().unwrap(),
+        bob_dh["public_key"].as_str().unwrap(),
+    )
+    .unwrap();
+
+    let bob_send: Value = serde_json::from_str(
+        &ratchet_encrypt_text_message(&bob_state, "secure-session-flow", "Bob first").unwrap(),
+    )
+    .unwrap();
+    let alice_receive: Value = serde_json::from_str(
+        &ratchet_decrypt_text_message(&alice_state, bob_send["envelope_json"].as_str().unwrap())
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(alice_receive["plain_json"].as_str().unwrap()).unwrap()["body"]
+            ["Text"]["text"],
+        "Bob first"
+    );
+
+    let alice_reply: Value = serde_json::from_str(
+        &ratchet_encrypt_text_message(
+            alice_receive["state_text"].as_str().unwrap(),
+            "secure-session-flow",
+            "Alice reply",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let bob_receive: Value = serde_json::from_str(
+        &ratchet_decrypt_text_message(
+            bob_send["state_text"].as_str().unwrap(),
+            alice_reply["envelope_json"].as_str().unwrap(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(bob_receive["plain_json"].as_str().unwrap()).unwrap()["body"]
+            ["Text"]["text"],
+        "Alice reply"
+    );
+}
+
+#[test]
 fn ratchet_state_advances_matching_message_keys() {
     let alice = create_identity("alice pass").unwrap();
     let bob = create_identity("bob pass").unwrap();
