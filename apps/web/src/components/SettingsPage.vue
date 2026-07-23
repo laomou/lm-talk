@@ -26,28 +26,28 @@ const mailboxInboxErrorLines = computed(() => props.ctx.mailboxInboxErrorText.va
   .map((line: string) => line.trim())
   .filter(Boolean))
 const syncStatus = computed(() => {
-  if (!props.ctx.nodeEnabled.value) return { text: '未开启', tone: 'neutral' as const }
-  if (props.ctx.nodeMissingRemoteTokenCount.value > 0) return { text: '需配置', tone: 'warning' as const }
+  if (!props.ctx.nodeEnabled.value) return { text: t('settingsView.syncDisabled'), tone: 'neutral' as const }
+  if (props.ctx.nodeMissingRemoteTokenCount.value > 0) return { text: t('settingsView.syncNeedsConfig'), tone: 'warning' as const }
   const hasOutbox = props.ctx.outbox.value.some((item: any) => item.status !== 'sent')
   const hasMailboxIssue = props.ctx.mailboxFailureSummaryText.value || props.ctx.mailboxInboxErrorText.value
   const hasSyncIssue = props.ctx.syncFailureSummaryText.value
   return hasOutbox || hasMailboxIssue || hasSyncIssue
-    ? { text: '需处理', tone: 'warning' as const }
-    : { text: '正常', tone: 'success' as const }
+    ? { text: t('settingsView.needsAction'), tone: 'warning' as const }
+    : { text: t('settingsView.normal'), tone: 'success' as const }
 })
 const backupStatus = computed(() => {
-  if (props.ctx.fullDataBackupFreshnessLevel.value === 'danger') return { text: '需备份', tone: 'warning' as const }
-  if (props.ctx.fullDataBackupFreshnessLevel.value === 'warning') return { text: '建议备份', tone: 'warning' as const }
-  return { text: '已备份', tone: 'success' as const }
+  if (props.ctx.fullDataBackupFreshnessLevel.value === 'danger') return { text: t('settingsView.backupNeeded'), tone: 'warning' as const }
+  if (props.ctx.fullDataBackupFreshnessLevel.value === 'warning') return { text: t('settingsView.backupSuggested'), tone: 'warning' as const }
+  return { text: t('settingsView.backedUp'), tone: 'success' as const }
 })
 const pendingOutboxCount = computed(() => props.ctx.outbox.value.filter((item: any) => item.status !== 'sent').length)
 const failedOutboxCount = computed(() => props.ctx.outbox.value.filter((item: any) => item.status === 'failed').length)
 const retrySyncIssueText = computed(() => {
-  if (pendingOutboxCount.value > 0) return props.ctx.nodeEnabled.value ? `重试待发送（${pendingOutboxCount.value}）` : `重新排队待发送（${pendingOutboxCount.value}）`
-  if (props.ctx.mailboxFailedCount.value > 0) return `重新处理收取失败（${props.ctx.mailboxFailedCount.value}）`
-  if (props.ctx.prekeyAutoErrorText.value) return '重试 PreKey 发布'
-  if (/failed|失败/i.test(props.ctx.nodeSyncStatusText.value) && props.ctx.autoNodeSync.value && props.ctx.nodeSyncPeerUrl.value.trim()) return '重试节点同步'
-  if (props.ctx.selfSyncGapCount.value > 0 && props.ctx.nodeEnabled.value) return `修复设备同步缺口（${props.ctx.selfSyncGapCount.value}）`
+  if (pendingOutboxCount.value > 0) return props.ctx.nodeEnabled.value ? t('settingsView.retryPendingOutbox', { count: pendingOutboxCount.value }) : t('settingsView.requeuePendingOutbox', { count: pendingOutboxCount.value })
+  if (props.ctx.mailboxFailedCount.value > 0) return t('settingsView.retryMailboxFailures', { count: props.ctx.mailboxFailedCount.value })
+  if (props.ctx.prekeyAutoErrorText.value) return t('settingsView.retryPreKey')
+  if (/failed|失败/i.test(props.ctx.nodeSyncStatusText.value) && props.ctx.autoNodeSync.value && props.ctx.nodeSyncPeerUrl.value.trim()) return t('settingsView.retryNodeSync')
+  if (props.ctx.selfSyncGapCount.value > 0 && props.ctx.nodeEnabled.value) return t('settingsView.repairDeviceSyncGap', { count: props.ctx.selfSyncGapCount.value })
   return ''
 })
 
@@ -80,7 +80,7 @@ function changeLocale(event: Event) {
         <header class="me-hero">
           <span class="avatar large">{{ (ctx.displayName.value || ctx.identity.value?.user_id || '?').slice(0, 1).toUpperCase() }}</span>
           <div class="me-hero-text">
-            <h2>{{ ctx.displayName.value || '未命名' }}</h2>
+            <h2>{{ ctx.displayName.value || t('settingsView.unnamed') }}</h2>
             <small>{{ ctx.identity.value?.user_id }}</small>
           </div>
         </header>
@@ -108,84 +108,84 @@ function changeLocale(event: Event) {
       </template>
 
       <template v-else-if="view === 'profile'">
-        <UiPageHeader title="个人资料" back-label="返回我" @back="backHome" />
-        <UiSection title="我的资料">
-          <UiField label="显示名" for-id="display-name-input">
+        <UiPageHeader :title="t('settingsView.profileTitle')" :back-label="t('settingsView.backToMe')" @back="backHome" />
+        <UiSection :title="t('settingsView.myProfile')">
+          <UiField :label="t('settingsView.displayName')" for-id="display-name-input">
           <div class="inline-field">
-            <input id="display-name-input" v-model="ctx.displayName.value" aria-label="显示名" @change="ctx.refreshMyContactCard" />
-            <button @click="ctx.refreshMyContactCard">保存</button>
+            <input id="display-name-input" v-model="ctx.displayName.value" :aria-label="t('settingsView.displayName')" @change="ctx.refreshMyContactCard" />
+            <button @click="ctx.refreshMyContactCard">{{ t('settingsView.save') }}</button>
           </div>
           </UiField>
           <UiActionGroup>
-            <button class="secondary" @click="ctx.showQr(ctx.myContactCardText.value, '我的名片')">我的名片</button>
+            <button class="secondary" @click="ctx.showQr(ctx.myContactCardText.value, t('settingsView.myCard'))">{{ t('settingsView.myCard') }}</button>
           </UiActionGroup>
         </UiSection>
       </template>
 
       <template v-else-if="view === 'backup'">
-        <UiPageHeader title="身份备份" back-label="返回我" @back="backHome" />
-        <UiSection title="身份备份" description="身份文件和提示词缺一不可；任意一项丢失都无法恢复这个身份。">
-          <template #actions><button class="secondary" @click="ctx.showQr(ctx.backupText.value, '导出身份')">导出身份</button></template>
+        <UiPageHeader :title="t('settingsView.identityBackup')" :back-label="t('settingsView.backToMe')" @back="backHome" />
+        <UiSection :title="t('settingsView.identityBackup')" :description="t('settingsView.identityBackupDescription')">
+          <template #actions><button class="secondary" @click="ctx.showQr(ctx.backupText.value, t('settingsView.exportIdentity'))">{{ t('settingsView.exportIdentity') }}</button></template>
         </UiSection>
-        <UiSection title="完整数据备份" description="加密导出本机联系人、消息和设置；可用于换设备恢复。">
-          <template #actions><button class="secondary" @click="showDataBackupEditor = !showDataBackupEditor">{{ showDataBackupEditor ? '隐藏' : '显示备份' }}</button></template>
+        <UiSection :title="t('settingsView.fullDataBackup')" :description="t('settingsView.fullDataBackupDescription')">
+          <template #actions><button class="secondary" @click="showDataBackupEditor = !showDataBackupEditor">{{ showDataBackupEditor ? t('settingsView.hideBackup') : t('settingsView.showBackup') }}</button></template>
           <UiActionGroup>
-            <button class="secondary" @click="ctx.exportFullDataBackup">生成备份</button>
-            <button class="secondary" :disabled="!ctx.dataBackupText.value.trim()" @click="ctx.downloadText(ctx.dataBackupText.value, 'lm-talk-data-backup.txt')">下载备份</button>
-            <button class="secondary" :disabled="!ctx.dataBackupText.value.trim()" @click="ctx.importFullDataBackupMerge">导入合并</button>
-            <button class="secondary danger" :disabled="!ctx.dataBackupText.value.trim()" @click="ctx.importFullDataBackup">导入覆盖</button>
+            <button class="secondary" @click="ctx.exportFullDataBackup">{{ t('settingsView.generateBackup') }}</button>
+            <button class="secondary" :disabled="!ctx.dataBackupText.value.trim()" @click="ctx.downloadText(ctx.dataBackupText.value, 'lm-talk-data-backup.txt')">{{ t('settingsView.downloadBackup') }}</button>
+            <button class="secondary" :disabled="!ctx.dataBackupText.value.trim()" @click="ctx.importFullDataBackupMerge">{{ t('settingsView.importMerge') }}</button>
+            <button class="secondary danger" :disabled="!ctx.dataBackupText.value.trim()" @click="ctx.importFullDataBackup">{{ t('settingsView.importOverwrite') }}</button>
           </UiActionGroup>
-          <UiField v-if="showDataBackupEditor" label="完整数据备份文本">
-            <textarea v-model="ctx.dataBackupText.value" class="mono" rows="5" aria-label="完整数据备份文本" placeholder="点击生成备份，或粘贴 lm-data-backup-v1 文本后导入" />
+          <UiField v-if="showDataBackupEditor" :label="t('settingsView.fullDataBackupText')">
+            <textarea v-model="ctx.dataBackupText.value" class="mono" rows="5" :aria-label="t('settingsView.fullDataBackupText')" :placeholder="t('settingsView.fullDataBackupPlaceholder')" />
           </UiField>
         </UiSection>
       </template>
 
       <template v-else-if="view === 'security'">
-        <UiPageHeader title="安全与设备" back-label="返回我" @back="backHome" />
-        <UiSection class="sync-card" title="安全状态" description="好友关系建立后会自动创建加密会话。对方设备被撤销或安全信息异常时，会在联系人和聊天中提示。">
-          <template #actions><UiStatusBadge tone="success">自动保护</UiStatusBadge></template>
+        <UiPageHeader :title="t('me.security')" :back-label="t('settingsView.backToMe')" @back="backHome" />
+        <UiSection class="sync-card" :title="t('settingsView.securityStatus')" :description="t('settingsView.securityStatusDescription')">
+          <template #actions><UiStatusBadge tone="success">{{ t('settingsView.autoProtect') }}</UiStatusBadge></template>
         </UiSection>
-        <UiSection class="sync-card" title="设备">
-          <small>当前设备：{{ ctx.myDeviceId.value || '未生成' }}</small>
+        <UiSection class="sync-card" :title="t('settingsView.device')">
+          <small>{{ t('settingsView.currentDevice', { device: ctx.myDeviceId.value || t('settingsView.notGenerated') }) }}</small>
           <small>{{ ctx.sealedSlotCoverageSummary.value }}</small>
         </UiSection>
       </template>
 
       <template v-else-if="view === 'sync'">
-        <UiPageHeader title="同步与安全" back-label="返回我" @back="backHome">
+        <UiPageHeader :title="t('me.sync')" :back-label="t('settingsView.backToMe')" @back="backHome">
           <template #end><UiStatusBadge compact :tone="syncStatus.tone">{{ syncStatus.text }}</UiStatusBadge></template>
         </UiPageHeader>
-        <UiSection class="sync-card" title="消息同步">
-          <template #actions><UiStatusBadge :tone="ctx.nodeEnabled.value ? 'success' : 'neutral'">{{ ctx.nodeEnabled.value ? '已开启' : '未开启' }}</UiStatusBadge></template>
+        <UiSection class="sync-card" :title="t('settingsView.messageSync')">
+          <template #actions><UiStatusBadge :tone="ctx.nodeEnabled.value ? 'success' : 'neutral'">{{ ctx.nodeEnabled.value ? t('settingsView.enabled') : t('settingsView.syncDisabled') }}</UiStatusBadge></template>
           <div v-if="ctx.nodeEntrySummaries.value.length && !showSyncEditor" class="outbox-list">
             <div v-for="entry in ctx.nodeEntrySummaries.value" :key="entry.url" class="outbox-row">
               <b>{{ entry.url }}</b>
-              <small>{{ entry.token_configured ? '令牌已配置' : entry.missing_remote_token ? '远端缺令牌' : '本机无需令牌' }}</small>
+              <small>{{ entry.token_configured ? t('settingsView.tokenConfigured') : entry.missing_remote_token ? t('settingsView.remoteTokenMissing') : t('settingsView.localTokenNotRequired') }}</small>
             </div>
           </div>
-          <UiField v-if="showSyncEditor" label="同步服务地址" for-id="sync-service-input">
-            <textarea id="sync-service-input" v-model="ctx.nodeControlUrl.value" rows="3" aria-label="同步服务地址列表" placeholder="每行一个同步服务地址，例如：&#10;http://127.0.0.1:8787&#10;http://192.168.1.23:8787|令牌" />
+          <UiField v-if="showSyncEditor" :label="t('settingsView.syncServiceAddress')" for-id="sync-service-input">
+            <textarea id="sync-service-input" v-model="ctx.nodeControlUrl.value" rows="3" :aria-label="t('settingsView.syncServiceAddress')" :placeholder="t('settingsView.syncServicePlaceholder')" />
           </UiField>
-          <small>开启后可自动收发好友请求和离线消息。跨设备访问节点需在地址后用 <code>|令牌</code> 附上。</small>
+          <small>{{ t('settingsView.syncDescription') }}</small>
           <UiActionGroup>
-            <button class="secondary" @click="showSyncServiceEditor = !showSyncServiceEditor">{{ showSyncEditor ? '隐藏编辑' : '编辑地址' }}</button>
-            <button @click="ctx.toggleNodeEnabled">{{ ctx.nodeEnabled.value ? '关闭同步' : '开启同步' }}</button>
-            <button v-if="showSyncEditor" class="secondary" @click="saveSyncSettings">保存</button>
-            <button class="secondary" @click="ctx.syncNow">立即同步</button>
+            <button class="secondary" @click="showSyncServiceEditor = !showSyncServiceEditor">{{ showSyncEditor ? t('settingsView.hideEditor') : t('settingsView.editAddress') }}</button>
+            <button @click="ctx.toggleNodeEnabled">{{ ctx.nodeEnabled.value ? t('settingsView.disableSync') : t('settingsView.enableSync') }}</button>
+            <button v-if="showSyncEditor" class="secondary" @click="saveSyncSettings">{{ t('settingsView.save') }}</button>
+            <button class="secondary" @click="ctx.syncNow">{{ t('settingsView.syncNow') }}</button>
           </UiActionGroup>
         </UiSection>
-        <UiSection class="sync-card" title="待发送">
+        <UiSection class="sync-card" :title="t('settingsView.outbox')">
           <template #actions><UiStatusBadge :tone="pendingOutboxCount ? 'warning' : 'neutral'">{{ pendingOutboxCount }}</UiStatusBadge></template>
-          <small>失败：{{ failedOutboxCount }}</small>
+          <small>{{ t('settingsView.failed', { count: failedOutboxCount }) }}</small>
           <small v-if="ctx.syncFailureSummaryText.value" class="danger-text">{{ ctx.syncFailureSummaryText.value }}</small>
           <UiActionGroup>
             <button v-if="retrySyncIssueText" class="secondary" @click="ctx.recoverSyncFailures">{{ retrySyncIssueText }}</button>
           </UiActionGroup>
           <small v-if="ctx.syncRecoveryStatusText.value && ctx.syncRecoveryStatusText.value !== '尚未恢复'">{{ ctx.syncRecoveryStatusText.value }}</small>
         </UiSection>
-        <UiSection class="sync-card" title="诊断">
-          <template #actions><button class="secondary" @click="ctx.goDiagnosticsPage('me-sync')">打开诊断工具</button></template>
+        <UiSection class="sync-card" :title="t('settingsView.diagnostics')">
+          <template #actions><button class="secondary" @click="ctx.goDiagnosticsPage('me-sync')">{{ t('settingsView.openDiagnostics') }}</button></template>
           <small v-if="ctx.mailboxFailureSummaryText.value" class="danger-text">{{ ctx.mailboxFailureSummaryText.value }}</small>
           <div v-if="mailboxInboxErrorLines.length" class="mailbox-error-lines">
             <small v-for="(line, index) in mailboxInboxErrorLines" :key="`${index}-${line}`" class="danger-text">{{ line }}</small>
@@ -205,16 +205,16 @@ function changeLocale(event: Event) {
             </select>
           </UiField>
         </UiSection>
-        <UiSection class="sync-card" title="PWA 应用">
-          <template #actions><button class="secondary" @click="ctx.refreshPwaStatus">刷新状态</button></template>
+        <UiSection class="sync-card" :title="t('settingsView.pwaApp')">
+          <template #actions><button class="secondary" @click="ctx.refreshPwaStatus">{{ t('settingsView.refreshStatus') }}</button></template>
           <small>{{ ctx.pwaStatusText.value }}</small>
-          <small>安全边界：PWA 只缓存静态应用壳；不会在 Service Worker 中保存身份密钥、解密消息、后台同步或发送队列。</small>
+          <small>{{ t('settingsView.pwaSecurityBoundary') }}</small>
         </UiSection>
-        <UiCard><UiListRow aria-label="清理浏览器缓存" @click="ctx.clearBrowserCaches">清理浏览器缓存</UiListRow></UiCard>
+        <UiCard><UiListRow :aria-label="t('settingsView.clearBrowserCaches')" @click="ctx.clearBrowserCaches">{{ t('settingsView.clearBrowserCaches') }}</UiListRow></UiCard>
       </template>
 
       <template v-else-if="view === 'about'">
-        <UiPageHeader title="关于" back-label="返回我" @back="backHome" />
+        <UiPageHeader :title="t('settingsView.about')" :back-label="t('settingsView.backToMe')" @back="backHome" />
         <UiCard class="about-card">
           <h2>LM Talk Web</h2>
           <p>{{ ctx.webVersionText }}</p>
