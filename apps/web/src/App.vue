@@ -363,6 +363,7 @@ type ProcessedMailboxRecord = {
 }
 
 type PersistedState = {
+  backupScope?: 'identity-and-security-v1'
   backupText: string
   contacts: ContactItem[]
   friendRequests: FriendRequestItem[]
@@ -436,6 +437,10 @@ type PersistedState = {
   lastContactCardDhtAutoRefreshAt?: number
   lastContactCardDhtAutoRefreshError?: string
   contactCardDhtAutoRefreshHistory?: ContactCardDhtAutoRefreshRecord[]
+}
+
+type IdentityAndSecurityBackupState = Omit<PersistedState, 'messages' | 'outbox'> & {
+  backupScope: 'identity-and-security-v1'
 }
 
 type PersistedMeta = {
@@ -771,9 +776,9 @@ const fullDataBackupFreshnessLevel = computed<'ok' | 'warning' | 'danger'>(() =>
 })
 const fullDataBackupFreshnessText = computed(() => {
   const at = lastFullDataBackupAt.value
-  if (!at) return '尚未生成完整数据备份'
+  if (!at) return '尚未生成身份与安全备份'
   const ageDays = Math.max(0, Math.floor((Date.now() - at) / 86_400_000))
-  return ageDays === 0 ? '完整数据备份：今天已生成' : `完整数据备份：${ageDays} 天前生成`
+  return ageDays === 0 ? '身份与安全备份：今天已生成' : `身份与安全备份：${ageDays} 天前生成`
 })
 const groupInviteText = ref('')
 const incomingGroupInviteText = ref('')
@@ -2256,6 +2261,14 @@ function currentPersistedState(): PersistedState {
   }
 }
 
+function currentIdentityAndSecurityBackupState(): IdentityAndSecurityBackupState {
+  const { messages: _messages, outbox: _outbox, ...state } = currentPersistedState()
+  return {
+    ...state,
+    backupScope: 'identity-and-security-v1',
+  }
+}
+
 function persistedMeta(): PersistedMeta {
   return {
     backupText: backupText.value,
@@ -2499,7 +2512,7 @@ if (typeof window !== 'undefined') {
   ;(window as any).contactAllKnownDevicesRevokedForTests = contactAllKnownDevicesRevoked
 }
 
-async function writeStateToTables(state: PersistedState) {
+async function writeStateToTables(state: PersistedState, options: { preserveConversationData?: boolean } = {}) {
   resetPersistSnapshots()
   backupText.value = state.backupText ?? ''
   const key = await localStorageCryptoKey()
@@ -2508,8 +2521,10 @@ async function writeStateToTables(state: PersistedState) {
   groups.value = await Promise.all((state.groups ?? []).map((g: any) => decryptGroupFromStore(g, key)))
   groupInvites.value = await Promise.all((state.groupInvites ?? []).map((g: any) => decryptGroupInviteFromStore(g, key)))
   groupSenderKeys.value = await Promise.all((state.groupSenderKeys ?? []).map((g: any) => decryptGroupSenderKeyFromStore(g, key)))
-  messages.value = await Promise.all((state.messages ?? []).map((m: any) => decryptMessageFromStore(m, key)))
-  outbox.value = await Promise.all((state.outbox ?? []).map((o: any) => decryptOutboxFromStore(o, key)))
+  if (!options.preserveConversationData) {
+    messages.value = await Promise.all((state.messages ?? []).map((m: any) => decryptMessageFromStore(m, key)))
+    outbox.value = await Promise.all((state.outbox ?? []).map((o: any) => decryptOutboxFromStore(o, key)))
+  }
   ratchetSessions.value = await Promise.all((state.ratchetSessions ?? []).map((r: any) => decryptRatchetFromStore(r, key)))
   pendingSecureSessionOffers.value = await Promise.all((state.pendingSecureSessionOffers ?? []).map((item: any) => decryptPendingSecureSessionOfferFromStore(item, key)))
   myContactCardText.value = state.myContactCardText ?? ''
@@ -2926,12 +2941,12 @@ async function warnIfLowStorageForFile(fileSize: number) {
 }
 
 function exportFullDataBackup() {
-  run('导出完整数据备份', () => {
+  run('导出身份与安全备份', () => {
     if (!backupText.value || !passphrase.value) throw new Error('需要当前身份备份包和提示词')
     dataBackupText.value = export_data_backup(
       backupText.value,
       passphrase.value,
-      JSON.stringify(currentPersistedState()),
+      JSON.stringify(currentIdentityAndSecurityBackupState()),
     )
     lastFullDataBackupAt.value = Date.now()
     persist()
@@ -2943,7 +2958,7 @@ async function pushFullDataBackupToOwnMailbox() {
     if (!identity.value?.user_id) throw new Error('需要先登录身份')
     if (!nodeEnabled.value) throw new Error('节点未启用')
     if (!dataBackupText.value.trim()) exportFullDataBackup()
-    if (!dataBackupText.value.trim()) throw new Error('请先生成完整数据备份')
+    if (!dataBackupText.value.trim()) throw new Error('请先生成身份与安全备份')
     const msg = create_mailbox_message(
       backupText.value,
       passphrase.value,
@@ -2961,10 +2976,10 @@ async function pushFullDataBackupToOwnMailbox() {
     })
     nodeControlStatus.value = JSON.stringify(body, null, 2)
     lastSelfMailboxBackupPushedAt.value = Date.now()
-    selfMailboxBackupStatusText.value = `完整数据备份已投递到自己的 Mailbox${body?.delivery_id ? '：' + body.delivery_id : ''}`
+    selfMailboxBackupStatusText.value = `身份与安全备份已投递到自己的 Mailbox${body?.delivery_id ? '：' + body.delivery_id : ''}`
     persist()
     appendLog(`✅ ${selfMailboxBackupStatusText.value}`)
-    toast('完整数据备份已投递到自己的 Mailbox', 'success')
+    toast('身份与安全备份已投递到自己的 Mailbox', 'success')
   })
 }
 
@@ -3354,7 +3369,7 @@ function clearSelfSyncRecentPackages() {
 async function importFullDataBackup() {
   try {
     if (!backupText.value || !passphrase.value) throw new Error('需要当前身份备份包和提示词')
-    if (!dataBackupText.value.trim()) throw new Error('请粘贴完整数据备份')
+    if (!dataBackupText.value.trim()) throw new Error('请粘贴身份与安全备份')
     const hasLocalData = contacts.value.length + groups.value.length + messages.value.length + outbox.value.length > 0
     if (hasLocalData) {
       const ok = await showConfirm(t('appDialog.importFullDataBackupTitle'), t('appDialog.importFullDataBackupMessage'), true)
@@ -3362,11 +3377,11 @@ async function importFullDataBackup() {
     }
     const json = import_data_backup(backupText.value, passphrase.value, dataBackupText.value)
     const state = JSON.parse(json) as PersistedState
-    await writeStateToTables(state)
-    appendLog('✅ 已导入完整数据备份')
+    await writeStateToTables(state, { preserveConversationData: state.backupScope === 'identity-and-security-v1' })
+    appendLog('✅ 已导入身份与安全备份')
     toast(t('appDialog.importFullDataBackupSuccess'), 'success')
   } catch (e) {
-    appendLog(`❌ 导入完整数据备份失败：${String(e)}`)
+    appendLog(`❌ 导入身份与安全备份失败：${String(e)}`)
   }
 }
 
@@ -3479,7 +3494,7 @@ function mergeProcessedMailboxRecords(current: ProcessedMailboxRecord[], incomin
 }
 
 async function mergeSelfMailboxBackupNow() {
-  if (!lastSelfMailboxBackupReceivedAt.value) throw new Error('尚未从自己的 Mailbox 收到完整备份')
+  if (!lastSelfMailboxBackupReceivedAt.value) throw new Error('尚未从自己的 Mailbox 收到身份与安全备份')
   await importFullDataBackupMerge()
   lastSelfMailboxBackupMergedAt.value = Date.now()
   persist()
@@ -3488,7 +3503,7 @@ async function mergeSelfMailboxBackupNow() {
 async function importFullDataBackupMerge() {
   try {
     if (!backupText.value || !passphrase.value) throw new Error('需要当前身份备份包和提示词')
-    if (!dataBackupText.value.trim()) throw new Error('请粘贴完整数据备份')
+    if (!dataBackupText.value.trim()) throw new Error('请粘贴身份与安全备份')
     const json = import_data_backup(backupText.value, passphrase.value, dataBackupText.value)
     const state = JSON.parse(json) as PersistedState
     const contactMerge = mergeUniqueBy(contacts.value, state.contacts ?? [], (x) => x.user_id)
@@ -3553,10 +3568,10 @@ async function importFullDataBackupMerge() {
     const added = contactMerge.added + requestMerge.added + groupMerge.added + inviteMerge.added + senderKeyMerge.added + messageMerge.added + outboxMerge.added + ratchetMerge.added
     const skipped = contactMerge.skipped + requestMerge.skipped + groupMerge.skipped + inviteMerge.skipped + senderKeyMerge.skipped + messageMerge.skipped + outboxMerge.skipped + ratchetMerge.skipped
     persist()
-    appendLog(`✅ 已合并完整数据备份：新增 ${added}，保留本机冲突 ${skipped}`)
-    toast(`完整数据备份已合并：新增 ${added}`, 'success')
+    appendLog(`✅ 已合并身份与安全备份：新增 ${added}，保留本机冲突 ${skipped}`)
+    toast(`身份与安全备份已合并：新增 ${added}`, 'success')
   } catch (e) {
-    appendLog(`❌ 合并完整数据备份失败：${String(e)}`)
+    appendLog(`❌ 合并身份与安全备份失败：${String(e)}`)
     showAlert(t('appDialog.mergeFullDataBackupFailed'), userFacingError(e), 'error')
   }
 }
@@ -8736,7 +8751,7 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
   if (identity.value?.user_id && fromUserId === identity.value.user_id && (normalizedKind === 'databackup' || ciphertext.startsWith('lm-data-backup-v1:'))) {
     dataBackupText.value = ciphertext
     lastSelfMailboxBackupReceivedAt.value = Date.now()
-    selfMailboxBackupStatusText.value = '已从自己的 Mailbox 收到完整数据备份，可在设置页导入合并'
+    selfMailboxBackupStatusText.value = '已从自己的 Mailbox 收到身份与安全备份，可在设置页导入合并'
     appendLog(`✅ ${selfMailboxBackupStatusText.value}`)
     mailboxInboxStatus.value = selfMailboxBackupStatusText.value
     return { handled: true, deliveryId, event: 'data-backup' }
@@ -8901,7 +8916,7 @@ function mailboxEventSummaryText(events: MailboxEventKind[]): string {
     ['好友通过', count('friend-response')],
     ['群邀请', count('group-invite')],
     ['安全会话', count('secure-session')],
-    ['完整备份', count('data-backup')],
+    ['身份与安全备份', count('data-backup')],
     ['自同步', count('self-sync')],
     ['回执', count('delivery-ack') + count('read-receipt')],
   ].filter(([, n]) => Number(n) > 0).map(([label, n]) => `${label} ${n}`)
