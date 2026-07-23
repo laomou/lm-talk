@@ -26,6 +26,12 @@ const mailboxInboxErrorLines = computed(() => props.ctx.mailboxInboxErrorText.va
   .map((line: string) => line.trim())
   .filter(Boolean))
 const syncStatus = computed(() => {
+  if (props.ctx.fullDataBackupFreshnessLevel.value !== 'ok') {
+    return {
+      text: props.ctx.fullDataBackupFreshnessLevel.value === 'danger' ? '需备份' : '建议备份',
+      tone: 'warning' as const,
+    }
+  }
   if (!props.ctx.nodeEnabled.value) return { text: '未开启', tone: 'neutral' as const }
   if (props.ctx.nodeMissingRemoteTokenCount.value > 0) return { text: '需配置', tone: 'warning' as const }
   const hasOutbox = props.ctx.outbox.value.some((item: any) => item.status !== 'sent')
