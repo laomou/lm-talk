@@ -1,54 +1,125 @@
-# 局域网一键启动
+# 局域网 HTTPS 部署
 
-本脚本会在一台局域网机器上启动两项服务：
+局域网部署由两个 Docker 容器组成：
 
-- LM Talk Web 静态页面；
-- 带 Bearer token 保护的 LM Talk 同步服务。
+- `lm-talk-web`：Caddy 提供 HTTPS、Web 静态页面，并代理 `/node/*`；
+- `lm-talk-node`：带 Bearer token 保护的同步服务，仅在 Docker 网络中监听。
 
 ## 前提
 
-- 已安装 Rust、Node.js/npm、`wasm-pack`、Python 3；
-- 局域网设备可以访问启动机器的 TCP `4173` 和 `8787` 端口；
-- 防火墙只对可信局域网放行这两个端口。
+- 已安装 Docker；从源码更新 Node 时还需要 Rust；
+- 局域网设备可以访问启动机器的 TCP `443`；
+- `lm-talk-web` Caddy 与 `lm-talk-node` 位于同一个 Docker 网络；
+- Windows 等客户端已信任 Caddy `tls internal` 的根证书。
 
-## 启动
+## HTTPS 路由
 
-在仓库根目录执行：
+浏览器只访问 Caddy。这里的 `<HTTPS-主机>` 是**本次部署自己的地址**，不是固定
+`10.235.112.40`：可以是当前服务器的局域网 IP，也可以是如 `lm-talk.lan` 的局域网名称。
 
 ```bash
-./scripts/lan-start.sh
+https://<HTTPS-主机>/
 ```
 
-脚本会：
-
-1. 构建 release `lm_node` 和 Web 生产包；
-2. 首次启动时，在 `.lan/control.token` 生成随机 token，并设置为仅当前用户可读；
-3. 启动 `0.0.0.0:8787` 的同步服务；
-4. 启动 `0.0.0.0:4173` 的 Web 静态服务；
-5. 输出局域网 Web 地址和可直接粘贴的“同步服务地址”。
-
-例如输出：
+同步接口同样通过 Caddy：
 
 ```text
-Web page:        http://192.168.1.23:4173
-Sync address:    http://192.168.1.23:8787|<token>
+https://<HTTPS-主机>/node|<control-token>
 ```
 
-所有设备先打开 `Web page`，再在 **我 → 同步与安全 → 编辑地址** 中粘贴 `Sync address`，保存后开启同步。
+`lm-talk-web` 的 Caddyfile 需要包含：
 
-按 `Ctrl+C` 同时停止 Web 和同步服务。节点状态存放在 `.lan/lm-node.sqlite3`；不要随意删除该文件。`control.token` 等同于同步服务访问密码，不要发到不可信渠道。
+```caddy
+https://<HTTPS-主机> {
+  tls internal
 
-## 常用选项
+  handle_path /node/* {
+    reverse_proxy lm-talk-node:8787
+  }
+
+  handle_path /admin/* {
+    root * /admin
+    try_files {path} /index.html
+    file_server
+  }
+
+  handle {
+    root * /srv
+    try_files {path} /index.html
+    file_server
+  }
+}
+```
+
+Node 不发布 `8787` 到宿主机；它只通过 `lm-talk-web` 的 Caddy 接收请求。
+
+同一个 Caddy 容器还提供独立的 Node 管理前端：
+
+```text
+https://<HTTPS-主机>/admin/
+```
+
+它是 Caddy 提供的静态前端，不是 `lm_node` 的 `/admin` 路径；页面默认连接同源
+`/node` API，仍须输入控制面 token。
+
+## 从源码启动 Web / Caddy
+
+首次部署或更新 Web 时执行：
 
 ```bash
-# 使用其他端口
-./scripts/lan-start.sh --web-port 8080 --node-port 8788
-
-# 把状态和 token 放在指定目录
-./scripts/lan-start.sh --state-dir /srv/lm-talk
-
-# 已构建过时，直接启动
-./scripts/lan-start.sh --no-build
+./scripts/dev-run.sh web \
+  --public-url https://<HTTPS-主机> \
+  --caddy-data-dir /home/user/lm-talk-web/caddy-data \
+  --root-cert /home/user/lm-talk-web/lm-talk-local-root.crt
 ```
 
-当前脚本使用 Python 的静态文件服务，适合可信局域网试用。长期运行、跨网段或公网部署请使用反向代理和 HTTPS，并参考 [NODE_CONFIG.md](NODE_CONFIG.md)。
+脚本会构建 Web 镜像、启动 `lm-talk-web`、发布宿主机 `80/443`，并自动生成包含
+`/node/* → lm-talk-node:8787` 与 `/admin/` 管理前端的 Caddyfile。重复使用同一个
+`--caddy-data-dir`，Caddy 会复用其中已有的内部 CA 和 HTTPS 证书：
+
+```text
+/home/user/lm-talk-web/caddy-data
+```
+
+已导入客户端的根证书可继续使用，例如：
+
+```text
+/home/user/lm-talk-web/lm-talk-local-root.crt
+```
+
+`--root-cert` 只是把 Caddy 当前正在使用的根 CA 复制到这个方便分发的路径；它不会
+生成或轮换 CA。只有首次使用一个空的 `--caddy-data-dir` 时，Caddy 才会创建新的内部
+CA。已有自定义 Caddyfile 时可挂载它：
+
+```bash
+./scripts/dev-run.sh web \
+  --caddyfile /home/user/lm-talk-web/Caddyfile \
+  --caddy-data-dir /home/user/lm-talk-web/caddy-data
+```
+
+## 从源码更新 Node
+
+```bash
+# 使用已有 Node 配置与数据目录，重建镜像并替换容器
+./scripts/dev-run.sh node \
+  --config-file /home/user/lm-talk-node/config.json \
+  --data-dir /home/user/lm-talk-node/data \
+  --public-url https://<HTTPS-主机>
+
+# 仅重新创建现有镜像对应的容器
+./scripts/dev-run.sh node \
+  --config-file /home/user/lm-talk-node/config.json \
+  --data-dir /home/user/lm-talk-node/data \
+  --public-url https://<HTTPS-主机> \
+  --no-build
+```
+
+配置中的 `cors_allow_origins` 必须包含 Web 的 HTTPS 来源，例如：
+
+```json
+{
+  "cors_allow_origins": ["https://<HTTPS-主机>"]
+}
+```
+
+`control_token` 等同于同步服务访问密码，不要发送到不可信渠道。更多配置项见 [NODE_CONFIG.md](NODE_CONFIG.md)。

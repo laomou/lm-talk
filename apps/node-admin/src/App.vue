@@ -21,7 +21,11 @@ function loadConfig(): NodeConfig {
   } catch {
     // ignore malformed storage
   }
-  // Auto-detect: if served from the node itself (same origin), use that as default URL
+  // When Caddy serves /admin/, use the same HTTPS origin and its /node proxy.
+  if (location.pathname.startsWith('/admin/')) {
+    return { url: `${location.origin}/node`, token: '' }
+  }
+  // Auto-detect: if served from the node itself (same origin), use that as default URL.
   if (location.hostname === '127.0.0.1' || location.hostname === 'localhost' || location.hostname === '[::1]') {
     return { url: location.origin, token: '' }
   }
@@ -50,11 +54,13 @@ function disconnect() {
   config.value = null
 }
 
-// Auto-connect when served from loopback on the default node port (same-origin)
+// Auto-connect through the same-origin Caddy /node proxy, or from the legacy
+// loopback node-admin entry point.
 onMounted(() => {
   const host = location.hostname
   const port = location.port
-  if ((host === '127.0.0.1' || host === 'localhost' || host === '::1') && port === '8787') {
+  if (location.pathname.startsWith('/admin/')
+    || ((host === '127.0.0.1' || host === 'localhost' || host === '::1') && port === '8787')) {
     connect()
   }
 })
@@ -77,7 +83,7 @@ onMounted(() => {
           <span class="sync-pill" :class="{ on: connected }">{{ connected ? '已连接' : '未连接' }}</span>
         </div>
         <label for="node-url">节点地址</label>
-        <input id="node-url" v-model="draft.url" aria-label="节点地址" placeholder="http://127.0.0.1:8787" />
+        <input id="node-url" v-model="draft.url" aria-label="节点地址" placeholder="/node 或 http://127.0.0.1:8787" />
         <label for="node-token">控制面令牌</label>
         <input
           id="node-token"
@@ -88,7 +94,7 @@ onMounted(() => {
           placeholder="节点 --control-token（跨域访问必填）"
         />
         <small>
-          远程访问要求节点以 <code>--control-token</code> 且 <code>--cors-allow-origin</code> 启动；仅本机可不填令牌。
+          通过本页 <code>/node</code> 代理访问时仍需控制面令牌；跨域访问还需要配置 <code>--cors-allow-origin</code>。
           令牌仅保存在本机浏览器 localStorage。
         </small>
         <div class="row compact">

@@ -25,8 +25,21 @@ ENV BUILD_REF=${BUILD_REF}
 # Run Vite only; `npm run build` would invoke wasm-pack again, which is not installed here.
 RUN cd apps/web && npm exec -- vite build
 
+FROM node:22-bookworm AS node-admin-builder
+WORKDIR /src
+
+COPY apps/node-admin/package.json apps/node-admin/package-lock.json ./apps/node-admin/
+RUN npm ci --prefix apps/node-admin
+
+COPY apps/node-admin ./apps/node-admin
+
+ARG BUILD_REF=container
+ENV BUILD_REF=${BUILD_REF}
+RUN cd apps/node-admin && NODE_ADMIN_BASE=/admin/ npm exec -- vite build
+
 FROM caddy:2-alpine AS runtime
 COPY docker/web/Caddyfile /etc/caddy/Caddyfile
 COPY --from=web-builder /src/apps/web/dist /srv
+COPY --from=node-admin-builder /src/apps/node-admin/dist /admin
 
 EXPOSE 80
