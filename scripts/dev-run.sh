@@ -81,12 +81,44 @@ if [[ -n "$public_url" ]]; then
     exit 2
   fi
 fi
+
 if [[ ! -f "$config_file" ]]; then
   echo "Node 配置文件不存在：$config_file" >&2
   exit 2
 fi
 
 config_file="$(cd "$(dirname "$config_file")" && pwd)/$(basename "$config_file")"
+read_control_token() {
+  python3 - "$config_file" <<'PY'
+import json
+import os
+import sys
+
+config_path = sys.argv[1]
+with open(config_path, encoding="utf-8") as source:
+    config = json.load(source)
+
+token = str(config.get("control_token") or "").strip()
+if not token:
+    token_file = str(config.get("control_token_file") or "").strip()
+    if token_file:
+        if not os.path.isabs(token_file):
+            token_file = os.path.join(os.path.dirname(config_path), token_file)
+        with open(token_file, encoding="utf-8") as source:
+            token = source.read().strip()
+
+print(token)
+PY
+}
+
+control_token="$(read_control_token)"
+if [[ -z "$control_token" ]]; then
+  cat >&2 <<'WARN'
+警告：配置中未读取到 control_token 或 control_token_file。
+Node 会拒绝非 loopback 的 API 请求；请在配置中设置强随机 control token 后再用于局域网。
+WARN
+fi
+
 if [[ -z "$data_dir" ]]; then
   data_dir="$(dirname "$config_file")/data"
 fi
@@ -167,7 +199,11 @@ fi
 
 echo "Node Docker 容器已启动：$container_name ($image_tag)"
 if [[ -n "$public_url" ]]; then
-  echo "请在 Web 中填写：$public_url/node|<control-token>"
+  if [[ -n "$control_token" ]]; then
+    echo "请在 Web 中填写（含访问令牌，请仅粘贴到可信设备）：$public_url/node|$control_token"
+  else
+    echo "请在 Web 中填写：$public_url/node|<control-token>"
+  fi
 else
   echo "请在 Web 中填写：<你的 Caddy HTTPS 地址>/node|<control-token>"
 fi
