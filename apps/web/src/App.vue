@@ -22,7 +22,6 @@ import init, {
   create_group_policy_state,
   create_group_sender_key,
   create_identity,
-  create_file_package,
   create_mailbox_message,
   create_message_receipt,
   create_peer_announce,
@@ -39,7 +38,6 @@ import init, {
   import_contact_as_json,
   import_data_backup,
   inspect_contact_card,
-  decrypt_file_package,
   inspect_file_package,
   inspect_device_revoke,
   inspect_friend_request,
@@ -1548,6 +1546,10 @@ onMounted(async () => {
 onUnmounted(() => {
   stopMailboxLongPoll()
   stopWatchingPwaUpdate?.()
+  fileCryptoWorker?.terminate()
+  fileCryptoWorker = null
+  for (const pending of fileCryptoRequests.values()) pending.reject(new Error('文件加密 Worker 已停止'))
+  fileCryptoRequests.clear()
 })
 
 function appendLog(line: string) {
@@ -9206,38 +9208,103 @@ async function takeMailboxFromNode() {
   startMailboxLongPoll()
 }
 
-function yieldToBrowser(): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, 0))
-}
-
 const FILE_BASE64_CHUNK_BYTES = 3 * 256 * 1024
-const FILE_BASE64_CHUNK_CHARS = (FILE_BASE64_CHUNK_BYTES / 3) * 4
-
-async function bytesToBase64ForFile(bytes: Uint8Array): Promise<string> {
-  const parts: string[] = []
-  for (let offset = 0; offset < bytes.length; offset += FILE_BASE64_CHUNK_BYTES) {
-    const chunk = bytes.subarray(offset, Math.min(offset + FILE_BASE64_CHUNK_BYTES, bytes.length))
-    let binary = ''
-    for (let index = 0; index < chunk.length; index += 0x8000) {
-      binary += String.fromCharCode(...chunk.subarray(index, index + 0x8000))
-    }
-    parts.push(btoa(binary))
-    if (offset + FILE_BASE64_CHUNK_BYTES < bytes.length) await yieldToBrowser()
-  }
-  return parts.join('')
+type FileCryptoCreateResult = {
+  filePackageText: string
 }
 
-async function base64ToBytesForFile(value: string): Promise<Uint8Array> {
-  const byteLength = Math.floor((value.length * 3) / 4) - (value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0)
-  const out = new Uint8Array(byteLength)
-  let offset = 0
-  for (let index = 0; index < value.length; index += FILE_BASE64_CHUNK_CHARS) {
-    const binary = atob(value.slice(index, index + FILE_BASE64_CHUNK_CHARS))
-    for (let byteIndex = 0; byteIndex < binary.length; byteIndex += 1) out[offset + byteIndex] = binary.charCodeAt(byteIndex)
-    offset += binary.length
-    if (index + FILE_BASE64_CHUNK_CHARS < value.length) await yieldToBrowser()
+type FileCryptoDecryptResult = {
+  name: string
+  mimeType: string
+  size?: number
+  bytes: ArrayBuffer
+}
+
+type FileCryptoWorkerResponse = {
+  id: number
+  ok: boolean
+  error?: string
+  filePackageText?: string
+  name?: string
+  mimeType?: string
+  size?: number
+  bytes?: ArrayBuffer
+}
+
+let fileCryptoWorker: Worker | null = null
+let nextFileCryptoRequestId = 1
+const fileCryptoRequests = new Map<number, {
+  resolve: (value: FileCryptoCreateResult | FileCryptoDecryptResult) => void
+  reject: (reason?: unknown) => void
+}>()
+
+function getFileCryptoWorker(): Worker {
+  if (fileCryptoWorker) return fileCryptoWorker
+  const worker = new Worker(new URL('./fileCrypto.worker.ts', import.meta.url), { type: 'module' })
+  worker.onmessage = (event: MessageEvent<FileCryptoWorkerResponse>) => {
+    const response = event.data
+    const pending = fileCryptoRequests.get(response.id)
+    if (!pending) return
+    fileCryptoRequests.delete(response.id)
+    if (!response.ok) {
+      pending.reject(new Error(response.error || '文件加密处理失败'))
+      return
+    }
+    if (response.filePackageText) {
+      pending.resolve({ filePackageText: response.filePackageText })
+      return
+    }
+    if (response.bytes && response.name !== undefined && response.mimeType !== undefined) {
+      pending.resolve({ name: response.name, mimeType: response.mimeType, size: response.size, bytes: response.bytes })
+      return
+    }
+    pending.reject(new Error('文件加密处理返回无效结果'))
   }
-  return out
+  worker.onerror = (event) => {
+    const error = new Error(event.message || '文件加密 Worker 已停止')
+    for (const pending of fileCryptoRequests.values()) pending.reject(error)
+    fileCryptoRequests.clear()
+    worker.terminate()
+    if (fileCryptoWorker === worker) fileCryptoWorker = null
+  }
+  fileCryptoWorker = worker
+  return worker
+}
+
+function runFileCryptoWorker<T extends FileCryptoCreateResult | FileCryptoDecryptResult>(
+  payload: Record<string, unknown>,
+  transfer: Transferable[] = [],
+): Promise<T> {
+  const id = nextFileCryptoRequestId++
+  return new Promise<T>((resolve, reject) => {
+    fileCryptoRequests.set(id, { resolve: resolve as (value: FileCryptoCreateResult | FileCryptoDecryptResult) => void, reject })
+    try {
+      getFileCryptoWorker().postMessage({ id, ...payload }, transfer)
+    } catch (error) {
+      fileCryptoRequests.delete(id)
+      reject(error)
+    }
+  })
+}
+
+async function createFilePackageInWorker(options: {
+  backupText: string
+  passphrase: string
+  contactCardText: string
+  name: string
+  mimeType: string
+  bytes: ArrayBuffer
+}): Promise<FileCryptoCreateResult> {
+  return runFileCryptoWorker<FileCryptoCreateResult>({ type: 'create', ...options }, [options.bytes])
+}
+
+async function decryptFilePackageInWorker(options: {
+  backupText: string
+  passphrase: string
+  contactCardText: string
+  filePackageText: string
+}): Promise<FileCryptoDecryptResult> {
+  return runFileCryptoWorker<FileCryptoDecryptResult>({ type: 'decrypt', ...options })
 }
 
 function filePreviewKind(name: string, mime: string): string {
@@ -9336,22 +9403,23 @@ async function createFilePackageForActive(): Promise<boolean> {
     rtcFileStatus.value = `正在读取文件：${selectedFile.value.name}`
     const bytes = await readFileWithProgress(selectedFile.value)
     if (bytes.length === 0) throw new Error('不能发送空文件')
+    const fileByteLength = bytes.byteLength
     fileTransferPhase.value = '加密封装'
-    fileProgressText.value = `读取完成 · ${formatBytes(bytes.length)}`
+    fileProgressText.value = `读取完成 · ${formatBytes(fileByteLength)}`
     rtcFileStatus.value = `正在生成加密文件包：${selectedFile.value.name}`
-    const bytesBase64 = await bytesToBase64ForFile(bytes)
-    filePackageText.value = create_file_package(
-      backupText.value,
-      passphrase.value,
-      activeContact.value.contact_card_text,
-      selectedFile.value.name,
-      selectedFile.value.type || 'application/octet-stream',
-      bytesBase64,
-      16 * 1024,
-    )
+    const file = selectedFile.value
+    const workerResult = await createFilePackageInWorker({
+      backupText: backupText.value,
+      passphrase: passphrase.value,
+      contactCardText: activeContact.value.contact_card_text,
+      name: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      bytes: bytes.buffer as ArrayBuffer,
+    })
+    filePackageText.value = workerResult.filePackageText
     filePackageInfoText.value = JSON.stringify(JSON.parse(inspect_file_package(filePackageText.value)), null, 2)
     fileTransferPhase.value = '待发送'
-    fileProgressText.value = `封装完成 · ${formatBytes(bytes.length)}`
+    fileProgressText.value = `封装完成 · ${formatBytes(fileByteLength)}`
     rtcFileStatus.value = '文件包已生成，可复制或 WebRTC 发送'
     appendLog(`已生成文件包：${selectedFile.value.name}`)
     ok = true
@@ -9390,7 +9458,7 @@ async function decryptIncomingFilePackage() {
       const info = JSON.parse(inspect_file_package(text)) as { manifest?: { name?: string } }
       manifestName = info.manifest?.name || ''
     } catch {
-      // decrypt_file_package below will surface the authoritative parse/decrypt error.
+      // The Worker will surface the authoritative parse/decrypt error below.
     }
     if (manifestName && safetyPolicy.value.warnExecutableFiles && isDangerousFileName(manifestName)) {
       const confirmed = await showConfirm(
@@ -9405,20 +9473,20 @@ async function decryptIncomingFilePackage() {
         return
       }
     }
-    const out = JSON.parse(decrypt_file_package(
-      backupText.value,
-      passphrase.value,
-      activeContact.value.contact_card_text,
-      text,
-    )) as { name: string; mime_type: string; size?: number; bytes_base64: string }
+    fileTransferPhase.value = '解密文件'
+    fileProgressText.value = '正在解密文件内容'
+    const out = await decryptFilePackageInWorker({
+      backupText: backupText.value,
+      passphrase: passphrase.value,
+      contactCardText: activeContact.value.contact_card_text,
+      filePackageText: text,
+    })
     if (receivedFileUrl.value) URL.revokeObjectURL(receivedFileUrl.value)
-    fileTransferPhase.value = '生成文件'
-    fileProgressText.value = '正在还原文件内容'
-    const bytes = await base64ToBytesForFile(out.bytes_base64)
-    const blob = new Blob([new Uint8Array(bytes)], { type: out.mime_type || 'application/octet-stream' })
+    const bytes = new Uint8Array(out.bytes)
+    const blob = new Blob([bytes], { type: out.mimeType || 'application/octet-stream' })
     receivedFileUrl.value = URL.createObjectURL(blob)
     receivedFileName.value = out.name
-    receivedFileMime.value = out.mime_type || 'application/octet-stream'
+    receivedFileMime.value = out.mimeType || 'application/octet-stream'
     receivedFileMeta.value = `${receivedFileMime.value} · ${formatBytes(out.size ?? bytes.length)}`
     receivedFilePreviewKind.value = filePreviewKind(out.name, receivedFileMime.value)
     if (activeContact.value) {
