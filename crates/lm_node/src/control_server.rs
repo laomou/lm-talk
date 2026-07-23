@@ -135,7 +135,7 @@ pub(super) fn control_error_http_response(status: u16, body: &str) -> String {
 #[allow(clippy::too_many_arguments)]
 pub(super) fn serve_control(
     bind: &str,
-    node: &mut NativeNode,
+    node: NativeNode,
     state_db: Option<&str>,
     sync_peers: Vec<SyncPeerConfig>,
     sync_interval_seconds: u64,
@@ -148,8 +148,11 @@ pub(super) fn serve_control(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(bind)?;
     listener.set_nonblocking(true)?;
-    let mut rate_limiter = RateLimiter::default();
-    let mut runtime_stats = ControlRuntimeStats::new(current_unix_timestamp());
+    let node = Arc::new(Mutex::new(node));
+    let rate_limiter = Arc::new(Mutex::new(RateLimiter::default()));
+    let runtime_stats = Arc::new(Mutex::new(ControlRuntimeStats::new(
+        current_unix_timestamp(),
+    )));
     let mut last_rate_limit_prune = Instant::now();
     let dht_configured_peers = sync_peers.clone();
     let mut sync_peers = if sync_interval_seconds == 0 {
@@ -217,7 +220,12 @@ pub(super) fn serve_control(
             serde_json::json!({"enabled": false}),
         );
     }
-    if let Some(config) = node.config.mailbox_global_rate_limit() {
+    let node_config = node
+        .lock()
+        .map_err(|_| "native node mutex poisoned")?
+        .config
+        .clone();
+    if let Some(config) = node_config.mailbox_global_rate_limit() {
         logger.info(
             "mailbox.global_rate_limit",
             format!(
@@ -236,7 +244,7 @@ pub(super) fn serve_control(
             serde_json::json!({"enabled": false}),
         );
     }
-    if let Some(config) = node.config.mailbox_sender_rate_limit() {
+    if let Some(config) = node_config.mailbox_sender_rate_limit() {
         logger.info(
             "mailbox.sender_rate_limit",
             format!(
@@ -259,9 +267,9 @@ pub(super) fn serve_control(
         "mailbox.storage_quota",
         "mailbox storage quotas",
         serde_json::json!({
-            "max_mailbox_bytes": node.config.max_mailbox_bytes,
-            "max_mailbox_bytes_per_user": node.config.max_mailbox_bytes_per_user,
-            "max_mailbox_messages_per_user": node.config.max_mailbox_messages_per_user,
+            "max_mailbox_bytes": node_config.max_mailbox_bytes,
+            "max_mailbox_bytes_per_user": node_config.max_mailbox_bytes_per_user,
+            "max_mailbox_messages_per_user": node_config.max_mailbox_messages_per_user,
         }),
     );
     if !sync_peers.is_empty() && sync_interval_seconds > 0 {
@@ -303,14 +311,20 @@ pub(super) fn serve_control(
             if now >= peer.next_attempt_at {
                 let delay = now.duration_since(peer.next_attempt_at);
                 max_sync_schedule_delay = max_sync_schedule_delay.max(delay);
-                runtime_stats.record_sync_schedule_delay(delay);
-                run_snapshot_sync(
-                    node,
-                    peer,
-                    sync_interval_seconds,
-                    sync_max_backoff_seconds,
-                    &logger,
-                );
+                runtime_stats
+                    .lock()
+                    .map_err(|_| "runtime stats mutex poisoned")?
+                    .record_sync_schedule_delay(delay);
+                {
+                    let mut node = node.lock().map_err(|_| "native node mutex poisoned")?;
+                    run_snapshot_sync(
+                        &mut node,
+                        peer,
+                        sync_interval_seconds,
+                        sync_max_backoff_seconds,
+                        &logger,
+                    );
+                }
                 sync_ran = true;
             }
         }
@@ -319,18 +333,29 @@ pub(super) fn serve_control(
                 .iter()
                 .map(|peer| peer.config.clone())
                 .collect::<Vec<_>>();
+            let mut node = node.lock().map_err(|_| "native node mutex poisoned")?;
             let (dht_peer_configs, dht_peers_quarantined) =
                 dht_runner_peer_configs_with_quarantine_count(
-                    node,
+                    &node,
                     &peer_configs,
                     dht_runner.transport,
                     dht_runner.peer_quarantine_consecutive_failures,
                 );
-            runtime_stats.record_dht_replication_schedule_delay(max_sync_schedule_delay);
-            let mut replication =
-                run_dht_replication_with_logger(node, &dht_peer_configs, dht_runner, Some(&logger));
+            runtime_stats
+                .lock()
+                .map_err(|_| "runtime stats mutex poisoned")?
+                .record_dht_replication_schedule_delay(max_sync_schedule_delay);
+            let mut replication = run_dht_replication_with_logger(
+                &mut node,
+                &dht_peer_configs,
+                dht_runner,
+                Some(&logger),
+            );
             replication.peers_quarantined = dht_peers_quarantined;
-            runtime_stats.record_dht_replication_run(replication, current_unix_timestamp());
+            runtime_stats
+                .lock()
+                .map_err(|_| "runtime stats mutex poisoned")?
+                .record_dht_replication_run(replication, current_unix_timestamp());
             if replication.attempts > 0 {
                 logger.info(
                     "dht.replication.run",
@@ -350,15 +375,21 @@ pub(super) fn serve_control(
                     }),
                 );
             }
-            runtime_stats.record_dht_routing_refresh_schedule_delay(max_sync_schedule_delay);
+            runtime_stats
+                .lock()
+                .map_err(|_| "runtime stats mutex poisoned")?
+                .record_dht_routing_refresh_schedule_delay(max_sync_schedule_delay);
             let mut refresh = run_dht_routing_refresh_with_logger(
-                node,
+                &mut node,
                 &dht_peer_configs,
                 dht_runner,
                 Some(&logger),
             );
             refresh.peers_quarantined = dht_peers_quarantined;
-            runtime_stats.record_dht_routing_refresh_run(refresh, current_unix_timestamp());
+            runtime_stats
+                .lock()
+                .map_err(|_| "runtime stats mutex poisoned")?
+                .record_dht_routing_refresh_run(refresh, current_unix_timestamp());
             if refresh.attempts > 0 {
                 logger.info(
                     "dht.routing_refresh.run",
@@ -383,7 +414,7 @@ pub(super) fn serve_control(
                 );
             }
             if let Some(path) = state_db
-                && let Err(err) = save_node_state_db(path, node)
+                && let Err(err) = save_node_state_db(path, &node)
             {
                 logger.error(
                     "state_db.save_error",
@@ -393,44 +424,69 @@ pub(super) fn serve_control(
             }
         }
         if now.duration_since(last_rate_limit_prune) >= Duration::from_secs(60) {
-            rate_limiter.prune(now, rate_limit);
+            rate_limiter
+                .lock()
+                .map_err(|_| "rate limiter mutex poisoned")?
+                .prune(now, rate_limit);
             last_rate_limit_prune = now;
         }
         match listener.accept() {
             Ok((mut stream, _addr)) => {
-                if let Err(err) = handle_stream(
-                    &mut stream,
-                    node,
-                    &security,
-                    &mut rate_limiter,
-                    rate_limit,
-                    &mut runtime_stats,
-                    state_db,
-                    &dht_configured_peers,
-                    dht_runner,
-                    web_admin,
-                    &logger,
-                ) {
-                    let status = status_for_request_error(&err.to_string());
-                    runtime_stats.record_response("<bad-request>", status, Duration::ZERO);
-                    let body = format!("request error: {err}");
-                    logger.warn(
-                        "control.request_error",
-                        body.clone(),
-                        serde_json::json!({"error": err.to_string(), "status": status}),
-                    );
-                    let response = control_error_http_response(status, &body);
-                    let _ = stream.write_all(response.as_bytes());
-                }
-                if let Some(path) = state_db
-                    && let Err(err) = save_node_state_db(path, node)
-                {
-                    logger.error(
-                        "state_db.save_error",
-                        format!("state db save error: {err}"),
-                        serde_json::json!({"path": path, "error": err.to_string()}),
-                    );
-                }
+                let node = Arc::clone(&node);
+                let rate_limiter = Arc::clone(&rate_limiter);
+                let runtime_stats = Arc::clone(&runtime_stats);
+                let security = security.clone();
+                let state_db = state_db.map(str::to_string);
+                let dht_configured_peers = dht_configured_peers.clone();
+                let web_admin = web_admin.map(str::to_string);
+                let request_logger = logger;
+                std::thread::spawn(move || {
+                    match handle_stream(
+                        &mut stream,
+                        &node,
+                        &security,
+                        &rate_limiter,
+                        rate_limit,
+                        &runtime_stats,
+                        state_db.as_deref(),
+                        &dht_configured_peers,
+                        dht_runner,
+                        web_admin.as_deref(),
+                        &request_logger,
+                    ) {
+                        Ok(state_changed) => {
+                            if state_changed
+                                && let Some(path) = state_db.as_deref()
+                                && let Ok(node) = node.lock()
+                                && let Err(err) = save_node_state_db(path, &node)
+                            {
+                                request_logger.error(
+                                    "state_db.save_error",
+                                    format!("state db save error: {err}"),
+                                    serde_json::json!({"path": path, "error": err.to_string()}),
+                                );
+                            }
+                        }
+                        Err(err) => {
+                            let status = status_for_request_error(&err.to_string());
+                            if let Ok(mut runtime_stats) = runtime_stats.lock() {
+                                runtime_stats.record_response(
+                                    "<bad-request>",
+                                    status,
+                                    Duration::ZERO,
+                                );
+                            }
+                            let body = format!("request error: {err}");
+                            request_logger.warn(
+                                "control.request_error",
+                                body.clone(),
+                                serde_json::json!({"error": err.to_string(), "status": status}),
+                            );
+                            let response = control_error_http_response(status, &body);
+                            let _ = stream.write_all(response.as_bytes());
+                        }
+                    }
+                });
             }
             Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
                 std::thread::sleep(Duration::from_millis(25));
@@ -447,17 +503,17 @@ pub(super) fn serve_control(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn handle_stream(
     stream: &mut TcpStream,
-    node: &mut NativeNode,
+    node: &Mutex<NativeNode>,
     security: &ControlSecurityConfig,
-    rate_limiter: &mut RateLimiter,
+    rate_limiter: &Mutex<RateLimiter>,
     rate_limit: RateLimitConfig,
-    runtime_stats: &mut ControlRuntimeStats,
+    runtime_stats: &Mutex<ControlRuntimeStats>,
     state_db: Option<&str>,
     dht_configured_peers: &[SyncPeerConfig],
     dht_runner: DhtRunnerConfig,
     web_admin: Option<&str>,
     logger: &ControlLogger,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<bool, Box<dyn std::error::Error>> {
     configure_control_client_stream(stream)?;
     let peer_addr = stream.peer_addr().ok();
     let request = read_http_request(stream)?;
@@ -481,31 +537,46 @@ pub(super) fn handle_stream(
                 "admin panel is loopback only",
                 "内嵌 /admin/ 只允许本机访问；远程运维请使用 SSH 隧道。",
             );
+            let mut runtime_stats = runtime_stats
+                .lock()
+                .map_err(|_| "runtime stats mutex poisoned")?;
             write_response(
                 stream,
                 &response,
-                runtime_stats,
+                &mut runtime_stats,
                 &endpoint,
                 &method,
                 started_at,
                 request_body_bytes,
             )?;
-            return Ok(());
+            return Ok(false);
         }
         let response = serve_admin_file(web_admin, &request.path);
+        let mut runtime_stats = runtime_stats
+            .lock()
+            .map_err(|_| "runtime stats mutex poisoned")?;
         write_response(
             stream,
             &response,
-            runtime_stats,
+            &mut runtime_stats,
             &endpoint,
             &method,
             started_at,
             request_body_bytes,
         )?;
-        return Ok(());
+        return Ok(false);
     }
 
     let origin = request.header("origin").map(str::to_string);
+    let is_mailbox_long_poll = mailbox_take_wait_seconds(&request).is_some();
+    let within_rate_limit = if security.allows_origin(origin.as_deref()) {
+        let mut rate_limiter = rate_limiter
+            .lock()
+            .map_err(|_| "rate limiter mutex poisoned")?;
+        request_is_within_rate_limit(&request, peer_addr.as_ref(), &mut rate_limiter, rate_limit)
+    } else {
+        true
+    };
     let response = if !security.allows_origin(origin.as_deref()) {
         ControlHttpResponse::error(
             403,
@@ -513,8 +584,7 @@ pub(super) fn handle_stream(
             "cors origin not allowed",
             "请把当前 Web/node-admin 来源加入 lm_node --cors-allow-origin。",
         )
-    } else if !request_is_within_rate_limit(&request, peer_addr.as_ref(), rate_limiter, rate_limit)
-    {
+    } else if !within_rate_limit {
         ControlHttpResponse::error(
             429,
             "CONTROL_RATE_LIMITED",
@@ -522,6 +592,7 @@ pub(super) fn handle_stream(
             "控制面请求过于频繁，请稍后重试或调整节点限流。",
         )
     } else if request.method == "OPTIONS" {
+        let mut node = node.lock().map_err(|_| "native node mutex poisoned")?;
         ControlHttpResponse::from_control(node.handle_control_request(request))
     } else if !request_is_authorized(&request, security, peer_addr.as_ref()) {
         ControlHttpResponse::error(
@@ -530,18 +601,28 @@ pub(super) fn handle_stream(
             "unauthorized",
             "请检查 Bearer token 或同步服务地址后的 |令牌。",
         )
+    } else if is_mailbox_long_poll {
+        handle_mailbox_take_long_poll(node, &request)?
     } else if request.method == "GET" && request.path.starts_with("/api/control/stats") {
+        let mut node = node.lock().map_err(|_| "native node mutex poisoned")?;
+        let runtime_stats = runtime_stats
+            .lock()
+            .map_err(|_| "runtime stats mutex poisoned")?;
         node.prune_expired_records();
         ControlHttpResponse::json(
             200,
             &ControlStatsResponse {
-                runtime: runtime_stats,
+                runtime: &runtime_stats,
                 maintenance: node.maintenance_stats().clone(),
                 state_db: state_db_stats_opt(state_db),
                 endpoint_groups: runtime_stats.endpoint_group_summary(),
             },
         )
     } else if request.method == "GET" && request.path.starts_with("/api/control/metrics") {
+        let mut node = node.lock().map_err(|_| "native node mutex poisoned")?;
+        let runtime_stats = runtime_stats
+            .lock()
+            .map_err(|_| "runtime stats mutex poisoned")?;
         node.prune_expired_records();
         ControlHttpResponse::openmetrics(
             200,
@@ -553,41 +634,61 @@ pub(super) fn handle_stream(
             ),
         )
     } else if request.method == "GET" && request.path.starts_with("/api/dht/find-value") {
+        let mut node = node.lock().map_err(|_| "native node mutex poisoned")?;
+        let mut runtime_stats = runtime_stats
+            .lock()
+            .map_err(|_| "runtime stats mutex poisoned")?;
         handle_control_dht_find_value_run(
-            node,
+            &mut node,
             dht_configured_peers,
             dht_runner,
             &request.path,
-            Some(runtime_stats),
+            Some(&mut runtime_stats),
         )
     } else if request.method == "GET" && request.path.starts_with("/api/dht/maintenance") {
+        let mut node = node.lock().map_err(|_| "native node mutex poisoned")?;
+        let mut runtime_stats = runtime_stats
+            .lock()
+            .map_err(|_| "runtime stats mutex poisoned")?;
         handle_control_dht_maintenance_run(
-            node,
+            &mut node,
             dht_configured_peers,
             dht_runner,
             &request.path,
-            Some(runtime_stats),
+            Some(&mut runtime_stats),
         )
     } else if request.method == "GET" && request.path.starts_with("/api/dht/replicate") {
+        let mut node = node.lock().map_err(|_| "native node mutex poisoned")?;
+        let mut runtime_stats = runtime_stats
+            .lock()
+            .map_err(|_| "runtime stats mutex poisoned")?;
         handle_control_dht_replication_run(
-            node,
+            &mut node,
             dht_configured_peers,
             dht_runner,
             &request.path,
-            Some(runtime_stats),
+            Some(&mut runtime_stats),
         )
     } else if request.method == "GET" && request.path.starts_with("/api/dht/routing-refresh") {
+        let mut node = node.lock().map_err(|_| "native node mutex poisoned")?;
+        let mut runtime_stats = runtime_stats
+            .lock()
+            .map_err(|_| "runtime stats mutex poisoned")?;
         handle_control_dht_routing_refresh_run(
-            node,
+            &mut node,
             dht_configured_peers,
             dht_runner,
             &request.path,
-            Some(runtime_stats),
+            Some(&mut runtime_stats),
         )
     } else {
+        let mut node = node.lock().map_err(|_| "native node mutex poisoned")?;
         ControlHttpResponse::from_control(node.handle_control_request(request))
     };
     let duration = started_at.elapsed();
+    let mut runtime_stats = runtime_stats
+        .lock()
+        .map_err(|_| "runtime stats mutex poisoned")?;
     runtime_stats.record_response(&endpoint, response.status, duration);
     runtime_stats.record_sync_snapshot_bytes(
         &endpoint,
@@ -617,7 +718,57 @@ pub(super) fn handle_stream(
     );
     let allow_origin = security.access_control_origin(origin.as_deref());
     stream.write_all(response.to_http_string(&allow_origin).as_bytes())?;
-    Ok(())
+    let long_poll_received_messages = if is_mailbox_long_poll {
+        serde_json::from_str::<serde_json::Value>(&response.body)
+            .ok()
+            .and_then(|body| body.get("returned").and_then(serde_json::Value::as_u64))
+            .unwrap_or(0)
+            > 0
+    } else {
+        true
+    };
+    Ok(!is_mailbox_long_poll || long_poll_received_messages)
+}
+
+const MAX_MAILBOX_TAKE_WAIT_SECONDS: u64 = 25;
+
+pub(super) fn mailbox_take_wait_seconds(request: &ControlRequest) -> Option<u64> {
+    if request.method != "GET" || request.path.split('?').next() != Some("/api/mailbox/take") {
+        return None;
+    }
+    let requested = request
+        .path
+        .split_once('?')
+        .and_then(|(_, query)| {
+            query
+                .split('&')
+                .find_map(|pair| pair.strip_prefix("wait_seconds="))
+        })
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0);
+    (requested > 0).then_some(requested.min(MAX_MAILBOX_TAKE_WAIT_SECONDS))
+}
+
+pub(super) fn handle_mailbox_take_long_poll(
+    node: &Mutex<NativeNode>,
+    request: &ControlRequest,
+) -> Result<ControlHttpResponse, Box<dyn std::error::Error>> {
+    let wait_seconds = mailbox_take_wait_seconds(request).unwrap_or(0);
+    let deadline = Instant::now() + Duration::from_secs(wait_seconds);
+    loop {
+        let response = {
+            let mut node = node.lock().map_err(|_| "native node mutex poisoned")?;
+            ControlHttpResponse::from_control(node.handle_control_request(request.clone()))
+        };
+        let returned = serde_json::from_str::<serde_json::Value>(&response.body)
+            .ok()
+            .and_then(|body| body.get("returned").and_then(serde_json::Value::as_u64))
+            .unwrap_or(0);
+        if returned > 0 || Instant::now() >= deadline || response.status != 200 {
+            return Ok(response);
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }
 
 pub(super) fn handle_control_dht_maintenance_run(
