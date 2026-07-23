@@ -4591,6 +4591,17 @@ function allowIncomingFromContact(sender: ContactItem): boolean {
   return false
 }
 
+function allowSecureSessionHandshakeFromContact(sender: ContactItem): boolean {
+  if (contactAllKnownDevicesRevoked(sender)) {
+    revokedDeviceIncomingDropCount.value += 1
+    lastRevokedDeviceIncomingDropAt.value = Date.now()
+    lastRevokedDeviceIncomingDropFrom.value = sender.display_name || sender.user_id
+    appendLog(`⚠️ 已丢弃已撤销联系人发来的安全会话握手：${lastRevokedDeviceIncomingDropFrom.value}`)
+    return false
+  }
+  return sender.state === 'Friend'
+}
+
 function clearUnverifiedIncomingDropStats() {
   unverifiedIncomingDropCount.value = 0
   lastUnverifiedIncomingDropAt.value = null
@@ -8735,8 +8746,8 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
       return { handled: true, deliveryId, event: 'file' }
     }
     if (parsed?.type === 'lm-secure-session-response-v1') {
-      if (!allowIncomingFromContact(sender)) {
-        const reason = `安全策略阻止接收未核验或已撤销设备联系人安全会话响应：${sender.display_name || sender.user_id}`
+      if (!allowSecureSessionHandshakeFromContact(sender)) {
+        const reason = `安全策略阻止接收非好友或已撤销联系人安全会话响应：${sender.display_name || sender.user_id}`
         appendLog(`⚠️ ${reason}`)
         persist()
         return { handled: true, deliveryId, event: 'other', reason }
@@ -8746,8 +8757,8 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
       return { handled: true, deliveryId, event: 'secure-session' }
     }
     if (parsed?.type === 'lm-secure-session-offer-v1') {
-      if (!allowIncomingFromContact(sender)) {
-        const reason = `安全策略阻止接收未核验或已撤销设备联系人安全会话邀请：${sender.display_name || sender.user_id}`
+      if (!allowSecureSessionHandshakeFromContact(sender)) {
+        const reason = `安全策略阻止接收非好友或已撤销联系人安全会话邀请：${sender.display_name || sender.user_id}`
         appendLog(`⚠️ ${reason}`)
         persist()
         return { handled: true, deliveryId, event: 'other', reason }
