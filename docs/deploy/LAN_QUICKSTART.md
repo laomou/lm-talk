@@ -69,7 +69,8 @@ https://<HTTPS-主机>/admin/
 ```bash
 ./scripts/dev-run.sh web \
   --public-url https://<HTTPS-主机> \
-  --caddy-data-dir /home/user/lm-talk-web/caddy-data
+  --caddy-data-dir /home/user/lm-talk-web/caddy-data \
+  --root-cert /home/user/lm-talk-web/lm-talk-local-root.crt
 ```
 
 脚本会构建 Web 镜像、启动 `lm-talk-web`、发布宿主机 `80/443`，并自动生成包含
@@ -86,7 +87,9 @@ https://<HTTPS-主机>/admin/
 /home/mourui/lm-talk-web/lm-talk-local-root.crt
 ```
 
-脚本不会重新生成或覆盖它。已有自定义 Caddyfile 时可挂载它：
+`--root-cert` 只是把 Caddy 当前正在使用的根 CA 复制到这个方便分发的路径；它不会
+生成或轮换 CA。只有首次使用一个空的 `--caddy-data-dir` 时，Caddy 才会创建新的内部
+CA。已有自定义 Caddyfile 时可挂载它：
 
 ```bash
 ./scripts/dev-run.sh web \
