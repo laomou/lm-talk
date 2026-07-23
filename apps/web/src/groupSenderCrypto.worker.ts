@@ -1,9 +1,17 @@
-import init, { group_sender_decrypt_text } from './wasm/lm_wasm.js'
+import init, { group_sender_decrypt_text, group_sender_encrypt_text } from './wasm/lm_wasm.js'
 
 type GroupSenderDecryptRequest = {
   id: number
+  type: 'decrypt'
   stateText: string
   envelopeText: string
+}
+
+type GroupSenderEncryptRequest = {
+  id: number
+  type: 'encrypt'
+  stateText: string
+  text: string
 }
 
 let wasmReady: Promise<unknown> | null = null
@@ -13,14 +21,19 @@ function ensureWasmReady(): Promise<unknown> {
   return wasmReady
 }
 
-self.onmessage = async (event: MessageEvent<GroupSenderDecryptRequest>) => {
+self.onmessage = async (event: MessageEvent<GroupSenderDecryptRequest | GroupSenderEncryptRequest>) => {
   const request = event.data
   try {
     await ensureWasmReady()
-    const result = JSON.parse(group_sender_decrypt_text(
-      request.stateText,
-      request.envelopeText,
-    )) as { state_json: string; plain_json: string }
+    const result = request.type === 'decrypt'
+      ? JSON.parse(group_sender_decrypt_text(
+        request.stateText,
+        request.envelopeText,
+      )) as { state_json: string; plain_json: string }
+      : JSON.parse(group_sender_encrypt_text(
+        request.stateText,
+        request.text,
+      )) as { state_json: string; envelope_json: string }
     self.postMessage({ id: request.id, ok: true, ...result })
   } catch (error) {
     self.postMessage({

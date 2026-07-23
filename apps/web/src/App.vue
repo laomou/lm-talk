@@ -42,7 +42,6 @@ import init, {
   inspect_friend_response,
   inspect_group_invite,
   inspect_group_event,
-  group_sender_encrypt_text,
   import_group_sender_key,
   apply_group_policy_event,
   inspect_mailbox_message,
@@ -5441,16 +5440,31 @@ function createGroupSenderDistributionFanoutForActiveGroup() {
   })
 }
 
-function encryptGroupSenderText(group: GroupItem, text: string): string | null {
+async function encryptGroupSenderText(group: GroupItem, text: string): Promise<string | null> {
   if (!identity.value) return null
   const key = getGroupSenderKey(group.group_id, identity.value.user_id)
   if (!key) return null
-  const out = JSON.parse(group_sender_encrypt_text(key.state_json, text)) as { state_json: string; envelope_json: string }
-  key.state_json = out.state_json
-  key.updated_at = Date.now()
-  groupSenderEnvelopeText.value = JSON.stringify(JSON.parse(out.envelope_json), null, 2)
-  appendLog('🔐 使用 Sender Key 加密群消息')
-  return out.envelope_json
+  const chainKey = key.key_id
+  const previous = groupSenderEncryptChains.get(chainKey) ?? Promise.resolve()
+  const task = previous
+    .catch(() => undefined)
+    .then(async () => {
+      const current = getGroupSenderKey(group.group_id, identity.value!.user_id)
+      if (!current) throw new Error('没有本群自己的 Sender Key，请先创建')
+      const out = await encryptGroupSenderEnvelopeInWorker(current.state_json, text)
+      current.state_json = out.stateText
+      current.updated_at = Date.now()
+      groupSenderEnvelopeText.value = JSON.stringify(JSON.parse(out.envelopeJson), null, 2)
+      appendLog('🔐 使用 Sender Key 加密群消息')
+      return out.envelopeJson
+    })
+  groupSenderEncryptChains.set(chainKey, task)
+  void task.then(() => {
+    if (groupSenderEncryptChains.get(chainKey) === task) groupSenderEncryptChains.delete(chainKey)
+  }, () => {
+    if (groupSenderEncryptChains.get(chainKey) === task) groupSenderEncryptChains.delete(chainKey)
+  })
+  return task as Promise<string>
 }
 
 type GroupSenderCryptoWorkerResponse = {
@@ -5458,16 +5472,18 @@ type GroupSenderCryptoWorkerResponse = {
   ok: boolean
   state_json?: string
   plain_json?: string
+  envelope_json?: string
   error?: string
 }
 
 let groupSenderCryptoWorker: Worker | null = null
 let nextGroupSenderCryptoRequestId = 1
 const groupSenderCryptoRequests = new Map<number, {
-  resolve: (value: { stateText: string; plainJson: string }) => void
+  resolve: (value: { stateText: string; plainJson?: string; envelopeJson?: string }) => void
   reject: (reason?: unknown) => void
 }>()
 const groupSenderDecryptChains = new Map<string, Promise<unknown>>()
+const groupSenderEncryptChains = new Map<string, Promise<unknown>>()
 
 function getGroupSenderCryptoWorker(): Worker {
   if (groupSenderCryptoWorker) return groupSenderCryptoWorker
@@ -5477,8 +5493,8 @@ function getGroupSenderCryptoWorker(): Worker {
     const pending = groupSenderCryptoRequests.get(response.id)
     if (!pending) return
     groupSenderCryptoRequests.delete(response.id)
-    if (response.ok && response.state_json !== undefined && response.plain_json !== undefined) {
-      pending.resolve({ stateText: response.state_json, plainJson: response.plain_json })
+    if (response.ok && response.state_json !== undefined && (response.plain_json !== undefined || response.envelope_json !== undefined)) {
+      pending.resolve({ stateText: response.state_json, plainJson: response.plain_json, envelopeJson: response.envelope_json })
     } else {
       pending.reject(new Error(response.error || 'Sender Key 解密 Worker 处理失败'))
     }
@@ -5494,17 +5510,29 @@ function getGroupSenderCryptoWorker(): Worker {
   return worker
 }
 
-function decryptGroupSenderEnvelopeInWorker(stateText: string, envelopeText: string): Promise<{ stateText: string; plainJson: string }> {
+function runGroupSenderCryptoWorker(payload: Record<string, string>): Promise<{ stateText: string; plainJson?: string; envelopeJson?: string }> {
   const id = nextGroupSenderCryptoRequestId++
   return new Promise((resolve, reject) => {
     groupSenderCryptoRequests.set(id, { resolve, reject })
     try {
-      getGroupSenderCryptoWorker().postMessage({ id, stateText, envelopeText })
+      getGroupSenderCryptoWorker().postMessage({ id, ...payload })
     } catch (error) {
       groupSenderCryptoRequests.delete(id)
       reject(error)
     }
   })
+}
+
+async function decryptGroupSenderEnvelopeInWorker(stateText: string, envelopeText: string): Promise<{ stateText: string; plainJson: string }> {
+  const result = await runGroupSenderCryptoWorker({ type: 'decrypt', stateText, envelopeText })
+  if (result.plainJson === undefined) throw new Error('Sender Key 解密 Worker 返回无效结果')
+  return { stateText: result.stateText, plainJson: result.plainJson }
+}
+
+async function encryptGroupSenderEnvelopeInWorker(stateText: string, text: string): Promise<{ stateText: string; envelopeJson: string }> {
+  const result = await runGroupSenderCryptoWorker({ type: 'encrypt', stateText, text })
+  if (result.envelopeJson === undefined) throw new Error('Sender Key 加密 Worker 返回无效结果')
+  return { stateText: result.stateText, envelopeJson: result.envelopeJson }
 }
 
 async function tryDecryptGroupSenderEnvelope(envelopeText: string): Promise<{ text: string; group_id: string; sender_user_id: string } | null> {
@@ -5547,11 +5575,11 @@ async function tryDecryptGroupSenderEnvelope(envelopeText: string): Promise<{ te
   }
 }
 
-function groupSenderEncryptDebug() {
-  run('Sender Key 加密调试', () => {
+async function groupSenderEncryptDebug() {
+  await runAsync('Sender Key 加密调试', async () => {
     if (!activeGroup.value) throw new Error('请选择群组')
     if (!composerText.value.trim()) throw new Error('请输入消息')
-    const envelope = encryptGroupSenderText(activeGroup.value, composerText.value)
+    const envelope = await encryptGroupSenderText(activeGroup.value, composerText.value)
     if (!envelope) throw new Error('没有本群自己的 Sender Key，请先创建')
   })
 }
@@ -6523,7 +6551,7 @@ async function sendMessage() {
     }
     if (riskText) appendLog(`群聊严格 E2EE 非阻塞提醒：${riskText}`)
   }
-  run('发送消息', () => {
+  await runAsync('发送消息', async () => {
     if (!composerText.value.trim()) return
     ensureUiTextSize('消息', composerText.value, MAX_TEXT_MESSAGE_BYTES)
 
@@ -6532,19 +6560,20 @@ async function sendMessage() {
 
     if (activeGroup.value) {
       if (activeGroup.value.removed_self_at) throw new Error('你已被移出该群聊，不能继续发送群消息')
+      const group = activeGroup.value
       let fanout: Array<{ to_user_id: string; envelope: string }> = []
-      const senderEnvelope = encryptGroupSenderText(activeGroup.value, `[${activeGroup.value.name}] ${outgoingFiltered.text}`)
+      const senderEnvelope = await encryptGroupSenderText(group, `[${group.name}] ${outgoingFiltered.text}`)
       if (senderEnvelope) {
-        fanout = activeGroup.value.member_user_ids.map((uid) => ({ to_user_id: uid, envelope: senderEnvelope }))
+        fanout = group.member_user_ids.map((uid) => ({ to_user_id: uid, envelope: senderEnvelope }))
         groupSenderEnvelopeText.value = senderEnvelope
       } else {
-        fanout = activeGroup.value.member_user_ids.map((uid) => {
+        fanout = group.member_user_ids.map((uid) => {
           const contact = contacts.value.find((c) => c.user_id === uid)
           if (!contact || contact.state !== 'Friend') throw new Error(`群成员还不是好友: ${uid}`)
           const envelope = encryptEnvelopeForContact(
             contact,
-            `grp-${activeGroup.value!.group_id}`,
-            `[${activeGroup.value!.name}] ${outgoingFiltered.text}`,
+            `grp-${group.group_id}`,
+            `[${group.name}] ${outgoingFiltered.text}`,
           )
           return { to_user_id: uid, envelope }
         })
@@ -6552,9 +6581,9 @@ async function sendMessage() {
       groupFanoutJson.value = JSON.stringify(fanout, null, 2)
       const msg: ChatMessage = {
         id: newId(),
-        conversation_id: `grp-${activeGroup.value.group_id}`,
+        conversation_id: `grp-${group.group_id}`,
         peer_user_id: '',
-        group_id: activeGroup.value.group_id,
+        group_id: group.group_id,
         direction: 'out',
         text: outgoingFiltered.text,
         envelope_json: groupFanoutJson.value,
@@ -6565,7 +6594,7 @@ async function sendMessage() {
       appendLog(`✅ 群消息已准备发送给 ${fanout.length} 个成员`)
       composerText.value = ''
       persist()
-      void sendGroupFanoutPayloads(activeGroup.value, fanout, msg.id)
+      void sendGroupFanoutPayloads(group, fanout, msg.id)
       return
     }
 
