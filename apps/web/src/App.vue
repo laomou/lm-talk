@@ -50,8 +50,6 @@ import init, {
   inspect_message_receipt,
   sign_identity_text,
   verify_identity_text_signature,
-  seal_device_slot,
-  open_device_slot,
   inspect_peer_announce,
   inspect_prekey_bundle,
   inspect_public_peer_announce,
@@ -1553,6 +1551,10 @@ onUnmounted(() => {
   persistenceSnapshotWorker = null
   for (const pending of persistenceSnapshotRequests.values()) pending.reject(new Error('本地存储快照 Worker 已停止'))
   persistenceSnapshotRequests.clear()
+  deviceSlotCryptoWorker?.terminate()
+  deviceSlotCryptoWorker = null
+  for (const pending of deviceSlotCryptoRequests.values()) pending.reject(new Error('分设备密文 Worker 已停止'))
+  deviceSlotCryptoRequests.clear()
   ratchetEncryptWorker?.terminate()
   ratchetEncryptWorker = null
   for (const pending of ratchetEncryptRequests.values()) pending.reject(new Error('Ratchet 加密 Worker 已停止'))
@@ -6387,7 +6389,7 @@ async function processOutgoingMessageJob(job: OutgoingMessageJob) {
   try {
     const envelope = await encryptEnvelopeForOutgoingContact(contact, job.conversation_id, job.text)
     const targetDeviceIds = contactActiveDeviceIds(contact)
-    const perDeviceEnvelope = createPerDeviceEnvelopeDraft(contact, job.conversation_id, envelope)
+    const perDeviceEnvelope = await createPerDeviceEnvelopeDraft(contact, job.conversation_id, envelope)
     if (perDeviceEnvelope) {
       perDeviceEnvelopeSentCount.value += 1
       lastPerDeviceEnvelopeAt.value = Date.now()
@@ -6537,45 +6539,104 @@ function perDeviceEnvelopeSigningPayload(envelope: PerDeviceEnvelopeV1): string 
   })
 }
 
-function createPerDeviceEnvelopeDraft(contact: ContactItem, conversationId: string, ciphertext: string): string | undefined {
+type DeviceSlotCryptoWorkerResponse = {
+  id: number
+  ok: boolean
+  value?: string
+  error?: string
+}
+
+let deviceSlotCryptoWorker: Worker | null = null
+let nextDeviceSlotCryptoRequestId = 1
+const deviceSlotCryptoRequests = new Map<number, {
+  resolve: (value: string) => void
+  reject: (reason?: unknown) => void
+}>()
+
+function getDeviceSlotCryptoWorker(): Worker {
+  if (deviceSlotCryptoWorker) return deviceSlotCryptoWorker
+  const worker = new Worker(new URL('./deviceSlotCrypto.worker.ts', import.meta.url), { type: 'module' })
+  worker.onmessage = (event: MessageEvent<DeviceSlotCryptoWorkerResponse>) => {
+    const response = event.data
+    const pending = deviceSlotCryptoRequests.get(response.id)
+    if (!pending) return
+    deviceSlotCryptoRequests.delete(response.id)
+    if (response.ok && typeof response.value === 'string') pending.resolve(response.value)
+    else pending.reject(new Error(response.error || '分设备密文 Worker 处理失败'))
+  }
+  worker.onerror = (event) => {
+    const error = new Error(event.message || '分设备密文 Worker 已停止')
+    for (const pending of deviceSlotCryptoRequests.values()) pending.reject(error)
+    deviceSlotCryptoRequests.clear()
+    worker.terminate()
+    if (deviceSlotCryptoWorker === worker) deviceSlotCryptoWorker = null
+  }
+  deviceSlotCryptoWorker = worker
+  return worker
+}
+
+function runDeviceSlotCryptoWorker(payload: Record<string, string>): Promise<string> {
+  const id = nextDeviceSlotCryptoRequestId++
+  return new Promise((resolve, reject) => {
+    deviceSlotCryptoRequests.set(id, { resolve, reject })
+    try {
+      getDeviceSlotCryptoWorker().postMessage({ id, ...payload })
+    } catch (error) {
+      deviceSlotCryptoRequests.delete(id)
+      reject(error)
+    }
+  })
+}
+
+function sealDeviceSlotInWorker(deviceBoxPublicKey: string, aad: string, ciphertext: string): Promise<string> {
+  return runDeviceSlotCryptoWorker({ type: 'seal', deviceBoxPublicKey, aad, ciphertext })
+}
+
+function openDeviceSlotInWorker(backupText: string, passphrase: string, deviceBackupText: string, aad: string, slotText: string): Promise<string> {
+  return runDeviceSlotCryptoWorker({ type: 'open', backupText, passphrase, deviceBackupText, aad, slotText })
+}
+
+async function createPerDeviceEnvelopeDraft(contact: ContactItem, conversationId: string, ciphertext: string): Promise<string | undefined> {
   const targetDeviceIds = contactActiveDeviceIds(contact)
   if (targetDeviceIds.length === 0) return undefined
   const senderUserId = identity.value?.user_id || ''
   const createdAt = Date.now()
+  type PerDeviceTarget = PerDeviceEnvelopeV1['target_devices'][number]
+  const targetDevices = await Promise.all(targetDeviceIds.map(async (deviceId): Promise<PerDeviceTarget> => {
+    const aad = perDeviceSlotAad(conversationId, senderUserId, deviceId, createdAt)
+    const cert = (contact.device_certs ?? []).find((item) => item.device_id === deviceId)
+    if (cert?.device_box_public_key) {
+      const sealed = safeJson<{
+        crypto: 'x25519-ephemeral-hkdf-xchacha20poly1305-device-slot-v1'
+        x25519_ephemeral_public_key: string
+        nonce: string
+        ciphertext: string
+      }>(await sealDeviceSlotInWorker(cert.device_box_public_key, aad, ciphertext))
+      return {
+        device_id: deviceId,
+        slot_id: randomBase64Url(16),
+        nonce: sealed.nonce,
+        aad,
+        crypto: sealed.crypto,
+        x25519_ephemeral_public_key: sealed.x25519_ephemeral_public_key,
+        ciphertext: sealed.ciphertext,
+      }
+    }
+    return {
+      device_id: deviceId,
+      slot_id: randomBase64Url(16),
+      nonce: randomBase64Url(24),
+      aad,
+      crypto: 'placeholder-shared-envelope-v1' as const,
+      ciphertext,
+    }
+  }))
   const draft: PerDeviceEnvelopeV1 = {
     type: 'lm-per-device-envelope-v1',
     version: 1,
     conversation_id: conversationId,
     sender_user_id: senderUserId,
-    target_devices: targetDeviceIds.map((deviceId) => {
-      const aad = perDeviceSlotAad(conversationId, senderUserId, deviceId, createdAt)
-      const cert = (contact.device_certs ?? []).find((item) => item.device_id === deviceId)
-      if (cert?.device_box_public_key) {
-        const sealed = safeJson<{
-          crypto: 'x25519-ephemeral-hkdf-xchacha20poly1305-device-slot-v1'
-          x25519_ephemeral_public_key: string
-          nonce: string
-          ciphertext: string
-        }>(seal_device_slot(cert.device_box_public_key, aad, ciphertext))
-        return {
-          device_id: deviceId,
-          slot_id: randomBase64Url(16),
-          nonce: sealed.nonce,
-          aad,
-          crypto: sealed.crypto,
-          x25519_ephemeral_public_key: sealed.x25519_ephemeral_public_key,
-          ciphertext: sealed.ciphertext,
-        }
-      }
-      return {
-        device_id: deviceId,
-        slot_id: randomBase64Url(16),
-        nonce: randomBase64Url(24),
-        aad,
-        crypto: 'placeholder-shared-envelope-v1',
-        ciphertext,
-      }
-    }),
+    target_devices: targetDevices,
     // Fallback remains for older/self devices until every contact device cert has a box key.
     fallback_ciphertext: ciphertext,
     created_at: createdAt,
@@ -6595,12 +6656,12 @@ function perDeviceEnvelopeTargetCount(message: ChatMessage): number {
 }
 
 
-function unwrapPerDeviceEnvelopeForCurrentDevice(payloadText: string, sender: ContactItem): {
+async function unwrapPerDeviceEnvelopeForCurrentDevice(payloadText: string, sender: ContactItem): Promise<{
   envelopeText: string
   perDeviceEnvelopeJson?: string
   targetDeviceIds?: string[]
   slotCrypto?: string
-} {
+}> {
   let parsed: PerDeviceEnvelopeV1 | null = null
   try { parsed = JSON.parse(payloadText) as PerDeviceEnvelopeV1 } catch {}
   if (parsed?.type !== 'lm-per-device-envelope-v1') return { envelopeText: payloadText }
@@ -6631,7 +6692,7 @@ function unwrapPerDeviceEnvelopeForCurrentDevice(payloadText: string, sender: Co
     if (matched.crypto === 'x25519-ephemeral-hkdf-xchacha20poly1305-device-slot-v1') {
       if (!matched.x25519_ephemeral_public_key) return recordDrop('分设备 sealed slot 缺少临时公钥')
       if (!myDeviceBackupText.value) return recordDrop('当前设备缺少设备私钥备份，无法打开 sealed slot')
-      envelopeText = open_device_slot(
+      envelopeText = await openDeviceSlotInWorker(
         backupText.value,
         passphrase.value,
         myDeviceBackupText.value,
@@ -6667,7 +6728,7 @@ async function receiveEnvelopeWithContact(envelopeText: string, sender: ContactI
   if (sender.state === 'Blocked') throw new Error('发送者已被拉黑')
   if (!allowIncomingFromContact(sender)) { persist(); return false }
   ensureUiTextSize('Envelope', envelopeText, MAX_SIGNAL_BYTES)
-  const unwrappedEnvelope = unwrapPerDeviceEnvelopeForCurrentDevice(envelopeText, sender)
+  const unwrappedEnvelope = await unwrapPerDeviceEnvelopeForCurrentDevice(envelopeText, sender)
   if (safetyPolicy.value.requireSealedPerDeviceSlotsForReceive && unwrappedEnvelope.slotCrypto !== 'x25519-ephemeral-hkdf-xchacha20poly1305-device-slot-v1') {
     perDeviceEnvelopeDropCount.value += 1
     lastPerDeviceEnvelopeDropAt.value = Date.now()
