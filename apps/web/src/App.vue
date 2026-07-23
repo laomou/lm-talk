@@ -13,14 +13,11 @@ import QRCode from 'qrcode'
 import { applyPwaUpdate, onPwaUpdateReady, readPwaStatus } from './pwa'
 import { TABLES, idbDel, idbGet, idbSet, idbTableApplyChanges, idbTableClear, idbTableGet, idbTableGetAllByPrefix, idbTableReplaceByPrefix } from './idb'
 import init, {
-  create_identity,
   decrypt_text_message,
   encrypt_text_message,
   inspect_file_package,
   normalize_passphrase,
   ratchet_encrypt_text_message,
-  reencrypt_identity_backup,
-  restore_identity,
 } from './wasm/lm_wasm.js'
 
 type IdentityOutput = {
@@ -1535,6 +1532,10 @@ onUnmounted(() => {
   messageMetadataCryptoWorker = null
   for (const pending of messageMetadataCryptoRequests.values()) pending.reject(new Error('消息元数据 Worker 已停止'))
   messageMetadataCryptoRequests.clear()
+  identityLifecycleCryptoWorker?.terminate()
+  identityLifecycleCryptoWorker = null
+  for (const pending of identityLifecycleCryptoRequests.values()) pending.reject(new Error('身份生命周期 Worker 已停止'))
+  identityLifecycleCryptoRequests.clear()
   ratchetEncryptWorker?.terminate()
   ratchetEncryptWorker = null
   for (const pending of ratchetEncryptRequests.values()) pending.reject(new Error('Ratchet 加密 Worker 已停止'))
@@ -4425,11 +4426,11 @@ function verifyRegisteredBackup() {
   void router.push('/import')
 }
 
-function importIdentityOnly() {
-  run('导入身份', () => {
+async function importIdentityOnly() {
+  await runAsync('导入身份', async () => {
     if (!backupText.value.trim()) throw new Error('请粘贴身份文本')
     if (!passphrase.value.trim()) throw new Error('请输入提示词')
-    const out = safeJson<RestoreOutput>(restore_identity(backupText.value, passphrase.value))
+    const out = await restoreIdentityInWorker(backupText.value, passphrase.value)
     rememberLocalIdentity(out.user_id, displayName.value || 'Me', backupText.value)
     passphrase.value = ''
     appendLog('✅ 身份已导入，请在登录页登录')
@@ -4443,7 +4444,7 @@ async function createIdentityAndEnter() {
     if (!passphrase.value.trim()) throw new Error('请输入提示词')
     const registerName = displayName.value.trim() || 'Me'
     displayName.value = registerName
-    const out = safeJson<IdentityOutput>(create_identity(passphrase.value))
+    const out = await createIdentityInWorker(passphrase.value)
     identity.value = out
     backupText.value = out.backup_text
     const device = await createDeviceCertInWorker(backupText.value, passphrase.value, 'Web Browser')
@@ -4465,40 +4466,36 @@ async function createIdentityAndEnter() {
   })
 }
 
-function restoreAndEnter() {
-  run('登录', () => {
+async function restoreAndEnter() {
+  try {
     if (!backupText.value.trim()) throw new Error('请粘贴身份备份包')
     if (!passphrase.value.trim()) throw new Error('请输入提示词')
     const loginBackup = backupText.value
     const loginName = displayName.value || 'Me'
     const destination = isAppRoute(route.path) ? route.fullPath : loginReturnPath.value
-    const out = safeJson<RestoreOutput>(restore_identity(loginBackup, passphrase.value))
+    const out = await restoreIdentityInWorker(loginBackup, passphrase.value)
     identity.value = out
     resetAccountScopedState()
     backupText.value = loginBackup
     displayName.value = loginName
-    void loadPersistedState()
-      .then(async () => {
-        loggedIn.value = true
-        if (!myContactCardText.value) await exportMyCard()
-        resumeQueuedOutgoingMessages()
-        rememberLocalIdentity(out.user_id, displayName.value, backupText.value)
-        persist()
-        void router.push(destination)
-        void afterLoginAutomation()
-      })
-      .catch((e) => {
-        const message = userFacingError(e)
-        appendLog(`❌ 登录失败：${message}`)
-        showAlert(t('appDialog.loginFailed'), message, 'error')
-      })
-  }, (message) => {
+    await loadPersistedState()
+    loggedIn.value = true
+    if (!myContactCardText.value) await exportMyCard()
+    resumeQueuedOutgoingMessages()
+    rememberLocalIdentity(out.user_id, displayName.value, backupText.value)
+    persist()
+    await router.push(destination)
+    void afterLoginAutomation()
+    appendLog('✅ 登录')
+  } catch (e) {
+    const message = userFacingError(e)
+    appendLog(`❌ 登录: ${message}`)
     if (message === '提示词不正确，请重新输入。') {
       showAlert(t('appDialog.loginFailed'), message, 'error', { actionLabel: t('appDialog.retryInput'), action: focusLoginPassphrase })
-      return true
+      return
     }
-    return false
-  })
+    showAlert(t('appDialog.loginFailed'), message, 'error')
+  }
 }
 
 async function exportMyCard() {
@@ -4522,16 +4519,16 @@ async function refreshMyContactCard() {
   })
 }
 
-function reencryptCurrentIdentityBackup() {
-  run('重加密身份备份', () => {
+async function reencryptCurrentIdentityBackup() {
+  await runAsync('重加密身份备份', async () => {
     if (!identity.value) throw new Error('请先登录')
     if (!backupText.value || !passphrase.value) throw new Error('需要当前身份备份和当前提示词')
     if (!newIdentityPassphrase.value.trim()) throw new Error('请输入新提示词')
-    const out = safeJson<ReencryptIdentityBackupOutput>(reencrypt_identity_backup(
+    const out = await reencryptIdentityBackupInWorker(
       backupText.value,
       passphrase.value,
       newIdentityPassphrase.value,
-    ))
+    )
     if (out.user_id !== identity.value.user_id) throw new Error('重加密后的身份不匹配')
     backupText.value = out.backup_text
     passphrase.value = newIdentityPassphrase.value
@@ -7122,6 +7119,76 @@ function createPublicPeerAnnounceInWorker(peerId: string, addressesJson: string,
 
 async function inspectPublicPeerAnnounceInWorker<T = any>(announceText: string, identityPublicKey: string): Promise<T> {
   return runMessageMetadataCryptoJson<T>({ operation: 'inspectPublicPeerAnnounce', announceText, identityPublicKey })
+}
+
+type IdentityLifecycleCryptoWorkerResponse = {
+  id: number
+  ok: boolean
+  value?: string
+  error?: string
+}
+
+let identityLifecycleCryptoWorker: Worker | null = null
+let nextIdentityLifecycleCryptoRequestId = 1
+const identityLifecycleCryptoRequests = new Map<number, {
+  resolve: (value: string) => void
+  reject: (reason?: unknown) => void
+}>()
+
+function getIdentityLifecycleCryptoWorker(): Worker {
+  if (identityLifecycleCryptoWorker) return identityLifecycleCryptoWorker
+  const worker = new Worker(new URL('./identityLifecycleCrypto.worker.ts', import.meta.url), { type: 'module' })
+  worker.onmessage = (event: MessageEvent<IdentityLifecycleCryptoWorkerResponse>) => {
+    const response = event.data
+    const pending = identityLifecycleCryptoRequests.get(response.id)
+    if (!pending) return
+    identityLifecycleCryptoRequests.delete(response.id)
+    if (response.ok && typeof response.value === 'string') pending.resolve(response.value)
+    else pending.reject(new Error(response.error || '身份生命周期 Worker 处理失败'))
+  }
+  worker.onerror = (event) => {
+    const error = new Error(event.message || '身份生命周期 Worker 已停止')
+    for (const pending of identityLifecycleCryptoRequests.values()) pending.reject(error)
+    identityLifecycleCryptoRequests.clear()
+    worker.terminate()
+    if (identityLifecycleCryptoWorker === worker) identityLifecycleCryptoWorker = null
+  }
+  identityLifecycleCryptoWorker = worker
+  return worker
+}
+
+function runIdentityLifecycleCryptoWorker(payload: Record<string, string>): Promise<string> {
+  const id = nextIdentityLifecycleCryptoRequestId++
+  return new Promise((resolve, reject) => {
+    identityLifecycleCryptoRequests.set(id, { resolve, reject })
+    try {
+      getIdentityLifecycleCryptoWorker().postMessage({ id, ...payload })
+    } catch (error) {
+      identityLifecycleCryptoRequests.delete(id)
+      reject(error)
+    }
+  })
+}
+
+async function runIdentityLifecycleCryptoJson<T>(payload: Record<string, string>): Promise<T> {
+  return JSON.parse(await runIdentityLifecycleCryptoWorker(payload)) as T
+}
+
+function createIdentityInWorker(passphrase: string): Promise<IdentityOutput> {
+  return runIdentityLifecycleCryptoJson<IdentityOutput>({ operation: 'createIdentity', passphrase })
+}
+
+function restoreIdentityInWorker(backupText: string, passphrase: string): Promise<RestoreOutput> {
+  return runIdentityLifecycleCryptoJson<RestoreOutput>({ operation: 'restoreIdentity', backupText, passphrase })
+}
+
+function reencryptIdentityBackupInWorker(backupText: string, passphrase: string, newPassphrase: string): Promise<ReencryptIdentityBackupOutput> {
+  return runIdentityLifecycleCryptoJson<ReencryptIdentityBackupOutput>({
+    operation: 'reencryptIdentityBackup',
+    backupText,
+    passphrase,
+    newPassphrase,
+  })
 }
 
 let deviceSlotCryptoWorker: Worker | null = null
