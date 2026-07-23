@@ -152,6 +152,13 @@ $public_url {
     reverse_proxy $node_container:8787
   }
 
+  handle_path /admin/* {
+    root * /admin
+    encode zstd gzip
+    try_files {path} /index.html
+    file_server
+  }
+
   handle {
     root * /srv
     encode zstd gzip

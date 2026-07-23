@@ -37,6 +37,12 @@ https://<HTTPS-主机> {
     reverse_proxy lm-talk-node:8787
   }
 
+  handle_path /admin/* {
+    root * /admin
+    try_files {path} /index.html
+    file_server
+  }
+
   handle {
     root * /srv
     try_files {path} /index.html
@@ -46,6 +52,15 @@ https://<HTTPS-主机> {
 ```
 
 Node 不发布 `8787` 到宿主机；它只通过 `lm-talk-web` 的 Caddy 接收请求。
+
+同一个 Caddy 容器还提供独立的 Node 管理前端：
+
+```text
+https://<HTTPS-主机>/admin/
+```
+
+它是 Caddy 提供的静态前端，不是 `lm_node` 的 `/admin` 路径；页面默认连接同源
+`/node` API，仍须输入控制面 token。
 
 ## 从源码启动 Web / Caddy
 
@@ -58,7 +73,7 @@ Node 不发布 `8787` 到宿主机；它只通过 `lm-talk-web` 的 Caddy 接收
 ```
 
 脚本会构建 Web 镜像、启动 `lm-talk-web`、发布宿主机 `80/443`，并自动生成包含
-`/node/* → lm-talk-node:8787` 的 Caddyfile。根证书会持久化在：
+`/node/* → lm-talk-node:8787` 与 `/admin/` 管理前端的 Caddyfile。根证书会持久化在：
 
 ```text
 /home/user/lm-talk-web/caddy-data/caddy/pki/authorities/local/root.crt
