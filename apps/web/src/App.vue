@@ -4533,17 +4533,6 @@ function allowSecureSessionHandshakeFromContact(sender: ContactItem): boolean {
   return sender.state === 'Friend'
 }
 
-function allowSecureSessionHandshakeFromContact(sender: ContactItem): boolean {
-  if (contactAllKnownDevicesRevoked(sender)) {
-    revokedDeviceIncomingDropCount.value += 1
-    lastRevokedDeviceIncomingDropAt.value = Date.now()
-    lastRevokedDeviceIncomingDropFrom.value = sender.display_name || sender.user_id
-    appendLog(`⚠️ 已丢弃已撤销联系人发来的安全会话握手：${lastRevokedDeviceIncomingDropFrom.value}`)
-    return false
-  }
-  return sender.state === 'Friend'
-}
-
 function clearUnverifiedIncomingDropStats() {
   unverifiedIncomingDropCount.value = 0
   lastUnverifiedIncomingDropAt.value = null
