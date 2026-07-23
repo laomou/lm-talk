@@ -19,12 +19,7 @@ import init, {
   create_mailbox_message,
   create_message_receipt,
   create_peer_announce,
-  create_prekey_bundle,
   create_public_peer_announce,
-  create_ratchet_dh_keypair,
-  create_ratchet_session_from_shared_secret,
-  create_ratchet_session_from_shared_secret_with_keys,
-  create_ratchet_session_pair,
   decrypt_text_message,
   encrypt_text_message,
   export_contact_card,
@@ -35,21 +30,8 @@ import init, {
   inspect_mailbox_message,
   inspect_message_receipt,
   inspect_peer_announce,
-  inspect_prekey_bundle,
   inspect_public_peer_announce,
-  inspect_ratchet_state,
   normalize_passphrase,
-  create_signal_offer,
-  create_signal_answer,
-  create_x3dh_initial_message,
-  create_x3dh_initial_message_with_one_time_prekey_id,
-  create_x3dh_initial_message_with_one_time_prekey_record,
-  derive_x3dh_responder_secret,
-  inspect_signal_offer,
-  inspect_signal_answer,
-  ratchet_next_receiving_key,
-  ratchet_next_sending_key,
-  ratchet_dh_step,
   ratchet_encrypt_text_message,
   reencrypt_identity_backup,
   restore_identity,
@@ -1555,6 +1537,10 @@ onUnmounted(() => {
   groupEventCryptoWorker = null
   for (const pending of groupEventCryptoRequests.values()) pending.reject(new Error('群邀请与事件 Worker 已停止'))
   groupEventCryptoRequests.clear()
+  secureSessionCryptoWorker?.terminate()
+  secureSessionCryptoWorker = null
+  for (const pending of secureSessionCryptoRequests.values()) pending.reject(new Error('安全会话 Worker 已停止'))
+  secureSessionCryptoRequests.clear()
   ratchetEncryptWorker?.terminate()
   ratchetEncryptWorker = null
   for (const pending of ratchetEncryptRequests.values()) pending.reject(new Error('Ratchet 加密 Worker 已停止'))
@@ -4063,7 +4049,7 @@ async function discoverMailboxHintForContact(contact: ContactItem): Promise<stri
     nodeDhtKeyKind.value = 'mailbox-hint'
     nodeDhtKeyValue.value = contact.user_id
     const body = await nodeFetchJson(`/api/dht/find-value?kind=mailbox-hint&value=${encodeURIComponent(contact.user_id)}&limit=8&max_peers=8&alpha=3`)
-    applyDhtFindValueRecord(body)
+    await applyDhtFindValueRecord(body)
     if (contact.mailbox_hint_url?.trim()) {
       markContactDhtDiscoverySuccess(contact, 'mailbox-hint')
       appendLog(`✅ 已通过 DHT 发现 ${contact.display_name || contact.user_id} 的 MailboxHint`)
@@ -6169,15 +6155,19 @@ function clearActiveFriendRequestError() {
   })
 }
 
-function recreateActiveRatchetSession() {
-  run('重建 Ratchet 会话', () => {
+async function recreateActiveRatchetSession() {
+  await runAsync('重建 Ratchet 会话', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
     if (activeContact.value.state !== 'Friend') throw new Error('联系人还不是 Friend')
     if (!activeContact.value.contact_card_text) throw new Error('缺少联系人名片')
-    const out = JSON.parse(create_ratchet_session_pair(myContactCardText.value, activeContact.value.contact_card_text)) as {
+    const out = await runSecureSessionCryptoJson<{
       local_state_text: string
       remote_state_text: string
-    }
+    }>({
+      operation: 'createRatchetSessionPair',
+      myContactCardText: myContactCardText.value,
+      peerContactCardText: activeContact.value.contact_card_text,
+    })
     ratchetStateText.value = out.local_state_text
     ratchetPeerStateText.value = out.remote_state_text
     saveRatchetSession(activeContact.value.user_id, out.local_state_text)
@@ -6890,6 +6880,59 @@ function createGroupPolicyStateInWorker(groupId: string, groupName: string, invi
   return runGroupEventCryptoWorker({ type: 'createPolicyState', groupId, groupName, inviterUserId, memberIdsJson })
 }
 
+type SecureSessionCryptoWorkerResponse = {
+  id: number
+  ok: boolean
+  value?: string
+  error?: string
+}
+
+let secureSessionCryptoWorker: Worker | null = null
+let nextSecureSessionCryptoRequestId = 1
+const secureSessionCryptoRequests = new Map<number, {
+  resolve: (value: string) => void
+  reject: (reason?: unknown) => void
+}>()
+
+function getSecureSessionCryptoWorker(): Worker {
+  if (secureSessionCryptoWorker) return secureSessionCryptoWorker
+  const worker = new Worker(new URL('./secureSessionCrypto.worker.ts', import.meta.url), { type: 'module' })
+  worker.onmessage = (event: MessageEvent<SecureSessionCryptoWorkerResponse>) => {
+    const response = event.data
+    const pending = secureSessionCryptoRequests.get(response.id)
+    if (!pending) return
+    secureSessionCryptoRequests.delete(response.id)
+    if (response.ok && typeof response.value === 'string') pending.resolve(response.value)
+    else pending.reject(new Error(response.error || '安全会话 Worker 处理失败'))
+  }
+  worker.onerror = (event) => {
+    const error = new Error(event.message || '安全会话 Worker 已停止')
+    for (const pending of secureSessionCryptoRequests.values()) pending.reject(error)
+    secureSessionCryptoRequests.clear()
+    worker.terminate()
+    if (secureSessionCryptoWorker === worker) secureSessionCryptoWorker = null
+  }
+  secureSessionCryptoWorker = worker
+  return worker
+}
+
+function runSecureSessionCryptoWorker(payload: Record<string, string>): Promise<string> {
+  const id = nextSecureSessionCryptoRequestId++
+  return new Promise((resolve, reject) => {
+    secureSessionCryptoRequests.set(id, { resolve, reject })
+    try {
+      getSecureSessionCryptoWorker().postMessage({ id, ...payload })
+    } catch (error) {
+      secureSessionCryptoRequests.delete(id)
+      reject(error)
+    }
+  })
+}
+
+async function runSecureSessionCryptoJson<T = any>(payload: Record<string, string>): Promise<T> {
+  return JSON.parse(await runSecureSessionCryptoWorker(payload)) as T
+}
+
 let deviceSlotCryptoWorker: Worker | null = null
 let nextDeviceSlotCryptoRequestId = 1
 const deviceSlotCryptoRequests = new Map<number, {
@@ -7563,13 +7606,14 @@ async function createRtcOfferForActive() {
     await waitIceGatheringComplete(peer)
     const sdp = JSON.stringify(peer.localDescription)
     ensureUiTextSize('WebRTC SDP', sdp, MAX_SIGNAL_BYTES)
-    localSignalText.value = create_signal_offer(
-      backupText.value,
-      passphrase.value,
-      activeContact.value.user_id,
+    localSignalText.value = await runSecureSessionCryptoWorker({
+      operation: 'createSignalOffer',
+      backupText: backupText.value,
+      passphrase: passphrase.value,
+      toUserId: activeContact.value.user_id,
       sdp,
-      BigInt(600),
-    )
+      ttlSeconds: '600',
+    })
   })
 }
 
@@ -7577,7 +7621,11 @@ async function acceptRtcOfferForActive() {
   await runAsync('接受 Offer 并创建 Answer', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
     ensureUiTextSize('远端 Signal', remoteSignalText.value, MAX_SIGNAL_BYTES)
-    const info = JSON.parse(inspect_signal_offer(remoteSignalText.value, activeContact.value.contact_card_text)) as { sdp: string }
+    const info = await runSecureSessionCryptoJson<{ sdp: string }>({
+      operation: 'inspectSignalOffer',
+      signalText: remoteSignalText.value,
+      contactCardText: activeContact.value.contact_card_text,
+    })
     const peer = setupPeerConnection()
     await peer.setRemoteDescription(JSON.parse(info.sdp))
     const answer = await peer.createAnswer()
@@ -7585,7 +7633,14 @@ async function acceptRtcOfferForActive() {
     await waitIceGatheringComplete(peer)
     const sdp = JSON.stringify(peer.localDescription)
     ensureUiTextSize('WebRTC SDP', sdp, MAX_SIGNAL_BYTES)
-    localSignalText.value = create_signal_answer(backupText.value, passphrase.value, remoteSignalText.value, sdp, BigInt(600))
+    localSignalText.value = await runSecureSessionCryptoWorker({
+      operation: 'createSignalAnswer',
+      backupText: backupText.value,
+      passphrase: passphrase.value,
+      offerText: remoteSignalText.value,
+      sdp,
+      ttlSeconds: '600',
+    })
   })
 }
 
@@ -7594,7 +7649,11 @@ async function applyRtcAnswerForActive() {
     if (!pc) throw new Error('请先创建 Offer')
     if (!activeContact.value) throw new Error('请选择联系人')
     ensureUiTextSize('远端 Signal', remoteSignalText.value, MAX_SIGNAL_BYTES)
-    const info = JSON.parse(inspect_signal_answer(remoteSignalText.value, activeContact.value.contact_card_text)) as { sdp: string }
+    const info = await runSecureSessionCryptoJson<{ sdp: string }>({
+      operation: 'inspectSignalAnswer',
+      signalText: remoteSignalText.value,
+      contactCardText: activeContact.value.contact_card_text,
+    })
     await pc.setRemoteDescription(JSON.parse(info.sdp))
   })
 }
@@ -7692,16 +7751,18 @@ type SecureSessionResponse = {
   created_at: number
 }
 
-function buildSecureSessionOfferForContact(contact: ContactItem): string {
+async function buildSecureSessionOfferForContact(contact: ContactItem): Promise<string> {
   if (!identity.value) throw new Error('请先登录')
   // The current UI also exposes a remote PreKey bundle for diagnostics. Always
   // regenerate our own bundle before offering, so a previously received bundle
   // can never be paired with this account's private state.
-  createMyPreKeyBundleText()
+  await createMyPreKeyBundleText()
   if (!prekeyBundleText.value.trim() || !prekeyPrivateBundleJson.value.trim()) {
     throw new Error('无法创建本端安全会话材料')
   }
-  const pair = JSON.parse(create_ratchet_dh_keypair()) as { private_key: string; public_key: string }
+  const pair = await runSecureSessionCryptoJson<{ private_key: string; public_key: string }>({
+    operation: 'createRatchetDhKeyPair',
+  })
   const offerId = newId()
   ratchetLocalDhKeyPairJson.value = JSON.stringify(pair, null, 2)
   ratchetRemoteDhPublicKeyForInit.value = ''
@@ -7731,7 +7792,7 @@ function buildSecureSessionOfferForContact(contact: ContactItem): string {
 }
 
 async function sendSecureSessionOfferToContact(contact: ContactItem) {
-  const offer = buildSecureSessionOfferForContact(contact)
+  const offer = await buildSecureSessionOfferForContact(contact)
   contact.last_secure_session_attempt_at = Date.now()
   try {
     await pushMailboxPayload(contact, 'other', offer)
@@ -7779,10 +7840,10 @@ function retrySecureSessionForActiveContact() {
   })
 }
 
-function createSecureSessionOfferText() {
-  run('创建安全会话 Offer', () => {
+async function createSecureSessionOfferText() {
+  await runAsync('创建安全会话 Offer', async () => {
     if (!activeContact.value) throw new Error('请先选择联系人')
-    buildSecureSessionOfferForContact(activeContact.value)
+    await buildSecureSessionOfferForContact(activeContact.value)
   })
 }
 
@@ -7804,49 +7865,53 @@ function clearSecureSessionRawText() {
   })
 }
 
-function applySecureSessionOfferText() {
-  run('应用安全会话 Offer 并生成 Response', () => {
-    if (!identity.value) throw new Error('请先登录')
-    const offer = JSON.parse(incomingSecureSessionText.value || secureSessionOfferText.value) as SecureSessionOffer
-    if (offer.type !== 'lm-secure-session-offer-v1') throw new Error('不是 secure session offer')
-    if (offer.to_user_id !== identity.value.user_id) throw new Error('Offer 不是发给当前身份')
-    const contact = contacts.value.find((c) => c.user_id === offer.from_user_id)
-    if (!contact || contact.state !== 'Friend') throw new Error('Offer 发送者不是 Friend 联系人')
-    activePeerId.value = contact.user_id
-    activeGroupId.value = ''
+async function applySecureSessionOfferRaw() {
+  if (!identity.value) throw new Error('请先登录')
+  const offer = JSON.parse(incomingSecureSessionText.value || secureSessionOfferText.value) as SecureSessionOffer
+  if (offer.type !== 'lm-secure-session-offer-v1') throw new Error('不是 secure session offer')
+  if (offer.to_user_id !== identity.value.user_id) throw new Error('Offer 不是发给当前身份')
+  const contact = contacts.value.find((c) => c.user_id === offer.from_user_id)
+  if (!contact || contact.state !== 'Friend') throw new Error('Offer 发送者不是 Friend 联系人')
+  activePeerId.value = contact.user_id
+  activeGroupId.value = ''
 
     const signedRecords = offer.signed_one_time_prekey_record_texts ?? []
     const signedRecord = signedRecords[0] || ''
-    const init = JSON.parse(signedRecord
-      ? create_x3dh_initial_message_with_one_time_prekey_record(
-        backupText.value,
-        passphrase.value,
-        offer.prekey_bundle_text,
-        signedRecord,
-      )
-      : create_x3dh_initial_message_with_one_time_prekey_id(
-        backupText.value,
-        passphrase.value,
-        offer.prekey_bundle_text,
-        selectedOneTimePreKeyId.value ?? undefined,
-      )) as {
+    const init = await runSecureSessionCryptoJson<{
       initial_message_json: string
       shared_secret: string
-    }
+    }>(signedRecord
+      ? {
+        operation: 'createX3dhInitialMessageWithRecord',
+        backupText: backupText.value,
+        passphrase: passphrase.value,
+        prekeyBundleText: offer.prekey_bundle_text,
+        signedRecordText: signedRecord,
+      }
+      : {
+        operation: 'createX3dhInitialMessageWithId',
+        backupText: backupText.value,
+        passphrase: passphrase.value,
+        prekeyBundleText: offer.prekey_bundle_text,
+        oneTimePrekeyId: selectedOneTimePreKeyId.value === null ? '' : String(selectedOneTimePreKeyId.value),
+      })
     x3dhInitialMessageJson.value = JSON.stringify(JSON.parse(init.initial_message_json), null, 2)
     x3dhSharedSecretText.value = init.shared_secret
-    const pair = JSON.parse(create_ratchet_dh_keypair()) as { private_key: string; public_key: string }
+    const pair = await runSecureSessionCryptoJson<{ private_key: string; public_key: string }>({
+      operation: 'createRatchetDhKeyPair',
+    })
     ratchetLocalDhKeyPairJson.value = JSON.stringify(pair, null, 2)
     ratchetRemoteDhPublicKeyForInit.value = offer.ratchet_dh_public_key
     ratchetInitRole.value = 'Initiator'
-    const stateText = create_ratchet_session_from_shared_secret_with_keys(
-      identity.value.user_id,
-      offer.from_user_id,
-      'Initiator',
-      init.shared_secret,
-      pair.private_key,
-      offer.ratchet_dh_public_key,
-    )
+    const stateText = await runSecureSessionCryptoWorker({
+      operation: 'createRatchetSessionFromSharedSecretWithKeys',
+      localUserId: identity.value.user_id,
+      remoteUserId: offer.from_user_id,
+      role: 'Initiator',
+      sharedSecret: init.shared_secret,
+      localDhPrivateKey: pair.private_key,
+      remoteDhPublicKey: offer.ratchet_dh_public_key,
+    })
     ratchetStateText.value = stateText
     saveRatchetSession(offer.from_user_id, stateText)
     contact.last_secure_session_error = undefined
@@ -7868,7 +7933,7 @@ function applySecureSessionOfferText() {
       ? '已建立本端 Ratchet Session，并自动回传 Response。'
       : '已建立本端 Ratchet Session，并生成 Response；开启消息同步后可自动回传。'
     incomingSecureSessionText.value = ''
-    inspectRatchetStateText()
+    await inspectRatchetStateText()
     persist()
     if (nodeEnabled.value) {
       void pushMailboxPayload(contact, 'other', responseText)
@@ -7883,40 +7948,46 @@ function applySecureSessionOfferText() {
           persist()
         })
     }
+}
+
+async function applySecureSessionOfferText() {
+  await runAsync('应用安全会话 Offer 并生成 Response', async () => {
+    await applySecureSessionOfferRaw()
   })
 }
 
-function applySecureSessionResponseText() {
-  run('应用安全会话 Response', () => {
-    if (!identity.value) throw new Error('请先登录')
-    const response = JSON.parse(incomingSecureSessionText.value || secureSessionResponseText.value) as SecureSessionResponse
-    if (response.type !== 'lm-secure-session-response-v1') throw new Error('不是 secure session response')
-    if (response.to_user_id !== identity.value.user_id) throw new Error('Response 不是发给当前身份')
-    const contact = contacts.value.find((c) => c.user_id === response.from_user_id)
-    if (!contact || contact.state !== 'Friend') throw new Error('Response 发送者不是 Friend 联系人')
-    const pendingOffer = pendingSecureSessionOfferFor(response.from_user_id, response.offer_id)
-    if (!pendingOffer) throw new Error('找不到这次安全建链的本地记录；请在联系人详情中重试安全建链')
-    activePeerId.value = contact.user_id
-    activeGroupId.value = ''
+async function applySecureSessionResponseRaw() {
+  if (!identity.value) throw new Error('请先登录')
+  const response = JSON.parse(incomingSecureSessionText.value || secureSessionResponseText.value) as SecureSessionResponse
+  if (response.type !== 'lm-secure-session-response-v1') throw new Error('不是 secure session response')
+  if (response.to_user_id !== identity.value.user_id) throw new Error('Response 不是发给当前身份')
+  const contact = contacts.value.find((c) => c.user_id === response.from_user_id)
+  if (!contact || contact.state !== 'Friend') throw new Error('Response 发送者不是 Friend 联系人')
+  const pendingOffer = pendingSecureSessionOfferFor(response.from_user_id, response.offer_id)
+  if (!pendingOffer) throw new Error('找不到这次安全建链的本地记录；请在联系人详情中重试安全建链')
+  activePeerId.value = contact.user_id
+  activeGroupId.value = ''
 
-    const derived = JSON.parse(derive_x3dh_responder_secret(
-      backupText.value,
-      passphrase.value,
-      pendingOffer.prekey_private_bundle_json,
-      response.initial_message_json,
-    )) as { shared_secret: string }
+    const derived = await runSecureSessionCryptoJson<{ shared_secret: string }>({
+      operation: 'deriveX3dhResponderSecret',
+      backupText: backupText.value,
+      passphrase: passphrase.value,
+      privateBundleJson: pendingOffer.prekey_private_bundle_json,
+      initialMessageJson: response.initial_message_json,
+    })
     x3dhInitialMessageJson.value = JSON.stringify(JSON.parse(response.initial_message_json), null, 2)
     x3dhSharedSecretText.value = derived.shared_secret
     ratchetRemoteDhPublicKeyForInit.value = response.ratchet_dh_public_key
     ratchetInitRole.value = 'Responder'
-    const stateText = create_ratchet_session_from_shared_secret_with_keys(
-      identity.value.user_id,
-      response.from_user_id,
-      'Responder',
-      derived.shared_secret,
-      pendingOffer.ratchet_dh_private_key,
-      response.ratchet_dh_public_key,
-    )
+    const stateText = await runSecureSessionCryptoWorker({
+      operation: 'createRatchetSessionFromSharedSecretWithKeys',
+      localUserId: identity.value.user_id,
+      remoteUserId: response.from_user_id,
+      role: 'Responder',
+      sharedSecret: derived.shared_secret,
+      localDhPrivateKey: pendingOffer.ratchet_dh_private_key,
+      remoteDhPublicKey: response.ratchet_dh_public_key,
+    })
     ratchetStateText.value = stateText
     saveRatchetSession(response.from_user_id, stateText)
     removePendingSecureSessionOffer(pendingOffer.offer_id)
@@ -7925,133 +7996,149 @@ function applySecureSessionResponseText() {
     contact.secure_session_failure_count = 0
     secureSessionStatusText.value = '已应用 Response，双方现在应该都有 Ratchet Session。后续聊天会自动优先使用 Double Ratchet。'
     incomingSecureSessionText.value = ''
-    inspectRatchetStateText()
+    await inspectRatchetStateText()
     persist()
+}
+
+async function applySecureSessionResponseText() {
+  await runAsync('应用安全会话 Response', async () => {
+    await applySecureSessionResponseRaw()
   })
 }
 
-function createMyPreKeyBundleText() {
-  run('生成 PreKey Bundle', () => {
+async function createMyPreKeyBundleText() {
+  await runAsync('生成 PreKey Bundle', async () => {
     if (!backupText.value || !passphrase.value) throw new Error('需要身份备份包和提示词')
-    const out = JSON.parse(create_prekey_bundle(
-      backupText.value,
-      passphrase.value,
-      Number(prekeySignedId.value || 1),
-      Number(prekeyOneTimeCount.value || 0),
-      BigInt(7 * 24 * 3600),
-    )) as {
+    const out = await runSecureSessionCryptoJson<{
       prekey_bundle_text: string
       private_bundle_json: string
       signed_one_time_prekey_record_texts?: string[]
-    }
+    }>({
+      operation: 'createPrekeyBundle',
+      backupText: backupText.value,
+      passphrase: passphrase.value,
+      signedId: String(Number(prekeySignedId.value || 1)),
+      oneTimeCount: String(Number(prekeyOneTimeCount.value || 0)),
+      expiresSeconds: String(7 * 24 * 3600),
+    })
     prekeyBundleText.value = out.prekey_bundle_text
     prekeyPrivateBundleJson.value = JSON.stringify(JSON.parse(out.private_bundle_json), null, 2)
     prekeySignedOneTimeRecordTexts.value = out.signed_one_time_prekey_record_texts ?? []
     selectedSignedOneTimePreKeyRecordText.value = ''
     selectedOneTimePreKeyId.value = null
-    inspectPreKeyBundleText()
+    await inspectPreKeyBundleText()
     persist()
   })
 }
 
-function inspectPreKeyBundleText() {
-  run('解析 PreKey Bundle', () => {
+async function inspectPreKeyBundleText() {
+  await runAsync('解析 PreKey Bundle', async () => {
     if (!prekeyBundleText.value.trim()) throw new Error('请先生成或粘贴 PreKey Bundle')
-    const info = JSON.parse(inspect_prekey_bundle(prekeyBundleText.value))
+    const info = await runSecureSessionCryptoJson<any>({
+      operation: 'inspectPrekeyBundle',
+      prekeyBundleText: prekeyBundleText.value,
+    })
     info.signed_one_time_prekey_records = prekeySignedOneTimeRecordTexts.value.length
     info.selected_signed_one_time_prekey_record = Boolean(selectedSignedOneTimePreKeyRecordText.value)
     prekeyInfoText.value = JSON.stringify(info, null, 2)
   })
 }
 
-function createX3dhInitialMessageText() {
-  run('创建 X3DH 初始消息', () => {
+async function createX3dhInitialMessageText() {
+  await runAsync('创建 X3DH 初始消息', async () => {
     if (!backupText.value || !passphrase.value) throw new Error('需要身份备份包和提示词')
     if (!prekeyBundleText.value.trim()) throw new Error('请粘贴对方 PreKey Bundle')
     const signedRecord = selectedSignedOneTimePreKeyRecordText.value || prekeySignedOneTimeRecordTexts.value[0] || ''
-    const out = JSON.parse(signedRecord
-      ? create_x3dh_initial_message_with_one_time_prekey_record(
-        backupText.value,
-        passphrase.value,
-        prekeyBundleText.value,
-        signedRecord,
-      )
-      : create_x3dh_initial_message_with_one_time_prekey_id(
-        backupText.value,
-        passphrase.value,
-        prekeyBundleText.value,
-        selectedOneTimePreKeyId.value ?? undefined,
-      )) as {
+    const out = await runSecureSessionCryptoJson<{
       initial_message_json: string
       shared_secret: string
-    }
+    }>(signedRecord
+      ? {
+        operation: 'createX3dhInitialMessageWithRecord',
+        backupText: backupText.value,
+        passphrase: passphrase.value,
+        prekeyBundleText: prekeyBundleText.value,
+        signedRecordText: signedRecord,
+      }
+      : {
+        operation: 'createX3dhInitialMessageWithId',
+        backupText: backupText.value,
+        passphrase: passphrase.value,
+        prekeyBundleText: prekeyBundleText.value,
+        oneTimePrekeyId: selectedOneTimePreKeyId.value === null ? '' : String(selectedOneTimePreKeyId.value),
+      })
     x3dhInitialMessageJson.value = JSON.stringify(JSON.parse(out.initial_message_json), null, 2)
     x3dhSharedSecretText.value = out.shared_secret
   })
 }
 
-function deriveX3dhResponderSecretText() {
-  run('响应方派生 X3DH 密钥', () => {
+async function deriveX3dhResponderSecretText() {
+  await runAsync('响应方派生 X3DH 密钥', async () => {
     if (!backupText.value || !passphrase.value) throw new Error('需要身份备份包和提示词')
     if (!prekeyPrivateBundleJson.value.trim()) throw new Error('需要本端 private prekey bundle')
     if (!x3dhInitialMessageJson.value.trim()) throw new Error('请粘贴 X3DH initial message JSON')
-    const out = JSON.parse(derive_x3dh_responder_secret(
-      backupText.value,
-      passphrase.value,
-      prekeyPrivateBundleJson.value,
-      x3dhInitialMessageJson.value,
-    )) as { shared_secret: string }
+    const out = await runSecureSessionCryptoJson<{ shared_secret: string }>({
+      operation: 'deriveX3dhResponderSecret',
+      backupText: backupText.value,
+      passphrase: passphrase.value,
+      privateBundleJson: prekeyPrivateBundleJson.value,
+      initialMessageJson: x3dhInitialMessageJson.value,
+    })
     x3dhSharedSecretText.value = out.shared_secret
   })
 }
 
 
 
-function generateRatchetDhKeyPairText() {
-  run('生成 Ratchet DH keypair', () => {
-    const pair = JSON.parse(create_ratchet_dh_keypair()) as { private_key: string; public_key: string }
+async function generateRatchetDhKeyPairText() {
+  await runAsync('生成 Ratchet DH keypair', async () => {
+    const pair = await runSecureSessionCryptoJson<{ private_key: string; public_key: string }>({
+      operation: 'createRatchetDhKeyPair',
+    })
     ratchetLocalDhKeyPairJson.value = JSON.stringify(pair, null, 2)
     appendLog('已生成本端 Ratchet DH public key，可把 public_key 发给对方')
   })
 }
 
-function createRatchetFromSharedSecretWithKeysText() {
-  run('用 Shared Secret + 双方 DH 初始化 Ratchet', () => {
+async function createRatchetFromSharedSecretWithKeysText() {
+  await runAsync('用 Shared Secret + 双方 DH 初始化 Ratchet', async () => {
     if (!identity.value) throw new Error('请先登录')
     if (!activeContact.value) throw new Error('请先选择联系人')
     if (!x3dhSharedSecretText.value.trim()) throw new Error('请先得到 X3DH shared secret')
     if (!ratchetLocalDhKeyPairJson.value.trim()) throw new Error('请先生成本端 Ratchet DH keypair')
     if (!ratchetRemoteDhPublicKeyForInit.value.trim()) throw new Error('请粘贴对方 Ratchet DH public_key')
     const localPair = JSON.parse(ratchetLocalDhKeyPairJson.value) as { private_key: string; public_key: string }
-    const stateText = create_ratchet_session_from_shared_secret_with_keys(
-      identity.value.user_id,
-      activeContact.value.user_id,
-      ratchetInitRole.value,
-      x3dhSharedSecretText.value.trim(),
-      localPair.private_key,
-      ratchetRemoteDhPublicKeyForInit.value.trim(),
-    )
+    const stateText = await runSecureSessionCryptoWorker({
+      operation: 'createRatchetSessionFromSharedSecretWithKeys',
+      localUserId: identity.value.user_id,
+      remoteUserId: activeContact.value.user_id,
+      role: ratchetInitRole.value,
+      sharedSecret: x3dhSharedSecretText.value.trim(),
+      localDhPrivateKey: localPair.private_key,
+      remoteDhPublicKey: ratchetRemoteDhPublicKeyForInit.value.trim(),
+    })
     ratchetStateText.value = stateText
     saveRatchetSession(activeContact.value.user_id, stateText)
-    inspectRatchetStateText()
+    await inspectRatchetStateText()
     persist()
   })
 }
 
-function createRatchetFromSharedSecretText() {
-  run('用 Shared Secret 初始化 Ratchet', () => {
+async function createRatchetFromSharedSecretText() {
+  await runAsync('用 Shared Secret 初始化 Ratchet', async () => {
     if (!identity.value) throw new Error('请先登录')
     if (!activeContact.value) throw new Error('请先选择联系人')
     if (!x3dhSharedSecretText.value.trim()) throw new Error('请先得到 X3DH shared secret')
-    const out = JSON.parse(create_ratchet_session_from_shared_secret(
-      identity.value.user_id,
-      activeContact.value.user_id,
-      x3dhSharedSecretText.value.trim(),
-    )) as { local_state_text: string; remote_state_text: string }
+    const out = await runSecureSessionCryptoJson<{ local_state_text: string; remote_state_text: string }>({
+      operation: 'createRatchetSessionFromSharedSecret',
+      localUserId: identity.value.user_id,
+      remoteUserId: activeContact.value.user_id,
+      sharedSecret: x3dhSharedSecretText.value.trim(),
+    })
     ratchetStateText.value = out.local_state_text
     ratchetPeerStateText.value = out.remote_state_text
     saveRatchetSession(activeContact.value.user_id, out.local_state_text)
-    inspectRatchetStateText()
+    await inspectRatchetStateText()
     persist()
   })
 }
@@ -8065,7 +8152,7 @@ async function ratchetEncryptEnvelopeText() {
     ratchetStateText.value = out.stateText
     if (activeContact.value) saveRatchetSession(activeContact.value.user_id, out.stateText)
     ratchetEnvelopeText.value = JSON.stringify(JSON.parse(out.envelopeJson), null, 2)
-    inspectRatchetStateText()
+    await inspectRatchetStateText()
   })
 }
 
@@ -8077,63 +8164,81 @@ async function ratchetDecryptEnvelopeText() {
     ratchetStateText.value = out.stateText
     if (activeContact.value) saveRatchetSession(activeContact.value.user_id, out.stateText)
     ratchetPlainText.value = JSON.stringify(JSON.parse(out.plainJson), null, 2)
-    inspectRatchetStateText()
+    await inspectRatchetStateText()
   })
 }
 
-function createRatchetPairForActiveContact() {
-  run('创建双棘轮状态对', () => {
+async function createRatchetPairForActiveContact() {
+  await runAsync('创建双棘轮状态对', async () => {
     if (!myContactCardText.value) throw new Error('请先生成我的 Contact Card')
     if (!activeContact.value) throw new Error('请先选择联系人')
-    const out = JSON.parse(create_ratchet_session_pair(myContactCardText.value, activeContact.value.contact_card_text)) as {
+    const out = await runSecureSessionCryptoJson<{
       local_state_text: string
       remote_state_text: string
-    }
+    }>({
+      operation: 'createRatchetSessionPair',
+      myContactCardText: myContactCardText.value,
+      peerContactCardText: activeContact.value.contact_card_text,
+    })
     ratchetStateText.value = out.local_state_text
     ratchetPeerStateText.value = out.remote_state_text
     saveRatchetSession(activeContact.value.user_id, out.local_state_text)
     ratchetHeaderText.value = ''
     ratchetKeyText.value = ''
-    inspectRatchetStateText()
+    await inspectRatchetStateText()
     appendLog('已生成本端状态；对端状态仅用于本地测试，真实聊天中不会发给对方')
   })
 }
 
-function inspectRatchetStateText() {
-  run('解析双棘轮状态', () => {
+async function inspectRatchetStateText() {
+  await runAsync('解析双棘轮状态', async () => {
     if (!ratchetStateText.value.trim()) throw new Error('请先粘贴或生成 ratchet state')
-    ratchetInfoText.value = JSON.stringify(JSON.parse(inspect_ratchet_state(ratchetStateText.value)), null, 2)
+    ratchetInfoText.value = JSON.stringify(await runSecureSessionCryptoJson({
+      operation: 'inspectRatchetState',
+      stateText: ratchetStateText.value,
+    }), null, 2)
   })
 }
 
-function ratchetNextSendKeyText() {
-  run('推进发送链', () => {
+async function ratchetNextSendKeyText() {
+  await runAsync('推进发送链', async () => {
     if (!ratchetStateText.value.trim()) throw new Error('请先粘贴或生成 ratchet state')
-    const out = JSON.parse(ratchet_next_sending_key(ratchetStateText.value)) as { state_text: string; key_json: string }
+    const out = await runSecureSessionCryptoJson<{ state_text: string; key_json: string }>({
+      operation: 'ratchetNextSendingKey',
+      stateText: ratchetStateText.value,
+    })
     ratchetStateText.value = out.state_text
     ratchetKeyText.value = JSON.stringify(JSON.parse(out.key_json), null, 2)
     ratchetHeaderText.value = JSON.stringify(JSON.parse(out.key_json).header, null, 2)
-    inspectRatchetStateText()
+    await inspectRatchetStateText()
   })
 }
 
-function ratchetNextRecvKeyText() {
-  run('推进接收链', () => {
+async function ratchetNextRecvKeyText() {
+  await runAsync('推进接收链', async () => {
     if (!ratchetStateText.value.trim()) throw new Error('请先粘贴或生成 ratchet state')
     if (!ratchetHeaderText.value.trim()) throw new Error('请粘贴收到消息的 ratchet header')
-    const out = JSON.parse(ratchet_next_receiving_key(ratchetStateText.value, ratchetHeaderText.value)) as { state_text: string; key_json: string }
+    const out = await runSecureSessionCryptoJson<{ state_text: string; key_json: string }>({
+      operation: 'ratchetNextReceivingKey',
+      stateText: ratchetStateText.value,
+      headerText: ratchetHeaderText.value,
+    })
     ratchetStateText.value = out.state_text
     ratchetKeyText.value = JSON.stringify(JSON.parse(out.key_json), null, 2)
-    inspectRatchetStateText()
+    await inspectRatchetStateText()
   })
 }
 
-function ratchetDhStepText() {
-  run('执行 DH 棘轮步进', () => {
+async function ratchetDhStepText() {
+  await runAsync('执行 DH 棘轮步进', async () => {
     if (!ratchetStateText.value.trim()) throw new Error('请先粘贴或生成 ratchet state')
     if (!ratchetRemoteDhPublicKey.value.trim()) throw new Error('请输入远端新的 DH public key')
-    ratchetStateText.value = ratchet_dh_step(ratchetStateText.value, ratchetRemoteDhPublicKey.value.trim())
-    inspectRatchetStateText()
+    ratchetStateText.value = await runSecureSessionCryptoWorker({
+      operation: 'ratchetDhStep',
+      stateText: ratchetStateText.value,
+      remoteDhPublicKey: ratchetRemoteDhPublicKey.value.trim(),
+    })
+    await inspectRatchetStateText()
   })
 }
 
@@ -8659,7 +8764,7 @@ function validateDhtRecordEnvelope(body: any, record: any): string | null {
   return null
 }
 
-function applyDhtFindValueRecord(body: any): boolean {
+async function applyDhtFindValueRecord(body: any): Promise<boolean> {
   const record = body?.record ?? body?.value ?? body?.found_record
   if (!record?.kind || typeof record.value !== 'string') return true
   const envelopeError = validateDhtRecordEnvelope(body, record)
@@ -8672,7 +8777,10 @@ function applyDhtFindValueRecord(body: any): boolean {
   }
   if (record.kind === 'PreKey') {
     try {
-      const inspected = JSON.parse(inspect_prekey_bundle(record.value))
+      const inspected = await runSecureSessionCryptoJson({
+        operation: 'inspectPrekeyBundle',
+        prekeyBundleText: record.value,
+      })
       prekeyBundleText.value = record.value
       const contact = currentDhtTargetContact('prekey')
       if (contact) markContactDhtDiscoverySuccess(contact, 'prekey')
@@ -8753,7 +8861,7 @@ function dhtFindValueSummary(body: any): string {
 async function runDhtFindValueForKey(key: string) {
   if (!/^[0-9a-fA-F]{64}$/.test(key)) throw new Error('请输入 64 位十六进制 DHT key')
   const body = await nodeFetchJson(`/api/dht/find-value?key=${encodeURIComponent(key)}&limit=8&max_peers=8&alpha=3`)
-  if (applyDhtFindValueRecord(body)) {
+  if (await applyDhtFindValueRecord(body)) {
     if (!body?.found) {
       const contact = nodeDhtKeyKind.value === 'prekey'
         ? currentDhtTargetContact('prekey')
@@ -8783,7 +8891,7 @@ async function deriveAndFindDhtValueNow() {
     if (!value) throw new Error('请输入 peer_id 或 UserID')
     const body = await nodeFetchJson(`/api/dht/find-value?kind=${encodeURIComponent(nodeDhtKeyKind.value)}&value=${encodeURIComponent(value)}&limit=8&max_peers=8&alpha=3`)
     nodeDhtFindValueKey.value = String(body.key || '')
-    applyDhtFindValueRecord(body)
+    await applyDhtFindValueRecord(body)
     if (!body?.found) {
       const contact = nodeDhtKeyKind.value === 'prekey'
         ? currentDhtTargetContact('prekey')
@@ -8888,7 +8996,7 @@ async function ackMailboxToNode(userId: string, deliveryIds: string[]) {
 
 async function publishPreKeyToNode() {
   await runAsync('发布 PreKey Bundle 到 lm_node', async () => {
-    if (!prekeyBundleText.value.trim()) createMyPreKeyBundleText()
+    if (!prekeyBundleText.value.trim()) await createMyPreKeyBundleText()
     if (!prekeyBundleText.value.trim()) throw new Error('请先生成 PreKey Bundle')
     const body = await publishPreKeyBundlePayload()
     nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
@@ -8899,7 +9007,7 @@ async function publishPreKeyToNode() {
 async function publishAndCheckAllMyDht() {
   await runAsync('发布并检查我的 DHT 发布', async () => {
     if (!identity.value?.user_id) throw new Error('需要先登录身份')
-    if (!prekeyBundleText.value.trim()) createMyPreKeyBundleText()
+    if (!prekeyBundleText.value.trim()) await createMyPreKeyBundleText()
     if (!prekeyBundleText.value.trim()) throw new Error('请先生成 PreKey Bundle')
     const prekeyBody = await publishPreKeyBundlePayload()
     nodePreKeyStatusText.value = JSON.stringify(prekeyBody, null, 2)
@@ -9107,7 +9215,7 @@ async function publishAndCheckMyMailboxHintDht() {
 async function publishAndCheckMyPreKeyDht() {
   await runAsync('发布并检查我的 PreKey DHT', async () => {
     if (!identity.value?.user_id) throw new Error('需要先登录身份')
-    if (!prekeyBundleText.value.trim()) createMyPreKeyBundleText()
+    if (!prekeyBundleText.value.trim()) await createMyPreKeyBundleText()
     if (!prekeyBundleText.value.trim()) throw new Error('请先生成 PreKey Bundle')
     const body = await publishPreKeyBundlePayload()
     nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
@@ -9148,8 +9256,8 @@ async function ensurePreKeyInventory() {
       prekeyAutoErrorText.value = ''
       return
     }
-    if (missing && !prekeyBundleText.value.trim()) createMyPreKeyBundleText()
-    if (low) createMyPreKeyBundleText()
+    if (missing && !prekeyBundleText.value.trim()) await createMyPreKeyBundleText()
+    if (low) await createMyPreKeyBundleText()
     const body = await publishPreKeyBundlePayload()
     nodePreKeyStatusText.value = JSON.stringify(body, null, 2)
     prekeyStatusSummary.value = `${summarizePreKeyStatus(body)}，${missing ? '已自动发布' : '已自动补货'}`
@@ -9220,7 +9328,7 @@ function applyPreKeyNodeResponse(body: any, sourceLabel: string): boolean {
     prekeyBundleText.value = body.prekey_bundle_text
     selectedOneTimePreKeyId.value = typeof body.selected_one_time_prekey_id === 'number' ? body.selected_one_time_prekey_id : null
     selectedSignedOneTimePreKeyRecordText.value = typeof body.selected_signed_one_time_prekey_record_text === 'string' ? body.selected_signed_one_time_prekey_record_text : ''
-    inspectPreKeyBundleText()
+    void inspectPreKeyBundleText()
     appendLog(`✅ 已${sourceLabel} PreKey Bundle${selectedOneTimePreKeyId.value !== null ? '，选中 one-time key ' + selectedOneTimePreKeyId.value : ''}${selectedSignedOneTimePreKeyRecordText.value ? '（signed record）' : ''}`)
     return true
   }
@@ -9229,7 +9337,7 @@ function applyPreKeyNodeResponse(body: any, sourceLabel: string): boolean {
 
 async function fetchPreKeyViaDht(userId: string): Promise<boolean> {
   const dht = await nodeFetchJson(`/api/dht/find-value?kind=prekey&value=${encodeURIComponent(userId)}&limit=8&max_peers=8&alpha=3`)
-  const ok = applyDhtFindValueRecord(dht)
+  const ok = await applyDhtFindValueRecord(dht)
   nodeDhtFindValueStatusText.value = ok ? dhtFindValueSummary(dht) : nodeDhtFindValueStatusText.value
   nodeClosestInfoText.value = JSON.stringify(dht, null, 2)
   return ok && dht?.record?.kind === 'PreKey' && typeof dht.record.value === 'string'
@@ -9562,7 +9670,7 @@ async function handleMailboxPayload(item: any): Promise<{ handled: boolean; deli
         return { handled: true, deliveryId, event: 'other', reason }
       }
       incomingSecureSessionText.value = ciphertext
-      applySecureSessionResponseText()
+      await applySecureSessionResponseRaw()
       return { handled: true, deliveryId, event: 'secure-session' }
     }
     if (parsed?.type === 'lm-secure-session-offer-v1') {
@@ -9573,7 +9681,7 @@ async function handleMailboxPayload(item: any): Promise<{ handled: boolean; deli
         return { handled: true, deliveryId, event: 'other', reason }
       }
       incomingSecureSessionText.value = ciphertext
-      applySecureSessionOfferText()
+      await applySecureSessionOfferRaw()
       return { handled: true, deliveryId, event: 'secure-session' }
     }
   } catch {}
