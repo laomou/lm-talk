@@ -131,6 +131,10 @@ run_web() {
   if [[ -n "$public_url" ]]; then
     public_url="$(normalize_public_url "$public_url")"
   fi
+  local public_host=""
+  if [[ -n "$public_url" ]]; then
+    public_host="${public_url#https://}"
+  fi
   if [[ -n "$caddyfile" && ! -f "$caddyfile" ]]; then
     echo "Caddyfile 不存在：$caddyfile" >&2
     exit 2
@@ -148,6 +152,8 @@ run_web() {
     caddyfile="$caddy_data_dir/Caddyfile"
     cat > "$caddyfile" <<EOF
 {
+  default_sni $public_host
+
   servers {
     protocols h1 h2
   }
