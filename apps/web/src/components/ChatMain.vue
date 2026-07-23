@@ -12,6 +12,7 @@ const contactName = (userId: string) => props.ctx.contacts.value.find((c: any) =
 const messageSearch = ref('')
 const messageSearchOpen = computed(() => route.path === '/chat/search/messages')
 const composerPanel = ref<'none' | 'attach' | 'emoji'>('none')
+const highlightedMessageId = ref('')
 const conversationMenuOpen = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 const composerTextarea = ref<HTMLTextAreaElement | null>(null)
@@ -98,11 +99,7 @@ function messageStatusDetailText(message: any) {
 const thread = computed(() => {
   const out: any[] = []
   let lastDay = ''
-  const q = messageSearch.value.trim().toLowerCase()
-  const messages = q
-    ? props.ctx.activeMessages.value.filter((m: any) => `${m.text || ''} ${contactName(m.peer_user_id)}`.toLowerCase().includes(q))
-    : props.ctx.activeMessages.value
-  for (const m of messages) {
+  for (const m of props.ctx.activeMessages.value) {
     const day = new Date(m.created_at).toDateString()
     if (day !== lastDay) {
       out.push({ kind: 'sep', id: `sep-${day}-${m.id}`, label: dayLabel(m.created_at) })
@@ -141,8 +138,8 @@ function scrollToBottom() {
   el.scrollTop = el.scrollHeight
 }
 watch(
-  () => [props.ctx.activeMessages.value.length, props.ctx.activePeerId?.value, messageSearch.value],
-  () => { void nextTick(scrollToBottom) },
+  () => [props.ctx.activeMessages.value.length, props.ctx.activePeerId?.value],
+  () => { if (!highlightedMessageId.value) void nextTick(scrollToBottom) },
   { immediate: true },
 )
 watch(() => props.ctx.activePeerId?.value, () => { conversationMenuOpen.value = false })
@@ -179,6 +176,27 @@ function onHiddenFileChange(event: Event) {
   props.ctx.onFileSelected(event)
   composerPanel.value = 'none'
 }
+
+function scrollToMessage(messageId: string) {
+  const el = messagesEl.value
+  if (!el) return false
+  const target = Array.from(el.querySelectorAll<HTMLElement>('[data-message-id]'))
+    .find((item) => item.dataset.messageId === messageId)
+  if (!target) return false
+  target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  return true
+}
+function locateMessage(messageId: string) {
+  highlightedMessageId.value = messageId
+  void router.push('/chat')
+  void nextTick(() => {
+    if (!scrollToMessage(messageId)) scrollToBottom()
+    window.setTimeout(() => {
+      if (highlightedMessageId.value === messageId) highlightedMessageId.value = ''
+    }, 1800)
+  })
+}
+
 function sendAndClose() {
   props.ctx.sendMessage()
   composerPanel.value = 'none'
@@ -221,7 +239,7 @@ function deleteActiveConversation() {
       <div class="chat-message-search-results">
         <UiEmptyState v-if="!messageSearch" title="搜索聊天记录" description="输入关键词查找当前会话的消息。" />
         <template v-else>
-          <button v-for="message in messageSearchResults" :key="message.id" class="search-message-result" @click="router.push('/chat')">
+          <button v-for="message in messageSearchResults" :key="message.id" class="search-message-result" @click="locateMessage(message.id)">
             <span>{{ message.direction === 'out' ? '我' : contactName(message.peer_user_id) }} · {{ hmTime(message.created_at) }}</span>
             <b>{{ message.text }}</b>
           </button>
@@ -259,7 +277,7 @@ function deleteActiveConversation() {
       <template v-if="ctx.activeContact.value">
         <template v-for="item in thread" :key="item.id">
           <div v-if="item.kind === 'sep'" class="day-sep"><span>{{ item.label }}</span></div>
-          <div v-else class="bubble" :class="item.m.direction">
+          <div v-else class="bubble" :class="[item.m.direction, { highlighted: highlightedMessageId === item.m.id }]" :data-message-id="item.m.id">
             <div class="text">{{ item.m.text }}</div>
             <small class="bubble-meta">
               <span>{{ hmTime(item.m.created_at) }}</span>
@@ -283,7 +301,6 @@ function deleteActiveConversation() {
           </div>
         </template>
         <UiEmptyState v-if="ctx.activeMessages.value.length === 0" class="chat-thread-empty" title="还没有消息" description="发送一条消息开始聊天。" />
-        <UiEmptyState v-else-if="thread.length === 0" icon="search" title="没有匹配的消息" description="换个关键词试试。" />
       </template>
 
       <section v-else class="chat-empty-state">
