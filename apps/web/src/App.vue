@@ -12,9 +12,6 @@ import UiActionGroup from './components/UiActionGroup.vue'
 import QRCode from 'qrcode'
 import { applyPwaUpdate, onPwaUpdateReady, readPwaStatus } from './pwa'
 import { TABLES, idbDel, idbGet, idbSet, idbTableApplyChanges, idbTableClear, idbTableGet, idbTableGetAllByPrefix, idbTableReplaceByPrefix } from './idb'
-import init, {
-  normalize_passphrase,
-} from './wasm/lm_wasm.js'
 
 type IdentityOutput = {
   user_id: string
@@ -925,7 +922,7 @@ const remoteSignalText = ref('')
 let pc: RTCPeerConnection | null = null
 let dc: RTCDataChannel | null = null
 
-const normalized = computed(() => ready.value ? normalize_passphrase(passphrase.value) : '')
+const normalized = computed(() => ready.value ? normalizePassphrase(passphrase.value) : '')
 const activeContact = computed(() => contacts.value.find((c) => c.user_id === activePeerId.value) ?? null)
 const activeGroup = computed(() => groups.value.find((g) => g.group_id === activeGroupId.value) ?? null)
 const activeRatchetSession = computed(() => activeContact.value ? ratchetSessionFor(activeContact.value.user_id) : null)
@@ -1457,35 +1454,30 @@ router.afterEach((to) => {
   keepBackupText = false
 })
 
-onMounted(async () => {
+onMounted(() => {
   stopWatchingPwaUpdate = onPwaUpdateReady(() => {
     pwaUpdateAvailable.value = true
   })
-  try {
-    await init()
-    loadLocalIdentityList()
-    startOutboxRetryLoop()
-    startNodeSyncLoop()
-    startSelfSyncLoop()
-    document.addEventListener('visibilitychange', () => {
-      refreshRuntimeStatus()
-      if (document.visibilityState === 'visible') startMailboxLongPoll()
-      else stopMailboxLongPoll()
-    })
-    window.addEventListener('online', () => {
-      void refreshRuntimeStatus()
-      startMailboxLongPoll()
-    })
-    window.addEventListener('offline', () => {
-      void refreshRuntimeStatus()
-      stopMailboxLongPoll()
-    })
+  loadLocalIdentityList()
+  startOutboxRetryLoop()
+  startNodeSyncLoop()
+  startSelfSyncLoop()
+  document.addEventListener('visibilitychange', () => {
+    refreshRuntimeStatus()
+    if (document.visibilityState === 'visible') startMailboxLongPoll()
+    else stopMailboxLongPoll()
+  })
+  window.addEventListener('online', () => {
     void refreshRuntimeStatus()
-    ready.value = true
     startMailboxLongPoll()
-  } catch (e) {
-    appendLog(`WASM 初始化失败：${String(e)}`)
-  }
+  })
+  window.addEventListener('offline', () => {
+    void refreshRuntimeStatus()
+    stopMailboxLongPoll()
+  })
+  void refreshRuntimeStatus()
+  ready.value = true
+  startMailboxLongPoll()
 })
 
 onUnmounted(() => {
@@ -1767,6 +1759,10 @@ function utf8Bytes(value: string): number {
   return new TextEncoder().encode(value).length
 }
 
+function normalizePassphrase(value: string): string {
+  return value.normalize('NFKC').trim().replace(/\s+/gu, ' ')
+}
+
 function ensureUiTextSize(label: string, value: string, max: number) {
   const size = utf8Bytes(value)
   if (size > max) throw new Error(`${label} 过大：${formatBytes(size)} > ${formatBytes(max)}`)
@@ -1907,7 +1903,7 @@ function dhtRecordStoreBody(record: { key: string; [key: string]: unknown }): st
 async function localStorageCryptoKey(): Promise<CryptoKey | null> {
   if (!identity.value || !passphrase.value) return null
   const owner = identity.value.user_id
-  const normalizedPassphrase = normalize_passphrase(passphrase.value)
+  const normalizedPassphrase = normalizePassphrase(passphrase.value)
   if (localStorageKeyCache?.owner === owner && localStorageKeyCache.passphrase === normalizedPassphrase) {
     return localStorageKeyCache.key
   }
