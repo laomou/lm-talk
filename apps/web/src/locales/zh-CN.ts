@@ -16,7 +16,16 @@ export default {
   },
   me: {
     profile: '个人资料', backup: '身份备份', security: '安全与设备', sync: '同步与安全', settings: '设置', about: '关于', logout: '退出登录',
-    language: '语言', languageDescription: '选择界面显示语言。修改后立即生效，并仅保存在本机。',
+    diagnosticsView: {
+    redacted: '[已脱敏]', truncated: '[已截断]',
+    title: '诊断工具', back: '返回', hint: '用于排查登录、同步、消息收发和本地数据问题。日常聊天不需要打开。',
+    runtimeStatus: '运行状态', currentAccount: '当前账号', unnamed: '未命名', messageSync: '消息同步', syncNotConfigured: '未配置同步服务', enabled: '已开启', disabled: '未开启',
+    outbox: '待发送', totalQueue: '总队列 {count}', newFriends: '新的朋友', groupInvites: '群邀请 {count}', junkRequests: '垃圾请求', dedupeRecords: '去重记录 {count}',
+    dhtStatus: 'DHT 状态', normal: '正常', warning: '警告', abnormal: '异常', groupStrictE2ee: '群聊严格 E2EE', groupRiskSummary: '风险群聊 / 总群聊 {count}',
+    reportTitle: '诊断报告', reportDescription: '生成只包含状态摘要的诊断报告，不会导出提示词、身份私钥或消息明文。', redactAccountAndServices: '脱敏账号和同步服务地址', summaryOnly: '只生成摘要报告',
+    generateReport: '生成诊断报告', copyReport: '复制报告', hidePreview: '隐藏预览', showPreview: '显示预览', syncNow: '立即同步', recentRecords: '最近记录', noRecords: '暂无记录',
+  },
+  language: '语言', languageDescription: '选择界面显示语言。修改后立即生效，并仅保存在本机。',
   },
   settingsView: {
     unnamed: '未命名',
