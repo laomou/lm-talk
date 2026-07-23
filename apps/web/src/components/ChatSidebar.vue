@@ -24,6 +24,8 @@ const conversations = computed(() => {
   const items: any[] = []
   for (const c of props.ctx.contacts.value) {
     const last = lastMessageFor((m) => !m.group_id && m.peer_user_id === c.user_id)
+    const isActive = c.user_id === props.ctx.activePeerId.value
+    if (!last && !isActive) continue
     items.push({ type: 'contact', id: c.user_id, data: c, last, ts: last?.created_at ?? 0 })
   }
   return items.sort((a, b) => b.ts - a.ts)

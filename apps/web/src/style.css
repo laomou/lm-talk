@@ -1342,3 +1342,28 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .product-chat-list-header { min-height: 52px; padding: var(--sp-2) var(--sp-3); }
   .product-chat-search-header { min-height: 52px; padding: var(--sp-2) var(--sp-3); }
 }
+.chat-more-menu { position: relative; display: inline-grid; place-items: center; }
+.chat-action-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 132px;
+  padding: 6px;
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-lg);
+  background: var(--c-surface);
+  box-shadow: var(--shadow-card);
+}
+.chat-action-menu button {
+  width: 100%;
+  justify-content: flex-start;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  padding: 9px 10px;
+  color: var(--c-ink);
+  font-size: 14px;
+}
+.chat-action-menu button:hover { background: var(--c-surface-2); }
+.chat-action-menu button.danger { color: var(--c-danger); }

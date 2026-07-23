@@ -12,6 +12,7 @@ const contactName = (userId: string) => props.ctx.contacts.value.find((c: any) =
 const messageSearch = ref('')
 const messageSearchOpen = computed(() => route.path === '/chat/search/messages')
 const composerPanel = ref<'none' | 'attach' | 'emoji'>('none')
+const conversationMenuOpen = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 const composerTextarea = ref<HTMLTextAreaElement | null>(null)
 const emojis = ['😀', '😃', '😄', '😁', '🙂', '😉', '😊', '😍', '👍', '👏', '🙏', '💪', '🎉', '❤️', '🔥', '✅']
@@ -144,6 +145,7 @@ watch(
   () => { void nextTick(scrollToBottom) },
   { immediate: true },
 )
+watch(() => props.ctx.activePeerId?.value, () => { conversationMenuOpen.value = false })
 
 // Enter 发送，Shift+Enter 换行；输入法组词中的 Enter 不触发发送
 function onComposerKeydown(e: KeyboardEvent) {
@@ -181,6 +183,10 @@ function sendAndClose() {
   props.ctx.sendMessage()
   composerPanel.value = 'none'
 }
+function deleteActiveConversation() {
+  conversationMenuOpen.value = false
+  void props.ctx.clearActiveConversation()
+}
 </script>
 
 <template>
@@ -198,7 +204,12 @@ function sendAndClose() {
           :title="messageSearchOpen ? '关闭搜索' : '搜索消息'"
           @click="router.push('/chat/search/messages')"
         ><UiIcon name="search" /></button>
-        <button class="icon-btn" aria-label="更多" title="更多"><UiIcon name="more" /></button>
+        <div class="chat-more-menu">
+          <button class="icon-btn" aria-label="更多" title="更多" :aria-expanded="conversationMenuOpen ? 'true' : 'false'" @click="conversationMenuOpen = !conversationMenuOpen"><UiIcon name="more" /></button>
+          <div v-if="conversationMenuOpen" class="chat-action-menu" role="menu">
+            <button class="danger" role="menuitem" @click="deleteActiveConversation">删除会话</button>
+          </div>
+        </div>
       </div>
     </header>
     <section v-if="ctx.activeContact.value && messageSearchOpen" class="chat-message-search-page">

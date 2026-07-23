@@ -192,7 +192,7 @@ function addContact() {
           </div>
         </div>
         <div class="detail-body narrow contact-detail-centered">
-          <button class="primary-action" @click="ctx.goChatPage()">发消息</button>
+          <button class="primary-action" @click="ctx.selectContact(ctx.activeContact.value.user_id); ctx.goChatPage()">发消息</button>
           <UiSection v-if="ctx.activeContact.value.state === 'Friend'" title="安全状态">
             <template #actions><UiStatusBadge :tone="ctx.contactAllKnownDevicesRevoked(ctx.activeContact.value) ? 'warning' : 'success'">{{ trustText(ctx.activeContact.value) }}</UiStatusBadge></template>
             <small v-if="!ctx.contactAllKnownDevicesRevoked(ctx.activeContact.value)">已建立加密会话；对方安全信息发生变化时会在这里提示。</small>
