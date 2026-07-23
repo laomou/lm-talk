@@ -8626,9 +8626,6 @@ function handleMailboxPayload(item: any): { handled: boolean; deliveryId?: strin
     appendLog(`mailbox 消息来自${reason}`)
     return { handled: false, deliveryId, reason }
   }
-  activePeerId.value = sender.user_id
-  activeGroupId.value = ''
-
   if (normalizedKind === 'contactupdate' || ciphertext.startsWith('lm-contact-card-v1:')) {
     applyContactCardUpdateFromMailbox(ciphertext, sender)
     void sendDeliveryAck(sender, contactCardUpdateId(ciphertext), `contact-update-${sender.user_id}`, deliveryId)

@@ -14,7 +14,10 @@ lm-node-state.prd.sqlite3-*
 lm-node-state.prd.json
 
 /apps/web/test-results/
+/artifacts/
 /apps/node-admin/test-results/
+/artifacts/
 /test-results/
+/artifacts/
 /node_admin.zip
 __pycache__/
