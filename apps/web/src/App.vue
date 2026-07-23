@@ -581,7 +581,7 @@ const passphrase = ref('')
 const newIdentityPassphrase = ref('')
 const backupText = ref('')
 let missingWebCryptoWarningShown = false
-let localStorageKeyCache: { owner: string; passphrase: string; key: CryptoKey } | null = null
+let localStorageKeyCache: { owner: string; passphrase: string; keyId: string } | null = null
 let keepBackupText = false
 const identity = ref<(IdentityOutput | RestoreOutput) | null>(null)
 const displayName = ref('Me')
@@ -1804,22 +1804,6 @@ function maybePlainText(value: unknown): string {
   return ''
 }
 
-function bytesToBase64Raw(bytes: Uint8Array): string {
-  let binary = ''
-  const step = 0x8000
-  for (let i = 0; i < bytes.length; i += step) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + step))
-  }
-  return btoa(binary)
-}
-
-function base64ToBytesRaw(value: string): Uint8Array {
-  const binary = atob(value)
-  const out = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i)
-  return out
-}
-
 type PersistenceCryptoWorkerResponse = {
   id: number
   ok: boolean
@@ -1828,13 +1812,11 @@ type PersistenceCryptoWorkerResponse = {
 }
 
 let persistenceCryptoWorker: Worker | null = null
-let persistenceCryptoWorkerDisabled = false
 let nextPersistenceCryptoRequestId = 1
 const persistenceCryptoRequests = new Map<number, {
   resolve: (value: string | EncryptedStringV1 | undefined) => void
   reject: (reason?: unknown) => void
 }>()
-let persistenceCryptoWorkerKeys = new WeakMap<CryptoKey, string>()
 let nextPersistenceCryptoKeyId = 1
 
 function stopPersistenceCryptoWorker(error = new Error('本地存储加密 Worker 已停止')) {
@@ -1842,14 +1824,13 @@ function stopPersistenceCryptoWorker(error = new Error('本地存储加密 Worke
   persistenceCryptoWorker = null
   for (const pending of persistenceCryptoRequests.values()) pending.reject(error)
   persistenceCryptoRequests.clear()
-  persistenceCryptoWorkerKeys = new WeakMap<CryptoKey, string>()
+  localStorageKeyCache = null
 }
 
 function getPersistenceCryptoWorker(): Worker {
   if (persistenceCryptoWorker) return persistenceCryptoWorker
   const worker = new Worker(new URL('./persistenceCrypto.worker.ts', import.meta.url), { type: 'module' })
   worker.onerror = (event) => {
-    persistenceCryptoWorkerDisabled = true
     stopPersistenceCryptoWorker(new Error(event.message || '本地存储加密 Worker 发生错误'))
   }
   worker.onmessage = (event: MessageEvent<PersistenceCryptoWorkerResponse>) => {
@@ -1879,15 +1860,6 @@ function runPersistenceCryptoWorker(
   })
 }
 
-async function persistenceCryptoWorkerKeyId(key: CryptoKey): Promise<string> {
-  let keyId = persistenceCryptoWorkerKeys.get(key)
-  if (keyId) return keyId
-  keyId = `key-${nextPersistenceCryptoKeyId++}`
-  await runPersistenceCryptoWorker({ type: 'set-key', keyId, key })
-  persistenceCryptoWorkerKeys.set(key, keyId)
-  return keyId
-}
-
 function hexToBytes(value: string): number[] {
   const hex = value.trim()
   if (!/^[0-9a-fA-F]{64}$/.test(hex)) throw new Error('DHT key 格式无效')
@@ -1900,96 +1872,51 @@ function dhtRecordStoreBody(record: { key: string; [key: string]: unknown }): st
   return JSON.stringify({ record: { ...record, key: hexToBytes(record.key) } })
 }
 
-async function localStorageCryptoKey(): Promise<CryptoKey | null> {
+async function localStorageCryptoKey(): Promise<string | null> {
   if (!identity.value || !passphrase.value) return null
   const owner = identity.value.user_id
   const normalizedPassphrase = normalizePassphrase(passphrase.value)
   if (localStorageKeyCache?.owner === owner && localStorageKeyCache.passphrase === normalizedPassphrase) {
-    return localStorageKeyCache.key
+    return localStorageKeyCache.keyId
   }
-  const webCrypto = globalThis.crypto
-  if (!webCrypto?.subtle) {
+  try {
+    const keyId = `key-${nextPersistenceCryptoKeyId++}`
+    const derived = await runPersistenceCryptoWorker({
+      type: 'derive-key',
+      keyId,
+      owner,
+      passphrase: normalizedPassphrase,
+    })
+    if (derived !== keyId) throw new Error('本地存储加密 Worker 返回无效密钥')
+    localStorageKeyCache = { owner, passphrase: normalizedPassphrase, keyId }
+    return keyId
+  } catch (error) {
+    stopPersistenceCryptoWorker(error instanceof Error ? error : new Error(String(error)))
     if (!missingWebCryptoWarningShown) {
       missingWebCryptoWarningShown = true
       appendLog(`⚠️ 当前页面没有 WebCrypto subtle，无法解密/加密本地敏感数据；当前地址：${window.location.protocol}//${window.location.host}。请使用 https 或 http://127.0.0.1 访问`)
     }
     return null
   }
-  const material = await webCrypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(normalizedPassphrase),
-    'PBKDF2',
-    false,
-    ['deriveKey'],
-  )
-  const key = await webCrypto.subtle.deriveKey(
-    {
-      name: 'PBKDF2',
-      salt: new TextEncoder().encode(`lm-talk-local-store-v1:${owner}`),
-      iterations: 210_000,
-      hash: 'SHA-256',
-    },
-    material,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt'],
-  )
-  localStorageKeyCache = { owner, passphrase: normalizedPassphrase, key }
-  return key
 }
 
-async function encryptLocalString(value: string, key: CryptoKey | null): Promise<string | EncryptedStringV1> {
-  if (!key || !value) return value
-  const webCrypto = globalThis.crypto
-  if (!webCrypto?.subtle) return value
-  if (!persistenceCryptoWorkerDisabled) {
-    try {
-      const keyId = await persistenceCryptoWorkerKeyId(key)
-      const encrypted = await runPersistenceCryptoWorker({ type: 'encrypt', keyId, value })
-      if (isEncryptedString(encrypted)) return encrypted
-      throw new Error('本地存储加密 Worker 返回无效结果')
-    } catch (error) {
-      persistenceCryptoWorkerDisabled = true
-      stopPersistenceCryptoWorker(error instanceof Error ? error : new Error(String(error)))
-      appendLog(`⚠️ 本地存储加密 Worker 不可用，已回退浏览器加密：${userFacingError(error)}`)
-    }
-  }
-  const iv = webCrypto.getRandomValues(new Uint8Array(12))
-  const ct = new Uint8Array(await webCrypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: iv as BufferSource },
-    key,
-    new TextEncoder().encode(value),
-  ))
-  return { __lm_enc_v1: true, alg: 'AES-GCM', kdf: 'PBKDF2-SHA-256', iv: bytesToBase64Raw(iv), ct: bytesToBase64Raw(ct) }
+async function encryptLocalString(value: string, keyId: string | null): Promise<string | EncryptedStringV1> {
+  if (!keyId || !value) return value
+  const encrypted = await runPersistenceCryptoWorker({ type: 'encrypt', keyId, value })
+  if (isEncryptedString(encrypted)) return encrypted
+  throw new Error('本地存储加密 Worker 返回无效结果')
 }
 
-async function decryptLocalString(value: unknown, key: CryptoKey | null): Promise<string> {
+async function decryptLocalString(value: unknown, keyId: string | null): Promise<string> {
   if (typeof value === 'string') return value
   if (!isEncryptedString(value)) return ''
-  if (!key) return value as any
-  const webCrypto = globalThis.crypto
-  if (!webCrypto?.subtle) return value as any
-  if (!persistenceCryptoWorkerDisabled) {
-    try {
-      const keyId = await persistenceCryptoWorkerKeyId(key)
-      const plain = await runPersistenceCryptoWorker({ type: 'decrypt', keyId, value })
-      if (typeof plain === 'string') return plain
-      throw new Error('本地存储解密 Worker 返回无效结果')
-    } catch (error) {
-      persistenceCryptoWorkerDisabled = true
-      stopPersistenceCryptoWorker(error instanceof Error ? error : new Error(String(error)))
-      appendLog(`⚠️ 本地存储解密 Worker 不可用，已回退浏览器解密：${userFacingError(error)}`)
-    }
-  }
-  const plain = await webCrypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: base64ToBytesRaw(value.iv) as BufferSource },
-    key,
-    base64ToBytesRaw(value.ct) as BufferSource,
-  )
-  return new TextDecoder().decode(plain)
+  if (!keyId) return value as any
+  const plain = await runPersistenceCryptoWorker({ type: 'decrypt', keyId, value })
+  if (typeof plain === 'string') return plain
+  throw new Error('本地存储解密 Worker 返回无效结果')
 }
 
-async function encryptContactForStore(contact: ContactItem, key: CryptoKey | null): Promise<any> {
+async function encryptContactForStore(contact: ContactItem, key: string | null): Promise<any> {
   return {
     ...contact,
     display_name: contact.display_name ? await encryptLocalString(contact.display_name, key) : contact.display_name,
@@ -1998,7 +1925,7 @@ async function encryptContactForStore(contact: ContactItem, key: CryptoKey | nul
   }
 }
 
-async function decryptContactFromStore(contact: any, key: CryptoKey | null): Promise<ContactItem> {
+async function decryptContactFromStore(contact: any, key: string | null): Promise<ContactItem> {
   return {
     ...contact,
     state: contact.state ?? 'LocalOnly',
@@ -2008,7 +1935,7 @@ async function decryptContactFromStore(contact: any, key: CryptoKey | null): Pro
   }
 }
 
-async function encryptGroupForStore(group: GroupItem, key: CryptoKey | null): Promise<any> {
+async function encryptGroupForStore(group: GroupItem, key: string | null): Promise<any> {
   return {
     ...group,
     name: await encryptLocalString(group.name, key),
@@ -2016,7 +1943,7 @@ async function encryptGroupForStore(group: GroupItem, key: CryptoKey | null): Pr
   }
 }
 
-async function decryptGroupFromStore(group: any, key: CryptoKey | null): Promise<GroupItem> {
+async function decryptGroupFromStore(group: any, key: string | null): Promise<GroupItem> {
   return {
     ...group,
     sequence: group.sequence ?? 0,
@@ -2026,7 +1953,7 @@ async function decryptGroupFromStore(group: any, key: CryptoKey | null): Promise
   }
 }
 
-async function encryptMessageForStore(message: ChatMessage, key: CryptoKey | null): Promise<any> {
+async function encryptMessageForStore(message: ChatMessage, key: string | null): Promise<any> {
   return {
     ...message,
     text: await encryptLocalString(message.text, key),
@@ -2034,7 +1961,7 @@ async function encryptMessageForStore(message: ChatMessage, key: CryptoKey | nul
   }
 }
 
-async function decryptMessageFromStore(message: any, key: CryptoKey | null): Promise<ChatMessage> {
+async function decryptMessageFromStore(message: any, key: string | null): Promise<ChatMessage> {
   return {
     ...message,
     status: message.status ?? (message.direction === 'in' ? 'received' : 'queued'),
@@ -2043,15 +1970,15 @@ async function decryptMessageFromStore(message: any, key: CryptoKey | null): Pro
   }
 }
 
-async function encryptOutboxForStore(item: OutboxItem, key: CryptoKey | null): Promise<any> {
+async function encryptOutboxForStore(item: OutboxItem, key: string | null): Promise<any> {
   return { ...item, envelope_json: await encryptLocalString(item.envelope_json, key) }
 }
 
-async function decryptOutboxFromStore(item: any, key: CryptoKey | null): Promise<OutboxItem> {
+async function decryptOutboxFromStore(item: any, key: string | null): Promise<OutboxItem> {
   return { ...item, status: item.status ?? 'queued', retry_count: item.retry_count ?? 0, envelope_json: await decryptLocalString(item.envelope_json, key) }
 }
 
-async function encryptFriendRequestForStore(item: FriendRequestItem, key: CryptoKey | null): Promise<any> {
+async function encryptFriendRequestForStore(item: FriendRequestItem, key: string | null): Promise<any> {
   return {
     ...item,
     note: item.note ? await encryptLocalString(item.note, key) : item.note,
@@ -2061,7 +1988,7 @@ async function encryptFriendRequestForStore(item: FriendRequestItem, key: Crypto
   }
 }
 
-async function decryptFriendRequestFromStore(item: any, key: CryptoKey | null): Promise<FriendRequestItem> {
+async function decryptFriendRequestFromStore(item: any, key: string | null): Promise<FriendRequestItem> {
   return {
     ...item,
     note: item.note ? await decryptLocalString(item.note, key) : item.note,
@@ -2071,7 +1998,7 @@ async function decryptFriendRequestFromStore(item: any, key: CryptoKey | null): 
   }
 }
 
-async function encryptGroupInviteForStore(item: GroupInviteItem, key: CryptoKey | null): Promise<any> {
+async function encryptGroupInviteForStore(item: GroupInviteItem, key: string | null): Promise<any> {
   return {
     ...item,
     group_name: await encryptLocalString(item.group_name, key),
@@ -2079,7 +2006,7 @@ async function encryptGroupInviteForStore(item: GroupInviteItem, key: CryptoKey 
   }
 }
 
-async function decryptGroupInviteFromStore(item: any, key: CryptoKey | null): Promise<GroupInviteItem> {
+async function decryptGroupInviteFromStore(item: any, key: string | null): Promise<GroupInviteItem> {
   return {
     ...item,
     group_name: await decryptLocalString(item.group_name, key),
@@ -2087,7 +2014,7 @@ async function decryptGroupInviteFromStore(item: any, key: CryptoKey | null): Pr
   }
 }
 
-async function encryptGroupSenderKeyForStore(item: GroupSenderKeyItem, key: CryptoKey | null): Promise<any> {
+async function encryptGroupSenderKeyForStore(item: GroupSenderKeyItem, key: string | null): Promise<any> {
   return {
     ...item,
     state_json: await encryptLocalString(item.state_json, key),
@@ -2095,7 +2022,7 @@ async function encryptGroupSenderKeyForStore(item: GroupSenderKeyItem, key: Cryp
   }
 }
 
-async function decryptGroupSenderKeyFromStore(item: any, key: CryptoKey | null): Promise<GroupSenderKeyItem> {
+async function decryptGroupSenderKeyFromStore(item: any, key: string | null): Promise<GroupSenderKeyItem> {
   return {
     ...item,
     state_json: await decryptLocalString(item.state_json, key),
@@ -2103,7 +2030,7 @@ async function decryptGroupSenderKeyFromStore(item: any, key: CryptoKey | null):
   }
 }
 
-async function encryptMailboxFailedItemForStore(item: MailboxFailedItem, key: CryptoKey | null): Promise<any> {
+async function encryptMailboxFailedItemForStore(item: MailboxFailedItem, key: string | null): Promise<any> {
   return {
     ...item,
     message: await encryptLocalString(JSON.stringify(item.message ?? null), key),
@@ -2111,7 +2038,7 @@ async function encryptMailboxFailedItemForStore(item: MailboxFailedItem, key: Cr
   }
 }
 
-async function decryptMailboxFailedItemFromStore(item: any, key: CryptoKey | null): Promise<MailboxFailedItem> {
+async function decryptMailboxFailedItemFromStore(item: any, key: string | null): Promise<MailboxFailedItem> {
   const messageText = await decryptLocalString(item.message, key)
   let message: any = null
   try { message = messageText ? JSON.parse(messageText) : null } catch { message = item.message }
@@ -2140,15 +2067,15 @@ function normalizeProcessedMailboxRecords(records: Array<string | ProcessedMailb
     .slice(0, MAILBOX_DEDUPE_MAX_RECORDS)
 }
 
-async function encryptRatchetForStore(item: RatchetSessionItem, key: CryptoKey | null): Promise<any> {
+async function encryptRatchetForStore(item: RatchetSessionItem, key: string | null): Promise<any> {
   return { ...item, state_text: await encryptLocalString(item.state_text, key) }
 }
 
-async function decryptRatchetFromStore(item: any, key: CryptoKey | null): Promise<RatchetSessionItem> {
+async function decryptRatchetFromStore(item: any, key: string | null): Promise<RatchetSessionItem> {
   return { ...item, state_text: await decryptLocalString(item.state_text, key) }
 }
 
-async function encryptPendingSecureSessionOfferForStore(item: PendingSecureSessionOfferItem, key: CryptoKey | null): Promise<any> {
+async function encryptPendingSecureSessionOfferForStore(item: PendingSecureSessionOfferItem, key: string | null): Promise<any> {
   return {
     ...item,
     prekey_private_bundle_json: await encryptLocalString(item.prekey_private_bundle_json, key),
@@ -2156,7 +2083,7 @@ async function encryptPendingSecureSessionOfferForStore(item: PendingSecureSessi
   }
 }
 
-async function decryptPendingSecureSessionOfferFromStore(item: any, key: CryptoKey | null): Promise<PendingSecureSessionOfferItem> {
+async function decryptPendingSecureSessionOfferFromStore(item: any, key: string | null): Promise<PendingSecureSessionOfferItem> {
   return {
     ...item,
     prekey_private_bundle_json: await decryptLocalString(item.prekey_private_bundle_json, key),
