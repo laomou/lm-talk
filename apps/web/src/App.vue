@@ -20,7 +20,6 @@ import init, {
   create_group_invite,
   create_group_event,
   create_group_policy_state,
-  create_group_sender_key,
   create_identity,
   create_mailbox_message,
   create_message_receipt,
@@ -42,7 +41,6 @@ import init, {
   inspect_friend_response,
   inspect_group_invite,
   inspect_group_event,
-  import_group_sender_key,
   apply_group_policy_event,
   inspect_mailbox_message,
   inspect_message_receipt,
@@ -1549,7 +1547,7 @@ onUnmounted(() => {
   persistenceSnapshotRequests.clear()
   groupSenderCryptoWorker?.terminate()
   groupSenderCryptoWorker = null
-  for (const pending of groupSenderCryptoRequests.values()) pending.reject(new Error('Sender Key 解密 Worker 已停止'))
+  for (const pending of groupSenderCryptoRequests.values()) pending.reject(new Error('Sender Key Worker 已停止'))
   groupSenderCryptoRequests.clear()
   deviceSlotCryptoWorker?.terminate()
   deviceSlotCryptoWorker = null
@@ -5355,12 +5353,9 @@ function scheduleGroupSenderDistributionFanout(group: GroupItem, fanout: Array<{
   void sendGroupSenderDistributionFanout(group, fanout, reason)
 }
 
-function rotateMyGroupSenderKey(group: GroupItem, reason: string) {
+async function rotateMyGroupSenderKey(group: GroupItem, reason: string) {
   if (!identity.value) return
-  const out = JSON.parse(create_group_sender_key(backupText.value, passphrase.value, group.group_id)) as {
-    state_json: string
-    distribution_text: string
-  }
+  const out = await createGroupSenderKeyInWorker(backupText.value, passphrase.value, group.group_id)
   saveGroupSenderKey({
     key_id: groupSenderKeyId(group.group_id, identity.value.user_id),
     group_id: group.group_id,
@@ -5370,6 +5365,7 @@ function rotateMyGroupSenderKey(group: GroupItem, reason: string) {
     updated_at: Date.now(),
   })
   groupSenderDistributionText.value = out.distribution_text
+  persist()
   let fanout: Array<{ to_user_id: string; envelope: string }> = []
   try {
     fanout = createGroupSenderDistributionFanout(group, out.distribution_text)
@@ -5385,14 +5381,11 @@ function rotateMyGroupSenderKey(group: GroupItem, reason: string) {
   scheduleGroupSenderDistributionFanout(group, fanout, `轮换：${reason}`)
 }
 
-function createGroupSenderKeyForActiveGroup() {
-  run('创建群 Sender Key', () => {
+async function createGroupSenderKeyForActiveGroup() {
+  await runAsync('创建群 Sender Key', async () => {
     if (!activeGroup.value) throw new Error('请选择群组')
     if (!identity.value) throw new Error('请先登录')
-    const out = JSON.parse(create_group_sender_key(backupText.value, passphrase.value, activeGroup.value.group_id)) as {
-      state_json: string
-      distribution_text: string
-    }
+    const out = await createGroupSenderKeyInWorker(backupText.value, passphrase.value, activeGroup.value.group_id)
     const item: GroupSenderKeyItem = {
       key_id: groupSenderKeyId(activeGroup.value.group_id, identity.value.user_id),
       group_id: activeGroup.value.group_id,
@@ -5411,11 +5404,11 @@ function createGroupSenderKeyForActiveGroup() {
   })
 }
 
-function importGroupSenderKeyForActiveContact() {
-  run('导入群 Sender Key', () => {
+async function importGroupSenderKeyForActiveContact() {
+  await runAsync('导入群 Sender Key', async () => {
     if (!activeContact.value) throw new Error('请选择 Sender 联系人')
     if (!groupSenderDistributionText.value.trim()) throw new Error('请填写 Sender Key Distribution')
-    const stateJson = import_group_sender_key(groupSenderDistributionText.value, activeContact.value.contact_card_text)
+    const stateJson = await importGroupSenderKeyInWorker(groupSenderDistributionText.value, activeContact.value.contact_card_text)
     const parsed = JSON.parse(stateJson) as { group_id: string; sender_user_id: string }
     const item: GroupSenderKeyItem = {
       key_id: groupSenderKeyId(parsed.group_id, parsed.sender_user_id),
@@ -5475,13 +5468,14 @@ type GroupSenderCryptoWorkerResponse = {
   state_json?: string
   plain_json?: string
   envelope_json?: string
+  distribution_text?: string
   error?: string
 }
 
 let groupSenderCryptoWorker: Worker | null = null
 let nextGroupSenderCryptoRequestId = 1
 const groupSenderCryptoRequests = new Map<number, {
-  resolve: (value: { stateText: string; plainJson?: string; envelopeJson?: string }) => void
+  resolve: (value: { stateText: string; plainJson?: string; envelopeJson?: string; distributionText?: string }) => void
   reject: (reason?: unknown) => void
 }>()
 const groupSenderDecryptChains = new Map<string, Promise<unknown>>()
@@ -5495,14 +5489,19 @@ function getGroupSenderCryptoWorker(): Worker {
     const pending = groupSenderCryptoRequests.get(response.id)
     if (!pending) return
     groupSenderCryptoRequests.delete(response.id)
-    if (response.ok && response.state_json !== undefined && (response.plain_json !== undefined || response.envelope_json !== undefined)) {
-      pending.resolve({ stateText: response.state_json, plainJson: response.plain_json, envelopeJson: response.envelope_json })
+    if (response.ok && response.state_json !== undefined) {
+      pending.resolve({
+        stateText: response.state_json,
+        plainJson: response.plain_json,
+        envelopeJson: response.envelope_json,
+        distributionText: response.distribution_text,
+      })
     } else {
-      pending.reject(new Error(response.error || 'Sender Key 解密 Worker 处理失败'))
+      pending.reject(new Error(response.error || 'Sender Key Worker 处理失败'))
     }
   }
   worker.onerror = (event) => {
-    const error = new Error(event.message || 'Sender Key 解密 Worker 已停止')
+    const error = new Error(event.message || 'Sender Key Worker 已停止')
     for (const pending of groupSenderCryptoRequests.values()) pending.reject(error)
     groupSenderCryptoRequests.clear()
     worker.terminate()
@@ -5512,7 +5511,7 @@ function getGroupSenderCryptoWorker(): Worker {
   return worker
 }
 
-function runGroupSenderCryptoWorker(payload: Record<string, string>): Promise<{ stateText: string; plainJson?: string; envelopeJson?: string }> {
+function runGroupSenderCryptoWorker(payload: Record<string, string>): Promise<{ stateText: string; plainJson?: string; envelopeJson?: string; distributionText?: string }> {
   const id = nextGroupSenderCryptoRequestId++
   return new Promise((resolve, reject) => {
     groupSenderCryptoRequests.set(id, { resolve, reject })
@@ -5535,6 +5534,17 @@ async function encryptGroupSenderEnvelopeInWorker(stateText: string, text: strin
   const result = await runGroupSenderCryptoWorker({ type: 'encrypt', stateText, text })
   if (result.envelopeJson === undefined) throw new Error('Sender Key 加密 Worker 返回无效结果')
   return { stateText: result.stateText, envelopeJson: result.envelopeJson }
+}
+
+async function createGroupSenderKeyInWorker(backupText: string, passphrase: string, groupId: string): Promise<{ state_json: string; distribution_text: string }> {
+  const result = await runGroupSenderCryptoWorker({ type: 'create', backupText, passphrase, groupId })
+  if (result.distributionText === undefined) throw new Error('Sender Key 创建 Worker 返回无效结果')
+  return { state_json: result.stateText, distribution_text: result.distributionText }
+}
+
+async function importGroupSenderKeyInWorker(distributionText: string, senderContactCardText: string): Promise<string> {
+  const result = await runGroupSenderCryptoWorker({ type: 'import', distributionText, senderContactCardText })
+  return result.stateText
 }
 
 async function tryDecryptGroupSenderEnvelope(envelopeText: string): Promise<{ text: string; group_id: string; sender_user_id: string } | null> {
@@ -5909,7 +5919,11 @@ function applyGroupEventRaw(text: string, actorId: string): { group_id: string; 
   if (membershipChanged) {
     groupSenderKeys.value = groupSenderKeys.value.filter((k) => k.group_id !== group.group_id || k.sender_user_id === identity.value?.user_id)
     if (group.member_user_ids.includes(identity.value?.user_id || '') || (group.admin_user_ids || []).includes(identity.value?.user_id || '')) {
-      rotateMyGroupSenderKey(group, summary)
+      void rotateMyGroupSenderKey(group, summary).catch((error) => {
+        const reason = userFacingError(error)
+        rememberGroupSenderKeyError(group.group_id, `轮换失败：${reason}`)
+        appendLog(`⚠️ Sender Key 轮换失败：${reason}`)
+      })
     } else if (info.action.RemoveMember?.user_id === identity.value?.user_id) {
       groupSenderKeys.value = groupSenderKeys.value.filter((k) => k.group_id !== group.group_id)
     }
@@ -6927,7 +6941,7 @@ async function receiveEnvelopeWithContact(envelopeText: string, sender: ContactI
   const rawText = plain.body?.Text?.text ?? JSON.stringify(plain.body)
   if (typeof rawText === 'string' && rawText.startsWith(GROUP_SENDER_KEY_PAYLOAD_PREFIX)) {
     const distribution = rawText.slice(GROUP_SENDER_KEY_PAYLOAD_PREFIX.length)
-    const stateJson = import_group_sender_key(distribution, sender.contact_card_text)
+    const stateJson = await importGroupSenderKeyInWorker(distribution, sender.contact_card_text)
     const parsed = JSON.parse(stateJson) as { group_id: string; sender_user_id: string }
     saveGroupSenderKey({
       key_id: groupSenderKeyId(parsed.group_id, parsed.sender_user_id),
