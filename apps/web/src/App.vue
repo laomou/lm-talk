@@ -14,17 +14,9 @@ import { applyPwaUpdate, onPwaUpdateReady, readPwaStatus } from './pwa'
 import { TABLES, idbDel, idbGet, idbSet, idbTableApplyChanges, idbTableClear, idbTableGet, idbTableGetAllByPrefix, idbTableReplaceByPrefix } from './idb'
 import init, {
   create_identity,
-  create_mailbox_message,
-  create_message_receipt,
-  create_peer_announce,
-  create_public_peer_announce,
   decrypt_text_message,
   encrypt_text_message,
   inspect_file_package,
-  inspect_mailbox_message,
-  inspect_message_receipt,
-  inspect_peer_announce,
-  inspect_public_peer_announce,
   normalize_passphrase,
   ratchet_encrypt_text_message,
   reencrypt_identity_backup,
@@ -1539,6 +1531,10 @@ onUnmounted(() => {
   contactCardCryptoWorker = null
   for (const pending of contactCardCryptoRequests.values()) pending.reject(new Error('联系人 Worker 已停止'))
   contactCardCryptoRequests.clear()
+  messageMetadataCryptoWorker?.terminate()
+  messageMetadataCryptoWorker = null
+  for (const pending of messageMetadataCryptoRequests.values()) pending.reject(new Error('消息元数据 Worker 已停止'))
+  messageMetadataCryptoRequests.clear()
   ratchetEncryptWorker?.terminate()
   ratchetEncryptWorker = null
   for (const pending of ratchetEncryptRequests.values()) pending.reject(new Error('Ratchet 加密 Worker 已停止'))
@@ -3061,13 +3057,11 @@ async function pushFullDataBackupToOwnMailbox() {
     if (!nodeEnabled.value) throw new Error('节点未启用')
     if (!dataBackupText.value.trim()) await exportFullDataBackup()
     if (!dataBackupText.value.trim()) throw new Error('请先生成身份与安全备份')
-    const msg = create_mailbox_message(
-      backupText.value,
-      passphrase.value,
+    const msg = await createMailboxMessageInWorker(
       identity.value.user_id,
       'data-backup',
       dataBackupText.value,
-      BigInt(7 * 24 * 3600),
+      7 * 24 * 3600,
     )
     const body = await nodeFetchJson('/api/mailbox/push', {
       method: 'POST',
@@ -3270,13 +3264,11 @@ function rememberSelfSyncPackage(pkg: SelfSyncPackage, payload: string) {
 async function pushSelfSyncPayloadToOwnMailbox(payload: string, label: string, kind = 'self-sync') {
   if (!identity.value?.user_id) throw new Error('需要先登录身份')
   if (!nodeEnabled.value) throw new Error('节点未启用')
-  const msg = create_mailbox_message(
-    backupText.value,
-    passphrase.value,
+  const msg = await createMailboxMessageInWorker(
     identity.value.user_id,
     kind,
     payload,
-    BigInt(7 * 24 * 3600),
+    7 * 24 * 3600,
   )
   const body = await nodeFetchJson('/api/mailbox/push', {
     method: 'POST',
@@ -4081,13 +4073,11 @@ function refreshMailboxHintInBackground(contact: ContactItem) {
 
 async function pushMailboxPayload(to: ContactItem, kind: string, payload: string): Promise<string> {
   if (!nodeEnabled.value) throw new Error('节点未启用')
-  const msg = create_mailbox_message(
-    backupText.value,
-    passphrase.value,
+  const msg = await createMailboxMessageInWorker(
     to.user_id,
     kind,
     payload,
-    BigInt(24 * 3600),
+    24 * 3600,
   )
   const init = {
     method: 'POST',
@@ -4244,13 +4234,13 @@ function applyDeliveryAck(messageId: string, fromUserId: string) {
   }
 }
 
-function applyMessageReceiptText(receiptText: string, sender: ContactItem): 'delivery-ack' | 'read-receipt' {
-  const info = JSON.parse(inspect_message_receipt(receiptText, sender.identity_public_key)) as {
+async function applyMessageReceiptText(receiptText: string, sender: ContactItem): Promise<'delivery-ack' | 'read-receipt'> {
+  const info = await inspectMessageReceiptInWorker<{
     from_user_id: string
     to_user_id: string
     target_message_id: string
     kind: 'Delivered' | 'Read'
-  }
+  }>(receiptText, sender.identity_public_key)
   if (identity.value && info.to_user_id !== identity.value.user_id) throw new Error('回执不是发给当前身份的')
   if (info.from_user_id !== sender.user_id) throw new Error('回执发送者与 Mailbox 发送者不一致')
   if (info.kind === 'Read') {
@@ -4270,15 +4260,13 @@ function applyMessageReceiptText(receiptText: string, sender: ContactItem): 'del
 
 async function sendDeliveryAck(sender: ContactItem, messageId?: string, conversationId?: string, mailboxDeliveryId?: string) {
   if (!messageId || !identity.value) return
-  const ack = create_message_receipt(
-    backupText.value,
-    passphrase.value,
+  const ack = await createMessageReceiptInWorker(
     sender.user_id,
     messageId,
     conversationId || `conv-${sender.user_id}`,
-    mailboxDeliveryId || undefined,
     'delivered',
-    BigInt(24 * 3600),
+    24 * 3600,
+    mailboxDeliveryId,
   )
   const result = await deliverPayloadToContact(sender, ack, '送达回执', 'delivery-receipt')
   if (result === 'queued' || result === 'failed') queueOutboxItem(sender, ack, undefined, 'delivery-receipt')
@@ -4287,15 +4275,13 @@ async function sendDeliveryAck(sender: ContactItem, messageId?: string, conversa
 
 async function sendReadReceipt(sender: ContactItem, messageId?: string, conversationId?: string, mailboxDeliveryId?: string) {
   if (!messageId || !identity.value || !readReceiptsEnabledFor(sender)) return
-  const receipt = create_message_receipt(
-    backupText.value,
-    passphrase.value,
+  const receipt = await createMessageReceiptInWorker(
     sender.user_id,
     messageId,
     conversationId || `conv-${sender.user_id}`,
-    mailboxDeliveryId || undefined,
     'read',
-    BigInt(24 * 3600),
+    24 * 3600,
+    mailboxDeliveryId,
   )
   const result = await deliverPayloadToContact(sender, receipt, '已读回执', 'read-receipt')
   if (result === 'queued' || result === 'failed') queueOutboxItem(sender, receipt, undefined, 'read-receipt')
@@ -7020,6 +7006,124 @@ async function inspectDeviceRevokeInWorker<T = DeviceRevokeInfo>(revokeText: str
   return runContactCardCryptoJson<T>({ operation: 'inspectDeviceRevoke', revokeText, identityPublicKey })
 }
 
+type MessageMetadataCryptoWorkerResponse = {
+  id: number
+  ok: boolean
+  value?: string
+  error?: string
+}
+
+let messageMetadataCryptoWorker: Worker | null = null
+let nextMessageMetadataCryptoRequestId = 1
+const messageMetadataCryptoRequests = new Map<number, {
+  resolve: (value: string) => void
+  reject: (reason?: unknown) => void
+}>()
+
+function getMessageMetadataCryptoWorker(): Worker {
+  if (messageMetadataCryptoWorker) return messageMetadataCryptoWorker
+  const worker = new Worker(new URL('./messageMetadataCrypto.worker.ts', import.meta.url), { type: 'module' })
+  worker.onmessage = (event: MessageEvent<MessageMetadataCryptoWorkerResponse>) => {
+    const response = event.data
+    const pending = messageMetadataCryptoRequests.get(response.id)
+    if (!pending) return
+    messageMetadataCryptoRequests.delete(response.id)
+    if (response.ok && typeof response.value === 'string') pending.resolve(response.value)
+    else pending.reject(new Error(response.error || '消息元数据 Worker 处理失败'))
+  }
+  worker.onerror = (event) => {
+    const error = new Error(event.message || '消息元数据 Worker 已停止')
+    for (const pending of messageMetadataCryptoRequests.values()) pending.reject(error)
+    messageMetadataCryptoRequests.clear()
+    worker.terminate()
+    if (messageMetadataCryptoWorker === worker) messageMetadataCryptoWorker = null
+  }
+  messageMetadataCryptoWorker = worker
+  return worker
+}
+
+function runMessageMetadataCryptoWorker(payload: Record<string, string>): Promise<string> {
+  const id = nextMessageMetadataCryptoRequestId++
+  return new Promise((resolve, reject) => {
+    messageMetadataCryptoRequests.set(id, { resolve, reject })
+    try {
+      getMessageMetadataCryptoWorker().postMessage({ id, ...payload })
+    } catch (error) {
+      messageMetadataCryptoRequests.delete(id)
+      reject(error)
+    }
+  })
+}
+
+async function runMessageMetadataCryptoJson<T = any>(payload: Record<string, string>): Promise<T> {
+  return JSON.parse(await runMessageMetadataCryptoWorker(payload)) as T
+}
+
+function createMailboxMessageInWorker(toUserId: string, kind: string, ciphertext: string, ttlSeconds: number): Promise<string> {
+  return runMessageMetadataCryptoWorker({
+    operation: 'createMailboxMessage',
+    backupText: backupText.value,
+    passphrase: passphrase.value,
+    toUserId,
+    kind,
+    ciphertext,
+    ttlSeconds: String(ttlSeconds),
+  })
+}
+
+async function inspectMailboxMessageInWorker<T = any>(messageText: string, identityPublicKey: string): Promise<T> {
+  return runMessageMetadataCryptoJson<T>({ operation: 'inspectMailboxMessage', messageText, identityPublicKey })
+}
+
+function createMessageReceiptInWorker(toUserId: string, targetMessageId: string, conversationId: string, kind: 'delivered' | 'read', ttlSeconds: number, mailboxDeliveryId?: string): Promise<string> {
+  return runMessageMetadataCryptoWorker({
+    operation: 'createMessageReceipt',
+    backupText: backupText.value,
+    passphrase: passphrase.value,
+    toUserId,
+    targetMessageId,
+    conversationId,
+    mailboxDeliveryId: mailboxDeliveryId ?? '',
+    kind,
+    ttlSeconds: String(ttlSeconds),
+  })
+}
+
+async function inspectMessageReceiptInWorker<T = any>(receiptText: string, identityPublicKey: string): Promise<T> {
+  return runMessageMetadataCryptoJson<T>({ operation: 'inspectMessageReceipt', receiptText, identityPublicKey })
+}
+
+function createPeerAnnounceInWorker(addressesJson: string, mailboxKey: string | undefined, ttlSeconds: number): Promise<string> {
+  return runMessageMetadataCryptoWorker({
+    operation: 'createPeerAnnounce',
+    backupText: backupText.value,
+    passphrase: passphrase.value,
+    addressesJson,
+    mailboxKey: mailboxKey ?? '',
+    ttlSeconds: String(ttlSeconds),
+  })
+}
+
+async function inspectPeerAnnounceInWorker<T = any>(announceText: string, identityPublicKey: string): Promise<T> {
+  return runMessageMetadataCryptoJson<T>({ operation: 'inspectPeerAnnounce', announceText, identityPublicKey })
+}
+
+function createPublicPeerAnnounceInWorker(peerId: string, addressesJson: string, capabilitiesJson: string, ttlSeconds: number): Promise<string> {
+  return runMessageMetadataCryptoWorker({
+    operation: 'createPublicPeerAnnounce',
+    backupText: backupText.value,
+    passphrase: passphrase.value,
+    peerId,
+    addressesJson,
+    capabilitiesJson,
+    ttlSeconds: String(ttlSeconds),
+  })
+}
+
+async function inspectPublicPeerAnnounceInWorker<T = any>(announceText: string, identityPublicKey: string): Promise<T> {
+  return runMessageMetadataCryptoJson<T>({ operation: 'inspectPublicPeerAnnounce', announceText, identityPublicKey })
+}
+
 let deviceSlotCryptoWorker: Worker | null = null
 let nextDeviceSlotCryptoRequestId = 1
 const deviceSlotCryptoRequests = new Map<number, {
@@ -7618,7 +7722,7 @@ function setupDataChannel(channel: RTCDataChannel) {
   dc.onerror = () => appendLog('❌ DataChannel error')
   dc.onmessage = (event) => {
     if (typeof event.data !== 'string') return
-    handleRtcText(event.data)
+    void handleRtcText(event.data)
   }
 }
 
@@ -7628,12 +7732,12 @@ function sendRtcText(value: string, label: string) {
   dc.send(value)
 }
 
-function handleRtcText(value: string) {
+async function handleRtcText(value: string) {
   if (value.startsWith('lm-message-receipt-v1:')) {
     const sender = activeContact.value
     if (sender) {
       try {
-        applyMessageReceiptText(value, sender)
+        await applyMessageReceiptText(value, sender)
         persist()
         return
       } catch (e) {
@@ -7753,62 +7857,58 @@ function defaultInspectPublicKey(): string {
   return activeContact.value?.identity_public_key || identity.value?.identity_public_key || ''
 }
 
-function createPeerAnnounceText() {
-  run('生成 PeerAnnounce', () => {
+async function createPeerAnnounceText() {
+  await runAsync('生成 PeerAnnounce', async () => {
     const addresses = parseLines(peerAddressesText.value)
     if (addresses.length === 0) throw new Error('请至少填写一个地址')
-    peerAnnounceText.value = create_peer_announce(
-      backupText.value,
-      passphrase.value,
+    peerAnnounceText.value = await createPeerAnnounceInWorker(
       JSON.stringify(addresses),
       peerMailboxKey.value.trim() || undefined,
-      BigInt(3600),
+      3600,
     )
     peerAnnounceInspectPublicKey.value = identity.value?.identity_public_key || ''
-    peerAnnounceInfoText.value = JSON.stringify(JSON.parse(inspect_peer_announce(
+    peerAnnounceInfoText.value = JSON.stringify(await inspectPeerAnnounceInWorker(
       peerAnnounceText.value,
       peerAnnounceInspectPublicKey.value,
-    )), null, 2)
+    ), null, 2)
   })
 }
 
-function inspectPeerAnnounceText() {
-  run('验签 PeerAnnounce', () => {
+async function inspectPeerAnnounceText() {
+  await runAsync('验签 PeerAnnounce', async () => {
     const key = peerAnnounceInspectPublicKey.value.trim() || defaultInspectPublicKey()
     if (!key) throw new Error('需要发布者 identity_public_key')
     peerAnnounceInspectPublicKey.value = key
-    peerAnnounceInfoText.value = JSON.stringify(JSON.parse(inspect_peer_announce(peerAnnounceText.value, key)), null, 2)
+    peerAnnounceInfoText.value = JSON.stringify(await inspectPeerAnnounceInWorker(peerAnnounceText.value, key), null, 2)
   })
 }
 
-function createPublicPeerAnnounceText() {
-  run('生成 PublicPeerAnnounce', () => {
+async function createPublicPeerAnnounceText() {
+  await runAsync('生成 PublicPeerAnnounce', async () => {
     const addresses = parseLines(publicPeerAddressesText.value)
     if (addresses.length === 0) throw new Error('请至少填写一个公网地址')
     const peerId = publicPeerId.value.trim() || `public-${identity.value?.user_id.slice(0, 12) || newId()}`
     publicPeerId.value = peerId
-    publicPeerAnnounceText.value = create_public_peer_announce(
-      backupText.value,
-      passphrase.value,
+    publicPeerAnnounceText.value = await createPublicPeerAnnounceInWorker(
       peerId,
       JSON.stringify(addresses),
       JSON.stringify(publicPeerCapabilities.value),
-      BigInt(24 * 3600),
+      24 * 3600,
     )
     publicPeerAnnounceInspectPublicKey.value = identity.value?.identity_public_key || ''
-    publicPeerAnnounceInfoText.value = JSON.stringify(JSON.parse(inspect_public_peer_announce(
+    publicPeerAnnounceInfoText.value = JSON.stringify(await inspectPublicPeerAnnounceInWorker(
       publicPeerAnnounceText.value,
       publicPeerAnnounceInspectPublicKey.value,
-    )), null, 2)
+    ), null, 2)
   })
 }
 
-function inspectPublicPeerAnnounceText() {
-  run('验签 PublicPeerAnnounce', () => {
+async function inspectPublicPeerAnnounceText() {
+  await runAsync('验签 PublicPeerAnnounce', async () => {
     const key = publicPeerAnnounceInspectPublicKey.value.trim() || defaultInspectPublicKey()
     if (!key) throw new Error('需要发布者 identity_public_key')
     publicPeerAnnounceInspectPublicKey.value = key
-    publicPeerAnnounceInfoText.value = JSON.stringify(JSON.parse(inspect_public_peer_announce(publicPeerAnnounceText.value, key)), null, 2)
+    publicPeerAnnounceInfoText.value = JSON.stringify(await inspectPublicPeerAnnounceInWorker(publicPeerAnnounceText.value, key), null, 2)
   })
 }
 
@@ -8329,33 +8429,31 @@ async function ratchetDhStepText() {
   })
 }
 
-function createMailboxMessageText() {
-  run('生成 MailboxMessage', () => {
+async function createMailboxMessageText() {
+  await runAsync('生成 MailboxMessage', async () => {
     if (!activeContact.value) throw new Error('请先选择收件人联系人')
     const ciphertext = mailboxCiphertext.value.trim() || inboundEnvelopeText.value.trim() || localSignalText.value.trim()
     if (!ciphertext) throw new Error('请填写要放入 mailbox 的密文/信令文本')
-    mailboxMessageText.value = create_mailbox_message(
-      backupText.value,
-      passphrase.value,
+    mailboxMessageText.value = await createMailboxMessageInWorker(
       activeContact.value.user_id,
       mailboxKind.value,
       ciphertext,
-      BigInt(24 * 3600),
+      24 * 3600,
     )
     mailboxMessageInspectPublicKey.value = identity.value?.identity_public_key || ''
-    mailboxMessageInfoText.value = JSON.stringify(JSON.parse(inspect_mailbox_message(
+    mailboxMessageInfoText.value = JSON.stringify(await inspectMailboxMessageInWorker(
       mailboxMessageText.value,
       mailboxMessageInspectPublicKey.value,
-    )), null, 2)
+    ), null, 2)
   })
 }
 
-function inspectMailboxMessageText() {
-  run('验签 MailboxMessage', () => {
+async function inspectMailboxMessageText() {
+  await runAsync('验签 MailboxMessage', async () => {
     const key = mailboxMessageInspectPublicKey.value.trim() || defaultInspectPublicKey()
     if (!key) throw new Error('需要发送者 identity_public_key')
     mailboxMessageInspectPublicKey.value = key
-    mailboxMessageInfoText.value = JSON.stringify(JSON.parse(inspect_mailbox_message(mailboxMessageText.value, key)), null, 2)
+    mailboxMessageInfoText.value = JSON.stringify(await inspectMailboxMessageInWorker(mailboxMessageText.value, key), null, 2)
   })
 }
 
@@ -8923,7 +9021,7 @@ async function applyDhtFindValueRecord(body: any): Promise<boolean> {
   } else if (record.kind === 'PublicPeer') {
     const key = publicPeerAnnounceInspectPublicKey.value.trim() || defaultInspectPublicKey()
     try {
-      const inspected = key ? JSON.parse(inspect_public_peer_announce(record.value, key)) : null
+      const inspected = key ? await inspectPublicPeerAnnounceInWorker(record.value, key) : null
       publicPeerAnnounceText.value = record.value
       publicPeerAnnounceInspectPublicKey.value = key
       publicPeerAnnounceInfoText.value = JSON.stringify({ source: 'dht', verified: Boolean(inspected), record, inspected }, null, 2)
@@ -9125,7 +9223,7 @@ async function publishAndCheckAllMyDht() {
     const contactCard = await publishContactCardDhtRecord({ recordHistory: false })
     await runDhtFindValueForKey(contactCard.key)
 
-    if (!publicPeerAnnounceText.value.trim()) createPublicPeerAnnounceText()
+    if (!publicPeerAnnounceText.value.trim()) await createPublicPeerAnnounceText()
     if (!publicPeerAnnounceText.value.trim()) throw new Error('请先生成 PublicPeerAnnounce')
     const peerId = publicPeerId.value.trim()
     if (!peerId) throw new Error('缺少 public peer id')
@@ -9154,7 +9252,7 @@ async function publishAndCheckAllMyDht() {
 }
 
 async function publishPublicPeerDhtRecord(options: { recordHistory?: boolean } = {}): Promise<{ key: string; peerId: string; store: any }> {
-  if (!publicPeerAnnounceText.value.trim()) createPublicPeerAnnounceText()
+  if (!publicPeerAnnounceText.value.trim()) await createPublicPeerAnnounceText()
   if (!publicPeerAnnounceText.value.trim()) throw new Error('请先生成 PublicPeerAnnounce')
   const peerId = publicPeerId.value.trim()
   if (!peerId) throw new Error('缺少 public peer id')
@@ -9701,7 +9799,7 @@ async function handleMailboxPayload(item: any): Promise<{ handled: boolean; deli
       persist()
       return { handled: true, deliveryId, event: 'other', reason }
     }
-    const event = applyMessageReceiptText(ciphertext, sender)
+    const event = await applyMessageReceiptText(ciphertext, sender)
     return { handled: true, deliveryId, event }
   }
 
