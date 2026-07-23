@@ -9197,19 +9197,37 @@ async function takeMailboxFromNode() {
   startMailboxLongPoll()
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  const step = 0x8000
-  for (let i = 0; i < bytes.length; i += step) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + step))
-  }
-  return btoa(binary)
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, 0))
 }
 
-function base64ToBytes(value: string): Uint8Array {
-  const binary = atob(value)
-  const out = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i)
+const FILE_BASE64_CHUNK_BYTES = 3 * 256 * 1024
+const FILE_BASE64_CHUNK_CHARS = (FILE_BASE64_CHUNK_BYTES / 3) * 4
+
+async function bytesToBase64ForFile(bytes: Uint8Array): Promise<string> {
+  const parts: string[] = []
+  for (let offset = 0; offset < bytes.length; offset += FILE_BASE64_CHUNK_BYTES) {
+    const chunk = bytes.subarray(offset, Math.min(offset + FILE_BASE64_CHUNK_BYTES, bytes.length))
+    let binary = ''
+    for (let index = 0; index < chunk.length; index += 0x8000) {
+      binary += String.fromCharCode(...chunk.subarray(index, index + 0x8000))
+    }
+    parts.push(btoa(binary))
+    if (offset + FILE_BASE64_CHUNK_BYTES < bytes.length) await yieldToBrowser()
+  }
+  return parts.join('')
+}
+
+async function base64ToBytesForFile(value: string): Promise<Uint8Array> {
+  const byteLength = Math.floor((value.length * 3) / 4) - (value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0)
+  const out = new Uint8Array(byteLength)
+  let offset = 0
+  for (let index = 0; index < value.length; index += FILE_BASE64_CHUNK_CHARS) {
+    const binary = atob(value.slice(index, index + FILE_BASE64_CHUNK_CHARS))
+    for (let byteIndex = 0; byteIndex < binary.length; byteIndex += 1) out[offset + byteIndex] = binary.charCodeAt(byteIndex)
+    offset += binary.length
+    if (index + FILE_BASE64_CHUNK_CHARS < value.length) await yieldToBrowser()
+  }
   return out
 }
 
@@ -9277,6 +9295,7 @@ async function readFileWithProgress(file: File): Promise<Uint8Array> {
   for (const chunk of chunks) {
     out.set(chunk, offset)
     offset += chunk.byteLength
+    if (offset < loaded && offset % FILE_BASE64_CHUNK_BYTES === 0) await yieldToBrowser()
   }
   return out
 }
@@ -9311,13 +9330,14 @@ async function createFilePackageForActive(): Promise<boolean> {
     fileTransferPhase.value = '加密封装'
     fileProgressText.value = `读取完成 · ${formatBytes(bytes.length)}`
     rtcFileStatus.value = `正在生成加密文件包：${selectedFile.value.name}`
+    const bytesBase64 = await bytesToBase64ForFile(bytes)
     filePackageText.value = create_file_package(
       backupText.value,
       passphrase.value,
       activeContact.value.contact_card_text,
       selectedFile.value.name,
       selectedFile.value.type || 'application/octet-stream',
-      bytesToBase64(bytes),
+      bytesBase64,
       16 * 1024,
     )
     filePackageInfoText.value = JSON.stringify(JSON.parse(inspect_file_package(filePackageText.value)), null, 2)
@@ -9383,7 +9403,9 @@ async function decryptIncomingFilePackage() {
       text,
     )) as { name: string; mime_type: string; size?: number; bytes_base64: string }
     if (receivedFileUrl.value) URL.revokeObjectURL(receivedFileUrl.value)
-    const bytes = base64ToBytes(out.bytes_base64)
+    fileTransferPhase.value = '生成文件'
+    fileProgressText.value = '正在还原文件内容'
+    const bytes = await base64ToBytesForFile(out.bytes_base64)
     const blob = new Blob([new Uint8Array(bytes)], { type: out.mime_type || 'application/octet-stream' })
     receivedFileUrl.value = URL.createObjectURL(blob)
     receivedFileName.value = out.name
