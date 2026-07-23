@@ -7,67 +7,32 @@ usage() {
   cat <<'USAGE'
 Usage: ./scripts/dev-run.sh node [options]
 
-Production runtime only. This script never uses `cargo run`.
-It builds release and then execs target/release/lm_node.
+Build the current lm_node release binary, package it into a local Docker image,
+and restart the Node container. HTTPS is provided by the lm-talk-web Caddy
+container through https://<LAN-IP>/node/; this script does not publish port 8787.
 
-Node options:
-  --local                 bind 127.0.0.1:8787
-  --lan                   bind 0.0.0.0:8787 (default)
-  --ipv6                  bind [::]:8787
-  --config-file PATH      JSON config for lm_node serve-control
-  --bind HOST:PORT
-  --state-db PATH         default: ./lm-node-state.prd.sqlite3 unless --config-file is used
-  --peer-id ID            default: lm-node-prd
-  --control-token TOKEN   require Authorization: Bearer TOKEN for non-health APIs
-  --control-token-file PATH read control token from file
-  --cors-allow-origin CSV allow only listed browser origins
-  --sync-peer URL[,URL]   periodically import peer snapshots
-  --sync-peer-token TOKEN Bearer token used when fetching sync peer snapshots
-  --sync-peer-token-file PATH read sync peer token from file
-  --sync-interval-seconds N
-  --sync-max-backoff-seconds N maximum retry backoff after sync failures (default: 300)
-  --dht-replication-factor N DHT StoreRecord replication factor (default: 3)
-  --dht-routing-refresh-limit N DHT FindNode response limit (default: 8)
-  --dht-routing-refresh-max-targets N DHT refresh targets per sync run (default: 8)
-  --dht-transport http-control|libp2p DHT runner transport (default: http-control)
-  --dht-peer-quarantine-consecutive-failures N skip DHT peers in backoff after N consecutive failures (default: 5; 0 disables)
-  --rate-limit-window-seconds N per-client control API rate window (default: 60; 0 disables)
-  --rate-limit-max-requests N max non-health requests per client/window (default: 600; 0 disables)
-  --log-format text|json  stdout log format (default: text; env: LM_NODE_LOG_FORMAT)
-  --web-admin-build-base BASE  build node-admin with this base before mounting /admin (default: /admin/)
-  --skip-web-admin-build       do not auto-build node-admin even when dist is missing or stale
-  --check-config          validate script options and exit before building/running
+Options:
+  --config-file PATH       Node JSON configuration (required unless LM_NODE_CONFIG_FILE is set)
+  --data-dir PATH          Persistent /data mount (default: sibling data directory)
+  --container-name NAME    Docker container name (default: lm-talk-node)
+  --network NAME           Docker network shared with Caddy (default: lm-talk-lan)
+  --image-tag TAG          Local image tag (default: lm-talk-node:dev)
+  --public-url URL         HTTPS origin served by Caddy, used only when printing the sync address
+  --no-build               Reuse the current local image; only recreate the container
+  --logs                   Follow Node logs after startup
+  --check-config           Validate local prerequisites and exit
+  -h, --help               Show this help
+
+Example:
+  ./scripts/dev-run.sh node \
+    --config-file /home/user/lm-talk-node/config.json \
+    --data-dir /home/user/lm-talk-node/data \
+    --public-url https://lm-talk.lan
+
+The Caddy container must be on the same Docker network and proxy /node/* to
+lm-talk-node:8787. --public-url is deployment-specific: it must exactly match
+the HTTPS host configured in Caddy and included in cors_allow_origins.
 USAGE
-}
-
-print_sync_addresses() {
-  local bind="$1"
-  local token="$2"
-  local port="${bind##*:}"
-  port="${port//]/}"
-  echo
-  echo "可在网页『我 → 同步与安全 → 编辑地址』填写："
-  echo "注意：以下地址包含访问令牌，请仅粘贴到可信设备，不要发送到公开渠道。"
-  local suffix=""
-  [[ -n "$token" ]] && suffix="|$token"
-  case "$bind" in
-    127.0.0.1:*|localhost:*) echo "  http://127.0.0.1:$port$suffix"; return ;;
-    \[::*\]|:::*) echo "  http://[::1]:$port$suffix" ;;
-    0.0.0.0:*|*:*) echo "  http://127.0.0.1:$port$suffix" ;;
-  esac
-  if command -v hostname >/dev/null 2>&1; then
-    while read -r ip; do
-      [[ -z "$ip" ]] && continue
-      [[ "$ip" == *:* ]] && echo "  http://[$ip]:$port$suffix" || echo "  http://$ip:$port$suffix"
-    done < <(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v '^127\.' | grep -v '^$' || true)
-  fi
-  if command -v ip >/dev/null 2>&1; then
-    while read -r ifname ip6 scope; do
-      [[ -z "$ip6" ]] && continue
-      [[ "$scope" == "global" ]] && echo "  http://[$ip6]:$port$suffix"
-      [[ "$scope" == "link" ]] && echo "  http://[$ip6%25$ifname]:$port$suffix  (IPv6 链路本地)"
-    done < <(ip -o -6 addr show scope global 2>/dev/null | awk '{split($4,a,"/"); print $2, a[1], "global"}'; ip -o -6 addr show scope link 2>/dev/null | awk '{split($4,a,"/"); print $2, a[1], "link"}')
-  fi
 }
 
 cmd="${1:-help}"
@@ -79,245 +44,133 @@ case "$cmd" in
 esac
 
 config_file="${LM_NODE_CONFIG_FILE:-}"
-bind="0.0.0.0:8787"
-bind_set=0
-state_db="$ROOT/lm-node-state.prd.sqlite3"
-state_db_set=0
-peer_id="lm-node-prd"
-peer_id_set=0
-control_token="${LM_NODE_CONTROL_TOKEN:-}"
-control_token_file="${LM_NODE_CONTROL_TOKEN_FILE:-}"
-cors_allow_origin="${LM_NODE_CORS_ALLOW_ORIGIN:-}"
-sync_peer=""
-sync_peer_token="${LM_NODE_SYNC_PEER_TOKEN:-}"
-sync_peer_token_file="${LM_NODE_SYNC_PEER_TOKEN_FILE:-}"
-sync_interval_seconds="0"
-sync_max_backoff_seconds="300"
-dht_replication_factor="${LM_NODE_DHT_REPLICATION_FACTOR:-3}"
-dht_replication_factor_set=$([[ -n "${LM_NODE_DHT_REPLICATION_FACTOR:-}" ]] && echo 1 || echo 0)
-dht_routing_refresh_limit="${LM_NODE_DHT_ROUTING_REFRESH_LIMIT:-8}"
-dht_routing_refresh_limit_set=$([[ -n "${LM_NODE_DHT_ROUTING_REFRESH_LIMIT:-}" ]] && echo 1 || echo 0)
-dht_routing_refresh_max_targets="${LM_NODE_DHT_ROUTING_REFRESH_MAX_TARGETS:-8}"
-dht_routing_refresh_max_targets_set=$([[ -n "${LM_NODE_DHT_ROUTING_REFRESH_MAX_TARGETS:-}" ]] && echo 1 || echo 0)
-dht_transport="${LM_NODE_DHT_TRANSPORT:-http-control}"
-dht_transport_set=$([[ -n "${LM_NODE_DHT_TRANSPORT:-}" ]] && echo 1 || echo 0)
-dht_peer_quarantine_consecutive_failures="${LM_NODE_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES:-5}"
-dht_peer_quarantine_consecutive_failures_set=$([[ -n "${LM_NODE_DHT_PEER_QUARANTINE_CONSECUTIVE_FAILURES:-}" ]] && echo 1 || echo 0)
-rate_limit_window_seconds="${LM_NODE_RATE_LIMIT_WINDOW_SECONDS:-60}"
-rate_limit_window_seconds_set=$([[ -n "${LM_NODE_RATE_LIMIT_WINDOW_SECONDS:-}" ]] && echo 1 || echo 0)
-rate_limit_max_requests="${LM_NODE_RATE_LIMIT_MAX_REQUESTS:-600}"
-rate_limit_max_requests_set=$([[ -n "${LM_NODE_RATE_LIMIT_MAX_REQUESTS:-}" ]] && echo 1 || echo 0)
-log_format="${LM_NODE_LOG_FORMAT:-text}"
-log_format_set=$([[ -n "${LM_NODE_LOG_FORMAT:-}" ]] && echo 1 || echo 0)
-web_admin_build_base="${LM_NODE_ADMIN_BASE:-${VITE_BASE:-/admin/}}"
-skip_web_admin_build=0
+data_dir="${LM_NODE_DATA_DIR:-}"
+container_name="${LM_NODE_CONTAINER_NAME:-lm-talk-node}"
+network_name="${LM_NODE_DOCKER_NETWORK:-lm-talk-lan}"
+image_tag="${LM_NODE_IMAGE_TAG:-lm-talk-node:dev}"
+public_url="${LM_TALK_PUBLIC_URL:-}"
+build_image=1
+follow_logs=0
 check_config=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config-file) config_file="${2:?--config-file requires PATH}"; shift 2 ;;
-    --local) bind="127.0.0.1:8787"; bind_set=1; shift ;;
-    --lan) bind="0.0.0.0:8787"; bind_set=1; shift ;;
-    --ipv6) bind="[::]:8787"; bind_set=1; shift ;;
-    --bind) bind="${2:?--bind requires HOST:PORT}"; bind_set=1; shift 2 ;;
-    --state-db) state_db="${2:?--state-db requires PATH}"; state_db_set=1; shift 2 ;;
-    --peer-id) peer_id="${2:?--peer-id requires ID}"; peer_id_set=1; shift 2 ;;
-    --control-token) control_token="${2:?--control-token requires TOKEN}"; shift 2 ;;
-    --control-token-file) control_token_file="${2:?--control-token-file requires PATH}"; shift 2 ;;
-    --cors-allow-origin) cors_allow_origin="${2:?--cors-allow-origin requires ORIGIN}"; shift 2 ;;
-    --sync-peer) sync_peer="${2:?--sync-peer requires URL[,URL]}"; shift 2 ;;
-    --sync-peer-token) sync_peer_token="${2:?--sync-peer-token requires TOKEN}"; shift 2 ;;
-    --sync-peer-token-file) sync_peer_token_file="${2:?--sync-peer-token-file requires PATH}"; shift 2 ;;
-    --sync-interval-seconds) sync_interval_seconds="${2:?--sync-interval-seconds requires N}"; shift 2 ;;
-    --sync-max-backoff-seconds) sync_max_backoff_seconds="${2:?--sync-max-backoff-seconds requires N}"; shift 2 ;;
-    --dht-replication-factor) dht_replication_factor="${2:?--dht-replication-factor requires N}"; dht_replication_factor_set=1; shift 2 ;;
-    --dht-routing-refresh-limit) dht_routing_refresh_limit="${2:?--dht-routing-refresh-limit requires N}"; dht_routing_refresh_limit_set=1; shift 2 ;;
-    --dht-routing-refresh-max-targets) dht_routing_refresh_max_targets="${2:?--dht-routing-refresh-max-targets requires N}"; dht_routing_refresh_max_targets_set=1; shift 2 ;;
-    --dht-transport) dht_transport="${2:?--dht-transport requires http-control|libp2p}"; dht_transport_set=1; shift 2 ;;
-    --dht-peer-quarantine-consecutive-failures) dht_peer_quarantine_consecutive_failures="${2:?--dht-peer-quarantine-consecutive-failures requires N}"; dht_peer_quarantine_consecutive_failures_set=1; shift 2 ;;
-    --rate-limit-window-seconds) rate_limit_window_seconds="${2:?--rate-limit-window-seconds requires N}"; rate_limit_window_seconds_set=1; shift 2 ;;
-    --rate-limit-max-requests) rate_limit_max_requests="${2:?--rate-limit-max-requests requires N}"; rate_limit_max_requests_set=1; shift 2 ;;
-    --log-format) log_format="${2:?--log-format requires text|json}"; log_format_set=1; shift 2 ;;
-    --web-admin-build-base) web_admin_build_base="${2:?--web-admin-build-base requires BASE}"; shift 2 ;;
-    --skip-web-admin-build) skip_web_admin_build=1; shift ;;
+    --data-dir) data_dir="${2:?--data-dir requires PATH}"; shift 2 ;;
+    --container-name) container_name="${2:?--container-name requires NAME}"; shift 2 ;;
+    --network) network_name="${2:?--network requires NAME}"; shift 2 ;;
+    --image-tag) image_tag="${2:?--image-tag requires TAG}"; shift 2 ;;
+    --public-url) public_url="${2:?--public-url requires URL}"; shift 2 ;;
+    --no-build) build_image=0; shift ;;
+    --logs) follow_logs=1; shift ;;
     --check-config) check_config=1; shift ;;
-    --debug|--release)
-      echo "run.sh 是 PRD runtime，不接受 $1；固定 build --release 并执行 target/release/lm_node" >&2
-      exit 2
-      ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown node option: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
 
+if [[ -z "$config_file" ]]; then
+  echo "需要 --config-file PATH（或设置 LM_NODE_CONFIG_FILE）。" >&2
+  exit 2
+fi
 
-is_loopback_bind() {
-  local value="$1"
-  case "$value" in
-    127.*:*|localhost:*|\[::1\]:*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-validate_prd_run_security() {
-  if [[ -z "$config_file" ]]; then
-    if ! is_loopback_bind "$bind" && [[ -z "$control_token" && -z "$control_token_file" ]]; then
-      cat >&2 <<'ERR'
-拒绝启动：生产脚本绑定到非 loopback 地址时必须配置 --control-token 或 --control-token-file。
-
-安全选项：
-  - 仅本机使用：加 --local
-  - 局域网/公网使用：加 --control-token-file /path/to/token，并确保文件 chmod 600
-  - 复杂部署：使用 --config-file，并在配置中设置 control_token_file，置于 TLS 反向代理后
-ERR
-      exit 2
-    fi
-  fi
-}
-
-validate_prd_run_security
-
-sync_address_token="$control_token"
-if [[ -z "$sync_address_token" && -n "$control_token_file" ]]; then
-  if [[ ! -r "$control_token_file" ]]; then
-    echo "无法读取控制令牌文件：$control_token_file" >&2
-    exit 2
-  fi
-  sync_address_token="$(tr -d '\r\n' < "$control_token_file")"
-  if [[ -z "$sync_address_token" ]]; then
-    echo "控制令牌文件为空：$control_token_file" >&2
+if [[ -n "$public_url" ]]; then
+  public_url="${public_url%/}"
+  if [[ ! "$public_url" =~ ^https://[^/]+$ ]]; then
+    echo "--public-url 必须是 HTTPS origin，例如 https://lm-talk.lan 或 https://10.0.0.8。" >&2
     exit 2
   fi
 fi
-
-admin_dist="$ROOT/apps/node-admin/dist"
-need_web_admin_build=0
-if [[ "$skip_web_admin_build" != "1" && ! -f "$ROOT/node_admin.zip" && ! -f "$ROOT/target/release/node_admin.zip" ]]; then
-  if [[ ! -f "$admin_dist/index.html" ]]; then
-    need_web_admin_build=1
-  elif ! grep -q "/admin/assets/" "$admin_dist/index.html"; then
-    need_web_admin_build=1
-  fi
-fi
-if [[ "$need_web_admin_build" == "1" ]]; then
-  echo "构建 node-admin：base=$web_admin_build_base"
-  (cd "$ROOT/apps/node-admin" && NODE_ADMIN_BASE="$web_admin_build_base" PATH="$ROOT/.tools/node/bin:$PATH" npm run build)
+if [[ ! -f "$config_file" ]]; then
+  echo "Node 配置文件不存在：$config_file" >&2
+  exit 2
 fi
 
-mkdir -p "$(dirname "$state_db")"
-echo "启动 LM Talk 同步服务（PRD）"
-if [[ -n "$config_file" ]]; then
-  echo "配置文件：$config_file"
+config_file="$(cd "$(dirname "$config_file")" && pwd)/$(basename "$config_file")"
+if [[ -z "$data_dir" ]]; then
+  data_dir="$(dirname "$config_file")/data"
 fi
-if [[ -z "$config_file" || "$bind_set" == "1" ]]; then
-  echo "绑定地址：$bind"
+mkdir -p "$data_dir"
+data_dir="$(cd "$data_dir" && pwd)"
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "未找到 docker，请先安装并启动 Docker。" >&2
+  exit 2
 fi
-if [[ -z "$config_file" || "$peer_id_set" == "1" ]]; then
-  echo "Peer ID：$peer_id"
+if ! docker info >/dev/null 2>&1; then
+  echo "Docker daemon 不可用，请确认 Docker 正在运行。" >&2
+  exit 2
 fi
-if [[ -z "$config_file" || "$state_db_set" == "1" ]]; then
-  echo "状态数据库：$state_db"
+
+if ! docker network inspect "$network_name" >/dev/null 2>&1; then
+  echo "创建 Docker 网络：$network_name"
+  docker network create "$network_name" >/dev/null
 fi
-if [[ -n "$control_token" || -n "$control_token_file" ]]; then
-  echo "控制面认证：Bearer token enabled"
+
+if ! docker ps --format '{{.Names}}' | grep -Fxq 'lm-talk-web'; then
+  cat >&2 <<'WARN'
+警告：未发现运行中的 lm-talk-web Caddy 容器。
+Node 仍会启动，但浏览器无法通过 HTTPS /node/ 访问它。请先启动 Web/Caddy，
+并确保其加入同一个 Docker network，且配置了：
+  handle_path /node/* { reverse_proxy lm-talk-node:8787 }
+WARN
+fi
+
+echo "Node 配置：$config_file"
+echo "Node 数据：$data_dir"
+echo "Docker 网络：$network_name"
+echo "容器名称：$container_name"
+echo "HTTPS：由 lm-talk-web Caddy 通过 /node/ 反向代理提供；不暴露宿主机 8787。"
+if [[ -n "$public_url" ]]; then
+  echo "HTTPS 来源：$public_url"
 else
-  echo "控制面认证：未配置 token，仅允许 loopback 非 health 请求"
+  echo "HTTPS 来源：未指定；启动后不会猜测局域网 IP。可传 --public-url https://<当前部署主机>。"
 fi
-if [[ -n "$cors_allow_origin" ]]; then
-  echo "CORS allow origin：$cors_allow_origin"
-fi
-if [[ "$rate_limit_window_seconds" != "0" && "$rate_limit_max_requests" != "0" ]]; then
-  echo "控制面限流：${rate_limit_max_requests} requests / ${rate_limit_window_seconds}s per client"
-else
-  echo "控制面限流：disabled"
-fi
-echo "日志格式：$log_format"
-echo "DHT runner：transport=$dht_transport replication_factor=$dht_replication_factor refresh_limit=$dht_routing_refresh_limit refresh_max_targets=$dht_routing_refresh_max_targets quarantine_failures=$dht_peer_quarantine_consecutive_failures"
-if [[ -n "$sync_peer" && "$sync_interval_seconds" != "0" ]]; then
-  echo "自动同步：$sync_peer every ${sync_interval_seconds}s, max backoff ${sync_max_backoff_seconds}s"
-  if [[ -n "$sync_peer_token" || -n "$sync_peer_token_file" ]]; then
-    echo "同步认证：Bearer token enabled"
-  fi
-fi
-print_sync_addresses "$bind" "$sync_address_token"
+
 if [[ "$check_config" == "1" ]]; then
   echo "配置检查：OK"
   exit 0
 fi
 
-echo "构建：release binary"
-echo
-echo "提示：PRD 禁止 cargo run，只执行 target/release/lm_node。公网部署请放在 TLS 反向代理后。"
-echo
+if [[ "$build_image" == "1" ]]; then
+  echo "构建 lm_node release binary"
+  (
+    cd "$ROOT"
+    cargo build --release -p lm_node
+    mkdir -p docker/node/dist
+    install -m 0755 target/release/lm_node docker/node/dist/lm_node-linux-x86_64
+    docker build -f docker/node/Dockerfile -t "$image_tag" docker/node
+  )
+fi
 
-cd "$ROOT"
-cargo build --release -p lm_node
-args=(serve-control)
-if [[ -n "$config_file" ]]; then
-  args+=(--config-file "$config_file")
+if ! docker image inspect "$image_tag" >/dev/null 2>&1; then
+  echo "本地镜像不存在：$image_tag；请移除 --no-build 后重试。" >&2
+  exit 2
 fi
-if [[ -z "$config_file" || "$bind_set" == "1" ]]; then
-  args+=(--bind "$bind")
+
+docker rm -f "$container_name" >/dev/null 2>&1 || true
+docker run -d \
+  --name "$container_name" \
+  --restart unless-stopped \
+  --network "$network_name" \
+  --user "$(id -u):$(id -g)" \
+  -v "$config_file:/app/config.json:ro" \
+  -v "$data_dir:/data" \
+  "$image_tag" >/dev/null
+
+sleep 1
+if [[ "$(docker inspect -f '{{.State.Running}}' "$container_name")" != "true" ]]; then
+  echo "Node 容器启动失败，最近日志：" >&2
+  docker logs --tail 80 "$container_name" >&2 || true
+  exit 1
 fi
-if [[ -z "$config_file" || "$peer_id_set" == "1" ]]; then
-  args+=(--peer-id "$peer_id")
+
+echo "Node Docker 容器已启动：$container_name ($image_tag)"
+if [[ -n "$public_url" ]]; then
+  echo "请在 Web 中填写：$public_url/node|<control-token>"
+else
+  echo "请在 Web 中填写：<你的 Caddy HTTPS 地址>/node|<control-token>"
 fi
-if [[ -z "$config_file" || "$state_db_set" == "1" ]]; then
-  args+=(--state-db "$state_db")
+if [[ "$follow_logs" == "1" ]]; then
+  exec docker logs -f "$container_name"
 fi
-if [[ -n "$control_token" ]]; then
-  args+=(--control-token "$control_token")
-fi
-if [[ -n "$control_token_file" ]]; then
-  args+=(--control-token-file "$control_token_file")
-fi
-if [[ -n "$cors_allow_origin" ]]; then
-  args+=(--cors-allow-origin "$cors_allow_origin")
-fi
-if [[ -n "$sync_peer" ]]; then
-  args+=(--sync-peer "$sync_peer")
-fi
-if [[ -n "$sync_peer_token" ]]; then
-  args+=(--sync-peer-token "$sync_peer_token")
-fi
-if [[ -n "$sync_peer_token_file" ]]; then
-  args+=(--sync-peer-token-file "$sync_peer_token_file")
-fi
-if [[ "$sync_interval_seconds" != "0" ]]; then
-  args+=(--sync-interval-seconds "$sync_interval_seconds")
-  args+=(--sync-max-backoff-seconds "$sync_max_backoff_seconds")
-fi
-if [[ -z "$config_file" || "$dht_replication_factor_set" == "1" ]]; then
-  args+=(--dht-replication-factor "$dht_replication_factor")
-fi
-if [[ -z "$config_file" || "$dht_routing_refresh_limit_set" == "1" ]]; then
-  args+=(--dht-routing-refresh-limit "$dht_routing_refresh_limit")
-fi
-if [[ -z "$config_file" || "$dht_routing_refresh_max_targets_set" == "1" ]]; then
-  args+=(--dht-routing-refresh-max-targets "$dht_routing_refresh_max_targets")
-fi
-if [[ -z "$config_file" || "$dht_transport_set" == "1" ]]; then
-  args+=(--dht-transport "$dht_transport")
-fi
-if [[ -z "$config_file" || "$dht_peer_quarantine_consecutive_failures_set" == "1" ]]; then
-  args+=(--dht-peer-quarantine-consecutive-failures "$dht_peer_quarantine_consecutive_failures")
-fi
-if [[ -z "$config_file" || "$rate_limit_window_seconds_set" == "1" ]]; then
-  args+=(--rate-limit-window-seconds "$rate_limit_window_seconds")
-fi
-if [[ -z "$config_file" || "$rate_limit_max_requests_set" == "1" ]]; then
-  args+=(--rate-limit-max-requests "$rate_limit_max_requests")
-fi
-if [[ -z "$config_file" || "$log_format_set" == "1" ]]; then
-  args+=(--log-format "$log_format")
-fi
-# Web admin panel: prefer a packaged node_admin.zip next to the binary,
-# otherwise fall back to the built dist directory during development.
-if [[ -f "$ROOT/node_admin.zip" ]]; then
-  args+=(--web-admin "$ROOT/node_admin.zip")
-elif [[ -f "$ROOT/target/release/node_admin.zip" ]]; then
-  args+=(--web-admin "$ROOT/target/release/node_admin.zip")
-elif [[ -d "$ROOT/apps/node-admin/dist" ]]; then
-  args+=(--web-admin "$ROOT/apps/node-admin/dist")
-fi
-exec "$ROOT/target/release/lm_node" "${args[@]}"

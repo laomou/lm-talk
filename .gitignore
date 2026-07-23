@@ -5,6 +5,7 @@
 /apps/web/src/wasm/
 /apps/node-admin/node_modules/
 /apps/node-admin/dist/
+/docker/node/dist/
 /.tools/
 .DS_Store
 *.log
