@@ -9208,10 +9208,6 @@ async function takeMailboxFromNode() {
   startMailboxLongPoll()
 }
 
-function yieldToBrowser(): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, 0))
-}
-
 const FILE_BASE64_CHUNK_BYTES = 3 * 256 * 1024
 type FileCryptoCreateResult = {
   filePackageText: string
