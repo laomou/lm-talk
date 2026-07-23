@@ -6444,16 +6444,18 @@ async function removeActiveContact() {
 async function clearActiveConversation() {
   if (!activeContact.value && !activeGroup.value) return
   const name = activeGroup.value?.name || activeContact.value?.display_name || activeContact.value?.user_id || '当前聊天'
-  const confirmed = await showConfirm('清空聊天记录', `清空「${name}」的本地聊天记录？联系人或群聊不会删除。`, true)
+  const confirmed = await showConfirm('删除会话', `删除「${name}」的本机会话记录？好友关系和安全会话不会删除，可从联系人详情再次发消息打开。`, true)
   if (!confirmed) return
   if (activeGroup.value) {
     const groupId = activeGroup.value.group_id
     messages.value = messages.value.filter((m) => m.group_id !== groupId)
+    activeGroupId.value = ''
   } else if (activeContact.value) {
     const peerId = activeContact.value.user_id
     messages.value = messages.value.filter((m) => m.peer_user_id !== peerId)
+    activePeerId.value = ''
   }
-  appendLog(`已清空聊天记录：${name}`)
+  appendLog(`已删除会话：${name}`)
   persist()
 }
 
