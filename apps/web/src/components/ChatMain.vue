@@ -15,6 +15,7 @@ const composerPanel = ref<'none' | 'attach' | 'emoji'>('none')
 const fileInput = ref<HTMLInputElement | null>(null)
 const composerTextarea = ref<HTMLTextAreaElement | null>(null)
 const emojis = ['😀', '😃', '😄', '😁', '🙂', '😉', '😊', '😍', '👍', '👏', '🙏', '💪', '🎉', '❤️', '🔥', '✅']
+type MessageStatusIcon = 'info' | 'check' | 'alert'
 
 function hmTime(ts: number) {
   return new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(ts))
@@ -47,6 +48,9 @@ function outgoingMessageStatus(message: any) {
     default:
       return { text: props.ctx.statusLabel(message.status), icon: 'info', tone: 'pending' }
   }
+}
+function outgoingMessageStatusIcon(message: any): MessageStatusIcon {
+  return outgoingMessageStatus(message).icon as MessageStatusIcon
 }
 function filePreviewLabel(name?: string, mime?: string) {
   const value = `${name || ''} ${mime || ''}`.toLowerCase()
@@ -254,7 +258,7 @@ function sendAndClose() {
                 :class="`is-${outgoingMessageStatus(item.m).tone}`"
                 :title="messageStatusDetailText(item.m)"
               >
-                <UiIcon :name="outgoingMessageStatus(item.m).icon" size="12" />
+                <UiIcon :name="outgoingMessageStatusIcon(item.m)" size="12" />
                 {{ outgoingMessageStatus(item.m).text }}
               </span>
               <span v-if="item.m.file_downloaded_at"> · 已下载 {{ ctx.formatDateTime(item.m.file_downloaded_at) }}</span>
