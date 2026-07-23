@@ -13,10 +13,7 @@ import QRCode from 'qrcode'
 import { applyPwaUpdate, onPwaUpdateReady, readPwaStatus } from './pwa'
 import { TABLES, idbDel, idbGet, idbSet, idbTableApplyChanges, idbTableClear, idbTableGet, idbTableGetAllByPrefix, idbTableReplaceByPrefix } from './idb'
 import init, {
-  decrypt_text_message,
-  encrypt_text_message,
   normalize_passphrase,
-  ratchet_encrypt_text_message,
 } from './wasm/lm_wasm.js'
 
 type IdentityOutput = {
@@ -1555,6 +1552,10 @@ onUnmounted(() => {
   fileMetadataCryptoWorker = null
   for (const pending of fileMetadataCryptoRequests.values()) pending.reject(new Error('文件元数据 Worker 已停止'))
   fileMetadataCryptoRequests.clear()
+  legacyEnvelopeCryptoWorker?.terminate()
+  legacyEnvelopeCryptoWorker = null
+  for (const pending of legacyEnvelopeCryptoRequests.values()) pending.reject(new Error('兼容消息加密 Worker 已停止'))
+  legacyEnvelopeCryptoRequests.clear()
 })
 
 function appendLog(line: string) {
@@ -5268,18 +5269,18 @@ function rememberGroupSenderKeyError(groupId: string | undefined, reason: string
   group.last_sender_key_error_at = Date.now()
 }
 
-function createGroupSenderDistributionFanout(group: GroupItem, distributionText: string) {
+async function createGroupSenderDistributionFanout(group: GroupItem, distributionText: string) {
   const recipients = group.member_user_ids.filter((uid) => uid !== identity.value?.user_id)
-  const fanout = recipients.map((uid) => {
+  const fanout = await Promise.all(recipients.map(async (uid) => {
     const contact = contacts.value.find((c) => c.user_id === uid)
     if (!contact || contact.state !== 'Friend') throw new Error(`群成员还不是好友: ${uid}`)
-    const envelope = encryptEnvelopeForContact(
+    const envelope = await encryptEnvelopeForContact(
       contact,
       `grp-key-${group.group_id}`,
       `${GROUP_SENDER_KEY_PAYLOAD_PREFIX}${distributionText}`,
     )
     return { to_user_id: uid, envelope }
-  })
+  }))
   groupSenderDistributionFanoutJson.value = JSON.stringify(fanout, null, 2)
   appendLog(`✅ 已生成 Sender Key Distribution fanout：${fanout.length} 个成员`)
   return fanout
@@ -5336,7 +5337,7 @@ async function rotateMyGroupSenderKey(group: GroupItem, reason: string) {
   persist()
   let fanout: Array<{ to_user_id: string; envelope: string }> = []
   try {
-    fanout = createGroupSenderDistributionFanout(group, out.distribution_text)
+    fanout = await createGroupSenderDistributionFanout(group, out.distribution_text)
     group.last_sender_key_error = undefined
     group.last_sender_key_error_at = undefined
   } catch (e) {
@@ -5365,7 +5366,7 @@ async function createGroupSenderKeyForActiveGroup() {
     saveGroupSenderKey(item)
     groupSenderDistributionText.value = out.distribution_text
     const group = activeGroup.value
-    const fanout = createGroupSenderDistributionFanout(group, out.distribution_text)
+    const fanout = await createGroupSenderDistributionFanout(group, out.distribution_text)
     appendLog('✅ 已创建我的群 Sender Key，并生成 distribution fanout')
     persist()
     scheduleGroupSenderDistributionFanout(group, fanout, '创建')
@@ -5392,12 +5393,12 @@ async function importGroupSenderKeyForActiveContact() {
   })
 }
 
-function createGroupSenderDistributionFanoutForActiveGroup() {
-  run('生成 Sender Key Distribution fanout', () => {
+async function createGroupSenderDistributionFanoutForActiveGroup() {
+  await runAsync('生成 Sender Key Distribution fanout', async () => {
     if (!activeGroup.value) throw new Error('请选择群组')
     if (!groupSenderDistributionText.value.trim()) throw new Error('请先创建 Sender Key Distribution')
     const group = activeGroup.value
-    const fanout = createGroupSenderDistributionFanout(group, groupSenderDistributionText.value.trim())
+    const fanout = await createGroupSenderDistributionFanout(group, groupSenderDistributionText.value.trim())
     persist()
     scheduleGroupSenderDistributionFanout(group, fanout, '手动重发')
   })
@@ -5932,29 +5933,29 @@ async function applyGroupEventText() {
   })
 }
 
-function createGroupEventFanout() {
-  run('生成群事件 fanout', () => {
-    createGroupEventFanoutRaw()
+async function createGroupEventFanout() {
+  await runAsync('生成群事件 fanout', async () => {
+    await createGroupEventFanoutRaw()
   })
 }
 
-function createGroupEventFanoutRaw(enforceStrictPolicy = true) {
+async function createGroupEventFanoutRaw(enforceStrictPolicy = true) {
   if (!activeGroup.value) throw new Error('请选择群组')
   if (!groupEventText.value.trim()) throw new Error('请先生成群事件')
   const riskText = activeGroupStrictE2eeRiskText.value
   if (enforceStrictPolicy && riskText && strictE2eePolicyEnabled.value) {
     throw new Error(`严格 E2EE 策略阻止生成风险群事件 fanout：${riskText}`)
   }
-  const fanout = activeGroup.value.member_user_ids.map((uid) => {
+  const fanout = await Promise.all(activeGroup.value.member_user_ids.map(async (uid) => {
     const contact = contacts.value.find((c) => c.user_id === uid)
     if (!contact || contact.state !== 'Friend') throw new Error(`群成员还不是好友: ${uid}`)
-    const envelope = encryptEnvelopeForContact(
+    const envelope = await encryptEnvelopeForContact(
       contact,
       `grp-${activeGroup.value!.group_id}`,
       `${GROUP_EVENT_PAYLOAD_PREFIX}${groupEventText.value}`,
     )
     return { to_user_id: uid, envelope }
-  })
+  }))
   groupEventFanoutJson.value = JSON.stringify(fanout, null, 2)
   appendLog(`✅ 已为 ${fanout.length} 个群成员生成群事件 fanout`)
 }
@@ -6038,7 +6039,7 @@ async function leaveActiveGroupWithNotice() {
   if (!ok) return
   try {
     await createRemoveMemberGroupEventText(identity.value.user_id)
-    createGroupEventFanoutRaw(false)
+    await createGroupEventFanoutRaw(false)
   } catch (e) {
     const message = userFacingError(e)
     appendLog(`❌ 生成退群通知失败：${message}`)
@@ -6282,36 +6283,85 @@ function encryptRatchetEnvelopeForContact(contact: ContactItem, conversationId: 
   return task
 }
 
-function encryptEnvelopeForContact(contact: ContactItem, conversationId: string, text: string): string {
-  requireContactHasActiveDevice(contact)
-  const session = ratchetSessionFor(contact.user_id)
-  if (session) {
-    const out = JSON.parse(ratchet_encrypt_text_message(session.state_text, conversationId, text)) as { state_text: string; envelope_json: string }
-    saveRatchetSession(contact.user_id, out.state_text)
-    appendLog(`🔐 使用 Double Ratchet 加密给 ${contact.display_name || contact.user_id}`)
-    return out.envelope_json
-  }
-  appendLog(`⚠️ 未找到 Ratchet 会话，回退 MVP 加密：${contact.display_name || contact.user_id}`)
-  return encrypt_text_message(
-    backupText.value,
-    passphrase.value,
-    contact.contact_card_text,
-    conversationId,
-    text,
-  )
+type LegacyEnvelopeCryptoWorkerResponse = {
+  id: number
+  ok: boolean
+  value?: string
+  error?: string
 }
 
-async function encryptEnvelopeForOutgoingContact(contact: ContactItem, conversationId: string, text: string): Promise<string> {
+let legacyEnvelopeCryptoWorker: Worker | null = null
+let nextLegacyEnvelopeCryptoRequestId = 1
+const legacyEnvelopeCryptoRequests = new Map<number, {
+  resolve: (value: string) => void
+  reject: (reason?: unknown) => void
+}>()
+
+function getLegacyEnvelopeCryptoWorker(): Worker {
+  if (legacyEnvelopeCryptoWorker) return legacyEnvelopeCryptoWorker
+  const worker = new Worker(new URL('./legacyEnvelopeCrypto.worker.ts', import.meta.url), { type: 'module' })
+  worker.onmessage = (event: MessageEvent<LegacyEnvelopeCryptoWorkerResponse>) => {
+    const response = event.data
+    const pending = legacyEnvelopeCryptoRequests.get(response.id)
+    if (!pending) return
+    legacyEnvelopeCryptoRequests.delete(response.id)
+    if (response.ok && typeof response.value === 'string') pending.resolve(response.value)
+    else pending.reject(new Error(response.error || '兼容消息加密 Worker 处理失败'))
+  }
+  worker.onerror = (event) => {
+    const error = new Error(event.message || '兼容消息加密 Worker 已停止')
+    for (const pending of legacyEnvelopeCryptoRequests.values()) pending.reject(error)
+    legacyEnvelopeCryptoRequests.clear()
+    worker.terminate()
+    if (legacyEnvelopeCryptoWorker === worker) legacyEnvelopeCryptoWorker = null
+  }
+  legacyEnvelopeCryptoWorker = worker
+  return worker
+}
+
+function runLegacyEnvelopeCryptoWorker(payload: Record<string, string>): Promise<string> {
+  const id = nextLegacyEnvelopeCryptoRequestId++
+  return new Promise((resolve, reject) => {
+    legacyEnvelopeCryptoRequests.set(id, { resolve, reject })
+    try {
+      getLegacyEnvelopeCryptoWorker().postMessage({ id, ...payload })
+    } catch (error) {
+      legacyEnvelopeCryptoRequests.delete(id)
+      reject(error)
+    }
+  })
+}
+
+function encryptLegacyEnvelopeInWorker(contactCardText: string, conversationId: string, text: string): Promise<string> {
+  return runLegacyEnvelopeCryptoWorker({
+    operation: 'encrypt',
+    backupText: backupText.value,
+    passphrase: passphrase.value,
+    contactCardText,
+    conversationId,
+    text,
+  })
+}
+
+async function decryptLegacyEnvelopeInWorker<T = any>(contactCardText: string, envelopeText: string): Promise<T> {
+  return safeJson<T>(await runLegacyEnvelopeCryptoWorker({
+    operation: 'decrypt',
+    backupText: backupText.value,
+    passphrase: passphrase.value,
+    contactCardText,
+    envelopeText,
+  }))
+}
+
+async function encryptEnvelopeForContact(contact: ContactItem, conversationId: string, text: string): Promise<string> {
   requireContactHasActiveDevice(contact)
   if (ratchetSessionFor(contact.user_id)) return encryptRatchetEnvelopeForContact(contact, conversationId, text)
   appendLog(`⚠️ 未找到 Ratchet 会话，回退 MVP 加密：${contact.display_name || contact.user_id}`)
-  return encrypt_text_message(
-    backupText.value,
-    passphrase.value,
-    contact.contact_card_text,
-    conversationId,
-    text,
-  )
+  return encryptLegacyEnvelopeInWorker(contact.contact_card_text, conversationId, text)
+}
+
+async function encryptEnvelopeForOutgoingContact(contact: ContactItem, conversationId: string, text: string): Promise<string> {
+  return encryptEnvelopeForContact(contact, conversationId, text)
 }
 
 type RatchetCryptoWorkerResponse = {
@@ -6398,12 +6448,7 @@ async function decryptEnvelopeForContact(envelopeText: string, sender: ContactIt
   if (parsed?.crypto === 'x3dh-double-ratchet-v1') {
     return decryptRatchetEnvelopeForContact(sender, envelopeText)
   }
-  return safeJson<any>(decrypt_text_message(
-    backupText.value,
-    passphrase.value,
-    sender.contact_card_text,
-    envelopeText,
-  ))
+  return decryptLegacyEnvelopeInWorker(sender.contact_card_text, envelopeText)
 }
 
 async function sendGroupFanoutPayloads(group: GroupItem, fanout: Array<{ to_user_id: string; envelope: string }>, messageId: string) {
@@ -6563,16 +6608,16 @@ async function sendMessage() {
         fanout = group.member_user_ids.map((uid) => ({ to_user_id: uid, envelope: senderEnvelope }))
         groupSenderEnvelopeText.value = senderEnvelope
       } else {
-        fanout = group.member_user_ids.map((uid) => {
+        fanout = await Promise.all(group.member_user_ids.map(async (uid) => {
           const contact = contacts.value.find((c) => c.user_id === uid)
           if (!contact || contact.state !== 'Friend') throw new Error(`群成员还不是好友: ${uid}`)
-          const envelope = encryptEnvelopeForContact(
+          const envelope = await encryptEnvelopeForContact(
             contact,
             `grp-${group.group_id}`,
             `[${group.name}] ${outgoingFiltered.text}`,
           )
           return { to_user_id: uid, envelope }
-        })
+        }))
       }
       groupFanoutJson.value = JSON.stringify(fanout, null, 2)
       const msg: ChatMessage = {
