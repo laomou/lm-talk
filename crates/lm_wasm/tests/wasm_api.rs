@@ -683,7 +683,7 @@ fn secure_session_offer_response_establishes_bidirectional_ratchet() {
     .unwrap();
     let bob_receive: Value = serde_json::from_str(
         &ratchet_decrypt_text_message(
-            &bob_send["state_text"].as_str().unwrap(),
+            bob_send["state_text"].as_str().unwrap(),
             alice_reply["envelope_json"].as_str().unwrap(),
         )
         .unwrap(),
