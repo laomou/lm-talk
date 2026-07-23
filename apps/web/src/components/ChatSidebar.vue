@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { avatarColor } from '../avatarColor'
 import UiIcon from './UiIcon.vue'
 import UiEmptyState from './UiEmptyState.vue'
@@ -9,6 +10,7 @@ const props = defineProps<{ ctx: any }>()
 const keyword = ref('')
 const route = useRoute()
 const router = useRouter()
+const { locale, t } = useI18n()
 const searchOpen = computed(() => route.path === '/chat/search')
 
 const conversationStats = computed(() => {
@@ -46,35 +48,35 @@ const filtered = computed(() => {
 })
 
 function convName(it: any) {
-  return it.data.display_name || '未命名'
+  return it.data.display_name || t('chatView.unnamed')
 }
 function trustBadgeIcon(it: any): 'alert' | 'lock' {
   return props.ctx.contactAllKnownDevicesRevoked(it.data) ? 'alert' : 'lock'
 }
 function trustBadgeTitle(it: any) {
   if (it.type !== 'contact' || it.data.state !== 'Friend') return ''
-  return props.ctx.contactAllKnownDevicesRevoked(it.data) ? '安全状态异常' : '安全状态正常'
+  return props.ctx.contactAllKnownDevicesRevoked(it.data) ? t('securityStatus.abnormal') : t('securityStatus.normal')
 }
 function convPreview(it: any) {
   if (it.last) {
     return it.last.text
   }
-  if (it.data.state === 'RequestSent') return '等待对方通过'
-  if (it.data.state === 'Blocked') return '已拉黑'
-  if (it.data.state !== 'Friend') return '还不是好友'
-  return '暂无消息'
+  if (it.data.state === 'RequestSent') return t('chatView.waitingApproval')
+  if (it.data.state === 'Blocked') return t('chatView.blocked')
+  if (it.data.state !== 'Friend') return t('chatView.notFriend')
+  return t('chatView.noPreview')
 }
 function convTime(ts: number) {
   if (!ts) return ''
   const d = new Date(ts)
   const now = new Date()
   const sameDay = d.toDateString() === now.toDateString()
-  if (sameDay) return new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }).format(d)
+  if (sameDay) return new Intl.DateTimeFormat(locale.value, { hour: '2-digit', minute: '2-digit', hour12: false }).format(d)
   const yesterday = new Date(now)
   yesterday.setDate(now.getDate() - 1)
-  if (d.toDateString() === yesterday.toDateString()) return '昨天'
-  if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}/${d.getDate()}`
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
+  if (d.toDateString() === yesterday.toDateString()) return t('chatView.yesterday')
+  if (d.getFullYear() === now.getFullYear()) return new Intl.DateTimeFormat(locale.value, { month: 'numeric', day: 'numeric' }).format(d)
+  return new Intl.DateTimeFormat(locale.value, { year: 'numeric', month: 'numeric', day: 'numeric' }).format(d)
 }
 function isActive(it: any) {
   return it.id === props.ctx.activePeerId.value
@@ -91,8 +93,8 @@ function select(it: any) {
   <aside v-if="!searchOpen" class="sidebar wechat-sidebar">
     <header class="list-col-header product-chat-list-header">
       <span></span>
-      <h2>聊天</h2>
-      <button class="icon-btn" aria-label="搜索聊天" title="搜索聊天" @click="router.push('/chat/search')"><UiIcon name="search" /></button>
+      <h2>{{ t('chatView.title') }}</h2>
+      <button class="icon-btn" :aria-label="t('chatView.searchChat')" :title="t('chatView.searchChat')" @click="router.push('/chat/search')"><UiIcon name="search" /></button>
     </header>
     <section class="conversation-list only-conversations">
       <button
@@ -111,8 +113,8 @@ function select(it: any) {
           <b>
             <span class="conv-name">
               {{ convName(it) }}
-              <em v-if="it.data.state === 'RequestSent'">等待通过</em>
-              <em v-else-if="it.data.state === 'Blocked'">已拉黑</em>
+              <em v-if="it.data.state === 'RequestSent'">{{ t('chatView.waitingApprovalBadge') }}</em>
+              <em v-else-if="it.data.state === 'Blocked'">{{ t('chatView.blocked') }}</em>
               <em
                 v-else-if="it.type === 'contact' && it.data.state === 'Friend'"
                 class="strict-badge"
@@ -129,14 +131,14 @@ function select(it: any) {
         </span>
       </button>
 
-      <UiEmptyState v-if="filtered.length === 0" title="暂无聊天" description="去通讯录添加好友后开始聊天。" />
+      <UiEmptyState v-if="filtered.length === 0" :title="t('chatView.noChatsTitle')" :description="t('chatView.noChatsDescription')" />
     </section>
   </aside>
 
   <aside v-else class="sidebar wechat-sidebar chat-search-page">
     <header class="list-col-header product-chat-search-header">
-      <button class="back-btn" aria-label="返回聊天" @click="router.push('/chat')"><UiIcon name="back" /></button>
-      <input v-model="keyword" type="search" aria-label="搜索聊天" placeholder="搜索聊天" autofocus />
+      <button class="back-btn" :aria-label="t('chatView.backToChat')" @click="router.push('/chat')"><UiIcon name="back" /></button>
+      <input v-model="keyword" type="search" :aria-label="t('chatView.searchChat')" :placeholder="t('chatView.searchChat')" autofocus />
     </header>
     <section class="conversation-list only-conversations">
       <button
@@ -155,8 +157,8 @@ function select(it: any) {
           <b>
             <span class="conv-name">
               {{ convName(it) }}
-              <em v-if="it.data.state === 'RequestSent'">等待通过</em>
-              <em v-else-if="it.data.state === 'Blocked'">已拉黑</em>
+              <em v-if="it.data.state === 'RequestSent'">{{ t('chatView.waitingApprovalBadge') }}</em>
+              <em v-else-if="it.data.state === 'Blocked'">{{ t('chatView.blocked') }}</em>
               <em
                 v-else-if="it.type === 'contact' && it.data.state === 'Friend'"
                 class="strict-badge"
@@ -173,7 +175,7 @@ function select(it: any) {
         </span>
       </button>
 
-      <UiEmptyState v-if="filtered.length === 0" :icon="keyword ? 'search' : 'info'" :title="keyword ? '没有匹配的聊天' : '搜索聊天'" :description="keyword ? '换个名称或关键词试试。' : '输入名称搜索聊天。'" />
+      <UiEmptyState v-if="filtered.length === 0" :icon="keyword ? 'search' : 'info'" :title="keyword ? t('chatView.noChatMatchesTitle') : t('chatView.searchChat')" :description="keyword ? t('chatView.noChatMatchesDescription') : t('chatView.searchChatDescription')" />
     </section>
   </aside>
 </template>
