@@ -72,6 +72,9 @@ function convTime(ts: number) {
 function isActive(it: any) {
   return it.id === props.ctx.activePeerId.value
 }
+function unreadCount(it: any) {
+  return it.type === 'contact' ? props.ctx.unreadCountForPeer(it.id) : 0
+}
 function select(it: any) {
   props.ctx.selectContact(it.id)
 }
@@ -109,7 +112,10 @@ function select(it: any) {
             </span>
             <span v-if="it.ts" class="conv-time">{{ convTime(it.ts) }}</span>
           </b>
-          <small class="conv-preview">{{ convPreview(it) }}</small>
+          <small class="conv-preview">
+            <span>{{ convPreview(it) }}</span>
+            <em v-if="unreadCount(it)" class="conversation-badge">{{ props.ctx.badgeCountText(unreadCount(it)) }}</em>
+          </small>
         </span>
       </button>
 
@@ -147,7 +153,10 @@ function select(it: any) {
             </span>
             <span v-if="it.ts" class="conv-time">{{ convTime(it.ts) }}</span>
           </b>
-          <small class="conv-preview">{{ convPreview(it) }}</small>
+          <small class="conv-preview">
+            <span>{{ convPreview(it) }}</span>
+            <em v-if="unreadCount(it)" class="conversation-badge">{{ props.ctx.badgeCountText(unreadCount(it)) }}</em>
+          </small>
         </span>
       </button>
 
