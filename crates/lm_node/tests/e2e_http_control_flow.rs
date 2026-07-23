@@ -261,25 +261,33 @@ fn http_control_plane_syncs_prekeys_and_mailbox_between_nodes() {
     assert_eq!(take_again_body["messages"].as_array().unwrap().len(), 0);
 }
 
-/// Manual baseline for the real lm_node HTTP control path.
+/// Manual baseline for the main real lm_node HTTP control-plane paths.
 ///
 /// This intentionally does not run in normal CI: latency and throughput depend
 /// on the runner, CPU governor and local network stack. It measures node HTTP
-/// handling only (no browser crypto, Caddy/TLS or LAN transport).
+/// handling with the real SQLite state DB, but not browser crypto, Caddy/TLS
+/// or LAN transport.
 ///
 /// Run with:
-/// `cargo test -p lm_node --test e2e_http_control_flow mailbox_http_performance_baseline -- --ignored --nocapture`
+/// `cargo test --release -p lm_node --test e2e_http_control_flow node_http_performance_baseline -- --ignored --nocapture`
 #[test]
 #[ignore = "manual lm_node performance baseline; run explicitly with --ignored"]
-fn mailbox_http_performance_baseline() {
+fn node_http_performance_baseline() {
     const DEFAULT_MESSAGES: usize = 500;
     const DEFAULT_CONCURRENCY: usize = 8;
     const DEFAULT_LONG_POLLS: usize = 20;
+    const DEFAULT_CONTROL_SAMPLES: usize = 100;
 
     let messages = benchmark_env_usize("LM_NODE_BENCH_MESSAGES", DEFAULT_MESSAGES, 1, 20_000);
     let concurrency =
         benchmark_env_usize("LM_NODE_BENCH_CONCURRENCY", DEFAULT_CONCURRENCY, 1, 64).min(messages);
     let long_polls = benchmark_env_usize("LM_NODE_BENCH_LONG_POLLS", DEFAULT_LONG_POLLS, 1, 200);
+    let control_samples = benchmark_env_usize(
+        "LM_NODE_BENCH_CONTROL_SAMPLES",
+        DEFAULT_CONTROL_SAMPLES,
+        1,
+        1_000,
+    );
 
     let base = format!("127.0.0.1:{}", free_port());
     let _node = spawn_node_with_args(
@@ -293,11 +301,109 @@ fn mailbox_http_performance_baseline() {
         ],
     );
     wait_for_health(&base);
+    let peer_base = format!("127.0.0.1:{}", free_port());
+    let _peer_node = spawn_node_with_args(
+        &peer_base,
+        "http-node-performance-peer",
+        &[
+            "--sync-peer",
+            &format!("http://{base}"),
+            "--sync-interval-seconds",
+            "0",
+            "--rate-limit-window-seconds",
+            "0",
+            "--rate-limit-max-requests",
+            "0",
+        ],
+    );
+    wait_for_health(&peer_base);
 
     let (sender, _) = Identity::create_with_passphrase("node benchmark sender").unwrap();
     let (recipient, _) = Identity::create_with_passphrase("node benchmark recipient").unwrap();
     let recipient_user_id = recipient.user_id().to_string();
     let sender_public_key = BASE64.encode(sender.identity_public_key());
+
+    let health_latencies = benchmark_samples(control_samples, || {
+        let response = http_request(&base, "GET", "/api/health", "");
+        assert_eq!(response.status, 200, "{}", response.body);
+    });
+
+    let (prekey_owner, _) =
+        Identity::create_with_passphrase("node benchmark prekey owner").unwrap();
+    let (prekey_bundle, _, signed_otks) =
+        PreKeyBundle::new_with_signed_one_time_prekey_records(&prekey_owner, 7, 2, 3600).unwrap();
+    let prekey_publish_started = Instant::now();
+    let prekey_publish = http_json(
+        &base,
+        "POST",
+        "/api/prekey/publish",
+        json!({
+            "prekey_bundle_text": prekey_bundle.to_export_text().unwrap(),
+            "signed_one_time_prekey_record_texts": signed_otks
+                .iter()
+                .map(|record| record.to_export_text().unwrap())
+                .collect::<Vec<_>>(),
+        }),
+    );
+    assert_eq!(prekey_publish.status, 201, "{}", prekey_publish.body);
+    let prekey_publish_elapsed = prekey_publish_started.elapsed();
+    let prekey_get_latencies = benchmark_samples(control_samples, || {
+        let response = http_request(
+            &base,
+            "GET",
+            &format!("/api/prekey/get?user_id={}", prekey_owner.user_id()),
+            "",
+        );
+        assert_eq!(response.status, 200, "{}", response.body);
+    });
+
+    let dht_records = (0..control_samples)
+        .map(|index| dht_public_peer_record(&sender, index))
+        .collect::<Vec<_>>();
+    let dht_store_latencies = dht_records
+        .iter()
+        .map(|record| {
+            let started = Instant::now();
+            let response = http_json(
+                &base,
+                "POST",
+                "/api/dht/record",
+                json!({ "record": record }),
+            );
+            assert_eq!(response.status, 201, "{}", response.body);
+            started.elapsed()
+        })
+        .collect::<Vec<_>>();
+    let dht_get_latencies = dht_records
+        .iter()
+        .map(|record| {
+            let started = Instant::now();
+            let response = http_request(
+                &base,
+                "GET",
+                &format!("/api/dht/record?key={}", record.key),
+                "",
+            );
+            assert_eq!(response.status, 200, "{}", response.body);
+            started.elapsed()
+        })
+        .collect::<Vec<_>>();
+    let dht_find_latencies = dht_records
+        .iter()
+        .map(|record| {
+            let started = Instant::now();
+            let response = http_request(
+                &peer_base,
+                "GET",
+                &format!("/api/dht/find-value?key={}&limit=8&max_peers=2", record.key),
+                "",
+            );
+            assert_eq!(response.status, 200, "{}", response.body);
+            let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+            assert_eq!(body["found"], true, "{}", response.body);
+            started.elapsed()
+        })
+        .collect::<Vec<_>>();
 
     let sequential_payloads = (0..messages)
         .map(|index| mailbox_push_body(&sender, &recipient, &sender_public_key, index))
@@ -376,6 +482,23 @@ fn mailbox_http_performance_baseline() {
     assert_eq!(concurrent_latencies.len(), messages);
     drain_mailbox(&base, &recipient_user_id);
 
+    let snapshot_export_latencies = benchmark_samples(10, || {
+        let response = http_request(&base, "GET", "/api/sync/snapshot", "");
+        assert_eq!(response.status, 200, "{}", response.body);
+    });
+    let snapshot_response = http_request(&base, "GET", "/api/sync/snapshot", "");
+    assert_eq!(snapshot_response.status, 200, "{}", snapshot_response.body);
+    let snapshot: NodeStateSnapshot = serde_json::from_str(&snapshot_response.body).unwrap();
+    let snapshot_import_latencies = benchmark_samples(10, || {
+        let response = http_json(
+            &peer_base,
+            "POST",
+            "/api/sync/import",
+            json!({ "snapshot": snapshot }),
+        );
+        assert_eq!(response.status, 200, "{}", response.body);
+    });
+
     let mut long_poll_wake_latencies = Vec::with_capacity(long_polls);
     for index in 0..long_polls {
         let poll_base = base.clone();
@@ -425,14 +548,28 @@ fn mailbox_http_performance_baseline() {
     }
 
     println!(
-        "lm_node mailbox HTTP baseline \
-messages={messages} concurrency={concurrency} long_polls={long_polls}\n\
+        "lm_node HTTP control-plane baseline \
+messages={messages} concurrency={concurrency} long_polls={long_polls} control_samples={control_samples}\n\
+health: {}\n\
+prekey publish: {}\n\
+prekey get: {}\n\
+DHT record store: {}\n\
+DHT record get: {}\n\
+DHT iterative find (two local nodes): {}\n\
 push sequential: {}\n\
 take batch({}): {}\n\
 ack batch({}): {}\n\
 push concurrent: {}\n\
 push concurrent total: {} ({:.1} msg/s)\n\
+snapshot export: {}\n\
+snapshot import: {}\n\
 long-poll push→take: {}",
+        benchmark_latency_summary(&health_latencies),
+        benchmark_duration(prekey_publish_elapsed),
+        benchmark_latency_summary(&prekey_get_latencies),
+        benchmark_latency_summary(&dht_store_latencies),
+        benchmark_latency_summary(&dht_get_latencies),
+        benchmark_latency_summary(&dht_find_latencies),
         benchmark_latency_summary(&sequential_latencies),
         delivery_ids.len(),
         benchmark_duration(take_elapsed),
@@ -441,6 +578,8 @@ long-poll push→take: {}",
         benchmark_latency_summary(&concurrent_latencies),
         benchmark_duration(concurrent_elapsed),
         messages as f64 / concurrent_elapsed.as_secs_f64(),
+        benchmark_latency_summary(&snapshot_export_latencies),
+        benchmark_latency_summary(&snapshot_import_latencies),
         benchmark_latency_summary(&long_poll_wake_latencies),
     );
 }
@@ -1136,6 +1275,26 @@ fn mailbox_push_body(
         "message_text": mailbox.to_export_text().unwrap(),
         "from_identity_public_key": sender_public_key,
     })
+}
+
+fn dht_public_peer_record(identity: &Identity, index: usize) -> DhtRecord {
+    let announce = NodeConfig {
+        peer_id: format!("http-performance-peer-{index}"),
+        ..Default::default()
+    }
+    .create_announce(identity)
+    .unwrap();
+    DhtRecord::public_peer(&announce, announce.to_export_text().unwrap(), 3600)
+}
+
+fn benchmark_samples(count: usize, mut operation: impl FnMut()) -> Vec<Duration> {
+    (0..count)
+        .map(|_| {
+            let started = Instant::now();
+            operation();
+            started.elapsed()
+        })
+        .collect()
 }
 
 fn split_benchmark_work<T>(items: Vec<T>, workers: usize) -> Vec<Vec<T>> {
