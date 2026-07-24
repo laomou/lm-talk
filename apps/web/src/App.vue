@@ -3628,7 +3628,6 @@ function clearSyncRecoveryHistory() {
 
 
 async function afterLoginAutomation() {
-  await ensureOwnDeviceCertForStrict('登录后的严格 E2EE 默认策略')
   if (!nodeEnabled.value) return
   if (autoPublishPreKey.value) await ensurePreKeyInventory()
   await ensureOwnMailboxHintDhtRecord()
@@ -3863,7 +3862,9 @@ function toggleNodeEnabled() {
   }
   if (nodeEnabled.value) {
     void checkNodeHealth()
-    startMailboxLongPoll()
+    void afterLoginAutomation().catch((error) => {
+      appendLog(`⚠️ 开启消息同步后的初始化失败：${userFacingError(error)}`)
+    })
   } else {
     stopMailboxLongPoll()
   }
@@ -4407,6 +4408,10 @@ async function restoreAndEnter() {
     displayName.value = loginName
     await loadPersistedState()
     loggedIn.value = true
+    // A Contact Card copied immediately after login must already describe the
+    // active device. Keep this short, local prerequisite on the login path;
+    // node publication and mailbox work remain asynchronous below.
+    await ensureOwnDeviceCertForStrict('登录后的严格 E2EE 默认策略')
     if (!myContactCardText.value) await exportMyCard()
     resumeQueuedOutgoingMessages()
     rememberLocalIdentity(out.user_id, displayName.value, backupText.value)

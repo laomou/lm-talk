@@ -93,6 +93,14 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+
+      - name: Build test sync node
+        run: cargo build --locked -p lm_node
+
       - name: Install wasm-pack
         uses: taiki-e/install-action@wasm-pack
 
