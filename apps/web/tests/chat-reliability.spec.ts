@@ -330,15 +330,16 @@ test('接收端 ACK 中断后自动去重并清空 Mailbox', async ({ browser })
     await reloadAndLogin(alice, alicePassphrase)
     await reloadAndLogin(bob, bobPassphrase)
     await expect.poll(() => bobUserId).not.toBe('')
+    await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(0)
 
     // Keep the receiver away from the conversation so the recovered messages
-    // remain unread. Abort exactly the first ACK: the next long-poll pass must
-    // receive duplicate mailbox deliveries, dedupe locally, then ACK them.
+    // remain unread. Keep ACK unavailable until the refresh: the next real
+    // mailbox take after login must receive duplicate deliveries, dedupe
+    // locally, then acknowledge them.
     await bob.locator('.rail-avatar[aria-label="打开我的设置"]').click()
     await bobContext.route('http://127.0.0.1:8787/api/mailbox/ack', async (route) => {
       ackAttempts += 1
-      if (ackAttempts === 1) await route.abort('connectionrefused')
-      else await route.continue()
+      await route.abort('connectionrefused')
     })
 
     await openOnlyContactConversation(alice)
@@ -349,12 +350,13 @@ test('接收端 ACK 中断后自动去重并清空 Mailbox', async ({ browser })
     }
 
     await expect.poll(() => ackAttempts, { timeout: 45_000 }).toBeGreaterThanOrEqual(1)
+    await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(texts.length)
     await expect(bob.locator('.rail-badge')).toHaveText(String(texts.length), { timeout: 45_000 })
     // Reload after the ACK failure. The received messages and dedupe records
     // must survive locally; the next real mailbox take sees the same delivery,
     // skips duplicate rendering, and sends the replacement ACK.
+    await bobContext.unroute('http://127.0.0.1:8787/api/mailbox/ack')
     await reloadAndLogin(bob, bobPassphrase)
-    await expect.poll(() => ackAttempts, { timeout: 45_000 }).toBeGreaterThanOrEqual(2)
     await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(0)
 
     await openOnlyContactConversation(bob)
