@@ -1205,6 +1205,50 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   box-shadow: var(--shadow-1);
   margin-bottom: var(--sp-2);
 }
+
+/* ---- UiNavRow ----------------------------------------------------------- */
+.ui-nav-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  text-align: left;
+  background: var(--c-surface);
+  color: var(--c-ink);
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-1);
+  padding: 14px var(--sp-5);
+  font-weight: 500;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.ui-nav-row:hover { background: var(--c-surface-2); }
+.ui-nav-row-icon {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  background: var(--c-primary-soft);
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+}
+.ui-nav-row-main { flex: 1 1 0; min-width: 0; }
+.ui-nav-row-badge {
+  background: var(--c-danger);
+  color: #fff;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  line-height: 18px;
+  text-align: center;
+}
 .directory-row:hover { background: var(--c-surface-2); }
 .directory-row.active { background: var(--c-primary-soft); }
 .directory-icon {
