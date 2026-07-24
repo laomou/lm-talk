@@ -466,3 +466,136 @@ test('接收端长轮询中断后无需刷新即可恢复收取消息', async ({
     await bobContext.close()
   }
 })
+
+test('双向并发消息在短暂断网恢复后保持 Ratchet 顺序与回执一致', async ({ browser }) => {
+  const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const alicePassphrase = 'playwright-bidirectional-alice-passphrase'
+  const bobPassphrase = 'playwright-bidirectional-bob-passphrase'
+  const alice = await registerAndLogin(aliceContext, 'Alice', alicePassphrase)
+  const bob = await registerAndLogin(bobContext, 'Bob', bobPassphrase)
+  let aliceUserId = ''
+  let bobUserId = ''
+  let interruptedAliceRequests = 0
+
+  aliceContext.on('request', (request) => {
+    const url = new URL(request.url())
+    if (url.pathname === '/api/mailbox/take') {
+      aliceUserId = url.searchParams.get('user_id') || aliceUserId
+    }
+  })
+  bobContext.on('request', (request) => {
+    const url = new URL(request.url())
+    if (url.pathname === '/api/mailbox/take') {
+      bobUserId = url.searchParams.get('user_id') || bobUserId
+    }
+  })
+
+  try {
+    const bobCard = await copyOwnCard(bob)
+    await alice.getByRole('button', { name: '打开通讯录' }).click()
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByLabel('对方名片').fill(bobCard)
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByRole('button', { name: '返回通讯录' }).click()
+
+    await bob.getByRole('button', { name: '打开通讯录' }).click()
+    await bob.getByRole('button', { name: '打开新的朋友' }).click()
+    await expect(bob.getByRole('button', { name: '同意' })).toBeVisible({ timeout: 45_000 })
+    await bob.getByRole('button', { name: '同意' }).click()
+    await bob.getByRole('button', { name: '返回通讯录' }).click()
+    await bob.locator('.directory-row.contact-row').click()
+    await bob.getByRole('button', { name: '开启已读回执' }).click()
+    await bob.getByRole('button', { name: '发消息' }).click()
+    await expect(alice.locator('.directory-row.contact-row')).toBeVisible({ timeout: 45_000 })
+    await alice.locator('.directory-row.contact-row').click()
+    await alice.getByRole('button', { name: '开启已读回执' }).click()
+    await expect(alice.getByRole('button', { name: '已开启已读回执' })).toBeVisible()
+    await alice.getByRole('button', { name: '发消息' }).click()
+    await flushLocalPersistence(alice)
+    await flushLocalPersistence(bob)
+    await expect.poll(() => persistedTableCount(alice, 'ratchetSessions')).toBeGreaterThan(0)
+    await expect.poll(() => persistedTableCount(bob, 'ratchetSessions')).toBeGreaterThan(0)
+    await reloadAndLogin(alice, alicePassphrase)
+    await reloadAndLogin(bob, bobPassphrase)
+    await expect.poll(() => aliceUserId).not.toBe('')
+    await expect.poll(() => bobUserId).not.toBe('')
+    await expect.poll(() => mailboxDeliveryTotal(alice, aliceUserId), { timeout: 45_000 }).toBe(0)
+    await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(0)
+
+    await openOnlyContactConversation(alice)
+    // Keep Bob outside the conversation so Alice's recovered batch is observed
+    // as unread. Wait until Alice has a genuinely interrupted long-poll before
+    // sending, rather than merely blocking a future request.
+    await bob.locator('.rail-avatar[aria-label="打开我的设置"]').click()
+    await aliceContext.route('http://127.0.0.1:8787/api/**', async (route) => {
+      interruptedAliceRequests += 1
+      await route.abort('connectionrefused')
+    })
+    await expect.poll(() => interruptedAliceRequests, { timeout: 45_000 }).toBeGreaterThanOrEqual(1)
+
+    const aliceTexts = ['Alice 并发第一条', '⚡', 'Alice 并发第三条']
+    const bobTexts = ['Bob 并发第一条', '🛰️', 'Bob 并发第三条']
+    const aliceMessages = alice.getByRole('log', { name: '消息列表' })
+    await Promise.all([
+      (async () => {
+        for (const text of aliceTexts) {
+          await alice.getByLabel('输入消息').fill(text)
+          await alice.getByRole('button', { name: '发送' }).click()
+          await expect(aliceMessages.getByText(text, { exact: true })).toBeVisible()
+        }
+      })(),
+      (async () => {
+        await openOnlyContactConversation(bob)
+        for (const text of bobTexts) {
+          await bob.getByLabel('输入消息').fill(text)
+          await bob.getByRole('button', { name: '发送' }).click()
+        }
+        await bob.locator('.rail-avatar[aria-label="打开我的设置"]').click()
+      })(),
+    ])
+    await flushLocalPersistence(alice)
+    await expect.poll(() => persistedTableCount(alice, 'outbox'), { timeout: 45_000 }).toBe(aliceTexts.length)
+    await expect(aliceMessages.getByText('待发送', { exact: true })).toHaveCount(aliceTexts.length)
+
+    // Restore only the actual node transport and emit the ordinary browser
+    // recovery signal. Both sides must converge without reload or re-login.
+    await aliceContext.unroute('http://127.0.0.1:8787/api/**')
+    await alice.evaluate(() => window.dispatchEvent(new Event('online')))
+    await expect(bob.locator('.rail-badge')).toHaveText(String(aliceTexts.length), { timeout: 45_000 })
+    await expect(alice).toHaveURL(/#\/chat/)
+    await expect(bob).toHaveURL(/#\/me$/)
+    await expect.poll(() => mailboxDeliveryTotal(alice, aliceUserId), { timeout: 45_000 }).toBe(0)
+    await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(0)
+
+    await openOnlyContactConversation(alice)
+    await expect(alice.getByRole('log', { name: '消息列表' }).locator('.bubble.in .text')).toHaveText(
+      bobTexts,
+      { timeout: 45_000 },
+    )
+    for (const text of bobTexts) {
+      await expect(alice.getByRole('log', { name: '消息列表' }).getByText(text, { exact: true })).toHaveCount(1)
+    }
+
+    await openOnlyContactConversation(bob)
+    const bobMessages = bob.getByRole('log', { name: '消息列表' })
+    await expect(bobMessages.locator('.bubble.in .text')).toHaveText(aliceTexts, { timeout: 45_000 })
+    for (const text of aliceTexts) {
+      await expect(bobMessages.getByText(text, { exact: true })).toHaveCount(1)
+    }
+    await expect(bob.locator('.conversation-badge')).toHaveCount(0)
+
+    await openOnlyContactConversation(alice)
+    await expect(alice.getByRole('log', { name: '消息列表' }).locator('.bubble.out .message-status')).toHaveText(
+      Array(aliceTexts.length).fill('已读'),
+      { timeout: 45_000 },
+    )
+    await expect(bob.getByRole('log', { name: '消息列表' }).locator('.bubble.out .message-status')).toHaveText(
+      Array(bobTexts.length).fill('已读'),
+      { timeout: 45_000 },
+    )
+  } finally {
+    await aliceContext.close()
+    await bobContext.close()
+  }
+})
