@@ -2442,42 +2442,39 @@ let persistChain: Promise<void> = Promise.resolve()
 let persistTimer: number | undefined
 let persistPending = false
 
+function flushPendingPersistence() {
+  persistChain = persistChain
+    .catch(() => undefined)
+    .then(async () => {
+      while (persistPending) {
+        persistPending = false
+        await persistStateTables()
+      }
+    })
+    .catch((e) => appendLog(`❌ IndexedDB 保存失败：${String(e)}`))
+  return persistChain
+}
+
 function persist() {
   persistPending = true
   if (persistTimer !== undefined) return
   persistTimer = window.setTimeout(() => {
     persistTimer = undefined
-    persistChain = persistChain
-      .catch(() => undefined)
-      .then(async () => {
-        while (persistPending) {
-          persistPending = false
-          await persistStateTables()
-        }
-      })
-      .catch((e) => appendLog(`❌ IndexedDB 保存失败：${String(e)}`))
+    void flushPendingPersistence()
   }, 120)
 }
 
-async function flushPersistForTests() {
+async function flushPendingPersistenceNow() {
   if (persistTimer !== undefined) {
     window.clearTimeout(persistTimer)
     persistTimer = undefined
-    persistChain = persistChain
-      .catch(() => undefined)
-      .then(async () => {
-        while (persistPending) {
-          persistPending = false
-          await persistStateTables()
-        }
-      })
-      .catch((e) => appendLog(`❌ IndexedDB 保存失败：${String(e)}`))
   }
-  await persistChain
+  if (persistPending) await flushPendingPersistence()
+  else await persistChain
 }
 
 if (typeof window !== 'undefined') {
-  ;(window as any).flushPersistForTests = flushPersistForTests
+  ;(window as any).flushPersistForTests = flushPendingPersistenceNow
   ;(window as any).appendLogForTests = appendLog
   ;(window as any).setDhtDiagnosticsForTests = (status: string, history: string[] = []) => {
     nodeDhtFindValueStatusText.value = status
@@ -4241,6 +4238,22 @@ function resendAckForDuplicateMailboxMessage(message: any, deliveryId?: string):
 
 function retryDelayMs(retryCount: number): number {
   return [30_000, 2 * 60_000, 10 * 60_000, 60 * 60_000, 6 * 60 * 60_000][Math.min(retryCount, 4)]
+}
+
+function outboxDeliveryTimestamp(item: OutboxItem): number {
+  if (item.message_id) {
+    const message = messages.value.find((candidate) => candidate.id === item.message_id)
+    if (message?.created_at) return message.created_at
+  }
+  return item.created_at
+}
+
+function compareOutboxDeliveryOrder(left: OutboxItem, right: OutboxItem): number {
+  const timestampDelta = outboxDeliveryTimestamp(left) - outboxDeliveryTimestamp(right)
+  if (timestampDelta !== 0) return timestampDelta
+  const createdAtDelta = left.created_at - right.created_at
+  if (createdAtDelta !== 0) return createdAtDelta
+  return left.id.localeCompare(right.id)
 }
 
 function classifyDeliveryError(e: unknown): string {
@@ -7642,11 +7655,15 @@ async function retryDueOutbox() {
   if (!loggedIn.value) return
   const now = Date.now()
   let attempted = 0
-  for (const item of outbox.value) {
-    if (item.status !== 'sent' && (item.next_retry_at ?? item.created_at) <= now) {
-      attempted += 1
-      await retryOutboxItem(item)
-    }
+  // IndexedDB reads table rows by key, not by insertion order. Retrying a
+  // restored batch in that order can feed Ratchet envelopes out of sequence.
+  // Preserve the original message creation order before redelivering.
+  const dueItems = outbox.value
+    .filter((item) => item.status !== 'sent' && (item.next_retry_at ?? item.created_at) <= now)
+    .sort(compareOutboxDeliveryOrder)
+  for (const item of dueItems) {
+    attempted += 1
+    await retryOutboxItem(item)
   }
   if (attempted > 0) {
     appendLog(`Outbox 自动重试 ${attempted} 条`)
@@ -10086,6 +10103,10 @@ async function processMailboxMessages(messagesFromNode: any[]): Promise<string[]
   mailboxFailureSummaryText.value = summarizeMailboxFailures(failureReasons)
   appendLog(`mailbox 自动处理完成：${mailboxInboxStatus.value}`)
   persist()
+  // Do not acknowledge mailbox deliveries until the decrypted state (including
+  // unread markers and Ratchet state) is durable. Otherwise a refresh after
+  // the server ack can permanently lose the last item from a received batch.
+  await flushPendingPersistenceNow()
   return ackIds
 }
 

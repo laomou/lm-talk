@@ -98,7 +98,7 @@ async function persistedTableCount(page: Page, table: string): Promise<number> {
   }, table)
 }
 
-test('双用户刷新并重新登录后，可保持会话、未读、文字、Emoji 与已读回执', async ({ browser }) => {
+test('双用户批量消息在刷新重连后保持顺序、去重、未读与已读回执', async ({ browser }) => {
   const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
   const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
   const alicePassphrase = 'playwright-alice-passphrase'
@@ -147,42 +147,51 @@ test('双用户刷新并重新登录后，可保持会话、未读、文字、Em
     await alice.getByRole('button', { name: '返回我' }).click()
     await openOnlyContactConversation(alice)
     const aliceMessages = alice.getByRole('log', { name: '消息列表' })
-    await alice.getByLabel('输入消息').fill('刷新后恢复的待发送消息')
-    await alice.getByRole('button', { name: '发送' }).click()
-    await expect(aliceMessages.getByText('刷新后恢复的待发送消息')).toBeVisible()
-    await expect(aliceMessages.getByText('待发送', { exact: true })).toBeVisible()
+    const queuedMessages = ['断线批量第一条', '断线批量第二条', '🎉', '断线批量第四条']
+    for (const text of queuedMessages) {
+      await alice.getByLabel('输入消息').fill(text)
+      await alice.getByRole('button', { name: '发送' }).click()
+      await expect(aliceMessages.getByText(text, { exact: true })).toBeVisible()
+    }
+    await expect(aliceMessages.getByText('待发送', { exact: true })).toHaveCount(queuedMessages.length)
     await flushLocalPersistence(alice)
-    await expect.poll(() => persistedTableCount(alice, 'outbox')).toBeGreaterThan(0)
+    await expect.poll(() => persistedTableCount(alice, 'outbox')).toBe(queuedMessages.length)
     await reloadAndLogin(alice, alicePassphrase)
     await openSyncSettings(alice)
     await alice.getByRole('button', { name: '开启同步' }).click()
     await expect(alice.getByRole('button', { name: '关闭同步' })).toBeVisible()
     await alice.getByRole('button', { name: '返回我' }).click()
 
-    // Bob stays on the conversation list. The badge proves incoming delivery
-    // does not force-switch the current view and that unread state is retained.
-    await expect(bob.locator('.conversation-badge')).toHaveText('1', { timeout: 45_000 })
+    // Bob stays on the conversation list. The badge proves batch delivery does
+    // not force-switch the current view and that unread state is retained.
+    await expect(bob.locator('.conversation-badge')).toHaveText(String(queuedMessages.length), { timeout: 45_000 })
     await reloadAndLogin(bob, bobPassphrase)
-    await expect(bob.locator('.conversation-badge')).toHaveText('1')
+    await expect(bob.locator('.conversation-badge')).toHaveText(String(queuedMessages.length))
 
     await openOnlyContactConversation(bob)
     const bobMessages = bob.getByRole('log', { name: '消息列表' })
-    const receivedText = bobMessages.getByText('刷新后恢复的待发送消息', { exact: true })
-    await expect(receivedText).toBeVisible({ timeout: 45_000 })
-    await expect(receivedText).toHaveCount(1)
+    await expect(bobMessages.locator('.bubble.in .text')).toHaveText(queuedMessages, { timeout: 45_000 })
+    for (const text of queuedMessages) {
+      await expect(bobMessages.getByText(text, { exact: true })).toHaveCount(1)
+    }
     await expect(bob.locator('.conversation-badge')).toHaveCount(0)
 
     await openOnlyContactConversation(alice)
     // A read receipt supersedes the visible "delivered" label. Bob receiving the
     // message plus Alice receiving the final read status covers the full flow.
-    await expect(alice.getByRole('log', { name: '消息列表' }).getByText('已读', { exact: true })).toBeVisible({ timeout: 45_000 })
+    await expect(alice.getByRole('log', { name: '消息列表' }).locator('.bubble.out .message-status')).toHaveText(
+      Array(queuedMessages.length).fill('已读'),
+      { timeout: 45_000 },
+    )
 
     await bob.getByLabel('输入消息').fill('🎉')
     await bob.getByRole('button', { name: '发送' }).click()
-    await expect(bobMessages.getByText('🎉', { exact: true })).toBeVisible()
+    await expect(bobMessages.locator('.bubble.out .text').getByText('🎉', { exact: true })).toHaveCount(1)
 
     await openOnlyContactConversation(alice)
-    await expect(alice.getByRole('log', { name: '消息列表' }).getByText('🎉', { exact: true })).toBeVisible({ timeout: 45_000 })
+    await expect(
+      alice.getByRole('log', { name: '消息列表' }).locator('.bubble.in .text').getByText('🎉', { exact: true }),
+    ).toHaveCount(1, { timeout: 45_000 })
   } finally {
     await aliceContext.close()
     await bobContext.close()
