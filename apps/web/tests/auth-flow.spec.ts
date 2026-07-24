@@ -127,3 +127,43 @@ test('导入身份页需要身份文本并可返回登录页', async ({ page }) 
   await page.getByRole('button', { name: '返回登录' }).click()
   await expect(page.getByRole('heading', { name: '登录' })).toBeVisible()
 })
+
+test('移动端可从二维码图片识别名片并在添加前确认', async ({ page }) => {
+  const passphrase = 'playwright-qr-scan-passphrase'
+  await page.goto('/#/register')
+  await waitForWasm(page)
+  await page.getByLabel('注册提示词').fill(passphrase)
+  await page.getByRole('button', { name: '注册' }).click()
+  await page.getByRole('button', { name: '去登录' }).click()
+  await page.getByLabel('登录提示词').fill(passphrase)
+  await page.getByRole('button', { name: '登录' }).click()
+
+  await page.locator('.rail-avatar[aria-label="打开我的设置"]').click()
+  await page.getByText('个人资料', { exact: true }).click()
+  await page.getByRole('button', { name: '我的名片' }).click()
+  const qrDialog = page.getByRole('dialog')
+  const qrDataUrl = await qrDialog.locator('img[alt="二维码"]').getAttribute('src')
+  expect(qrDataUrl).toMatch(/^data:image\/png;base64,/)
+  await qrDialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.getByRole('button', { name: '返回我' }).click()
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.getByRole('button', { name: '打开通讯录' }).click()
+  await page.getByRole('button', { name: '添加好友' }).click()
+  await page.getByRole('button', { name: '扫码添加' }).click()
+  const scanner = page.getByRole('dialog', { name: '扫码添加' })
+  await expect(scanner).toBeVisible()
+  await expect(scanner.getByRole('button', { name: '从相册选择' })).toBeVisible()
+
+  const base64 = qrDataUrl!.split(',')[1]
+  await scanner.locator('input[type="file"]').setInputFiles({
+    name: 'contact-card.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(base64, 'base64'),
+  })
+  await expect(scanner).toBeHidden()
+  await expect(page.getByText('扫码结果', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '添加好友' }).last()).toBeVisible()
+  await page.getByRole('button', { name: '取消' }).last().click()
+  await expect(page.getByText('扫码结果', { exact: true })).toBeHidden()
+})

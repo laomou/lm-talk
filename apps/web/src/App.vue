@@ -5047,9 +5047,11 @@ async function showQr(value: string, label: string) {
     qrTitle.value = label
     qrRawText.value = value
     qrDataUrl.value = await QRCode.toDataURL(value, {
-      errorCorrectionLevel: 'M',
+      errorCorrectionLevel: 'L',
       margin: 2,
-      width: 360,
+      // Contact cards are longer than ordinary URLs. Keep enough source
+      // pixels for camera and photo scanners even though CSS constrains display.
+      width: 720,
     })
     appendLog(`✅ 已生成二维码：${label}`)
   } catch (e) {
@@ -5085,6 +5087,11 @@ async function addContact() {
     persist()
     if (nodeEnabled.value && item.state === 'LocalOnly') void createFriendRequestForActive()
   })
+}
+
+async function inspectContactCardForAdd(cardText: string) {
+  ensureUiTextSize('名片', cardText, MAX_CONTACT_CARD_BYTES)
+  return inspectContactCardInWorker<ContactInfo>(cardText)
 }
 
 
@@ -10949,7 +10956,7 @@ const appContext = {
   autoPublishPreKey, autoNodeSync, autoSelfMailboxSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodeStateFileSecurityText, nodeStateFileSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutMyContactCardUpdateToFriends, fanoutDeviceRevokeToFriends, myDeviceCertJson, myDeviceBackupText,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
-  exportFullDataBackup, pushFullDataBackupToOwnMailbox, pushSelfSyncPackageToOwnMailbox, selfSyncStatusText, processedSelfSyncIds, processedSelfSyncRequestIds, selfSyncMissingRequestRecords, selfSyncRequestSentCount, selfSyncRequestHitCount, selfSyncRequestMissCount, selfSyncRecentPackages, resendLatestSelfSyncPackageToOwnMailbox, clearSelfSyncRecentPackages, lastSelfSyncPushedAt, lastSelfSyncMergedAt, lastSelfSyncSequenceSent, lastSelfSyncSequenceMerged, selfSyncGapCount, lastSelfSyncGapAt, lastSelfSyncMissingPreviousId, lastSelfSyncReceiptStatesSent, lastSelfSyncReceiptStatesMerged, totalSelfSyncReceiptStatesMerged, lastSelfSyncOutboxSummary, clearSelfSyncGapStats, repairSelfSyncGapNow, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, selfMailboxBackupStatusText, selfMailboxBackupMergePending, selfMailboxBackupMergeStatusText, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
+  exportFullDataBackup, pushFullDataBackupToOwnMailbox, pushSelfSyncPackageToOwnMailbox, selfSyncStatusText, processedSelfSyncIds, processedSelfSyncRequestIds, selfSyncMissingRequestRecords, selfSyncRequestSentCount, selfSyncRequestHitCount, selfSyncRequestMissCount, selfSyncRecentPackages, resendLatestSelfSyncPackageToOwnMailbox, clearSelfSyncRecentPackages, lastSelfSyncPushedAt, lastSelfSyncMergedAt, lastSelfSyncSequenceSent, lastSelfSyncSequenceMerged, selfSyncGapCount, lastSelfSyncGapAt, lastSelfSyncMissingPreviousId, lastSelfSyncReceiptStatesSent, lastSelfSyncReceiptStatesMerged, totalSelfSyncReceiptStatesMerged, lastSelfSyncOutboxSummary, clearSelfSyncGapStats, repairSelfSyncGapNow, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, selfMailboxBackupStatusText, selfMailboxBackupMergePending, selfMailboxBackupMergeStatusText, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, inspectContactCardForAdd, incomingFriendRequestText,
   addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, friendRequestRateRecords, friendRequestRateSummaryText, clearFriendRequestRateRecords, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,

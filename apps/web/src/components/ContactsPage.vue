@@ -24,6 +24,7 @@ const { t } = useI18n()
 type View = 'home' | 'friends' | 'search' | 'add' | 'detail' | 'group-invites'
 const view = ref<View>('home')
 const scannerOpen = ref(false)
+const scannedCard = ref<{ text: string; displayName: string; userId: string } | null>(null)
 const isSearchPage = computed(() => route.path === '/contacts/search')
 
 const requestCount = computed(() => props.ctx.visibleFriendRequests.value.length)
@@ -78,14 +79,28 @@ function addContact() {
   props.ctx.addContact()
   if (!props.ctx.addContactText.value.trim() && props.ctx.activePeerId.value) view.value = 'detail'
 }
-function onQrScanned(value: string) {
+async function onQrScanned(value: string) {
   scannerOpen.value = false
-  if (value.startsWith('lm-contact-card-v1:')) {
-    props.ctx.addContactText.value = value
-    addContact()
-  } else {
-    props.ctx.showAlert('扫码结果', '无法识别为名片二维码。', 'warning')
+  if (!value.startsWith('lm-contact-card-v1:')) {
+    props.ctx.showAlert(t('contactsView.scanResultTitle'), t('contactsView.scanInvalidCard'), 'warning')
+    return
   }
+  try {
+    const info = await props.ctx.inspectContactCardForAdd(value)
+    scannedCard.value = {
+      text: value,
+      displayName: info.display_name || t('contactsView.unnamed'),
+      userId: info.user_id,
+    }
+  } catch {
+    props.ctx.showAlert(t('contactsView.scanResultTitle'), t('contactsView.scanInvalidCard'), 'warning')
+  }
+}
+function confirmScannedCard() {
+  if (!scannedCard.value) return
+  props.ctx.addContactText.value = scannedCard.value.text
+  scannedCard.value = null
+  addContact()
 }
 </script>
 
@@ -191,6 +206,15 @@ function onQrScanned(value: string) {
             <UiActionGroup><button @click="addContact">{{ t('contactsView.addFriend') }}</button></UiActionGroup>
           </UiSection>
           <UiListRow class="mobile-only-row" :aria-label="t('contactsView.scanAdd')" @click="scannerOpen = true">{{ t('contactsView.scanAdd') }}</UiListRow>
+          <UiCard v-if="scannedCard" class="scanned-contact-preview">
+            <small>{{ t('contactsView.scanResultTitle') }}</small>
+            <b>{{ scannedCard.displayName }}</b>
+            <small>{{ shortId(scannedCard.userId) }}</small>
+            <UiActionGroup>
+              <button @click="confirmScannedCard">{{ t('contactsView.addFriend') }}</button>
+              <button class="secondary" @click="scannedCard = null">{{ t('common.cancel') }}</button>
+            </UiActionGroup>
+          </UiCard>
         </div>
       </section>
 
