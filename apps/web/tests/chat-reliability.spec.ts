@@ -59,11 +59,52 @@ async function openOnlyContactConversation(page: Page) {
   await page.getByRole('button', { name: '发消息' }).click()
 }
 
-test('双用户可加好友、双向收发文字与 Emoji，并同步送达和已读回执', async ({ browser }) => {
+async function reloadAndLogin(page: Page, passphrase: string) {
+  const expectedPath = new URL(page.url()).hash
+  await page.reload()
+  await waitForWasm(page)
+  await expect(page.getByRole('heading', { name: '登录' })).toBeVisible()
+  await page.getByLabel('登录提示词').fill(passphrase)
+  await page.getByRole('button', { name: '登录' }).click()
+  await expect(page).toHaveURL(new RegExp(`${expectedPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
+}
+
+async function flushLocalPersistence(page: Page) {
+  await page.evaluate(async () => {
+    await (window as typeof window & { flushPersistForTests?: () => Promise<void> }).flushPersistForTests?.()
+  })
+}
+
+async function openSyncSettings(page: Page) {
+  await openMe(page)
+  await page.getByText('同步与安全', { exact: true }).click()
+}
+
+async function persistedTableCount(page: Page, table: string): Promise<number> {
+  return page.evaluate(async (tableName) => {
+    const request = indexedDB.open('lm-talk-web-db')
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    const tx = db.transaction(tableName, 'readonly')
+    const countRequest = tx.objectStore(tableName).count()
+    const count = await new Promise<number>((resolve, reject) => {
+      countRequest.onsuccess = () => resolve(countRequest.result)
+      countRequest.onerror = () => reject(countRequest.error)
+    })
+    db.close()
+    return count
+  }, table)
+}
+
+test('双用户刷新并重新登录后，可保持会话、未读、文字、Emoji 与已读回执', async ({ browser }) => {
   const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
   const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
-  const alice = await registerAndLogin(aliceContext, 'Alice', 'playwright-alice-passphrase')
-  const bob = await registerAndLogin(bobContext, 'Bob', 'playwright-bob-passphrase')
+  const alicePassphrase = 'playwright-alice-passphrase'
+  const bobPassphrase = 'playwright-bob-passphrase'
+  const alice = await registerAndLogin(aliceContext, 'Alice', alicePassphrase)
+  const bob = await registerAndLogin(bobContext, 'Bob', bobPassphrase)
 
   try {
     const bobCard = await copyOwnCard(bob)
@@ -86,15 +127,50 @@ test('双用户可加好友、双向收发文字与 Emoji，并同步送达和�
 
     // Mailbox long-poll completes the friend response and the secure-session handshake.
     await expect(alice.locator('.directory-row.contact-row')).toBeVisible({ timeout: 45_000 })
+    // Wait for the app's normal IndexedDB persistence pipeline to settle before
+    // the destructive browser lifecycle event. This does not seed or alter
+    // state; it only makes the real write completion observable to the test.
+    await flushLocalPersistence(alice)
+    await flushLocalPersistence(bob)
+    await expect.poll(() => persistedTableCount(alice, 'contacts')).toBeGreaterThan(0)
+    await expect.poll(() => persistedTableCount(alice, 'ratchetSessions')).toBeGreaterThan(0)
+    await expect.poll(() => persistedTableCount(bob, 'contacts')).toBeGreaterThan(0)
+    await expect.poll(() => persistedTableCount(bob, 'ratchetSessions')).toBeGreaterThan(0)
+    await reloadAndLogin(alice, alicePassphrase)
+    await reloadAndLogin(bob, bobPassphrase)
+
+    // Compose while offline, then refresh and log in again. The durable outbox
+    // must survive and resume automatically when sync is restored.
+    await openSyncSettings(alice)
+    await alice.getByRole('button', { name: '关闭同步' }).click()
+    await expect(alice.getByRole('button', { name: '开启同步' })).toBeVisible()
+    await alice.getByRole('button', { name: '返回我' }).click()
     await openOnlyContactConversation(alice)
     const aliceMessages = alice.getByRole('log', { name: '消息列表' })
-    await alice.getByLabel('输入消息').fill('你好 Bob，来自 Alice')
+    await alice.getByLabel('输入消息').fill('刷新后恢复的待发送消息')
     await alice.getByRole('button', { name: '发送' }).click()
-    await expect(aliceMessages.getByText('你好 Bob，来自 Alice')).toBeVisible()
+    await expect(aliceMessages.getByText('刷新后恢复的待发送消息')).toBeVisible()
+    await expect(aliceMessages.getByText('待发送', { exact: true })).toBeVisible()
+    await flushLocalPersistence(alice)
+    await expect.poll(() => persistedTableCount(alice, 'outbox')).toBeGreaterThan(0)
+    await reloadAndLogin(alice, alicePassphrase)
+    await openSyncSettings(alice)
+    await alice.getByRole('button', { name: '开启同步' }).click()
+    await expect(alice.getByRole('button', { name: '关闭同步' })).toBeVisible()
+    await alice.getByRole('button', { name: '返回我' }).click()
+
+    // Bob stays on the conversation list. The badge proves incoming delivery
+    // does not force-switch the current view and that unread state is retained.
+    await expect(bob.locator('.conversation-badge')).toHaveText('1', { timeout: 45_000 })
+    await reloadAndLogin(bob, bobPassphrase)
+    await expect(bob.locator('.conversation-badge')).toHaveText('1')
 
     await openOnlyContactConversation(bob)
     const bobMessages = bob.getByRole('log', { name: '消息列表' })
-    await expect(bobMessages.getByText('你好 Bob，来自 Alice')).toBeVisible({ timeout: 45_000 })
+    const receivedText = bobMessages.getByText('刷新后恢复的待发送消息', { exact: true })
+    await expect(receivedText).toBeVisible({ timeout: 45_000 })
+    await expect(receivedText).toHaveCount(1)
+    await expect(bob.locator('.conversation-badge')).toHaveCount(0)
 
     await openOnlyContactConversation(alice)
     // A read receipt supersedes the visible "delivered" label. Bob receiving the
