@@ -217,6 +217,7 @@ test('节点暂不可用后自动恢复批量消息、未读与已读状态', as
   const bobPassphrase = 'playwright-network-bob-passphrase'
   const alice = await registerAndLogin(aliceContext, 'Alice', alicePassphrase)
   const bob = await registerAndLogin(bobContext, 'Bob', bobPassphrase)
+  let restoreAliceTransport = false
 
   try {
     const bobCard = await copyOwnCard(bob)
@@ -252,7 +253,13 @@ test('节点暂不可用后自动恢复批量消息、未读与已读状态', as
     // Simulate a connection refusal only on Alice's transport to the real
     // lm_node. No mailbox response, IndexedDB data, Ratchet state, or message
     // payload is mocked; the node remains running and Bob stays connected.
-    await aliceContext.route('http://127.0.0.1:8787/api/**', (route) => route.abort('connectionrefused'))
+    await aliceContext.route('http://127.0.0.1:8787/api/**', async (route) => {
+      if (restoreAliceTransport) {
+        await route.continue()
+        return
+      }
+      await route.abort('connectionrefused')
+    })
     const queuedMessages = ['网络恢复第一条', '网络恢复第二条', '🚀']
     const aliceMessages = alice.getByRole('log', { name: '消息列表' })
     for (const text of queuedMessages) {
@@ -266,7 +273,7 @@ test('节点暂不可用后自动恢复批量消息、未读与已读状态', as
 
     // Restore access to the actual lm_node and emit the browser recovery
     // event. No mailbox, IndexedDB, Ratchet, or message state is mocked.
-    await aliceContext.unroute('http://127.0.0.1:8787/api/**')
+    restoreAliceTransport = true
     await alice.evaluate(() => window.dispatchEvent(new Event('online')))
 
     await expect(bob.locator('.rail-badge')).toHaveText(String(queuedMessages.length), { timeout: 45_000 })
@@ -709,6 +716,7 @@ test('发送端在加密投递失败后刷新可按顺序恢复 Ratchet 消息',
   const bobPassphrase = 'playwright-send-refresh-bob-passphrase'
   const alice = await registerAndLogin(aliceContext, 'Alice', alicePassphrase)
   const bob = await registerAndLogin(bobContext, 'Bob', bobPassphrase)
+  let restoreAliceTransport = false
 
   try {
     const bobCard = await copyOwnCard(bob)
@@ -736,7 +744,13 @@ test('发送端在加密投递失败后刷新可按顺序恢复 Ratchet 消息',
     await bob.locator('.rail-avatar[aria-label="打开我的设置"]').click()
     await expect(bob).toHaveURL(/#\/me$/)
     await openOnlyContactConversation(alice)
-    await aliceContext.route('http://127.0.0.1:8787/api/**', (route) => route.abort('connectionrefused'))
+    await aliceContext.route('http://127.0.0.1:8787/api/**', async (route) => {
+      if (restoreAliceTransport) {
+        await route.continue()
+        return
+      }
+      await route.abort('connectionrefused')
+    })
     const pending = ['刷新恢复第一条', '🧭', '刷新恢复第三条']
     const aliceMessages = alice.getByRole('log', { name: '消息列表' })
     for (const text of pending) {
@@ -749,7 +763,7 @@ test('发送端在加密投递失败后刷新可按顺序恢复 Ratchet 消息',
     await flushLocalPersistence(alice)
     await expect.poll(() => persistedTableCount(alice, 'outbox')).toBe(pending.length)
     await reloadAndLogin(alice, alicePassphrase)
-    await aliceContext.unroute('http://127.0.0.1:8787/api/**')
+    restoreAliceTransport = true
     await alice.evaluate(() => window.dispatchEvent(new Event('online')))
 
     await expect(bob.locator('.rail-badge')).toHaveText(String(pending.length), { timeout: 45_000 })
