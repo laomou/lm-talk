@@ -387,6 +387,7 @@ test('接收端长轮询中断后无需刷新即可恢复收取消息', async ({
   const bob = await registerAndLogin(bobContext, 'Bob', bobPassphrase)
   let bobUserId = ''
   let interruptedLongPolls = 0
+  let restoreBobTransport = false
 
   bobContext.on('request', (request) => {
     const url = new URL(request.url())
@@ -422,11 +423,16 @@ test('接收端长轮询中断后无需刷新即可恢复收取消息', async ({
     await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(0)
 
     // Interrupt a real auto-poll request rather than faking a mailbox response.
-    // The route remains active until recovery so Bob cannot consume Alice's
-    // messages through another request before the long-poll retry starts.
+    // Keep the route installed and restore its real transport in-place: removing
+    // a context route while a long-poll retry is being scheduled has proved
+    // timing-sensitive in CI.
     await bob.locator('.rail-avatar[aria-label="打开我的设置"]').click()
     await bobContext.route('http://127.0.0.1:8787/api/mailbox/take**', async (route) => {
       const url = new URL(route.request().url())
+      if (restoreBobTransport) {
+        await route.continue()
+        return
+      }
       if (url.searchParams.has('wait_seconds')) interruptedLongPolls += 1
       await route.abort('connectionrefused')
     })
@@ -443,7 +449,7 @@ test('接收端长轮询中断后无需刷新即可恢复收取消息', async ({
 
     // Do not reload, re-login, or fire an online event. Restoring the real
     // node transport must be enough for the long-poll backoff loop to recover.
-    await bobContext.unroute('http://127.0.0.1:8787/api/mailbox/take**')
+    restoreBobTransport = true
     await expect(bob.locator('.rail-badge')).toHaveText(String(texts.length), { timeout: 45_000 })
     await expect(bob).toHaveURL(/#\/me$/)
     await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(0)
