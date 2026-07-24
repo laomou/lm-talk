@@ -816,6 +816,106 @@ test('节点已收但发送端立即刷新后可恢复未知投递结果', async
   }
 })
 
+test('Mailbox 积压超过单页时可分页恢复全部 Ratchet 消息', async ({ browser }) => {
+  test.setTimeout(240_000)
+  const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const alicePassphrase = 'playwright-pagination-alice-passphrase'
+  const bobPassphrase = 'playwright-pagination-bob-passphrase'
+  const alice = await registerAndLogin(aliceContext, 'Alice', alicePassphrase)
+  const bob = await registerAndLogin(bobContext, 'Bob', bobPassphrase)
+  let bobUserId = ''
+  let blockedBobTakes = 0
+  let restoreBobTakeTransport = false
+  let immediatePageTakesAfterRestore = 0
+
+  bobContext.on('request', (request) => {
+    const url = new URL(request.url())
+    if (url.pathname === '/api/mailbox/take') {
+      bobUserId = url.searchParams.get('user_id') || bobUserId
+    }
+  })
+
+  try {
+    const bobCard = await copyOwnCard(bob)
+    await alice.getByRole('button', { name: '打开通讯录' }).click()
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByLabel('对方名片').fill(bobCard)
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByRole('button', { name: '返回通讯录' }).click()
+
+    await bob.getByRole('button', { name: '打开通讯录' }).click()
+    await bob.getByRole('button', { name: '打开新的朋友' }).click()
+    await expect(bob.getByRole('button', { name: '同意' })).toBeVisible({ timeout: 45_000 })
+    await bob.getByRole('button', { name: '同意' }).click()
+    await bob.getByRole('button', { name: '返回通讯录' }).click()
+    await bob.locator('.directory-row.contact-row').click()
+    await bob.getByRole('button', { name: '开启已读回执' }).click()
+    await bob.getByRole('button', { name: '发消息' }).click()
+    await expect(alice.locator('.directory-row.contact-row')).toBeVisible({ timeout: 45_000 })
+    await flushLocalPersistence(alice)
+    await flushLocalPersistence(bob)
+    await expect.poll(() => persistedTableCount(alice, 'ratchetSessions')).toBeGreaterThan(0)
+    await expect.poll(() => persistedTableCount(bob, 'ratchetSessions')).toBeGreaterThan(0)
+    await reloadAndLogin(alice, alicePassphrase)
+    await reloadAndLogin(bob, bobPassphrase)
+    await expect.poll(() => bobUserId).not.toBe('')
+    await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(0)
+
+    // Keep the receiver offline at the mailbox transport layer. Alice still
+    // sends normally through the real node, producing 51 encrypted records:
+    // one more than the web client's real 50-message page size.
+    await bob.locator('.rail-avatar[aria-label="打开我的设置"]').click()
+    await bobContext.route('http://127.0.0.1:8787/api/mailbox/take**', async (route) => {
+      const url = new URL(route.request().url())
+      if (restoreBobTakeTransport) {
+        if (!url.searchParams.has('wait_seconds')) immediatePageTakesAfterRestore += 1
+        await route.continue()
+        return
+      }
+      blockedBobTakes += 1
+      await route.abort('connectionrefused')
+    })
+    await expect.poll(() => blockedBobTakes, { timeout: 45_000 }).toBeGreaterThanOrEqual(1)
+
+    await openOnlyContactConversation(alice)
+    const batch = Array.from({ length: 51 }, (_, index) => `分页积压消息 ${String(index + 1).padStart(2, '0')}`)
+    for (const text of batch) {
+      await alice.getByLabel('输入消息').fill(text)
+      await alice.getByRole('button', { name: '发送' }).click()
+    }
+    await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 90_000 }).toBe(batch.length)
+
+    // A normal mailbox take returns the first 50 with `more: true`; the web
+    // client must ACK that page and issue a second zero-wait take for item 51.
+    restoreBobTakeTransport = true
+    await expect(bob.locator('.rail-badge')).toHaveText(String(batch.length), { timeout: 90_000 })
+    await expect.poll(() => immediatePageTakesAfterRestore, { timeout: 45_000 }).toBeGreaterThanOrEqual(1)
+    await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 90_000 }).toBe(0)
+
+    await openOnlyContactConversation(bob)
+    const bobMessages = bob.getByRole('log', { name: '消息列表' })
+    await expect(bobMessages.locator('.bubble.in .text')).toHaveText(batch, { timeout: 90_000 })
+    for (const text of batch) {
+      await expect(bobMessages.getByText(text, { exact: true })).toHaveCount(1)
+    }
+    await expect(bob.locator('.conversation-badge')).toHaveCount(0)
+
+    await openOnlyContactConversation(alice)
+    const aliceMessages = alice.getByRole('log', { name: '消息列表' })
+    await expect(aliceMessages.locator('.bubble.out .message-status')).toHaveText(
+      Array(batch.length).fill('已读'),
+      { timeout: 90_000 },
+    )
+    await bob.getByLabel('输入消息').fill('分页恢复后继续收发')
+    await bob.getByRole('button', { name: '发送' }).click()
+    await expect(aliceMessages.getByText('分页恢复后继续收发', { exact: true })).toHaveCount(1, { timeout: 45_000 })
+  } finally {
+    await aliceContext.close()
+    await bobContext.close()
+  }
+})
+
 test('发送端在加密投递失败后刷新可按顺序恢复 Ratchet 消息', async ({ browser }) => {
   const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
   const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
