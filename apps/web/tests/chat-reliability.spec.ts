@@ -771,3 +771,103 @@ test('发送端在加密投递失败后刷新可按顺序恢复 Ratchet 消息',
     await bobContext.close()
   }
 })
+
+test('接收端在批量解密后刷新可恢复未确认消息、顺序与 Ratchet 会话', async ({ browser }) => {
+  const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const alicePassphrase = 'playwright-receive-refresh-alice-passphrase'
+  const bobPassphrase = 'playwright-receive-refresh-bob-passphrase'
+  const alice = await registerAndLogin(aliceContext, 'Alice', alicePassphrase)
+  const bob = await registerAndLogin(bobContext, 'Bob', bobPassphrase)
+  let bobUserId = ''
+  let blockedAcks = 0
+  let restoreBobAckTransport = false
+
+  bobContext.on('request', (request) => {
+    const url = new URL(request.url())
+    if (url.pathname === '/api/mailbox/take') {
+      bobUserId = url.searchParams.get('user_id') || bobUserId
+    }
+  })
+
+  try {
+    const bobCard = await copyOwnCard(bob)
+    await alice.getByRole('button', { name: '打开通讯录' }).click()
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByLabel('对方名片').fill(bobCard)
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByRole('button', { name: '返回通讯录' }).click()
+
+    await bob.getByRole('button', { name: '打开通讯录' }).click()
+    await bob.getByRole('button', { name: '打开新的朋友' }).click()
+    await expect(bob.getByRole('button', { name: '同意' })).toBeVisible({ timeout: 45_000 })
+    await bob.getByRole('button', { name: '同意' }).click()
+    await bob.getByRole('button', { name: '返回通讯录' }).click()
+    await bob.locator('.directory-row.contact-row').click()
+    await bob.getByRole('button', { name: '开启已读回执' }).click()
+    await bob.getByRole('button', { name: '发消息' }).click()
+    await expect(alice.locator('.directory-row.contact-row')).toBeVisible({ timeout: 45_000 })
+    await flushLocalPersistence(alice)
+    await flushLocalPersistence(bob)
+    await expect.poll(() => persistedTableCount(alice, 'ratchetSessions')).toBeGreaterThan(0)
+    await expect.poll(() => persistedTableCount(bob, 'ratchetSessions')).toBeGreaterThan(0)
+    await reloadAndLogin(alice, alicePassphrase)
+    await reloadAndLogin(bob, bobPassphrase)
+    await expect.poll(() => bobUserId).not.toBe('')
+    await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(0)
+
+    // The node has delivered the encrypted batch, but the acknowledgement is
+    // unavailable. Bob must first persist decrypted messages, dedupe records,
+    // unread state, and the advanced Ratchet session before a refresh.
+    await bob.locator('.rail-avatar[aria-label="打开我的设置"]').click()
+    await bobContext.route('http://127.0.0.1:8787/api/mailbox/ack', async (route) => {
+      if (restoreBobAckTransport) {
+        await route.continue()
+        return
+      }
+      blockedAcks += 1
+      await route.abort('connectionrefused')
+    })
+    const persistedMessagesBefore = await persistedTableCount(bob, 'messages')
+    await openOnlyContactConversation(alice)
+    const batch = ['接收刷新第一条', '📥', '接收刷新第三条']
+    for (const text of batch) {
+      await alice.getByLabel('输入消息').fill(text)
+      await alice.getByRole('button', { name: '发送' }).click()
+    }
+    await expect.poll(() => blockedAcks, { timeout: 45_000 }).toBeGreaterThanOrEqual(1)
+    await expect(bob.locator('.rail-badge')).toHaveText(String(batch.length), { timeout: 45_000 })
+    await flushLocalPersistence(bob)
+    await expect.poll(() => persistedTableCount(bob, 'messages')).toBe(persistedMessagesBefore + batch.length)
+    await expect.poll(() => persistedTableCount(bob, 'ratchetSessions')).toBeGreaterThan(0)
+    await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(batch.length)
+
+    // A new login reads the same real node deliveries. Its stored protocol ids
+    // must suppress duplicate rendering, then allow the normal replacement ACK.
+    restoreBobAckTransport = true
+    await reloadAndLogin(bob, bobPassphrase)
+    await expect(bob.locator('.rail-badge')).toHaveText(String(batch.length), { timeout: 45_000 })
+    await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(0)
+
+    await openOnlyContactConversation(bob)
+    const bobMessages = bob.getByRole('log', { name: '消息列表' })
+    await expect(bobMessages.locator('.bubble.in .text')).toHaveText(batch, { timeout: 45_000 })
+    for (const text of batch) {
+      await expect(bobMessages.getByText(text, { exact: true })).toHaveCount(1)
+    }
+    await expect(bob.locator('.conversation-badge')).toHaveCount(0)
+
+    await openOnlyContactConversation(alice)
+    const aliceMessages = alice.getByRole('log', { name: '消息列表' })
+    await expect(aliceMessages.locator('.bubble.out .message-status')).toHaveText(
+      Array(batch.length).fill('已读'),
+      { timeout: 45_000 },
+    )
+    await bob.getByLabel('输入消息').fill('接收刷新后继续收发')
+    await bob.getByRole('button', { name: '发送' }).click()
+    await expect(aliceMessages.getByText('接收刷新后继续收发', { exact: true })).toHaveCount(1, { timeout: 45_000 })
+  } finally {
+    await aliceContext.close()
+    await bobContext.close()
+  }
+})
