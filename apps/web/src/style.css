@@ -1199,6 +1199,11 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   border-radius: 0;
   padding: 12px var(--sp-5);
 }
+.directory-row.primary-row {
+  border-radius: var(--r-md);
+  border-bottom: 0;
+  margin-bottom: var(--sp-2);
+}
 .directory-row:hover { background: var(--c-surface-2); }
 .directory-row.active { background: var(--c-primary-soft); }
 .directory-icon {
