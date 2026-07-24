@@ -251,6 +251,7 @@ type OutboxItem = {
   kind?: 'direct-envelope' | 'group-fanout' | 'file-package' | 'delivery-receipt' | 'read-receipt' | 'contact-update' | 'other'
   status: 'queued' | 'sent' | 'failed'
   created_at: number
+  delivery_order?: number
   retry_count: number
   next_retry_at?: number
   expires_at?: number
@@ -638,6 +639,7 @@ const messages = ref<ChatMessage[]>([])
 const outbox = ref<OutboxItem[]>([])
 const outgoingMessageQueue: OutgoingMessageJob[] = []
 let outgoingMessageQueueRunning = false
+let nextOutboxDeliveryOrder = 0
 const ratchetSessions = ref<RatchetSessionItem[]>([])
 const pendingSecureSessionOffers = ref<PendingSecureSessionOfferItem[]>([])
 const processedMailboxIds = ref<ProcessedMailboxRecord[]>([])
@@ -646,6 +648,7 @@ const CONTACT_CARD_UPDATE_ACK_STALE_MS = 24 * 60 * 60 * 1000
 const CONTACT_CARD_DHT_FRESH_MS = 7 * 24 * 60 * 60 * 1000
 const contactCardUpdateFanoutRecords = ref<ContactCardUpdateFanoutRecord[]>([])
 let outboxRetryTimer: number | undefined
+let outboxRetryChain: Promise<void> = Promise.resolve()
 let lastDeliveryError = ''
 const runtimeStatusText = ref('尚未检查')
 const pwaStatusText = ref('PWA：尚未检查')
@@ -989,8 +992,7 @@ const activeMessages = computed(() => {
   const conversationMessages = activeGroup.value
     ? messages.value.filter((m) => m.group_id === activeGroup.value?.group_id)
     : messages.value.filter((m) => m.peer_user_id === activePeerId.value)
-  return conversationMessages.slice().sort((a, b) =>
-    Number(a.created_at || 0) - Number(b.created_at || 0) || a.id.localeCompare(b.id))
+  return conversationMessages.slice().sort(compareConversationMessageOrder)
 })
 function unreadCountForPeer(userId: string): number {
   return messages.value.filter((m) => !m.group_id && m.peer_user_id === userId && m.direction === 'in' && !m.read_at).length
@@ -1469,6 +1471,7 @@ onMounted(() => {
   })
   window.addEventListener('online', () => {
     void refreshRuntimeStatus()
+    void resumeOutboxAfterNetworkRecovery()
     startMailboxLongPoll()
   })
   window.addEventListener('offline', () => {
@@ -2498,6 +2501,10 @@ async function writeStateToTables(state: PersistedState, options: { preserveConv
   if (!options.preserveConversationData) {
     messages.value = await Promise.all((state.messages ?? []).map((m: any) => decryptMessageFromStore(m, key)))
     outbox.value = await Promise.all((state.outbox ?? []).map((o: any) => decryptOutboxFromStore(o, key)))
+    nextOutboxDeliveryOrder = Math.max(
+      nextOutboxDeliveryOrder,
+      ...outbox.value.map((item) => (item.delivery_order ?? -1) + 1),
+    )
   }
   ratchetSessions.value = await Promise.all((state.ratchetSessions ?? []).map((r: any) => decryptRatchetFromStore(r, key)))
   pendingSecureSessionOffers.value = await Promise.all((state.pendingSecureSessionOffers ?? []).map((item: any) => decryptPendingSecureSessionOfferFromStore(item, key)))
@@ -2653,6 +2660,10 @@ async function loadStateFromTables(): Promise<boolean> {
   groupSenderKeys.value = loadedGroupSenderKeys.items
   messages.value = loadedMessages.items
   outbox.value = loadedOutbox.items
+  nextOutboxDeliveryOrder = Math.max(
+    nextOutboxDeliveryOrder,
+    ...outbox.value.map((item) => (item.delivery_order ?? -1) + 1),
+  )
   ratchetSessions.value = loadedRatchets.items
   summarizePartialLoadFailures([
     ['联系人', loadedContacts.failed],
@@ -4053,6 +4064,7 @@ function createOutboxItem(contact: ContactItem, payload: string, messageId?: str
     kind,
     status: 'queued',
     created_at: now,
+    delivery_order: nextOutboxDeliveryOrder++,
     retry_count: 0,
     next_retry_at: now,
     expires_at: now + 7 * 24 * 3600 * 1000,
@@ -4240,6 +4252,12 @@ function retryDelayMs(retryCount: number): number {
   return [30_000, 2 * 60_000, 10 * 60_000, 60 * 60_000, 6 * 60 * 60_000][Math.min(retryCount, 4)]
 }
 
+function isRetryableDeliveryError(errorText: string): boolean {
+  return errorText === '网络失败'
+    || errorText === '节点错误'
+    || errorText === '节点拒绝：请求过于频繁'
+}
+
 function outboxDeliveryTimestamp(item: OutboxItem): number {
   if (item.message_id) {
     const message = messages.value.find((candidate) => candidate.id === item.message_id)
@@ -4249,11 +4267,19 @@ function outboxDeliveryTimestamp(item: OutboxItem): number {
 }
 
 function compareOutboxDeliveryOrder(left: OutboxItem, right: OutboxItem): number {
+  if (left.delivery_order !== undefined && right.delivery_order !== undefined) {
+    const deliveryOrderDelta = left.delivery_order - right.delivery_order
+    if (deliveryOrderDelta !== 0) return deliveryOrderDelta
+  }
   const timestampDelta = outboxDeliveryTimestamp(left) - outboxDeliveryTimestamp(right)
   if (timestampDelta !== 0) return timestampDelta
   const createdAtDelta = left.created_at - right.created_at
   if (createdAtDelta !== 0) return createdAtDelta
   return left.id.localeCompare(right.id)
+}
+
+function compareConversationMessageOrder(left: ChatMessage, right: ChatMessage): number {
+  return Number(left.created_at || 0) - Number(right.created_at || 0) || left.id.localeCompare(right.id)
 }
 
 function classifyDeliveryError(e: unknown): string {
@@ -4324,11 +4350,11 @@ async function tryMailboxDeliveryForMessage(contact: ContactItem, envelope: stri
     if (deliveryId) msg.mailbox_delivery_id = deliveryId
     appendLog(`✅ 已通过 mailbox 投递${deliveryId ? '：' + deliveryId : ''}`)
   } catch (e) {
-    msg.status = 'failed'
     const item = createOutboxItem(contact, envelope, msg.id, 'direct-envelope')
     item.last_error = classifyDeliveryError(e)
     outbox.value.push(item)
-    appendLog(`❌ mailbox 投递失败，已加入 outbox：${item.last_error}`)
+    msg.status = isRetryableDeliveryError(item.last_error) ? 'queued' : 'failed'
+    appendLog(`${msg.status === 'queued' ? '⚠️' : '❌'} mailbox 投递失败，已加入 outbox${msg.status === 'queued' ? '并等待自动重试' : ''}：${item.last_error}`)
   } finally {
     persist()
   }
@@ -7639,9 +7665,13 @@ async function retryOutboxItem(item: OutboxItem): Promise<boolean> {
     markOutboxSent(item)
     return true
   }
-  item.status = result === 'failed' ? 'failed' : 'queued'
+  const retryable = result === 'queued' || isRetryableDeliveryError(lastDeliveryError)
+  item.status = retryable ? 'queued' : 'failed'
+  const msg = messages.value.find((message) => message.id === item.message_id)
+  if (msg && msg.status !== 'read' && msg.status !== 'delivered') msg.status = item.status
   if (item.retry_count >= MAX_OUTBOX_RETRY_COUNT) {
     item.status = 'failed'
+    if (msg && msg.status !== 'read' && msg.status !== 'delivered') msg.status = 'failed'
     item.next_retry_at = undefined
     item.last_error = `已达到最大重试次数 ${MAX_OUTBOX_RETRY_COUNT}`
   } else {
@@ -7651,7 +7681,20 @@ async function retryOutboxItem(item: OutboxItem): Promise<boolean> {
   return false
 }
 
-async function retryDueOutbox() {
+function resumeOutboxAfterNetworkRecovery() {
+  let resumed = 0
+  for (const item of outbox.value) {
+    if (item.status !== 'queued') continue
+    item.next_retry_at = Date.now()
+    resumed += 1
+  }
+  if (resumed === 0) return
+  appendLog(`网络恢复，立即重试 Outbox ${resumed} 条`)
+  persist()
+  void retryDueOutbox()
+}
+
+async function retryDueOutboxNow() {
   if (!loggedIn.value) return
   const now = Date.now()
   let attempted = 0
@@ -7669,6 +7712,17 @@ async function retryDueOutbox() {
     appendLog(`Outbox 自动重试 ${attempted} 条`)
     persist()
   }
+}
+
+function retryDueOutbox(): Promise<void> {
+  // Several recovery signals can arrive together (online, sync enable,
+  // background timer). Ratchet envelopes for one contact must always be
+  // redelivered through a single queue, otherwise concurrent retries can
+  // race and reach the recipient out of order.
+  outboxRetryChain = outboxRetryChain
+    .catch(() => undefined)
+    .then(() => retryDueOutboxNow())
+  return outboxRetryChain
 }
 
 function startOutboxRetryLoop() {
