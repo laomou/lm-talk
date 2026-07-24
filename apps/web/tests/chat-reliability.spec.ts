@@ -885,3 +885,70 @@ test('接收端在批量解密后刷新可恢复未确认消息、顺序与 Ratc
     await bobContext.close()
   }
 })
+
+test('删除本地会话后可由新消息恢复并继续使用既有 Ratchet 会话', async ({ browser }) => {
+  const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const alicePassphrase = 'playwright-delete-conversation-alice-passphrase'
+  const bobPassphrase = 'playwright-delete-conversation-bob-passphrase'
+  const alice = await registerAndLogin(aliceContext, 'Alice', alicePassphrase)
+  const bob = await registerAndLogin(bobContext, 'Bob', bobPassphrase)
+
+  try {
+    const bobCard = await copyOwnCard(bob)
+    await alice.getByRole('button', { name: '打开通讯录' }).click()
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByLabel('对方名片').fill(bobCard)
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByRole('button', { name: '返回通讯录' }).click()
+
+    await bob.getByRole('button', { name: '打开通讯录' }).click()
+    await bob.getByRole('button', { name: '打开新的朋友' }).click()
+    await expect(bob.getByRole('button', { name: '同意' })).toBeVisible({ timeout: 45_000 })
+    await bob.getByRole('button', { name: '同意' }).click()
+    await bob.getByRole('button', { name: '返回通讯录' }).click()
+    await bob.locator('.directory-row.contact-row').click()
+    await bob.getByRole('button', { name: '开启已读回执' }).click()
+    await bob.getByRole('button', { name: '发消息' }).click()
+    await expect(alice.locator('.directory-row.contact-row')).toBeVisible({ timeout: 45_000 })
+    await flushLocalPersistence(alice)
+    await flushLocalPersistence(bob)
+    await expect.poll(() => persistedTableCount(alice, 'ratchetSessions')).toBeGreaterThan(0)
+    await expect.poll(() => persistedTableCount(bob, 'ratchetSessions')).toBeGreaterThan(0)
+
+    await openOnlyContactConversation(alice)
+    const aliceMessages = alice.getByRole('log', { name: '消息列表' })
+    await alice.getByLabel('输入消息').fill('删除前的本地消息')
+    await alice.getByRole('button', { name: '发送' }).click()
+    await expect(aliceMessages.getByText('删除前的本地消息', { exact: true })).toBeVisible()
+    const bobMessages = bob.getByRole('log', { name: '消息列表' })
+    await expect(bobMessages.getByText('删除前的本地消息', { exact: true })).toBeVisible({ timeout: 45_000 })
+
+    // Delete only the local transcript. The contact and persisted Ratchet
+    // session must remain, so a later message can reopen this conversation.
+    await alice.getByRole('button', { name: '更多' }).click()
+    await alice.getByRole('menuitem', { name: '删除会话' }).click()
+    const dialog = alice.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    await dialog.getByRole('button', { name: '确定' }).click()
+    await expect(alice).toHaveURL(/#\/chat$/)
+    await expect(alice.locator('.contact')).toHaveCount(0)
+    await expect.poll(() => persistedTableCount(alice, 'messages')).toBe(0)
+    await expect.poll(() => persistedTableCount(alice, 'ratchetSessions')).toBeGreaterThan(0)
+
+    await bob.getByLabel('输入消息').fill('删除后重新打开会话')
+    await bob.getByRole('button', { name: '发送' }).click()
+    await expect(alice.locator('.conversation-badge')).toHaveText('1', { timeout: 45_000 })
+    await alice.locator('.contact').click()
+    await expect(aliceMessages.getByText('删除后重新打开会话', { exact: true })).toHaveCount(1)
+    await expect(alice.locator('.conversation-badge')).toHaveCount(0)
+
+    await alice.getByLabel('输入消息').fill('会话恢复后继续发送')
+    await alice.getByRole('button', { name: '发送' }).click()
+    await expect(bobMessages.getByText('会话恢复后继续发送', { exact: true })).toHaveCount(1, { timeout: 45_000 })
+    await expect(aliceMessages.locator('.bubble.out .message-status')).toHaveText(['已读'], { timeout: 45_000 })
+  } finally {
+    await aliceContext.close()
+    await bobContext.close()
+  }
+})
