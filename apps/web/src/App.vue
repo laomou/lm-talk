@@ -4120,6 +4120,20 @@ function messageProtocolIdFromEnvelope(envelope: string): string | undefined {
   } catch { return undefined }
 }
 
+function protocolMessageIdFromDeliveryPayload(payload: string): string | undefined {
+  const directId = messageProtocolIdFromEnvelope(payload)
+  if (directId) return directId
+  try {
+    const parsed = JSON.parse(payload) as PerDeviceEnvelopeV1
+    if (parsed?.type !== 'lm-per-device-envelope-v1') return undefined
+    const nestedPayload = parsed.fallback_ciphertext
+      || (Array.isArray(parsed.target_devices) ? parsed.target_devices[0]?.ciphertext : undefined)
+    return typeof nestedPayload === 'string' ? messageProtocolIdFromEnvelope(nestedPayload) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function conversationIdFromEnvelope(envelope: string): string | undefined {
   try {
     const parsed = JSON.parse(envelope) as { conversation_id?: string }
@@ -4244,7 +4258,7 @@ function resendAckForDuplicateMailboxMessage(message: any, deliveryId?: string):
   const kind = typeof message?.kind === 'string' ? message.kind.replace(/[-_]/g, '').toLowerCase() : ''
   const ciphertext = String(message?.ciphertext ?? '')
   if (!sender || kind !== 'directenvelope') return false
-  void sendDeliveryAck(sender, messageProtocolIdFromEnvelope(ciphertext), conversationIdFromEnvelope(ciphertext), deliveryId)
+  void sendDeliveryAck(sender, protocolMessageIdFromDeliveryPayload(ciphertext), conversationIdFromEnvelope(ciphertext), deliveryId)
   return true
 }
 
@@ -10019,8 +10033,12 @@ function mailboxEventSummaryText(events: MailboxEventKind[]): string {
   return parts.length ? parts.join('，') : `已处理 ${events.length} 条`
 }
 
-function mailboxDedupeIds(deliveryId?: string, messageId?: string): string[] {
-  return [deliveryId, messageId ? `message:${messageId}` : '']
+function mailboxDedupeIds(deliveryId?: string, messageId?: string, protocolMessageId?: string): string[] {
+  return [
+    deliveryId,
+    messageId ? `message:${messageId}` : '',
+    protocolMessageId ? `protocol:${protocolMessageId}` : '',
+  ]
     .map((id) => (id || '').trim())
     .filter(Boolean)
 }
@@ -10128,7 +10146,12 @@ async function processMailboxMessages(messagesFromNode: any[]): Promise<string[]
   for (const [index, item] of messagesFromNode.entries()) {
     const { deliveryId, message } = unwrapMailboxDelivery(item)
     const messageId = String(message?.message_id ?? '')
-    const dedupeIds = mailboxDedupeIds(deliveryId, messageId)
+    // The same encrypted envelope can be accepted by lm_node while the sender
+    // loses the HTTP response, then be retried inside a new MailboxMessage
+    // wrapper. A delivery id or outer mailbox message id alone cannot identify
+    // that replay; use the signed direct-envelope protocol id as well.
+    const protocolMessageId = protocolMessageIdFromDeliveryPayload(String(message?.ciphertext ?? ''))
+    const dedupeIds = mailboxDedupeIds(deliveryId, messageId, protocolMessageId)
     if (hasProcessedMailboxIds(dedupeIds)) {
       duplicate += 1
       if (resendAckForDuplicateMailboxMessage(message, deliveryId)) duplicateAckResent += 1
