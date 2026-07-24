@@ -86,6 +86,7 @@ function unreadCount(it: any) {
 }
 function select(it: any) {
   props.ctx.selectContact(it.id)
+  void router.push(`/chat/${encodeURIComponent(it.id)}`)
 }
 </script>
 

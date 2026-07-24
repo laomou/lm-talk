@@ -193,7 +193,8 @@ function scrollToMessage(messageId: string) {
 }
 function locateMessage(messageId: string) {
   highlightedMessageId.value = messageId
-  void router.push('/chat')
+  const peerId = props.ctx.activePeerId.value
+  if (peerId) void router.push(`/chat/${encodeURIComponent(peerId)}`)
   void nextTick(() => {
     if (!scrollToMessage(messageId)) scrollToBottom()
     window.setTimeout(() => {
@@ -236,7 +237,7 @@ function deleteActiveConversation() {
       </div>
     </header>
     <section v-if="ctx.activeContact.value && messageSearchOpen" class="chat-message-search-page">
-      <UiPageHeader :back-label="t('chatView.backToChat')" @back="router.push('/chat')">
+      <UiPageHeader :back-label="t('chatView.backToChat')" @back="ctx.goChatPage">
         <template #title>
           <input v-model="messageSearch" class="subbar-search" type="search" :aria-label="t('chatView.searchMessages')" :placeholder="t('chatView.searchMessages')" autofocus />
         </template>
