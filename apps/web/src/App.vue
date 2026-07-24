@@ -2355,7 +2355,15 @@ function getPersistenceSnapshotWorker(): Worker {
 
 function persistEntrySignatures(entries: Array<[string, unknown]>): Promise<Map<string, string>> {
   const id = nextPersistenceSnapshotRequestId++
-  const plainEntries = entries.map(([key, value]) => [key, toRaw(value)] as [string, unknown])
+  // `toRaw` only unwraps the outer Vue proxy. Nested arrays/objects can still
+  // be reactive proxies, which cannot cross a Worker boundary and previously
+  // caused a DataCloneError before any table write occurred. JSON-compatible
+  // protocol/UI records are persisted elsewhere with the same representation,
+  // so use that plain snapshot for worker-side change detection too.
+  const plainEntries = entries.map(([key, value]) => [
+    key,
+    value == null ? value : JSON.parse(JSON.stringify(toRaw(value))),
+  ] as [string, unknown])
   return new Promise((resolve, reject) => {
     persistenceSnapshotRequests.set(id, { resolve, reject })
     try {
@@ -3633,6 +3641,10 @@ async function afterLoginAutomation() {
   await ensureOwnMailboxHintDhtRecord()
   await ensureOwnContactCardDhtRecord()
   await ensureOwnPublicPeerDhtRecord()
+  // A message composed while sync was disabled is encrypted into the durable
+  // outbox. Once connectivity is restored (including after a refresh/login),
+  // retry it immediately instead of waiting for the 30-second background tick.
+  await retryDueOutbox()
   if (autoMailboxTake.value) {
     await takeMailboxFromNode()
     startMailboxLongPoll()
