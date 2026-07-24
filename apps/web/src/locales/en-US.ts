@@ -219,6 +219,7 @@ export default {
     scanAdd: 'Scan to add',
     scanAddComing: 'You can also use “Add friend (paste card)”.',
     scanHint: 'Place a contact-card QR code in the frame, or choose a QR image from your photos.',
+    scanFillHint: 'Paste a contact card directly, or use the scan button to fill it in.',
     scanImage: 'Choose from photos',
     scanningImage: 'Scanning…',
     scanResultTitle: 'Scan result',

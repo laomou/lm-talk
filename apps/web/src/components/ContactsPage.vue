@@ -24,7 +24,6 @@ const { t } = useI18n()
 type View = 'home' | 'friends' | 'search' | 'add' | 'detail' | 'group-invites'
 const view = ref<View>('home')
 const scannerOpen = ref(false)
-const scannedCard = ref<{ text: string; displayName: string; userId: string } | null>(null)
 const isSearchPage = computed(() => route.path === '/contacts/search')
 
 const requestCount = computed(() => props.ctx.visibleFriendRequests.value.length)
@@ -85,22 +84,7 @@ async function onQrScanned(value: string) {
     props.ctx.showAlert(t('contactsView.scanResultTitle'), t('contactsView.scanInvalidCard'), 'warning')
     return
   }
-  try {
-    const info = await props.ctx.inspectContactCardForAdd(value)
-    scannedCard.value = {
-      text: value,
-      displayName: info.display_name || t('contactsView.unnamed'),
-      userId: info.user_id,
-    }
-  } catch {
-    props.ctx.showAlert(t('contactsView.scanResultTitle'), t('contactsView.scanInvalidCard'), 'warning')
-  }
-}
-function confirmScannedCard() {
-  if (!scannedCard.value) return
-  props.ctx.addContactText.value = scannedCard.value.text
-  scannedCard.value = null
-  addContact()
+  props.ctx.addContactText.value = value
 }
 </script>
 
@@ -200,21 +184,15 @@ function confirmScannedCard() {
         <UiPageHeader :title="t('contactsView.add')" :back-label="t('contactsView.backToContacts')" @back="backHome" />
         <div class="detail-body narrow add-page-body">
           <UiSection :title="t('contactsView.pasteCardAddFriend')">
-            <UiField :label="t('contactsView.contactCard')" for-id="contact-card-input">
+            <div class="contact-card-field-label">
+              <label for="contact-card-input">{{ t('contactsView.contactCard') }}</label>
+              <button class="icon-btn" :aria-label="t('contactsView.scanAdd')" :title="t('contactsView.scanAdd')" @click="scannerOpen = true"><UiIcon name="scan" /></button>
+            </div>
+            <UiField for-id="contact-card-input" :hint="t('contactsView.scanFillHint')">
               <textarea id="contact-card-input" v-model="ctx.addContactText.value" rows="7" :aria-label="t('contactsView.contactCard')" :placeholder="t('contactsView.pasteContactCard')" />
             </UiField>
             <UiActionGroup><button @click="addContact">{{ t('contactsView.addFriend') }}</button></UiActionGroup>
           </UiSection>
-          <UiListRow class="mobile-only-row" :aria-label="t('contactsView.scanAdd')" @click="scannerOpen = true">{{ t('contactsView.scanAdd') }}</UiListRow>
-          <UiCard v-if="scannedCard" class="scanned-contact-preview">
-            <small>{{ t('contactsView.scanResultTitle') }}</small>
-            <b>{{ scannedCard.displayName }}</b>
-            <small>{{ shortId(scannedCard.userId) }}</small>
-            <UiActionGroup>
-              <button @click="confirmScannedCard">{{ t('contactsView.addFriend') }}</button>
-              <button class="secondary" @click="scannedCard = null">{{ t('common.cancel') }}</button>
-            </UiActionGroup>
-          </UiCard>
         </div>
       </section>
 
