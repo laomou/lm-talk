@@ -1200,8 +1200,9 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   padding: 12px var(--sp-5);
 }
 .directory-row.primary-row {
-  border-radius: var(--r-md);
-  border-bottom: 0;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--c-line);
+  box-shadow: var(--shadow-1);
   margin-bottom: var(--sp-2);
 }
 .directory-row:hover { background: var(--c-surface-2); }
