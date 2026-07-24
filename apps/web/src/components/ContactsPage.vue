@@ -20,12 +20,13 @@ const keyword = ref('')
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
-type View = 'home' | 'friends' | 'search' | 'add' | 'detail'
+type View = 'home' | 'friends' | 'search' | 'add' | 'detail' | 'group-invites'
 const view = ref<View>('home')
 const scannerOpen = ref(false)
 const isSearchPage = computed(() => route.path === '/contacts/search')
 
 const requestCount = computed(() => props.ctx.visibleFriendRequests.value.length)
+const groupInviteCount = computed(() => props.ctx.groupInvites.value.length)
 const contactQuery = computed(() => keyword.value.trim().toLowerCase())
 const friendContacts = computed(() => props.ctx.contacts.value.filter((c: any) => c.state === 'Friend'))
 const visibleContacts = computed(() => {
@@ -105,6 +106,12 @@ function onQrScanned(value: string) {
             <span class="directory-icon">{{ t('contactsView.newFriendsIcon') }}</span>
             <span class="directory-main"><b>{{ t('contactsView.newFriends') }}</b></span>
             <em v-if="requestCount" class="request-badge">{{ requestCount }}</em>
+            <span class="chevron">›</span>
+          </button>
+          <button class="directory-row primary-row" :aria-label="t('contactsView.openGroupInvites')" @click="view = 'group-invites'">
+            <span class="directory-icon">{{ t('contactsView.groupInvitesIcon') }}</span>
+            <span class="directory-main"><b>{{ t('contactsView.groupInvites') }}</b></span>
+            <em v-if="groupInviteCount" class="request-badge">{{ groupInviteCount }}</em>
             <span class="chevron">›</span>
           </button>
 
@@ -193,6 +200,23 @@ function onQrScanned(value: string) {
             <UiActionGroup><button @click="addContact">{{ t('contactsView.addFriend') }}</button></UiActionGroup>
           </UiSection>
           <UiListRow class="mobile-only-row" :aria-label="t('contactsView.scanAdd')" @click="scannerOpen = true">{{ t('contactsView.scanAdd') }}</UiListRow>
+        </div>
+      </section>
+
+      <section v-else-if="view === 'group-invites'" class="detail-scroll">
+        <UiPageHeader :title="t('contactsView.groupInvites')" :back-label="t('contactsView.backToContacts')" @back="backHome" />
+        <div class="detail-body narrow">
+          <div v-if="ctx.groupInvites.value.length" class="request-grid">
+            <UiCard v-for="invite in ctx.groupInvites.value" :key="invite.invite_id" variant="inset">
+              <b>{{ invite.group_name || t('contactsView.groupNameFallback') }}</b>
+              <small>{{ t('contactsView.inviteFrom', { name: invite.inviter_display_name || invite.inviter_user_id || '?' }) }}</small>
+              <UiActionGroup>
+                <button @click="ctx.acceptGroupInvite(invite)">{{ t('contactsView.joinGroup') }}</button>
+                <button class="secondary danger" @click="ctx.ignoreGroupInvite(invite)">{{ t('contactsView.ignoreInvite') }}</button>
+              </UiActionGroup>
+            </UiCard>
+          </div>
+          <UiEmptyState v-else :title="t('contactsView.noGroupInvitesTitle')" :description="t('contactsView.noGroupInvitesDescription')" />
         </div>
       </section>
 
