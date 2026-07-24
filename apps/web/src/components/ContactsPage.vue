@@ -11,6 +11,7 @@ import UiField from './UiField.vue'
 import UiSection from './UiSection.vue'
 import UiActionGroup from './UiActionGroup.vue'
 import UiListGroup from './UiListGroup.vue'
+import UiNavRow from './UiNavRow.vue'
 import QrScanner from './QrScanner.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -102,18 +103,8 @@ function onQrScanned(value: string) {
         </header>
 
         <div class="contact-directory">
-          <button class="directory-row primary-row" :aria-label="t('contactsView.openNewFriends')" @click="view = 'friends'">
-            <span class="directory-icon">{{ t('contactsView.newFriendsIcon') }}</span>
-            <span class="directory-main"><b>{{ t('contactsView.newFriends') }}</b></span>
-            <em v-if="requestCount" class="request-badge">{{ requestCount }}</em>
-            <span class="chevron">›</span>
-          </button>
-          <button class="directory-row primary-row" :aria-label="t('contactsView.openGroupInvites')" @click="view = 'group-invites'">
-            <span class="directory-icon">{{ t('contactsView.groupInvitesIcon') }}</span>
-            <span class="directory-main"><b>{{ t('contactsView.groupInvites') }}</b></span>
-            <em v-if="groupInviteCount" class="request-badge">{{ groupInviteCount }}</em>
-            <span class="chevron">›</span>
-          </button>
+          <UiNavRow :icon="t('contactsView.newFriendsIcon')" :badge="requestCount || undefined" :aria-label="t('contactsView.openNewFriends')" @click="view = 'friends'">{{ t('contactsView.newFriends') }}</UiNavRow>
+          <UiNavRow :icon="t('contactsView.groupInvitesIcon')" :badge="groupInviteCount || undefined" :aria-label="t('contactsView.openGroupInvites')" @click="view = 'group-invites'">{{ t('contactsView.groupInvites') }}</UiNavRow>
 
           <template v-for="group in groupedContacts" :key="group.key">
             <h3 class="alpha-heading">{{ group.key }}</h3>
