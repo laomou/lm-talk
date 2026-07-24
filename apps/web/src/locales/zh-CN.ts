@@ -219,6 +219,7 @@ export default {
     scanAdd: '扫码添加',
     scanAddComing: '也可以使用“添加好友（粘贴名片）”。',
     scanHint: '将好友名片二维码放入取景框，或从相册选择二维码图片。',
+    scanFillHint: '可直接粘贴名片，也可点击右侧扫码填入。',
     scanImage: '从相册选择',
     scanningImage: '正在识别…',
     scanResultTitle: '扫码结果',

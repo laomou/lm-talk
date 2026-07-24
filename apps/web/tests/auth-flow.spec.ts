@@ -128,7 +128,7 @@ test('导入身份页需要身份文本并可返回登录页', async ({ page }) 
   await expect(page.getByRole('heading', { name: '登录' })).toBeVisible()
 })
 
-test('移动端可从二维码图片识别名片并在添加前确认', async ({ page }) => {
+test('移动端可从二维码图片识别名片并回填添加好友输入框', async ({ page }) => {
   const passphrase = 'playwright-qr-scan-passphrase'
   await page.goto('/#/register')
   await waitForWasm(page)
@@ -162,8 +162,6 @@ test('移动端可从二维码图片识别名片并在添加前确认', async ({
     buffer: Buffer.from(base64, 'base64'),
   })
   await expect(scanner).toBeHidden()
-  await expect(page.getByText('扫码结果', { exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: '添加好友' }).last()).toBeVisible()
-  await page.getByRole('button', { name: '取消' }).last().click()
-  await expect(page.getByText('扫码结果', { exact: true })).toBeHidden()
+  await expect(page.getByLabel('对方名片')).toHaveValue(/^lm-contact-card-v1:/)
+  await expect(page.getByRole('button', { name: '添加好友' })).toBeVisible()
 })

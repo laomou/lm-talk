@@ -5089,11 +5089,6 @@ async function addContact() {
   })
 }
 
-async function inspectContactCardForAdd(cardText: string) {
-  ensureUiTextSize('名片', cardText, MAX_CONTACT_CARD_BYTES)
-  return inspectContactCardInWorker<ContactInfo>(cardText)
-}
-
 
 async function addIncomingFriendRequest() {
   await runAsync('加入好友请求收件箱', async () => {
@@ -10956,7 +10951,7 @@ const appContext = {
   autoPublishPreKey, autoNodeSync, autoSelfMailboxSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodeStateFileSecurityText, nodeStateFileSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutMyContactCardUpdateToFriends, fanoutDeviceRevokeToFriends, myDeviceCertJson, myDeviceBackupText,
   myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
-  exportFullDataBackup, pushFullDataBackupToOwnMailbox, pushSelfSyncPackageToOwnMailbox, selfSyncStatusText, processedSelfSyncIds, processedSelfSyncRequestIds, selfSyncMissingRequestRecords, selfSyncRequestSentCount, selfSyncRequestHitCount, selfSyncRequestMissCount, selfSyncRecentPackages, resendLatestSelfSyncPackageToOwnMailbox, clearSelfSyncRecentPackages, lastSelfSyncPushedAt, lastSelfSyncMergedAt, lastSelfSyncSequenceSent, lastSelfSyncSequenceMerged, selfSyncGapCount, lastSelfSyncGapAt, lastSelfSyncMissingPreviousId, lastSelfSyncReceiptStatesSent, lastSelfSyncReceiptStatesMerged, totalSelfSyncReceiptStatesMerged, lastSelfSyncOutboxSummary, clearSelfSyncGapStats, repairSelfSyncGapNow, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, selfMailboxBackupStatusText, selfMailboxBackupMergePending, selfMailboxBackupMergeStatusText, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, inspectContactCardForAdd, incomingFriendRequestText,
+  exportFullDataBackup, pushFullDataBackupToOwnMailbox, pushSelfSyncPackageToOwnMailbox, selfSyncStatusText, processedSelfSyncIds, processedSelfSyncRequestIds, selfSyncMissingRequestRecords, selfSyncRequestSentCount, selfSyncRequestHitCount, selfSyncRequestMissCount, selfSyncRecentPackages, resendLatestSelfSyncPackageToOwnMailbox, clearSelfSyncRecentPackages, lastSelfSyncPushedAt, lastSelfSyncMergedAt, lastSelfSyncSequenceSent, lastSelfSyncSequenceMerged, selfSyncGapCount, lastSelfSyncGapAt, lastSelfSyncMissingPreviousId, lastSelfSyncReceiptStatesSent, lastSelfSyncReceiptStatesMerged, totalSelfSyncReceiptStatesMerged, lastSelfSyncOutboxSummary, clearSelfSyncGapStats, repairSelfSyncGapNow, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, selfMailboxBackupStatusText, selfMailboxBackupMergePending, selfMailboxBackupMergeStatusText, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
   addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, friendRequestRateRecords, friendRequestRateSummaryText, clearFriendRequestRateRecords, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
