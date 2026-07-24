@@ -228,6 +228,16 @@ function onQrScanned(value: string) {
             <small v-if="!ctx.contactAllKnownDevicesRevoked(ctx.activeContact.value)">{{ t('contactsView.secureSessionEstablished') }}</small>
             <small v-if="ctx.contactRevokedDeviceCount(ctx.activeContact.value)" class="danger-text">{{ t('contactsView.revokedDevices', { count: ctx.contactRevokedDeviceCount(ctx.activeContact.value) }) }}</small>
           </UiSection>
+          <UiSection v-if="ctx.activeContact.value.state === 'Friend'" :title="t('contactsView.readReceipts')">
+            <small>{{ t('contactsView.readReceiptsDescription') }}</small>
+            <UiActionGroup>
+              <button
+                class="secondary"
+                :aria-pressed="ctx.readReceiptsEnabledFor(ctx.activeContact.value) ? 'true' : 'false'"
+                @click="ctx.setActiveContactReadReceipts(ctx.readReceiptsEnabledFor(ctx.activeContact.value) ? 'disabled' : 'enabled')"
+              >{{ ctx.readReceiptsEnabledFor(ctx.activeContact.value) ? t('contactsView.readReceiptsEnabled') : t('contactsView.enableReadReceipts') }}</button>
+            </UiActionGroup>
+          </UiSection>
           <UiCard>
             <UiListGroup>
               <UiListRow @click="ctx.showQr(ctx.activeContact.value.contact_card_text, t('contactsView.friendIdentity'))">{{ t('contactsView.viewCard') }}</UiListRow>
