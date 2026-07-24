@@ -527,7 +527,7 @@ const currentPage = computed(() => route.path === '/diagnostics'
   ? 'diagnostics'
   : route.path.startsWith('/contacts')
     ? 'contacts'
-    : (route.path === '/me' || route.path === '/settings')
+    : (route.path.startsWith('/me') || route.path === '/settings')
       ? 'settings'
       : 'chat')
 type ToastKind = 'success' | 'error' | 'warning' | 'info'
@@ -1454,6 +1454,16 @@ const groupSenderDistributionFanoutItems = computed(() => {
 router.afterEach((to) => {
   if (to.path === '/import' && !keepBackupText) backupText.value = ''
   keepBackupText = false
+  if (to.path === '/chat') {
+    activePeerId.value = ''
+    activeGroupId.value = ''
+    return
+  }
+  const userId = typeof to.params.userId === 'string' ? decodeURIComponent(to.params.userId) : ''
+  if (to.path.startsWith('/chat/') && userId) {
+    if (contacts.value.some((contact) => contact.user_id === userId)) selectContact(userId)
+    else void router.replace('/chat')
+  }
 })
 
 onMounted(() => {
@@ -4513,6 +4523,25 @@ async function refreshMyContactCard() {
     if (identity.value) rememberLocalIdentity(identity.value.user_id, displayName.value || 'Me', backupText.value)
     persist()
     appendLog('✅ 我的 Contact Card 已更新，可重新发布/发送给好友')
+  })
+}
+
+async function saveMyProfile() {
+  await runAsync('保存个人资料', async () => {
+    if (!backupText.value || !passphrase.value) throw new Error('请先登录')
+    await exportMyCard()
+    if (identity.value) rememberLocalIdentity(identity.value.user_id, displayName.value || 'Me', backupText.value)
+    persist()
+    appendLog('✅ 个人资料已更新')
+    if (!nodeEnabled.value) {
+      appendLog('⚠️ 消息同步未开启，新的联系人资料将在下次开启同步后发布')
+      return
+    }
+    await ensureOwnContactCardDhtRecord()
+    if (friendContacts.value.length) {
+      appendLog(`正在向 ${friendContacts.value.length} 个好友同步新的联系人资料`)
+      await fanoutMyContactCardUpdateToFriends({ force: true })
+    }
   })
 }
 
@@ -10907,7 +10936,8 @@ function goChatHome() {
 }
 
 function goChatPage() {
-  void router.push('/chat')
+  const peerId = activePeerId.value
+  void router.push(peerId ? `/chat/${encodeURIComponent(peerId)}` : '/chat')
 }
 
 function goContactsPage() {
@@ -10918,8 +10948,12 @@ function goSettingsPage() {
   void router.push('/me')
 }
 
+function goMyProfilePage() {
+  void router.push('/me/profile')
+}
+
 function goSyncSettings() {
-  void router.push({ path: '/me', query: { section: 'sync' } })
+  void router.push('/me/sync')
 }
 
 
@@ -10929,7 +10963,7 @@ function goDiagnosticsPage(from?: 'me' | 'me-sync') {
 
 function goDiagnosticsBack() {
   if (route.query.from === 'me-sync') {
-    void router.push({ path: '/me', query: { section: 'sync' } })
+    void router.push('/me/sync')
     return
   }
   void router.push('/me')
@@ -10944,7 +10978,7 @@ function logout() {
   void router.push('/login')
 }
 const appContext = {
-  goChatPage, goChatHome, goContactsPage, goSettingsPage, goSyncSettings, goDiagnosticsPage, goDiagnosticsBack, showAlert, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
+  goChatPage, goChatHome, goContactsPage, goSettingsPage, goSyncSettings, goDiagnosticsPage, goDiagnosticsBack, showAlert, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, saveMyProfile, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, webVersionText,
   nodeControlUrl, nodeUrlList, nodeEntrySummaries, nodeSettingsSummaryText, nodeTokenStorageText, nodeTokenCount, nodeMissingRemoteTokenCount, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake, autoReadReceipts,
   runtimeStatusText, pwaStatusText, inAppRuntimePolicyText, refreshRuntimeStatus, refreshPwaStatus,
@@ -11012,7 +11046,7 @@ const appContext = {
 
   <main v-else class="app-shell" :class="{ 'in-chat-detail': currentPage === 'chat' && activePeerId }">
     <nav class="app-rail" :aria-label="$t('nav.me')">
-      <button class="rail-avatar" :title="$t('nav.me')" :aria-label="$t('nav.openMe')" :aria-current="currentPage === 'settings' || currentPage === 'diagnostics' ? 'page' : undefined" @click="goSettingsPage">
+      <button class="rail-avatar" :title="$t('me.profile')" :aria-label="$t('nav.openMe')" :aria-current="route.path === '/me/profile' ? 'page' : undefined" @click="goMyProfilePage">
         {{ (displayName || identity?.user_id || '?').slice(0, 1).toUpperCase() }}
       </button>
       <button class="rail-item" :class="{ active: currentPage === 'chat' }" :aria-current="currentPage === 'chat' ? 'page' : undefined" :aria-label="$t('nav.openChat')" @click="goChatHome">

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { avatarColor } from '../avatarColor'
 import UiPageHeader from './UiPageHeader.vue'
 import UiListRow from './UiListRow.vue'
@@ -21,10 +21,17 @@ const keyword = ref('')
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
-type View = 'home' | 'friends' | 'search' | 'add' | 'detail' | 'group-invites'
-const view = ref<View>('home')
 const scannerOpen = ref(false)
 const isSearchPage = computed(() => route.path === '/contacts/search')
+type View = 'home' | 'friends' | 'search' | 'add' | 'detail' | 'group-invites'
+const view = computed<View>(() => {
+  if (route.path === '/contacts/new-friends') return 'friends'
+  if (route.path === '/contacts/group-invites') return 'group-invites'
+  if (route.path === '/contacts/add') return 'add'
+  if (route.path === '/contacts/search') return 'search'
+  if (route.params.userId) return 'detail'
+  return 'home'
+})
 
 const requestCount = computed(() => props.ctx.visibleFriendRequests.value.length)
 const groupInviteCount = computed(() => props.ctx.groupInvites.value.length)
@@ -68,15 +75,16 @@ function shortId(value?: string) {
 }
 function openContact(userId: string) {
   props.ctx.selectContact(userId)
-  view.value = 'detail'
+  void router.push(`/contacts/${encodeURIComponent(userId)}`)
 }
 function backHome() {
-  view.value = 'home'
   void router.push('/contacts')
 }
 function addContact() {
   props.ctx.addContact()
-  if (!props.ctx.addContactText.value.trim() && props.ctx.activePeerId.value) view.value = 'detail'
+  if (!props.ctx.addContactText.value.trim() && props.ctx.activePeerId.value) {
+    void router.push(`/contacts/${encodeURIComponent(props.ctx.activePeerId.value)}`)
+  }
 }
 async function onQrScanned(value: string) {
   scannerOpen.value = false
@@ -86,6 +94,20 @@ async function onQrScanned(value: string) {
   }
   props.ctx.addContactText.value = value
 }
+
+watch(
+  () => route.params.userId,
+  (userId) => {
+    if (!userId) return
+    const decodedUserId = decodeURIComponent(String(userId))
+    if (props.ctx.contacts.value.some((contact: any) => contact.user_id === decodedUserId)) {
+      props.ctx.selectContact(decodedUserId)
+    } else {
+      void router.replace('/contacts')
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -97,13 +119,13 @@ async function onQrScanned(value: string) {
           <h2>{{ t('contactsView.title') }}</h2>
           <div class="header-actions icon-actions">
             <button class="icon-btn" :aria-label="t('contactsView.searchContacts')" :title="t('contactsView.searchContacts')" @click="router.push('/contacts/search')"><UiIcon name="search" /></button>
-            <button class="icon-btn" :aria-label="t('contactsView.addFriend')" :title="t('contactsView.addFriend')" @click="view = 'add'"><UiIcon name="add" /></button>
+            <button class="icon-btn" :aria-label="t('contactsView.addFriend')" :title="t('contactsView.addFriend')" @click="router.push('/contacts/add')"><UiIcon name="add" /></button>
           </div>
         </header>
 
         <div class="contact-directory">
-          <UiNavRow :icon="t('contactsView.newFriendsIcon')" :badge="requestCount || undefined" :aria-label="t('contactsView.openNewFriends')" @click="view = 'friends'">{{ t('contactsView.newFriends') }}</UiNavRow>
-          <UiNavRow :icon="t('contactsView.groupInvitesIcon')" :badge="groupInviteCount || undefined" :aria-label="t('contactsView.openGroupInvites')" @click="view = 'group-invites'">{{ t('contactsView.groupInvites') }}</UiNavRow>
+          <UiNavRow :icon="t('contactsView.newFriendsIcon')" :badge="requestCount || undefined" :aria-label="t('contactsView.openNewFriends')" @click="router.push('/contacts/new-friends')">{{ t('contactsView.newFriends') }}</UiNavRow>
+          <UiNavRow :icon="t('contactsView.groupInvitesIcon')" :badge="groupInviteCount || undefined" :aria-label="t('contactsView.openGroupInvites')" @click="router.push('/contacts/group-invites')">{{ t('contactsView.groupInvites') }}</UiNavRow>
 
           <template v-for="group in groupedContacts" :key="group.key">
             <h3 class="alpha-heading">{{ group.key }}</h3>

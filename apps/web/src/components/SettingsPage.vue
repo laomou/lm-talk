@@ -52,16 +52,31 @@ const retrySyncIssueText = computed(() => {
 })
 
 watch(
-  () => route.query.section,
-  (section) => {
-    if (section === 'sync') view.value = 'sync'
+  () => [route.path, route.query.section],
+  ([path, section]) => {
+    if (path === '/me/profile') {
+      view.value = 'profile'
+    } else if (path === '/me/backup') {
+      view.value = 'backup'
+    } else if (path === '/me/security') {
+      view.value = 'security'
+    } else if (path === '/me/sync') {
+      view.value = 'sync'
+    } else if (path === '/me/preferences') {
+      view.value = 'settings'
+    } else if (path === '/me/about') {
+      view.value = 'about'
+    } else if (section === 'sync') {
+      view.value = 'sync'
+    } else {
+      view.value = 'home'
+    }
   },
   { immediate: true },
 )
 
 function backHome() {
-  view.value = 'home'
-  if (route.query.section) void router.replace('/me')
+  void router.push('/me')
 }
 
 function saveSyncSettings() {
@@ -87,18 +102,18 @@ function changeLocale(event: Event) {
 
         <UiCard>
           <UiListGroup class="product-me-rows">
-            <UiListRow @click="view = 'profile'">{{ t('me.profile') }}</UiListRow>
-            <UiListRow @click="view = 'backup'">
+            <UiListRow @click="router.push('/me/profile')">{{ t('me.profile') }}</UiListRow>
+            <UiListRow @click="router.push('/me/backup')">
               {{ t('me.backup') }}
               <template #end><UiStatusBadge compact :tone="backupStatus.tone">{{ backupStatus.text }}</UiStatusBadge><span class="chevron">›</span></template>
             </UiListRow>
-            <UiListRow @click="view = 'security'">{{ t('me.security') }}</UiListRow>
-            <UiListRow @click="view = 'sync'">
+            <UiListRow @click="router.push('/me/security')">{{ t('me.security') }}</UiListRow>
+            <UiListRow @click="router.push('/me/sync')">
               {{ t('me.sync') }}
               <template #end><UiStatusBadge compact :tone="syncStatus.tone">{{ syncStatus.text }}</UiStatusBadge><span class="chevron">›</span></template>
             </UiListRow>
-            <UiListRow @click="view = 'settings'">{{ t('me.settings') }}</UiListRow>
-            <UiListRow @click="view = 'about'">{{ t('me.about') }}</UiListRow>
+            <UiListRow @click="router.push('/me/preferences')">{{ t('me.settings') }}</UiListRow>
+            <UiListRow @click="router.push('/me/about')">{{ t('me.about') }}</UiListRow>
           </UiListGroup>
         </UiCard>
 
@@ -112,8 +127,8 @@ function changeLocale(event: Event) {
         <UiSection :title="t('settingsView.myProfile')">
           <UiField :label="t('settingsView.displayName')" for-id="display-name-input">
           <div class="inline-field">
-            <input id="display-name-input" v-model="ctx.displayName.value" :aria-label="t('settingsView.displayName')" @change="ctx.refreshMyContactCard" />
-            <button @click="ctx.refreshMyContactCard">{{ t('settingsView.save') }}</button>
+            <input id="display-name-input" v-model="ctx.displayName.value" :aria-label="t('settingsView.displayName')" />
+            <button @click="ctx.saveMyProfile">{{ t('settingsView.save') }}</button>
           </div>
           </UiField>
           <UiActionGroup>
