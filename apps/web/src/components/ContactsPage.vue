@@ -108,9 +108,9 @@ function onQrScanned(value: string) {
             <em v-if="requestCount" class="request-badge">{{ requestCount }}</em>
             <span class="chevron">›</span>
           </button>
-          <button class="directory-row primary-row" aria-label="群聊邀请" @click="view = 'group-invites'">
-            <span class="directory-icon">👥</span>
-            <span class="directory-main"><b>群聊邀请</b></span>
+          <button class="directory-row primary-row" :aria-label="t('contactsView.openGroupInvites')" @click="view = 'group-invites'">
+            <span class="directory-icon">{{ t('contactsView.groupInvitesIcon') }}</span>
+            <span class="directory-main"><b>{{ t('contactsView.groupInvites') }}</b></span>
             <em v-if="groupInviteCount" class="request-badge">{{ groupInviteCount }}</em>
             <span class="chevron">›</span>
           </button>
@@ -204,19 +204,19 @@ function onQrScanned(value: string) {
       </section>
 
       <section v-else-if="view === 'group-invites'" class="detail-scroll">
-        <UiPageHeader title="群聊邀请" :back-label="t('contactsView.backToContacts')" @back="backHome" />
+        <UiPageHeader :title="t('contactsView.groupInvites')" :back-label="t('contactsView.backToContacts')" @back="backHome" />
         <div class="detail-body narrow">
           <div v-if="ctx.groupInvites.value.length" class="request-grid">
             <UiCard v-for="invite in ctx.groupInvites.value" :key="invite.invite_id" variant="inset">
-              <b>{{ invite.group_name || '未命名群聊' }}</b>
-              <small>来自 {{ invite.inviter_display_name || invite.inviter_user_id || '未知' }}</small>
+              <b>{{ invite.group_name || t('contactsView.groupNameFallback') }}</b>
+              <small>{{ t('contactsView.inviteFrom', { name: invite.inviter_display_name || invite.inviter_user_id || '?' }) }}</small>
               <UiActionGroup>
-                <button @click="ctx.acceptGroupInvite(invite)">加入</button>
-                <button class="secondary danger" @click="ctx.ignoreGroupInvite(invite)">忽略</button>
+                <button @click="ctx.acceptGroupInvite(invite)">{{ t('contactsView.joinGroup') }}</button>
+                <button class="secondary danger" @click="ctx.ignoreGroupInvite(invite)">{{ t('contactsView.ignoreInvite') }}</button>
               </UiActionGroup>
             </UiCard>
           </div>
-          <UiEmptyState v-else title="暂无群聊邀请" description="收到的群聊邀请会显示在这里。" />
+          <UiEmptyState v-else :title="t('contactsView.noGroupInvitesTitle')" :description="t('contactsView.noGroupInvitesDescription')" />
         </div>
       </section>
 
