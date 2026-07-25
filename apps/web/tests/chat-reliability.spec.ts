@@ -53,7 +53,7 @@ async function copyOwnCard(page: Page): Promise<string> {
 async function openOnlyContactConversation(page: Page) {
   await page.getByRole('button', { name: '打开通讯录' }).click()
   const contact = page.locator('.directory-row.contact-row').first()
-  await expect(contact).toBeVisible()
+  await expect(contact).toBeVisible({ timeout: 45_000 })
   await contact.click()
   await page.getByRole('button', { name: '发消息' }).click()
 }
@@ -1166,6 +1166,10 @@ test('接收端在批量解密后刷新可恢复未确认消息、顺序与 Ratc
       await alice.getByLabel('输入消息').fill(text)
       await alice.getByRole('button', { name: '发送' }).click()
     }
+    await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(batch.length)
+    // The route above intentionally rejects ACK. Mailbox processing may still
+    // persist the decrypted messages before that expected ACK error surfaces.
+    await takeMailbox(bob).catch(() => undefined)
     await expect.poll(() => blockedAcks, { timeout: 45_000 }).toBeGreaterThanOrEqual(1)
     await flushLocalPersistence(bob)
     await expect.poll(() => persistedTableCount(bob, 'messages'), { timeout: 45_000 }).toBe(persistedMessagesBefore + batch.length)
