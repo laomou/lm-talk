@@ -4667,6 +4667,17 @@ function canvasToDataUrl(canvas: HTMLCanvasElement, type: string, quality: numbe
   return canvas.toDataURL(type, quality)
 }
 
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => typeof reader.result === 'string'
+      ? resolve(reader.result)
+      : reject(new Error('头像文件读取失败'))
+    reader.onerror = () => reject(new Error('头像文件读取失败'))
+    reader.readAsDataURL(file)
+  })
+}
+
 async function imageFileToAvatarDataUrl(file: File): Promise<string> {
   const objectUrl = URL.createObjectURL(file)
   try {
@@ -4684,21 +4695,48 @@ async function imageFileToAvatarDataUrl(file: File): Promise<string> {
     if (!ctx) throw new Error('当前浏览器无法处理头像图片')
     ctx.clearRect(0, 0, width, height)
     ctx.drawImage(img, 0, 0, width, height)
+
+    // JPEG does not support transparency. Flatten it on white instead of
+    // letting transparent pixels become black in browsers that choose JPEG.
+    const jpegCanvas = document.createElement('canvas')
+    jpegCanvas.width = width
+    jpegCanvas.height = height
+    const jpegCtx = jpegCanvas.getContext('2d')
+    if (!jpegCtx) throw new Error('当前浏览器无法处理头像图片')
+    jpegCtx.fillStyle = '#ffffff'
+    jpegCtx.fillRect(0, 0, width, height)
+    jpegCtx.drawImage(img, 0, 0, width, height)
+
     const candidates: string[] = []
-    for (const quality of [0.86, 0.72, 0.58, 0.44]) candidates.push(canvasToDataUrl(canvas, 'image/jpeg', quality))
+    for (const quality of [0.86, 0.72, 0.58, 0.44]) candidates.push(canvasToDataUrl(jpegCanvas, 'image/jpeg', quality))
     candidates.push(canvasToDataUrl(canvas, 'image/png', 0.92))
     const best = candidates.sort((a, b) => utf8Bytes(a) - utf8Bytes(b))[0]
     ensureUiTextSize('头像', best, MAX_PROFILE_AVATAR_BYTES)
     return best
+  } catch {
+    // Some browsers cannot decode or draw every image format to canvas. Keep
+    // a small original file instead of rejecting a valid avatar unnecessarily.
+    const original = await readFileAsDataUrl(file).catch(() => '')
+    if (original && utf8Bytes(original) <= MAX_PROFILE_AVATAR_BYTES) return original
+    throw new Error(original ? t('appDialog.avatarTooLarge') : t('appDialog.avatarProcessingFailed'))
   } finally {
     URL.revokeObjectURL(objectUrl)
   }
 }
 
 async function setMyProfileAvatarFromFile(file: File) {
+  if (!file.type.startsWith('image/')) {
+    showAlert(t('appDialog.avatarProcessingFailed'), t('appDialog.avatarImageOnly'), 'error')
+    return
+  }
+  let dataUrl = ''
+  try {
+    dataUrl = await imageFileToAvatarDataUrl(file)
+  } catch (error) {
+    showAlert(t('appDialog.avatarProcessingFailed'), userFacingError(error), 'error')
+    return
+  }
   await runAsync('更新头像', async () => {
-    if (!file.type.startsWith('image/')) throw new Error('请选择图片文件')
-    const dataUrl = await imageFileToAvatarDataUrl(file)
     myProfileAvatarDataUrl.value = dataUrl
     persist()
     appendLog(`✅ 头像已更新并压缩到 ${formatBytes(utf8Bytes(dataUrl))}`)

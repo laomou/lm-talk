@@ -102,6 +102,7 @@ export default {
   clearBrowserCachesTitle: '清理浏览器缓存', clearBrowserCachesMessage: '清理浏览器缓存并注销旧版 Service Worker？这不会删除身份、联系人或聊天数据。', clearBrowserCachesSuccess: '已清理浏览器缓存',
   importFullDataBackupTitle: '导入身份与安全备份', importFullDataBackupMessage: '导入会覆盖当前身份的本地联系人、群组、安全会话和设置；当前聊天记录和待发送消息会保留。继续导入？', importFullDataBackupSuccess: '身份与安全备份已导入',
   mergeFullDataBackupFailed: '合并身份与安全备份失败', saveSyncSettingsTitle: '保存消息同步设置', loginFailed: '登录失败', retryInput: '重新输入',
+  avatarProcessingFailed: '头像处理失败', avatarImageOnly: '请选择图片文件。', avatarTooLarge: '头像压缩后仍超过 64KB，请选择更小的图片。',
   deleteLocalIdentityTitle: '删除本地身份', deleteLocalIdentityMessage: '删除本地身份「{name}」？这会删除本机保存的登录入口和该身份在本浏览器中的加密联系人、群聊、消息、待发送队列与设置。请确认你已保存身份文件和必要的数据备份。', deleteLocalIdentitySuccess: '已删除本地身份及本机数据',
   riskyContentTitle: '发送风险内容', externalLinkRisk: '消息中包含外部链接。请确认链接可信，避免钓鱼或泄露身份信息。', executableTextRisk: '消息中包含可执行/脚本文件名等高风险内容。请确认这是你想发送的内容。',
   unblockDeviceTitle: '解除设备撤销标记', unblockDeviceMessage: '仅在你确认该设备仍可信或撤销事件误操作时解除：{deviceId}。继续？',
