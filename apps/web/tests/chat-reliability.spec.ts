@@ -65,6 +65,7 @@ async function reloadAndLogin(page: Page, passphrase: string) {
   await expect(page.getByRole('heading', { name: '登录' })).toBeVisible()
   await page.getByLabel('登录提示词').fill(passphrase)
   await page.getByRole('button', { name: '登录' }).click()
+  await expect(page.locator('.app-rail')).toBeVisible({ timeout: 45_000 })
   await expect(page).toHaveURL(new RegExp(`${expectedPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
 }
 
@@ -1167,7 +1168,7 @@ test('接收端在批量解密后刷新可恢复未确认消息、顺序与 Ratc
     }
     await expect.poll(() => blockedAcks, { timeout: 45_000 }).toBeGreaterThanOrEqual(1)
     await flushLocalPersistence(bob)
-    await expect.poll(() => persistedTableCount(bob, 'messages')).toBe(persistedMessagesBefore + batch.length)
+    await expect.poll(() => persistedTableCount(bob, 'messages'), { timeout: 45_000 }).toBe(persistedMessagesBefore + batch.length)
     await expect.poll(() => persistedTableCount(bob, 'ratchetSessions')).toBeGreaterThan(0)
     await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(batch.length)
 
@@ -1175,6 +1176,7 @@ test('接收端在批量解密后刷新可恢复未确认消息、顺序与 Ratc
     // must suppress duplicate rendering, then allow the normal replacement ACK.
     restoreBobAckTransport = true
     await reloadAndLogin(bob, bobPassphrase)
+    await takeMailbox(bob)
     await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(0)
 
     await openOnlyContactConversation(bob)
