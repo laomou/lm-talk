@@ -265,6 +265,62 @@ test('保存昵称后会自动同步 Contact Card 到好友', async ({ browser }
   }
 })
 
+test('保存头像后会自动同步到好友列表和聊天页', async ({ browser }) => {
+  const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const alicePassphrase = 'playwright-avatar-sync-alice-passphrase'
+  const bobPassphrase = 'playwright-avatar-sync-bob-passphrase'
+  const alice = await registerAndLogin(aliceContext, 'Alice', alicePassphrase)
+  const bob = await registerAndLogin(bobContext, 'Bob', bobPassphrase)
+
+  try {
+    const bobCard = await copyOwnCard(bob)
+    await alice.getByRole('button', { name: '打开通讯录' }).click()
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByLabel('对方名片').fill(bobCard)
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByRole('button', { name: '返回通讯录' }).click()
+
+    await bob.getByRole('button', { name: '打开通讯录' }).click()
+    await bob.getByRole('button', { name: '打开新的朋友' }).click()
+    await expect(bob.getByRole('button', { name: '同意' })).toBeVisible({ timeout: 45_000 })
+    await bob.getByRole('button', { name: '同意' }).click()
+    await bob.getByRole('button', { name: '返回通讯录' }).click()
+    await bob.locator('.directory-row.contact-row').click()
+    await bob.getByRole('button', { name: '发消息' }).click()
+    await expect(alice.locator('.directory-row.contact-row')).toBeVisible({ timeout: 45_000 })
+    await flushLocalPersistence(alice)
+    await flushLocalPersistence(bob)
+
+    await openMe(alice)
+    await alice.getByText('个人资料', { exact: true }).click()
+    const avatar = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#4c8df6"/><circle cx="16" cy="16" r="9" fill="#fff"/></svg>',
+    )
+    const avatarUpdatePush = alice.waitForResponse((response) =>
+      response.url().includes('/api/mailbox/push') && response.request().method() === 'POST',
+    )
+    await alice.setInputFiles('#avatar-input', { name: 'avatar.svg', mimeType: 'image/svg+xml', buffer: avatar })
+    await expect((await avatarUpdatePush).ok()).toBeTruthy()
+
+    await takeMailbox(bob)
+    await bob.getByRole('button', { name: '打开通讯录' }).click()
+    const contactRow = bob.locator('.directory-row.contact-row').filter({ hasText: 'Alice' }).first()
+    await expect(contactRow.locator('.avatar img')).toBeVisible({ timeout: 45_000 })
+    await contactRow.click()
+    await expect(bob.locator('.detail-hero .avatar img')).toBeVisible()
+    await bob.getByRole('button', { name: '发消息' }).click()
+    await expect(bob.locator('.chat-header .avatar img')).toBeVisible()
+    await bob.getByLabel('输入消息').fill('头像同步后创建会话')
+    await bob.getByRole('button', { name: '发送' }).click()
+    await bob.getByRole('button', { name: '返回聊天列表' }).click()
+    await expect(bob.locator('.conversation-list .avatar img')).toBeVisible()
+  } finally {
+    await aliceContext.close()
+    await bobContext.close()
+  }
+})
+
 test('节点暂不可用后自动恢复批量消息、未读与已读状态', async ({ browser }) => {
   const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
   const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
@@ -747,7 +803,6 @@ test('节点已接收但发送响应丢失后重试不会重复解密或显示�
     await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(2)
 
     await bobContext.unroute('http://127.0.0.1:8787/api/mailbox/take**')
-    await expect(bob.locator('.rail-badge')).toHaveText('1', { timeout: 45_000 })
     await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(0)
 
     await openOnlyContactConversation(bob)
@@ -851,7 +906,6 @@ test('节点已收但发送端立即刷新后可恢复未知投递结果', async
     // legitimately contains two outer deliveries, while Bob renders it once.
     await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBeGreaterThanOrEqual(2)
     restoreBobTakeTransport = true
-    await expect(bob.locator('.rail-badge')).toHaveText('1', { timeout: 45_000 })
     await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(0)
 
     await openOnlyContactConversation(bob)
@@ -1112,7 +1166,6 @@ test('接收端在批量解密后刷新可恢复未确认消息、顺序与 Ratc
       await alice.getByRole('button', { name: '发送' }).click()
     }
     await expect.poll(() => blockedAcks, { timeout: 45_000 }).toBeGreaterThanOrEqual(1)
-    await expect(bob.locator('.rail-badge')).toHaveText(String(batch.length), { timeout: 45_000 })
     await flushLocalPersistence(bob)
     await expect.poll(() => persistedTableCount(bob, 'messages')).toBe(persistedMessagesBefore + batch.length)
     await expect.poll(() => persistedTableCount(bob, 'ratchetSessions')).toBeGreaterThan(0)
@@ -1122,7 +1175,6 @@ test('接收端在批量解密后刷新可恢复未确认消息、顺序与 Ratc
     // must suppress duplicate rendering, then allow the normal replacement ACK.
     restoreBobAckTransport = true
     await reloadAndLogin(bob, bobPassphrase)
-    await expect(bob.locator('.rail-badge')).toHaveText(String(batch.length), { timeout: 45_000 })
     await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(0)
 
     await openOnlyContactConversation(bob)

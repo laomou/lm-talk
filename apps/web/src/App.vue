@@ -62,6 +62,7 @@ type ContactInfo = {
   x25519_public_key: string
   device_count: number
   device_certs?: DeviceCertItem[]
+  avatar_data_url?: string
 }
 
 type ContactItem = ContactInfo & {
@@ -92,6 +93,7 @@ type ContactItem = ContactInfo & {
   last_contact_card_dht_found_at?: number
   fingerprint_verified_at?: number
   fingerprint_verified_note?: string
+  avatar_data_url?: string
 }
 
 type FilterLevel = 'Off' | 'Relaxed' | 'Standard' | 'Strict'
@@ -375,6 +377,7 @@ type PersistedState = {
   lastContactCardDhtAutoRefreshAt?: number
   lastContactCardDhtAutoRefreshError?: string
   contactCardDhtAutoRefreshHistory?: ContactCardDhtAutoRefreshRecord[]
+  myProfileAvatarDataUrl?: string
 }
 
 type IdentityAndSecurityBackupState = Omit<PersistedState, 'messages' | 'outbox'> & {
@@ -450,6 +453,7 @@ type PersistedMeta = {
   lastContactCardDhtAutoRefreshAt?: number
   lastContactCardDhtAutoRefreshError?: string
   contactCardDhtAutoRefreshHistory?: ContactCardDhtAutoRefreshRecord[]
+  myProfileAvatarDataUrl?: string
   schemaVersion: number
 }
 
@@ -469,6 +473,7 @@ type SelfSyncPackage = {
   myContactCardText?: string
   myDeviceCertJson?: string
   myDeviceId?: string
+  myProfileAvatarDataUrl?: string
   signature?: string
   dhtOperationHistory?: string[]
   processedSelfSyncIds?: string[]
@@ -586,6 +591,7 @@ let localStorageKeyCache: { owner: string; passphrase: string; keyId: string } |
 let keepBackupText = false
 const identity = ref<(IdentityOutput | RestoreOutput) | null>(null)
 const displayName = ref('Me')
+const myProfileAvatarDataUrl = ref('')
 const localIdentities = ref<LocalIdentityRecord[]>([])
 const selectedLocalIdentityId = ref('')
 const lastRegisteredIdentity = ref<LocalIdentityRecord | null>(null)
@@ -646,6 +652,7 @@ const processedMailboxIds = ref<ProcessedMailboxRecord[]>([])
 const mailboxFailedItems = ref<MailboxFailedItem[]>([])
 const CONTACT_CARD_UPDATE_ACK_STALE_MS = 24 * 60 * 60 * 1000
 const CONTACT_CARD_DHT_FRESH_MS = 7 * 24 * 60 * 60 * 1000
+const MAX_PROFILE_AVATAR_BYTES = 64 * 1024
 const contactCardUpdateFanoutRecords = ref<ContactCardUpdateFanoutRecord[]>([])
 let outboxRetryTimer: number | undefined
 let outboxRetryChain: Promise<void> = Promise.resolve()
@@ -1939,6 +1946,7 @@ async function encryptContactForStore(contact: ContactItem, key: string | null):
     display_name: contact.display_name ? await encryptLocalString(contact.display_name, key) : contact.display_name,
     contact_card_text: await encryptLocalString(contact.contact_card_text, key),
     block_reason: contact.block_reason ? await encryptLocalString(contact.block_reason, key) : contact.block_reason,
+    avatar_data_url: contact.avatar_data_url ? await encryptLocalString(contact.avatar_data_url, key) : contact.avatar_data_url,
   }
 }
 
@@ -1949,6 +1957,7 @@ async function decryptContactFromStore(contact: any, key: string | null): Promis
     display_name: contact.display_name ? await decryptLocalString(contact.display_name, key) : contact.display_name,
     contact_card_text: await decryptLocalString(contact.contact_card_text, key),
     block_reason: contact.block_reason ? await decryptLocalString(contact.block_reason, key) : contact.block_reason,
+    avatar_data_url: contact.avatar_data_url ? await decryptLocalString(contact.avatar_data_url, key) : contact.avatar_data_url,
   }
 }
 
@@ -2139,6 +2148,7 @@ function currentPersistedState(): PersistedState {
     myDeviceCertJson: myDeviceCertJson.value,
     myDeviceBackupText: myDeviceBackupText.value,
     myDeviceId: myDeviceId.value,
+    myProfileAvatarDataUrl: myProfileAvatarDataUrl.value || undefined,
     prekeyBundleText: prekeyBundleText.value,
     prekeyPrivateBundleJson: prekeyPrivateBundleJson.value,
     prekeySignedOneTimeRecordTexts: prekeySignedOneTimeRecordTexts.value,
@@ -2262,6 +2272,20 @@ function persistedMeta(): PersistedMeta {
     revokedDeviceIncomingDropCount: revokedDeviceIncomingDropCount.value,
     lastRevokedDeviceIncomingDropAt: lastRevokedDeviceIncomingDropAt.value ?? undefined,
     lastRevokedDeviceIncomingDropFrom: lastRevokedDeviceIncomingDropFrom.value,
+    perDeviceEnvelopeSentCount: perDeviceEnvelopeSentCount.value || undefined,
+    perDeviceEnvelopeReceivedCount: perDeviceEnvelopeReceivedCount.value || undefined,
+    perDeviceEnvelopeDropCount: perDeviceEnvelopeDropCount.value || undefined,
+    lastPerDeviceEnvelopeAt: lastPerDeviceEnvelopeAt.value ?? undefined,
+    lastPerDeviceEnvelopeDropAt: lastPerDeviceEnvelopeDropAt.value ?? undefined,
+    lastPerDeviceEnvelopeDropReason: lastPerDeviceEnvelopeDropReason.value || undefined,
+    contactCardUpdateFanoutCount: contactCardUpdateFanoutCount.value || undefined,
+    contactCardUpdateFanoutSkipCount: contactCardUpdateFanoutSkipCount.value || undefined,
+    lastContactCardUpdateFanoutAt: lastContactCardUpdateFanoutAt.value ?? undefined,
+    contactCardDhtAutoRefreshCount: contactCardDhtAutoRefreshCount.value || undefined,
+    lastContactCardDhtAutoRefreshAt: lastContactCardDhtAutoRefreshAt.value ?? undefined,
+    lastContactCardDhtAutoRefreshError: lastContactCardDhtAutoRefreshError.value || undefined,
+    contactCardDhtAutoRefreshHistory: contactCardDhtAutoRefreshHistory.value,
+    myProfileAvatarDataUrl: myProfileAvatarDataUrl.value || undefined,
     schemaVersion: 3,
   }
 }
@@ -2527,6 +2551,7 @@ async function writeStateToTables(state: PersistedState, options: { preserveConv
   myDeviceCertJson.value = state.myDeviceCertJson ?? ''
   myDeviceBackupText.value = state.myDeviceBackupText ?? ''
   myDeviceId.value = state.myDeviceId ?? ''
+  myProfileAvatarDataUrl.value = state.myProfileAvatarDataUrl ?? ''
   prekeyBundleText.value = state.prekeyBundleText ?? ''
   prekeyPrivateBundleJson.value = state.prekeyPrivateBundleJson ? await decryptLocalString(state.prekeyPrivateBundleJson, key) : ''
   prekeySignedOneTimeRecordTexts.value = state.prekeySignedOneTimeRecordTexts ?? []
@@ -2598,6 +2623,7 @@ async function loadStateFromTables(): Promise<boolean> {
   myDeviceCertJson.value = meta.myDeviceCertJson ?? ''
   myDeviceBackupText.value = meta.myDeviceBackupText ?? ''
   myDeviceId.value = meta.myDeviceId ?? ''
+  myProfileAvatarDataUrl.value = meta.myProfileAvatarDataUrl ?? ''
   const key = await localStorageCryptoKey()
   prekeyBundleText.value = meta.prekeyBundleText ?? ''
   prekeyPrivateBundleJson.value = meta.prekeyPrivateBundleJson ? await decryptLocalString(meta.prekeyPrivateBundleJson, key) : ''
@@ -2752,6 +2778,7 @@ function resetAccountScopedState() {
   myDeviceCertJson.value = ''
   myDeviceBackupText.value = ''
   myDeviceId.value = ''
+  myProfileAvatarDataUrl.value = ''
   prekeyBundleText.value = ''
   prekeyPrivateBundleJson.value = ''
   prekeySignedOneTimeRecordTexts.value = []
@@ -3055,6 +3082,7 @@ function selfSyncSigningPayload(pkg: SelfSyncPackage): string {
     myContactCardText: pkg.myContactCardText,
     myDeviceCertJson: pkg.myDeviceCertJson,
     myDeviceId: pkg.myDeviceId,
+    myProfileAvatarDataUrl: pkg.myProfileAvatarDataUrl,
     dhtOperationHistory: pkg.dhtOperationHistory,
     processedSelfSyncIds: pkg.processedSelfSyncIds,
     unverifiedIncomingDropCount: pkg.unverifiedIncomingDropCount,
@@ -3172,6 +3200,7 @@ async function currentSelfSyncPackage(): Promise<SelfSyncPackage> {
     myContactCardText: myContactCardText.value || undefined,
     myDeviceCertJson: myDeviceCertJson.value || undefined,
     myDeviceId: myDeviceId.value || undefined,
+    myProfileAvatarDataUrl: myProfileAvatarDataUrl.value || undefined,
     dhtOperationHistory: nodeDhtOperationHistory.value,
     processedSelfSyncIds: processedSelfSyncIds.value,
     unverifiedIncomingDropCount: unverifiedIncomingDropCount.value,
@@ -3289,6 +3318,7 @@ async function applySelfSyncPackage(pkg: SelfSyncPackage) {
   lastSelfSyncReceiptStatesMerged.value = receiptStatesMerged
   totalSelfSyncReceiptStatesMerged.value += receiptStatesMerged
   const ownDeviceCertsChanged = await mergeOwnDeviceCertsFromSelfSync(pkg)
+  if (!myProfileAvatarDataUrl.value && pkg.myProfileAvatarDataUrl) myProfileAvatarDataUrl.value = pkg.myProfileAvatarDataUrl
   nodeDhtOperationHistory.value = [...new Set([...(pkg.dhtOperationHistory ?? []), ...nodeDhtOperationHistory.value])].slice(0, DHT_OPERATION_HISTORY_MAX_RECORDS)
   unverifiedIncomingDropCount.value = Math.max(unverifiedIncomingDropCount.value, Number(pkg.unverifiedIncomingDropCount ?? 0))
   revokedDeviceIncomingDropCount.value = Math.max(revokedDeviceIncomingDropCount.value, Number(pkg.revokedDeviceIncomingDropCount ?? 0))
@@ -3536,6 +3566,7 @@ function mergeContactDeviceAndTrustState(current: ContactItem[], incoming: Conta
       fingerprint_verified_at: contact.fingerprint_verified_at ?? other.fingerprint_verified_at,
       fingerprint_verified_note: contact.fingerprint_verified_note ?? other.fingerprint_verified_note,
       mailbox_hint_url: contact.mailbox_hint_url ?? other.mailbox_hint_url,
+      avatar_data_url: contact.avatar_data_url ?? other.avatar_data_url,
       last_prekey_dht_found_at: Math.max(contact.last_prekey_dht_found_at ?? 0, other.last_prekey_dht_found_at ?? 0) || contact.last_prekey_dht_found_at,
       last_mailbox_hint_dht_found_at: Math.max(contact.last_mailbox_hint_dht_found_at ?? 0, other.last_mailbox_hint_dht_found_at ?? 0) || contact.last_mailbox_hint_dht_found_at,
     }
@@ -3615,6 +3646,7 @@ async function importFullDataBackupMerge() {
     if (!myDeviceCertJson.value && state.myDeviceCertJson) myDeviceCertJson.value = state.myDeviceCertJson
     if (!myDeviceBackupText.value && state.myDeviceBackupText) myDeviceBackupText.value = state.myDeviceBackupText
     if (!myDeviceId.value && state.myDeviceId) myDeviceId.value = state.myDeviceId
+    if (!myProfileAvatarDataUrl.value && state.myProfileAvatarDataUrl) myProfileAvatarDataUrl.value = state.myProfileAvatarDataUrl
     if (!prekeyBundleText.value && state.prekeyBundleText) prekeyBundleText.value = state.prekeyBundleText
     if (!prekeyPrivateBundleJson.value && typeof state.prekeyPrivateBundleJson === 'string') prekeyPrivateBundleJson.value = state.prekeyPrivateBundleJson
     if (prekeySignedOneTimeRecordTexts.value.length === 0 && state.prekeySignedOneTimeRecordTexts) prekeySignedOneTimeRecordTexts.value = state.prekeySignedOneTimeRecordTexts
@@ -4135,6 +4167,24 @@ function messageProtocolIdFromEnvelope(envelope: string): string | undefined {
   } catch { return undefined }
 }
 
+function profileUpdateIdFromDeliveryPayload(payload: string): string | undefined {
+  try {
+    const parsed = JSON.parse(payload) as { type?: string; update_id?: string }
+    if ((parsed?.type === 'lm-profile-update-v1' || parsed?.type === 'lm-profile-avatar-update-v1') && parsed.update_id) return `profile-update:${parsed.update_id}`
+  } catch { /* not JSON */ }
+  return undefined
+}
+
+
+function profileUpdatePayloadType(payload: string): 'avatar' | 'legacy-profile' | '' {
+  try {
+    const parsed = JSON.parse(payload) as { type?: string }
+    if (parsed?.type === 'lm-profile-avatar-update-v1') return 'avatar'
+    if (parsed?.type === 'lm-profile-update-v1') return 'legacy-profile'
+  } catch { /* not JSON */ }
+  return ''
+}
+
 function protocolMessageIdFromDeliveryPayload(payload: string): string | undefined {
   const directId = messageProtocolIdFromEnvelope(payload)
   if (directId) return directId
@@ -4178,6 +4228,49 @@ function contactCardUpdateId(cardText: string): string {
   return `contact-card-update:${identity.value?.user_id || 'unknown'}:${(hash >>> 0).toString(16)}`
 }
 
+
+type ProfileAvatarUpdatePackage = {
+  type: 'lm-profile-avatar-update-v1'
+  version: 1
+  update_id: string
+  created_at: number
+  from_user_id: string
+  identity_public_key: string
+  avatar_data_url?: string
+  contact_card_text: string
+  signature?: string
+}
+
+function profileAvatarUpdateSigningPayload(pkg: ProfileAvatarUpdatePackage): string {
+  return JSON.stringify({
+    type: pkg.type,
+    version: pkg.version,
+    update_id: pkg.update_id,
+    created_at: pkg.created_at,
+    from_user_id: pkg.from_user_id,
+    identity_public_key: pkg.identity_public_key,
+    avatar_data_url: pkg.avatar_data_url,
+    contact_card_text: pkg.contact_card_text,
+  })
+}
+
+async function currentProfileAvatarUpdatePackage(): Promise<ProfileAvatarUpdatePackage> {
+  if (!identity.value) throw new Error('请先登录')
+  if (!myContactCardText.value.trim()) await exportMyCard()
+  const pkg: ProfileAvatarUpdatePackage = {
+    type: 'lm-profile-avatar-update-v1',
+    version: 1,
+    update_id: newId(),
+    created_at: Date.now(),
+    from_user_id: identity.value.user_id,
+    identity_public_key: identity.value.identity_public_key,
+    avatar_data_url: myProfileAvatarDataUrl.value || undefined,
+    contact_card_text: myContactCardText.value,
+  }
+  pkg.signature = await signIdentityTextInWorker(backupText.value, passphrase.value, profileAvatarUpdateSigningPayload(pkg))
+  return pkg
+}
+
 function rememberContactCardUpdateFanout(peerUserId: string, updateId: string, status: 'sent' | 'queued') {
   const existing = contactCardUpdateFanoutRecords.value.find((item) => item.peer_user_id === peerUserId && item.update_id === updateId)
   if (existing) {
@@ -4203,7 +4296,7 @@ const contactCardUpdatePendingAckCount = computed(() => contactCardUpdateFanoutR
 const contactCardUpdateStaleAckCount = computed(() => contactCardUpdateFanoutRecords.value.filter((item) => contactCardUpdateRecordIsStale(item)).length)
 
 function applyDeliveryAck(messageId: string, fromUserId: string) {
-  if (messageId.startsWith('contact-card-update:') && markContactCardUpdateAck(messageId, fromUserId)) return
+  if ((messageId.startsWith('contact-card-update:') || messageId.startsWith('profile-update:')) && markContactCardUpdateAck(messageId, fromUserId)) return
   const msg = messages.value.find((m) => m.direction === 'out' && m.protocol_message_id === messageId && m.peer_user_id === fromUserId)
   if (msg) {
     if (msg.status !== 'read') msg.status = 'delivered'
@@ -4336,6 +4429,10 @@ function markOutboxSent(item: OutboxItem) {
 function outboundPayloadBypassesStrictSendPolicy(kind: OutboxItem['kind'], payload: string): boolean {
   if (kind === 'contact-update') return true
   if (payload.startsWith('lm-contact-card-v1:')) return true
+  try {
+    const parsed = JSON.parse(payload) as { type?: string }
+    if (parsed?.type === 'lm-profile-update-v1') return true
+  } catch { /* not JSON */ }
   try {
     const parsed = JSON.parse(payload) as { type?: string }
     return parsed?.type === 'lm-device-revoke-v1'
@@ -4550,6 +4647,44 @@ async function saveMyProfile() {
     if (friendContacts.value.length) {
       appendLog(`正在向 ${friendContacts.value.length} 个好友同步新的联系人资料`)
       await fanoutMyContactCardUpdateToFriends({ force: true })
+      appendLog(`正在向 ${friendContacts.value.length} 个好友同步新的头像`)
+      await fanoutMyProfileAvatarUpdateToFriends({ force: true })
+    }
+  })
+}
+
+function imageFileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error || new Error('头像读取失败'))
+    reader.readAsDataURL(file)
+  })
+}
+
+async function setMyProfileAvatarFromFile(file: File) {
+  await runAsync('更新头像', async () => {
+    if (!file.type.startsWith('image/')) throw new Error('请选择图片文件')
+    const dataUrl = await imageFileToDataUrl(file)
+    ensureUiTextSize('头像', dataUrl, MAX_PROFILE_AVATAR_BYTES)
+    myProfileAvatarDataUrl.value = dataUrl
+    persist()
+    appendLog('✅ 头像已更新')
+    if (nodeEnabled.value && friendContacts.value.length) {
+      appendLog(`正在向 ${friendContacts.value.length} 个好友同步新的头像`)
+      await fanoutMyProfileAvatarUpdateToFriends({ force: true })
+    }
+  })
+}
+
+async function removeMyProfileAvatar() {
+  await runAsync('移除头像', async () => {
+    myProfileAvatarDataUrl.value = ''
+    persist()
+    appendLog('✅ 头像已移除')
+    if (nodeEnabled.value && friendContacts.value.length) {
+      appendLog(`正在向 ${friendContacts.value.length} 个好友同步新的头像`)
+      await fanoutMyProfileAvatarUpdateToFriends({ force: true })
     }
   })
 }
@@ -4593,6 +4728,7 @@ function mergeContactCard(existing: ContactItem | undefined, info: ContactInfo, 
     fingerprint_verified_at: existing?.fingerprint_verified_at,
     fingerprint_verified_note: existing?.fingerprint_verified_note,
     device_certs: info.device_certs ?? contactCardDeviceCerts(cardText),
+    avatar_data_url: existing?.avatar_data_url,
   }
 }
 
@@ -4678,6 +4814,17 @@ async function sendContactCardUpdateToContact(contact: ContactItem): Promise<'se
   return result
 }
 
+async function sendProfileAvatarUpdateToContact(contact: ContactItem): Promise<'sent' | 'mailbox' | 'queued' | 'failed'> {
+  const pkg = await currentProfileAvatarUpdatePackage()
+  const payload = JSON.stringify(pkg)
+  const updateId = `profile-avatar-update:${pkg.update_id}`
+  const result = await deliverPayloadToContact(contact, payload, '联系人头像更新', 'contact-update')
+  const status = result === 'sent' || result === 'mailbox' ? 'sent' : 'queued'
+  rememberContactCardUpdateFanout(contact.user_id, updateId, status)
+  if (result === 'queued' || result === 'failed') queueOutboxItem(contact, payload, undefined, 'contact-update')
+  return result
+}
+
 async function retryStaleContactCardUpdateAcksRaw(): Promise<{ stale: number; retried: number }> {
   const stale = contactCardUpdateFanoutRecords.value.filter((record) => contactCardUpdateRecordIsStale(record))
   if (!stale.length) return { stale: 0, retried: 0 }
@@ -4730,8 +4877,24 @@ async function fanoutMyContactCardUpdateToFriends(options: { force?: boolean } =
   })
 }
 
-async function applyContactCardUpdateFromMailbox(cardText: string, sender: ContactItem) {
+
+async function fanoutMyProfileAvatarUpdateToFriends(options: { force?: boolean } = {}) {
+  await runAsync('向好友分发头像更新', async () => {
+    let sent = 0
+    let queued = 0
+    for (const contact of friendContacts.value) {
+      const result = await sendProfileAvatarUpdateToContact(contact)
+      if (result === 'sent' || result === 'mailbox') sent += 1
+      else queued += 1
+    }
+    appendLog(`头像更新分发完成：已投递 ${sent}，queued ${queued}`)
+    persist()
+  })
+}
+
+async function applyContactCardTextUpdate(cardText: string, sender: ContactItem, avatarDataUrl?: string) {
   ensureUiTextSize('联系人设备证书更新', cardText, MAX_CONTACT_CARD_BYTES)
+  if (avatarDataUrl) ensureUiTextSize('头像', avatarDataUrl, MAX_PROFILE_AVATAR_BYTES)
   const info = await inspectContactCardInWorker<ContactInfo>(cardText)
   if (info.user_id !== sender.user_id) throw new Error('联系人更新 user_id 与发送者不匹配')
   // Validate the signed Contact Card through the same wasm import path used
@@ -4741,10 +4904,39 @@ async function applyContactCardUpdateFromMailbox(cardText: string, sender: Conta
   const index = contacts.value.findIndex((c) => c.user_id === info.user_id)
   const existing = index >= 0 ? contacts.value[index] : sender
   const merged = mergeContactCard(existing, info, cardText)
+  merged.avatar_data_url = avatarDataUrl ?? existing?.avatar_data_url
   if (index >= 0) contacts.value[index] = merged
   else contacts.value.push({ ...merged, state: 'Friend' })
-  appendLog(`✅ 已合并 ${merged.display_name || merged.user_id} 的联系人设备证书更新`)
+  appendLog(`✅ 已合并 ${merged.display_name || merged.user_id} 的联系人资料更新`)
   persist()
+}
+
+async function applyProfileAvatarUpdateFromMailbox(payloadText: string, sender: ContactItem) {
+  ensureUiTextSize('联系人头像更新', payloadText, MAX_SIGNAL_BYTES)
+  const pkg = JSON.parse(payloadText) as ProfileAvatarUpdatePackage
+  if (pkg.type !== 'lm-profile-avatar-update-v1' || pkg.version !== 1) throw new Error('联系人头像更新版本不支持')
+  if (pkg.from_user_id !== sender.user_id) throw new Error('联系人头像更新 user_id 与发送者不匹配')
+  if (pkg.identity_public_key !== sender.identity_public_key) throw new Error('联系人头像更新 identity_public_key 与已有联系人不一致')
+  if (!pkg.signature || !await verifyIdentityTextSignatureInWorker(sender.identity_public_key, profileAvatarUpdateSigningPayload(pkg), pkg.signature)) throw new Error('联系人头像更新签名无效')
+  const index = contacts.value.findIndex((c) => c.user_id === sender.user_id)
+  if (index >= 0) {
+    contacts.value[index].avatar_data_url = pkg.avatar_data_url || ''
+  } else {
+    sender.avatar_data_url = pkg.avatar_data_url || ''
+  }
+  appendLog(`✅ 已合并 ${sender.display_name || sender.user_id} 的头像更新`)
+  persist()
+}
+
+async function applyProfileUpdateFromMailbox(payloadText: string, sender: ContactItem) {
+  ensureUiTextSize('联系人资料更新', payloadText, MAX_SIGNAL_BYTES)
+  const pkg = JSON.parse(payloadText) as ProfileAvatarUpdatePackage & { display_name?: string }
+  if (pkg.type !== 'lm-profile-avatar-update-v1' || pkg.version !== 1) throw new Error('联系人资料更新版本不支持')
+  await applyContactCardTextUpdate(pkg.contact_card_text, sender, pkg.avatar_data_url || '')
+}
+
+async function applyContactCardUpdateFromMailbox(cardText: string, sender: ContactItem) {
+  await applyContactCardTextUpdate(cardText, sender)
 }
 
 async function applyDeviceRevokeToActiveContact() {
@@ -9933,9 +10125,12 @@ async function handleMailboxPayload(item: any): Promise<{ handled: boolean; deli
     appendLog(`mailbox 消息来自${reason}`)
     return { handled: false, deliveryId, reason }
   }
-  if (normalizedKind === 'contactupdate' || ciphertext.startsWith('lm-contact-card-v1:')) {
-    await applyContactCardUpdateFromMailbox(ciphertext, sender)
-    void sendDeliveryAck(sender, contactCardUpdateId(ciphertext), `contact-update-${sender.user_id}`, deliveryId)
+  const profileUpdateType = profileUpdatePayloadType(ciphertext)
+  if (normalizedKind === 'contactupdate' || ciphertext.startsWith('lm-contact-card-v1:') || profileUpdateType) {
+    if (profileUpdateType === 'avatar') await applyProfileAvatarUpdateFromMailbox(ciphertext, sender)
+    else if (profileUpdateType === 'legacy-profile') await applyProfileUpdateFromMailbox(ciphertext, sender)
+    else await applyContactCardUpdateFromMailbox(ciphertext, sender)
+    void sendDeliveryAck(sender, profileUpdateIdFromDeliveryPayload(ciphertext) || contactCardUpdateId(ciphertext), `contact-update-${sender.user_id}`, deliveryId)
     return { handled: true, deliveryId, event: 'contact-update' }
   }
 
@@ -10077,11 +10272,12 @@ function mailboxEventSummaryText(events: MailboxEventKind[]): string {
   return parts.length ? parts.join('，') : `已处理 ${events.length} 条`
 }
 
-function mailboxDedupeIds(deliveryId?: string, messageId?: string, protocolMessageId?: string): string[] {
+function mailboxDedupeIds(deliveryId?: string, messageId?: string, protocolMessageId?: string, profileUpdateId?: string): string[] {
   return [
     deliveryId,
     messageId ? `message:${messageId}` : '',
     protocolMessageId ? `protocol:${protocolMessageId}` : '',
+    profileUpdateId ? `profile:${profileUpdateId}` : '',
   ]
     .map((id) => (id || '').trim())
     .filter(Boolean)
@@ -10194,8 +10390,10 @@ async function processMailboxMessages(messagesFromNode: any[]): Promise<string[]
     // loses the HTTP response, then be retried inside a new MailboxMessage
     // wrapper. A delivery id or outer mailbox message id alone cannot identify
     // that replay; use the signed direct-envelope protocol id as well.
-    const protocolMessageId = protocolMessageIdFromDeliveryPayload(String(message?.ciphertext ?? ''))
-    const dedupeIds = mailboxDedupeIds(deliveryId, messageId, protocolMessageId)
+    const ciphertext = String(message?.ciphertext ?? '')
+    const protocolMessageId = protocolMessageIdFromDeliveryPayload(ciphertext)
+    const profileUpdateId = profileUpdateIdFromDeliveryPayload(ciphertext)
+    const dedupeIds = mailboxDedupeIds(deliveryId, messageId, protocolMessageId, profileUpdateId)
     if (hasProcessedMailboxIds(dedupeIds)) {
       duplicate += 1
       if (resendAckForDuplicateMailboxMessage(message, deliveryId)) duplicateAckResent += 1
@@ -10997,7 +11195,7 @@ const appContext = {
   runtimeStatusText, pwaStatusText, inAppRuntimePolicyText, refreshRuntimeStatus, refreshPwaStatus,
   autoPublishPreKey, autoNodeSync, autoSelfMailboxSync, nodeControlStatus, nodeHealthSummaryText, nodeStateDbSecurityText, nodeStateDbSecurityLevel, nodeStateFileSecurityText, nodeStateFileSecurityLevel, nodePeerHealthStatusText, nodePeerHealthRiskLevel, nodePeerHealthPeers, resetDhtPeerHealth, secureSessionOfferText, secureSessionResponseText, incomingSecureSessionText,
   secureSessionStatusText, createSecureSessionOfferText, applySecureSessionOfferText, applySecureSessionResponseText, recreateActiveRatchetSession, retrySecureSessionForActiveContact, clearActiveSecureSessionError, clearSecureSessionRawText, createMyDeviceCert, fanoutMyContactCardUpdateToFriends, fanoutDeviceRevokeToFriends, myDeviceCertJson, myDeviceBackupText,
-  myDeviceId, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
+  myDeviceId, myProfileAvatarDataUrl, setMyProfileAvatarFromFile, removeMyProfileAvatar, revokeDeviceId, revokeReason, createDeviceRevokeText, deviceRevokeText, dataBackupText,
   exportFullDataBackup, pushFullDataBackupToOwnMailbox, pushSelfSyncPackageToOwnMailbox, selfSyncStatusText, processedSelfSyncIds, processedSelfSyncRequestIds, selfSyncMissingRequestRecords, selfSyncRequestSentCount, selfSyncRequestHitCount, selfSyncRequestMissCount, selfSyncRecentPackages, resendLatestSelfSyncPackageToOwnMailbox, clearSelfSyncRecentPackages, lastSelfSyncPushedAt, lastSelfSyncMergedAt, lastSelfSyncSequenceSent, lastSelfSyncSequenceMerged, selfSyncGapCount, lastSelfSyncGapAt, lastSelfSyncMissingPreviousId, lastSelfSyncReceiptStatesSent, lastSelfSyncReceiptStatesMerged, totalSelfSyncReceiptStatesMerged, lastSelfSyncOutboxSummary, clearSelfSyncGapStats, repairSelfSyncGapNow, importFullDataBackup, importFullDataBackupMerge, mergeSelfMailboxBackupNow, downloadText, lastFullDataBackupAt, lastSelfMailboxBackupPushedAt, lastSelfMailboxBackupReceivedAt, lastSelfMailboxBackupMergedAt, selfMailboxBackupStatusText, selfMailboxBackupMergePending, selfMailboxBackupMergeStatusText, fullDataBackupFreshnessText, fullDataBackupFreshnessLevel, addContactText, addContact, incomingFriendRequestText,
   addIncomingFriendRequest, friendRequests, visibleFriendRequests, quarantinedFriendRequests, friendRequestRateRecords, friendRequestRateSummaryText, clearFriendRequestRateRecords, acceptInboxRequest, rejectInboxRequest, rejectAllInboxRequests, blockAllInboxRequests,
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
@@ -11059,8 +11257,9 @@ const appContext = {
 
   <main v-else class="app-shell" :class="{ 'in-chat-detail': currentPage === 'chat' && activePeerId }">
     <nav class="app-rail" :aria-label="$t('nav.me')">
-      <button class="rail-avatar" :title="$t('me.profile')" :aria-label="$t('nav.openMe')" :aria-current="route.path === '/me/profile' ? 'page' : undefined" @click="goMyProfilePage">
-        {{ (displayName || identity?.user_id || '?').slice(0, 1).toUpperCase() }}
+      <button class="rail-avatar" :class="{ 'has-image': Boolean(myProfileAvatarDataUrl) }" :title="$t('me.profile')" :aria-label="$t('nav.openMe')" :aria-current="route.path === '/me/profile' ? 'page' : undefined" @click="goMyProfilePage">
+        <img v-if="myProfileAvatarDataUrl" :src="myProfileAvatarDataUrl" alt="" />
+        <span v-else>{{ (displayName || identity?.user_id || '?').slice(0, 1).toUpperCase() }}</span>
       </button>
       <button class="rail-item" :class="{ active: currentPage === 'chat' }" :aria-current="currentPage === 'chat' ? 'page' : undefined" :aria-label="$t('nav.openChat')" @click="goChatHome">
         <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.9-.9L3 21l1.9-5.6A8.5 8.5 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5z"/></svg>
