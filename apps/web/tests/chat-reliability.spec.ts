@@ -7,7 +7,7 @@ async function waitForWasm(page: Page) {
 }
 
 async function openMe(page: Page) {
-  await page.locator('.rail-avatar[aria-label="打开我的设置"]').click()
+  await page.locator('.app-rail .rail-item[aria-label="打开我的设置"]').click()
 }
 
 async function registerAndLogin(context: BrowserContext, name: string, passphrase: string): Promise<Page> {
@@ -39,8 +39,7 @@ async function registerAndLogin(context: BrowserContext, name: string, passphras
 }
 
 async function copyOwnCard(page: Page): Promise<string> {
-  await openMe(page)
-  await page.getByText('个人资料', { exact: true }).click()
+  await page.locator('.rail-avatar[aria-label="打开我的设置"]').click()
   await page.getByRole('button', { name: '我的名片' }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()
@@ -72,6 +71,12 @@ async function reloadAndLogin(page: Page, passphrase: string) {
 async function flushLocalPersistence(page: Page) {
   await page.evaluate(async () => {
     await (window as typeof window & { flushPersistForTests?: () => Promise<void> }).flushPersistForTests?.()
+  })
+}
+
+async function takeMailbox(page: Page) {
+  await page.evaluate(async () => {
+    await (window as typeof window & { takeMailboxForTests?: () => Promise<void> }).takeMailboxForTests?.()
   })
 }
 
@@ -150,6 +155,7 @@ test('双用户批量消息在刷新重连后保持顺序、去重、未读与�
     await expect.poll(() => persistedTableCount(bob, 'ratchetSessions')).toBeGreaterThan(0)
     await reloadAndLogin(alice, alicePassphrase)
     await reloadAndLogin(bob, bobPassphrase)
+    await bob.getByRole('button', { name: '返回聊天列表' }).click()
 
     // Compose while offline, then refresh and log in again. The durable outbox
     // must survive and resume automatically when sync is restored.
@@ -210,6 +216,55 @@ test('双用户批量消息在刷新重连后保持顺序、去重、未读与�
   }
 })
 
+test('保存昵称后会自动同步 Contact Card 到好友', async ({ browser }) => {
+  const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const alicePassphrase = 'playwright-profile-sync-alice-passphrase'
+  const bobPassphrase = 'playwright-profile-sync-bob-passphrase'
+  const alice = await registerAndLogin(aliceContext, 'Alice', alicePassphrase)
+  const bob = await registerAndLogin(bobContext, 'Bob', bobPassphrase)
+
+  try {
+    const bobCard = await copyOwnCard(bob)
+    await alice.getByRole('button', { name: '打开通讯录' }).click()
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByLabel('对方名片').fill(bobCard)
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByRole('button', { name: '返回通讯录' }).click()
+
+    await bob.getByRole('button', { name: '打开通讯录' }).click()
+    await bob.getByRole('button', { name: '打开新的朋友' }).click()
+    await expect(bob.getByRole('button', { name: '同意' })).toBeVisible({ timeout: 45_000 })
+    await bob.getByRole('button', { name: '同意' }).click()
+    await bob.getByRole('button', { name: '返回通讯录' }).click()
+    await bob.locator('.directory-row.contact-row').click()
+    await bob.getByRole('button', { name: '发消息' }).click()
+    await expect(alice.locator('.directory-row.contact-row')).toBeVisible({ timeout: 45_000 })
+    await flushLocalPersistence(alice)
+    await flushLocalPersistence(bob)
+    await expect.poll(() => persistedTableCount(alice, 'ratchetSessions')).toBeGreaterThan(0)
+    await expect.poll(() => persistedTableCount(bob, 'ratchetSessions')).toBeGreaterThan(0)
+
+    await openMe(alice)
+    await alice.getByText('个人资料', { exact: true }).click()
+    await alice.getByLabel('显示名').fill('Alice 更新后昵称')
+    const contactUpdatePush = alice.waitForResponse((response) =>
+      response.url().includes('/api/mailbox/push') && response.request().method() === 'POST',
+    )
+    await alice.getByRole('button', { name: '保存' }).click()
+    await expect((await contactUpdatePush).ok()).toBeTruthy()
+    await takeMailbox(bob)
+    await bob.getByRole('button', { name: '打开通讯录' }).click()
+    await expect(bob.locator('.directory-row.contact-row').getByText('Alice 更新后昵称', { exact: true }))
+      .toBeVisible({ timeout: 45_000 })
+    await bob.locator('.directory-row.contact-row').click()
+    await expect(bob.getByRole('heading', { name: 'Alice 更新后昵称' })).toBeVisible()
+  } finally {
+    await aliceContext.close()
+    await bobContext.close()
+  }
+})
+
 test('节点暂不可用后自动恢复批量消息、未读与已读状态', async ({ browser }) => {
   const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
   const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
@@ -248,7 +303,7 @@ test('节点暂不可用后自动恢复批量消息、未读与已读状态', as
 
     // Keep Bob out of the conversation so incoming messages remain unread until
     // the user intentionally opens the chat.
-    await bob.locator('.rail-avatar[aria-label="打开我的设置"]').click()
+    await openMe(bob)
     await openOnlyContactConversation(alice)
     // Simulate a connection refusal only on Alice's transport to the real
     // lm_node. No mailbox response, IndexedDB data, Ratchet state, or message
@@ -343,7 +398,7 @@ test('接收端 ACK 中断后自动去重并清空 Mailbox', async ({ browser })
     // remain unread. Keep ACK unavailable until the refresh: the next real
     // mailbox take after login must receive duplicate deliveries, dedupe
     // locally, then acknowledge them.
-    await bob.locator('.rail-avatar[aria-label="打开我的设置"]').click()
+    await openMe(bob)
     await bobContext.route('http://127.0.0.1:8787/api/mailbox/ack', async (route) => {
       ackAttempts += 1
       await route.abort('connectionrefused')
@@ -433,7 +488,7 @@ test('接收端长轮询中断后无需刷新即可恢复收取消息', async ({
     // Keep the route installed and restore its real transport in-place: removing
     // a context route while a long-poll retry is being scheduled has proved
     // timing-sensitive in CI.
-    await bob.locator('.rail-avatar[aria-label="打开我的设置"]').click()
+    await openMe(bob)
     await bobContext.route('http://127.0.0.1:8787/api/mailbox/take**', async (route) => {
       const url = new URL(route.request().url())
       if (restoreBobTransport) {
@@ -540,7 +595,7 @@ test('双向并发消息在短暂断网恢复后保持 Ratchet 顺序与回执�
     // Keep Bob outside the conversation so Alice's recovered batch is observed
     // as unread. Wait until Alice has a genuinely interrupted long-poll before
     // sending, rather than merely blocking a future request.
-    await bob.locator('.rail-avatar[aria-label="打开我的设置"]').click()
+    await openMe(bob)
     await aliceContext.route('http://127.0.0.1:8787/api/**', async (route) => {
       interruptedAliceRequests += 1
       await route.abort('connectionrefused')
@@ -564,7 +619,7 @@ test('双向并发消息在短暂断网恢复后保持 Ratchet 顺序与回执�
           await bob.getByLabel('输入消息').fill(text)
           await bob.getByRole('button', { name: '发送' }).click()
         }
-        await bob.locator('.rail-avatar[aria-label="打开我的设置"]').click()
+        await openMe(bob)
       })(),
     ])
     await flushLocalPersistence(alice)
@@ -660,7 +715,7 @@ test('节点已接收但发送响应丢失后重试不会重复解密或显示�
     // Hold Bob's real mailbox take requests so we can observe both node
     // deliveries. The response to Alice's first push is lost only after
     // route.fetch() has let the real lm_node accept it.
-    await bob.locator('.rail-avatar[aria-label="打开我的设置"]').click()
+    await openMe(bob)
     await expect(bob).toHaveURL(/#\/me$/)
     await bobContext.route('http://127.0.0.1:8787/api/mailbox/take**', async (route) => {
       blockedBobTakes += 1
@@ -758,7 +813,7 @@ test('节点已收但发送端立即刷新后可恢复未知投递结果', async
     // The node accepts the first encrypted envelope, then Alice loses the
     // response and immediately refreshes. Neither mailbox data nor IndexedDB
     // is mocked: only the HTTP response and Bob's receive transport are held.
-    await bob.locator('.rail-avatar[aria-label="打开我的设置"]').click()
+    await openMe(bob)
     await bobContext.route('http://127.0.0.1:8787/api/mailbox/take**', async (route) => {
       if (restoreBobTakeTransport) {
         await route.continue()
@@ -865,7 +920,7 @@ test('Mailbox 积压超过单页时可分页恢复全部 Ratchet 消息', async 
     // Keep the receiver offline at the mailbox transport layer. Alice still
     // sends normally through the real node, producing 51 encrypted records:
     // one more than the web client's real 50-message page size.
-    await bob.locator('.rail-avatar[aria-label="打开我的设置"]').click()
+    await openMe(bob)
     await bobContext.route('http://127.0.0.1:8787/api/mailbox/take**', async (route) => {
       const url = new URL(route.request().url())
       if (restoreBobTakeTransport) {
@@ -948,7 +1003,7 @@ test('发送端在加密投递失败后刷新可按顺序恢复 Ratchet 消息',
     await reloadAndLogin(alice, alicePassphrase)
     await reloadAndLogin(bob, bobPassphrase)
 
-    await bob.locator('.rail-avatar[aria-label="打开我的设置"]').click()
+    await openMe(bob)
     await expect(bob).toHaveURL(/#\/me$/)
     await openOnlyContactConversation(alice)
     await aliceContext.route('http://127.0.0.1:8787/api/**', async (route) => {
@@ -1040,7 +1095,7 @@ test('接收端在批量解密后刷新可恢复未确认消息、顺序与 Ratc
     // The node has delivered the encrypted batch, but the acknowledgement is
     // unavailable. Bob must first persist decrypted messages, dedupe records,
     // unread state, and the advanced Ratchet session before a refresh.
-    await bob.locator('.rail-avatar[aria-label="打开我的设置"]').click()
+    await openMe(bob)
     await bobContext.route('http://127.0.0.1:8787/api/mailbox/ack', async (route) => {
       if (restoreBobAckTransport) {
         await route.continue()

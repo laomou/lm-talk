@@ -1451,19 +1451,23 @@ const groupSenderDistributionFanoutItems = computed(() => {
   }
 })
 
-router.afterEach((to) => {
-  if (to.path === '/import' && !keepBackupText) backupText.value = ''
-  keepBackupText = false
+function syncChatRouteContact(to = route) {
   if (to.path === '/chat') {
     activePeerId.value = ''
     activeGroupId.value = ''
     return
   }
   const userId = typeof to.params.userId === 'string' ? decodeURIComponent(to.params.userId) : ''
-  if (to.path.startsWith('/chat/') && userId) {
-    if (contacts.value.some((contact) => contact.user_id === userId)) selectContact(userId)
-    else void router.replace('/chat')
-  }
+  if (!to.path.startsWith('/chat/') || !userId) return
+  if (!loggedIn.value) return
+  if (contacts.value.some((contact) => contact.user_id === userId)) selectContact(userId)
+  else void router.replace('/chat')
+}
+
+router.afterEach((to) => {
+  if (to.path === '/import' && !keepBackupText) backupText.value = ''
+  keepBackupText = false
+  syncChatRouteContact(to)
 })
 
 onMounted(() => {
@@ -2497,6 +2501,7 @@ if (typeof window !== 'undefined') {
   ;(window as any).mergeMessagesForTests = mergeMessagesForState
   ;(window as any).mergeContactDeviceAndTrustStateForTests = mergeContactDeviceAndTrustState
   ;(window as any).contactAllKnownDevicesRevokedForTests = contactAllKnownDevicesRevoked
+  ;(window as any).takeMailboxForTests = takeMailboxFromNodeNow
 }
 
 async function writeStateToTables(state: PersistedState, options: { preserveConversationData?: boolean } = {}) {
@@ -4351,7 +4356,10 @@ async function deliverPayloadToContact(contact: ContactItem, payload: string, la
     }
   }
   try {
-    if (dc && dc.readyState === 'open' && activePeerId.value === contact.user_id && kind !== 'group-fanout') {
+    // Contact Card updates change durable contact metadata. Always route them
+    // through Mailbox so the update is retained and acknowledged even when a
+    // transient WebRTC channel is open.
+    if (dc && dc.readyState === 'open' && activePeerId.value === contact.user_id && kind !== 'group-fanout' && kind !== 'contact-update') {
       sendRtcText(payload, label)
       return 'sent'
     }
@@ -4492,6 +4500,7 @@ async function restoreAndEnter() {
     rememberLocalIdentity(out.user_id, displayName.value, backupText.value)
     persist()
     await router.push(destination)
+    syncChatRouteContact()
     void afterLoginAutomation()
     appendLog('✅ 登录')
   } catch (e) {
@@ -4725,7 +4734,10 @@ async function applyContactCardUpdateFromMailbox(cardText: string, sender: Conta
   ensureUiTextSize('联系人设备证书更新', cardText, MAX_CONTACT_CARD_BYTES)
   const info = await inspectContactCardInWorker<ContactInfo>(cardText)
   if (info.user_id !== sender.user_id) throw new Error('联系人更新 user_id 与发送者不匹配')
-  await importContactInWorker(cardText, 'MailboxContactUpdate')
+  // Validate the signed Contact Card through the same wasm import path used
+  // for regular imports. "MailboxContactUpdate" is an application event, not
+  // a core TrustLevel value.
+  await importContactInWorker(cardText, 'Imported')
   const index = contacts.value.findIndex((c) => c.user_id === info.user_id)
   const existing = index >= 0 ? contacts.value[index] : sender
   const merged = mergeContactCard(existing, info, cardText)
@@ -7662,6 +7674,7 @@ async function clearActiveConversation() {
     messages.value = messages.value.filter((m) => m.peer_user_id !== peerId)
     activePeerId.value = ''
   }
+  void router.push('/chat')
   appendLog(`已删除会话：${name}`)
   persist()
 }
