@@ -378,6 +378,7 @@ type PersistedState = {
   lastContactCardDhtAutoRefreshError?: string
   contactCardDhtAutoRefreshHistory?: ContactCardDhtAutoRefreshRecord[]
   myProfileAvatarDataUrl?: string
+  profileSyncPending?: boolean
 }
 
 type IdentityAndSecurityBackupState = Omit<PersistedState, 'messages' | 'outbox'> & {
@@ -454,6 +455,7 @@ type PersistedMeta = {
   lastContactCardDhtAutoRefreshError?: string
   contactCardDhtAutoRefreshHistory?: ContactCardDhtAutoRefreshRecord[]
   myProfileAvatarDataUrl?: string
+  profileSyncPending?: boolean
   schemaVersion: number
 }
 
@@ -652,7 +654,14 @@ const processedMailboxIds = ref<ProcessedMailboxRecord[]>([])
 const mailboxFailedItems = ref<MailboxFailedItem[]>([])
 const profileSaving = ref(false)
 const profileAvatarSaving = ref(false)
+const profileSyncing = ref(false)
+const profileSyncPending = ref(false)
 const profileUpdateStatus = ref<{ text: string; tone: 'success' | 'warning' | 'neutral' } | null>(null)
+const profileSyncRetryAvailable = computed(() => Boolean(
+  profileSyncPending.value
+  && nodeEnabled.value
+  && friendContacts.value.length,
+))
 const CONTACT_CARD_UPDATE_ACK_STALE_MS = 24 * 60 * 60 * 1000
 const CONTACT_CARD_DHT_FRESH_MS = 7 * 24 * 60 * 60 * 1000
 const MAX_PROFILE_AVATAR_BYTES = 64 * 1024
@@ -2212,6 +2221,7 @@ function currentPersistedState(): PersistedState {
     lastContactCardDhtAutoRefreshAt: lastContactCardDhtAutoRefreshAt.value ?? undefined,
     lastContactCardDhtAutoRefreshError: lastContactCardDhtAutoRefreshError.value || undefined,
     contactCardDhtAutoRefreshHistory: contactCardDhtAutoRefreshHistory.value,
+    profileSyncPending: profileSyncPending.value || undefined,
   }
 }
 
@@ -2290,6 +2300,7 @@ function persistedMeta(): PersistedMeta {
     lastContactCardDhtAutoRefreshError: lastContactCardDhtAutoRefreshError.value || undefined,
     contactCardDhtAutoRefreshHistory: contactCardDhtAutoRefreshHistory.value,
     myProfileAvatarDataUrl: myProfileAvatarDataUrl.value || undefined,
+    profileSyncPending: profileSyncPending.value || undefined,
     schemaVersion: 3,
   }
 }
@@ -2556,6 +2567,7 @@ async function writeStateToTables(state: PersistedState, options: { preserveConv
   myDeviceBackupText.value = state.myDeviceBackupText ?? ''
   myDeviceId.value = state.myDeviceId ?? ''
   myProfileAvatarDataUrl.value = state.myProfileAvatarDataUrl ?? ''
+  profileSyncPending.value = Boolean(state.profileSyncPending)
   prekeyBundleText.value = state.prekeyBundleText ?? ''
   prekeyPrivateBundleJson.value = state.prekeyPrivateBundleJson ? await decryptLocalString(state.prekeyPrivateBundleJson, key) : ''
   prekeySignedOneTimeRecordTexts.value = state.prekeySignedOneTimeRecordTexts ?? []
@@ -2628,6 +2640,7 @@ async function loadStateFromTables(): Promise<boolean> {
   myDeviceBackupText.value = meta.myDeviceBackupText ?? ''
   myDeviceId.value = meta.myDeviceId ?? ''
   myProfileAvatarDataUrl.value = meta.myProfileAvatarDataUrl ?? ''
+  profileSyncPending.value = Boolean(meta.profileSyncPending)
   const key = await localStorageCryptoKey()
   prekeyBundleText.value = meta.prekeyBundleText ?? ''
   prekeyPrivateBundleJson.value = meta.prekeyPrivateBundleJson ? await decryptLocalString(meta.prekeyPrivateBundleJson, key) : ''
@@ -2783,6 +2796,7 @@ function resetAccountScopedState() {
   myDeviceBackupText.value = ''
   myDeviceId.value = ''
   myProfileAvatarDataUrl.value = ''
+  profileSyncPending.value = false
   prekeyBundleText.value = ''
   prekeyPrivateBundleJson.value = ''
   prekeySignedOneTimeRecordTexts.value = []
@@ -4644,12 +4658,13 @@ async function saveMyProfile() {
     if (!backupText.value || !passphrase.value) throw new Error('请先登录')
     await exportMyCard()
     if (identity.value) rememberLocalIdentity(identity.value.user_id, displayName.value || 'Me', backupText.value)
-    persist()
     appendLog('✅ 个人资料已更新')
     profileUpdateStatus.value = { text: t('settingsView.profileSaved'), tone: 'success' }
     if (!nodeEnabled.value) {
       appendLog('⚠️ 消息同步未开启，新的联系人资料将在下次开启同步后发布')
+      profileSyncPending.value = true
       profileUpdateStatus.value = { text: t('settingsView.profileSavedPendingSync'), tone: 'warning' }
+      persist()
       return
     }
     try {
@@ -4660,17 +4675,40 @@ async function saveMyProfile() {
         appendLog(`正在向 ${friendContacts.value.length} 个好友同步新的头像`)
         if (!await fanoutMyProfileAvatarUpdateToFriends({ force: true })) throw new Error('头像同步失败')
       }
+      profileSyncPending.value = false
       profileUpdateStatus.value = { text: t('settingsView.profileSavedAndSynced'), tone: 'success' }
     } catch (error) {
       appendLog(`⚠️ 个人资料已保存，本次同步未完成：${userFacingError(error)}`)
+      profileSyncPending.value = true
       profileUpdateStatus.value = { text: t('settingsView.profileSavedPendingSync'), tone: 'warning' }
     }
+    persist()
   } catch (error) {
     appendLog(`❌ 保存个人资料: ${userFacingError(error)}`)
     profileUpdateStatus.value = { text: t('settingsView.profileSaveFailed'), tone: 'warning' }
     showAlert(t('appDialog.profileSaveFailed'), userFacingError(error), 'error')
   } finally {
     profileSaving.value = false
+  }
+}
+
+async function retryMyProfileSync() {
+  if (profileSyncing.value || !profileSyncRetryAvailable.value) return
+  profileSyncing.value = true
+  try {
+    await ensureOwnContactCardDhtRecord()
+    if (!await fanoutMyContactCardUpdateToFriends({ force: true })) throw new Error('联系人资料同步失败')
+    if (!await fanoutMyProfileAvatarUpdateToFriends({ force: true })) throw new Error('头像同步失败')
+    appendLog('✅ 个人资料已同步')
+    profileSyncPending.value = false
+    profileUpdateStatus.value = { text: t('settingsView.profileSavedAndSynced'), tone: 'success' }
+  } catch (error) {
+    appendLog(`⚠️ 个人资料同步未完成：${userFacingError(error)}`)
+    profileSyncPending.value = true
+    profileUpdateStatus.value = { text: t('settingsView.profileSavedPendingSync'), tone: 'warning' }
+  } finally {
+    persist()
+    profileSyncing.value = false
   }
 }
 
@@ -4762,20 +4800,27 @@ async function setMyProfileAvatarFromFile(file: File) {
   }
   try {
     myProfileAvatarDataUrl.value = dataUrl
-    persist()
     appendLog(`✅ 头像已更新并压缩到 ${formatBytes(utf8Bytes(dataUrl))}`)
     profileUpdateStatus.value = { text: t('settingsView.avatarSaved'), tone: 'success' }
     if (nodeEnabled.value && friendContacts.value.length) {
       try {
         appendLog(`正在向 ${friendContacts.value.length} 个好友同步新的头像`)
         if (!await fanoutMyProfileAvatarUpdateToFriends({ force: true })) throw new Error('头像同步失败')
+        profileSyncPending.value = false
         profileUpdateStatus.value = { text: t('settingsView.avatarSavedAndSynced'), tone: 'success' }
       } catch (error) {
         appendLog(`⚠️ 头像已保存，本次同步未完成：${userFacingError(error)}`)
+        profileSyncPending.value = true
         profileUpdateStatus.value = { text: t('settingsView.avatarSavedPendingSync'), tone: 'warning' }
       }
+    } else if (nodeEnabled.value) {
+      profileSyncPending.value = false
+    } else if (!nodeEnabled.value) {
+      profileSyncPending.value = true
+      profileUpdateStatus.value = { text: t('settingsView.avatarSavedPendingSync'), tone: 'warning' }
     }
   } finally {
+    persist()
     profileAvatarSaving.value = false
   }
 }
@@ -4788,16 +4833,24 @@ async function removeMyProfileAvatar() {
   profileUpdateStatus.value = null
   try {
     myProfileAvatarDataUrl.value = ''
-    persist()
     appendLog('✅ 头像已移除')
     profileUpdateStatus.value = { text: t('settingsView.avatarRemoved'), tone: 'success' }
     if (nodeEnabled.value && friendContacts.value.length) {
       appendLog(`正在向 ${friendContacts.value.length} 个好友同步新的头像`)
       if (!await fanoutMyProfileAvatarUpdateToFriends({ force: true })) {
+        profileSyncPending.value = true
         profileUpdateStatus.value = { text: t('settingsView.avatarSavedPendingSync'), tone: 'warning' }
+      } else {
+        profileSyncPending.value = false
       }
+    } else if (nodeEnabled.value) {
+      profileSyncPending.value = false
+    } else if (!nodeEnabled.value) {
+      profileSyncPending.value = true
+      profileUpdateStatus.value = { text: t('settingsView.avatarSavedPendingSync'), tone: 'warning' }
     }
   } finally {
+    persist()
     profileAvatarSaving.value = false
   }
 }
@@ -11310,7 +11363,7 @@ function logout() {
   void router.push('/login')
 }
 const appContext = {
-  goChatPage, goChatHome, goContactsPage, goSettingsPage, goSyncSettings, goDiagnosticsPage, goDiagnosticsBack, showAlert, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, saveMyProfile, profileSaving, profileAvatarSaving, profileUpdateStatus, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
+  goChatPage, goChatHome, goContactsPage, goSettingsPage, goSyncSettings, goDiagnosticsPage, goDiagnosticsBack, showAlert, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, saveMyProfile, retryMyProfileSync, profileSaving, profileAvatarSaving, profileSyncing, profileSyncPending, profileSyncRetryAvailable, profileUpdateStatus, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, webVersionText,
   nodeControlUrl, nodeUrlList, nodeEntrySummaries, nodeSettingsSummaryText, nodeTokenStorageText, nodeTokenCount, nodeMissingRemoteTokenCount, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake, autoReadReceipts,
   runtimeStatusText, pwaStatusText, inAppRuntimePolicyText, refreshRuntimeStatus, refreshPwaStatus,

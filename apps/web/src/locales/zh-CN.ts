@@ -59,6 +59,8 @@ export default {
     avatarSavedAndSynced: '头像已保存并同步',
     avatarSavedPendingSync: '头像已保存，等待下次同步',
     avatarRemoved: '头像已移除',
+    syncProfileNow: '立即同步',
+    syncingProfile: '同步中…',
     myCard: '我的名片',
     identityBackup: '身份备份',
     identityBackupDescription: '身份文件和提示词缺一不可；任意一项丢失都无法恢复这个身份。',

@@ -21,7 +21,10 @@ const router = useRouter()
 const { locale, t } = useI18n()
 const showSyncServiceEditor = ref(false)
 const showDataBackupEditor = ref(false)
-const profileStatus = computed(() => props.ctx.profileUpdateStatus.value)
+const profileStatus = computed(() => props.ctx.profileUpdateStatus.value
+  ?? (props.ctx.profileSyncPending.value
+    ? { text: t('settingsView.profileSavedPendingSync'), tone: 'warning' as const }
+    : null))
 const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.nodeEntrySummaries.value.length === 0)
 const mailboxInboxErrorLines = computed(() => props.ctx.mailboxInboxErrorText.value
   .split('\n')
@@ -152,6 +155,7 @@ function onAvatarSelected(event: Event) {
           </UiField>
           <UiStatusBadge v-if="profileStatus" :tone="profileStatus.tone">{{ profileStatus.text }}</UiStatusBadge>
           <UiActionGroup>
+            <button v-if="ctx.profileSyncRetryAvailable.value" class="secondary" :disabled="ctx.profileSyncing.value" @click="ctx.retryMyProfileSync">{{ ctx.profileSyncing.value ? t('settingsView.syncingProfile') : t('settingsView.syncProfileNow') }}</button>
             <button class="secondary" @click="ctx.showQr(ctx.myContactCardText.value, t('settingsView.myCard'))">{{ t('settingsView.myCard') }}</button>
           </UiActionGroup>
         </UiSection>
