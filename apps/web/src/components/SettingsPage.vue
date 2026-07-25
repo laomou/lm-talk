@@ -87,6 +87,13 @@ function saveSyncSettings() {
 function changeLocale(event: Event) {
   setLocale((event.target as HTMLSelectElement).value as SupportedLocale)
 }
+
+function onAvatarSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (file) void props.ctx.setMyProfileAvatarFromFile(file)
+  input.value = ''
+}
 </script>
 
 <template>
@@ -132,11 +139,11 @@ function changeLocale(event: Event) {
             <button @click="ctx.saveMyProfile">{{ t('settingsView.save') }}</button>
           </div>
           </UiField>
-          <UiField :label="t('settingsView.avatar')">
+          <UiField :label="t('settingsView.avatar')" :hint="t('settingsView.avatarHint')">
             <div class="avatar-upload-row">
               <UiAvatar size="large" :src="ctx.myProfileAvatarDataUrl.value" :name="ctx.displayName.value" :seed="ctx.identity.value?.user_id" />
               <div class="avatar-upload-actions">
-                <input id="avatar-input" class="sr-only" type="file" accept="image/*" @change="(e) => { const file = (e.target as HTMLInputElement).files?.[0]; if (file) ctx.setMyProfileAvatarFromFile(file) }" />
+                <input id="avatar-input" class="sr-only" type="file" accept="image/*" @change="onAvatarSelected" />
                 <label for="avatar-input" class="secondary buttonlike">{{ t('settingsView.changeAvatar') }}</label>
                 <button class="secondary" :disabled="!ctx.myProfileAvatarDataUrl.value" @click="ctx.removeMyProfileAvatar">{{ t('settingsView.removeAvatar') }}</button>
               </div>

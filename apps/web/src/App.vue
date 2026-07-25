@@ -653,6 +653,7 @@ const mailboxFailedItems = ref<MailboxFailedItem[]>([])
 const CONTACT_CARD_UPDATE_ACK_STALE_MS = 24 * 60 * 60 * 1000
 const CONTACT_CARD_DHT_FRESH_MS = 7 * 24 * 60 * 60 * 1000
 const MAX_PROFILE_AVATAR_BYTES = 64 * 1024
+const PROFILE_AVATAR_DIMENSION = 128
 const contactCardUpdateFanoutRecords = ref<ContactCardUpdateFanoutRecord[]>([])
 let outboxRetryTimer: number | undefined
 let outboxRetryChain: Promise<void> = Promise.resolve()
@@ -4653,23 +4654,54 @@ async function saveMyProfile() {
   })
 }
 
-function imageFileToDataUrl(file: File): Promise<string> {
+function loadImageFromObjectUrl(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result || ''))
-    reader.onerror = () => reject(reader.error || new Error('头像读取失败'))
-    reader.readAsDataURL(file)
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error('头像图片读取失败'))
+    img.src = url
   })
+}
+
+function canvasToDataUrl(canvas: HTMLCanvasElement, type: string, quality: number): string {
+  return canvas.toDataURL(type, quality)
+}
+
+async function imageFileToAvatarDataUrl(file: File): Promise<string> {
+  const objectUrl = URL.createObjectURL(file)
+  try {
+    const img = await loadImageFromObjectUrl(objectUrl)
+    const sourceWidth = img.naturalWidth || img.width
+    const sourceHeight = img.naturalHeight || img.height
+    if (!sourceWidth || !sourceHeight) throw new Error('头像图片尺寸无效')
+    const scale = Math.min(1, PROFILE_AVATAR_DIMENSION / Math.max(sourceWidth, sourceHeight))
+    const width = Math.max(1, Math.round(sourceWidth * scale))
+    const height = Math.max(1, Math.round(sourceHeight * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('当前浏览器无法处理头像图片')
+    ctx.clearRect(0, 0, width, height)
+    ctx.drawImage(img, 0, 0, width, height)
+    const candidates: string[] = []
+    for (const quality of [0.86, 0.72, 0.58, 0.44]) candidates.push(canvasToDataUrl(canvas, 'image/jpeg', quality))
+    candidates.push(canvasToDataUrl(canvas, 'image/png', 0.92))
+    const best = candidates.sort((a, b) => utf8Bytes(a) - utf8Bytes(b))[0]
+    ensureUiTextSize('头像', best, MAX_PROFILE_AVATAR_BYTES)
+    return best
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
 }
 
 async function setMyProfileAvatarFromFile(file: File) {
   await runAsync('更新头像', async () => {
     if (!file.type.startsWith('image/')) throw new Error('请选择图片文件')
-    const dataUrl = await imageFileToDataUrl(file)
-    ensureUiTextSize('头像', dataUrl, MAX_PROFILE_AVATAR_BYTES)
+    const dataUrl = await imageFileToAvatarDataUrl(file)
     myProfileAvatarDataUrl.value = dataUrl
     persist()
-    appendLog('✅ 头像已更新')
+    appendLog(`✅ 头像已更新并压缩到 ${formatBytes(utf8Bytes(dataUrl))}`)
     if (nodeEnabled.value && friendContacts.value.length) {
       appendLog(`正在向 ${friendContacts.value.length} 个好友同步新的头像`)
       await fanoutMyProfileAvatarUpdateToFriends({ force: true })
@@ -4678,6 +4710,8 @@ async function setMyProfileAvatarFromFile(file: File) {
 }
 
 async function removeMyProfileAvatar() {
+  const ok = await showConfirm(t('appDialog.removeAvatarTitle'), t('appDialog.removeAvatarMessage'), true)
+  if (!ok) return
   await runAsync('移除头像', async () => {
     myProfileAvatarDataUrl.value = ''
     persist()
