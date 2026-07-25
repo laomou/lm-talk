@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { avatarColor } from '../avatarColor'
 import UiPageHeader from './UiPageHeader.vue'
 import UiListRow from './UiListRow.vue'
 import UiStatusBadge from './UiStatusBadge.vue'
@@ -12,6 +11,7 @@ import UiSection from './UiSection.vue'
 import UiActionGroup from './UiActionGroup.vue'
 import UiListGroup from './UiListGroup.vue'
 import UiNavRow from './UiNavRow.vue'
+import UiAvatar from './UiAvatar.vue'
 import QrScanner from './QrScanner.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -136,7 +136,7 @@ watch(
               :class="{ active: c.user_id === ctx.activePeerId.value }"
               @click="openContact(c.user_id)"
             >
-              <span class="avatar" :style="{ background: avatarColor(c.user_id) }">{{ (c.display_name || c.user_id || '?').slice(0, 1).toUpperCase() }}</span>
+              <UiAvatar :src="c.avatar_data_url" :name="c.display_name" :seed="c.user_id" />
               <span class="directory-main">
                 <b>{{ c.display_name || t('contactsView.unnamed') }}</b>
                 <small>{{ shortId(c.user_id) }}</small>
@@ -193,7 +193,7 @@ watch(
         <div class="contact-directory search-directory">
           <h3 class="alpha-heading">{{ t('contactsView.contacts') }}</h3>
           <button v-for="c in visibleContacts" :key="c.user_id" class="directory-row contact-row" @click="openContact(c.user_id)">
-            <span class="avatar" :style="{ background: avatarColor(c.user_id) }">{{ (c.display_name || c.user_id || '?').slice(0, 1).toUpperCase() }}</span>
+            <UiAvatar :src="c.avatar_data_url" :name="c.display_name" :seed="c.user_id" />
             <span class="directory-main"><b>{{ c.display_name || t('contactsView.unnamed') }}</b><small>{{ shortId(c.user_id) }}</small></span>
             <UiStatusBadge :tone="ctx.contactAllKnownDevicesRevoked(c) ? 'warning' : 'success'" :title="trustTitle(c)" :aria-label="trustTitle(c)"><UiIcon :name="trustIconName(c)" size="13" /></UiStatusBadge>
             <span class="chevron">›</span>
@@ -238,7 +238,7 @@ watch(
       <section v-else-if="view === 'detail' && ctx.activeContact.value" class="detail-scroll">
         <UiPageHeader :title="t('contactsView.contactDetail')" :back-label="t('contactsView.backToContacts')" @back="backHome" />
         <div class="detail-hero product-contact-hero contact-detail-centered">
-          <span class="avatar large" :style="{ background: avatarColor(ctx.activeContact.value.user_id) }">{{ (ctx.activeContact.value.display_name || ctx.activeContact.value.user_id || '?').slice(0, 1).toUpperCase() }}</span>
+          <UiAvatar size="large" :src="ctx.activeContact.value.avatar_data_url" :name="ctx.activeContact.value.display_name" :seed="ctx.activeContact.value.user_id" />
           <div class="detail-hero-text">
             <h2>{{ ctx.activeContact.value.display_name || t('contactsView.unnamed') }}</h2>
             <UiStatusBadge v-if="ctx.activeContact.value.state === 'Friend'" :tone="ctx.contactAllKnownDevicesRevoked(ctx.activeContact.value) ? 'warning' : 'success'" :title="trustTitle(ctx.activeContact.value)" :aria-label="trustTitle(ctx.activeContact.value)"><UiIcon :name="trustIconName(ctx.activeContact.value)" size="13" /></UiStatusBadge>

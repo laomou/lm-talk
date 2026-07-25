@@ -2,9 +2,9 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { avatarColor } from '../avatarColor'
 import UiIcon from './UiIcon.vue'
 import UiEmptyState from './UiEmptyState.vue'
+import UiAvatar from './UiAvatar.vue'
 
 const props = defineProps<{ ctx: any }>()
 const keyword = ref('')
@@ -107,7 +107,7 @@ function select(it: any) {
         @click="select(it)"
       >
         <span class="conversation-avatar-wrap">
-          <span class="avatar" :style="{ background: avatarColor(it.id) }">{{ (convName(it) || '?').slice(0, 1).toUpperCase() }}</span>
+          <UiAvatar :src="it.data.avatar_data_url" :name="convName(it)" :seed="it.id" />
           <em v-if="unreadCount(it)" class="conversation-avatar-badge">{{ props.ctx.badgeCountText(unreadCount(it)) }}</em>
         </span>
         <span class="contact-main">
@@ -151,7 +151,7 @@ function select(it: any) {
         @click="select(it)"
       >
         <span class="conversation-avatar-wrap">
-          <span class="avatar" :style="{ background: avatarColor(it.id) }">{{ (convName(it) || '?').slice(0, 1).toUpperCase() }}</span>
+          <UiAvatar :src="it.data.avatar_data_url" :name="convName(it)" :seed="it.id" />
           <em v-if="unreadCount(it)" class="conversation-avatar-badge">{{ props.ctx.badgeCountText(unreadCount(it)) }}</em>
         </span>
         <span class="contact-main">

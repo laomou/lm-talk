@@ -11,6 +11,7 @@ import UiField from './UiField.vue'
 import UiSection from './UiSection.vue'
 import UiActionGroup from './UiActionGroup.vue'
 import UiListGroup from './UiListGroup.vue'
+import UiAvatar from './UiAvatar.vue'
 
 const props = defineProps<{ ctx: any }>()
 type MeView = 'home' | 'profile' | 'backup' | 'security' | 'sync' | 'settings' | 'about'
@@ -93,7 +94,7 @@ function changeLocale(event: Event) {
     <div class="me-inner">
       <template v-if="view === 'home'">
         <header class="me-hero">
-          <span class="avatar large">{{ (ctx.displayName.value || ctx.identity.value?.user_id || '?').slice(0, 1).toUpperCase() }}</span>
+          <UiAvatar class="me-avatar" size="large" :src="ctx.myProfileAvatarDataUrl.value" :name="ctx.displayName.value" :seed="ctx.identity.value?.user_id" />
           <div class="me-hero-text">
             <h2>{{ ctx.displayName.value || t('settingsView.unnamed') }}</h2>
             <small>{{ ctx.identity.value?.user_id }}</small>
@@ -130,6 +131,16 @@ function changeLocale(event: Event) {
             <input id="display-name-input" v-model="ctx.displayName.value" :aria-label="t('settingsView.displayName')" />
             <button @click="ctx.saveMyProfile">{{ t('settingsView.save') }}</button>
           </div>
+          </UiField>
+          <UiField :label="t('settingsView.avatar')">
+            <div class="avatar-upload-row">
+              <UiAvatar size="large" :src="ctx.myProfileAvatarDataUrl.value" :name="ctx.displayName.value" :seed="ctx.identity.value?.user_id" />
+              <div class="avatar-upload-actions">
+                <input id="avatar-input" class="sr-only" type="file" accept="image/*" @change="(e) => { const file = (e.target as HTMLInputElement).files?.[0]; if (file) ctx.setMyProfileAvatarFromFile(file) }" />
+                <label for="avatar-input" class="secondary buttonlike">{{ t('settingsView.changeAvatar') }}</label>
+                <button class="secondary" :disabled="!ctx.myProfileAvatarDataUrl.value" @click="ctx.removeMyProfileAvatar">{{ t('settingsView.removeAvatar') }}</button>
+              </div>
+            </div>
           </UiField>
           <UiActionGroup>
             <button class="secondary" @click="ctx.showQr(ctx.myContactCardText.value, t('settingsView.myCard'))">{{ t('settingsView.myCard') }}</button>

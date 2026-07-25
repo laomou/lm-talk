@@ -388,6 +388,13 @@ button.secondary.danger:hover { background: var(--c-danger-soft); border-color: 
 }
 .group-avatar { background: var(--c-avatar-group); }
 .avatar.large { width: 56px; height: 56px; font-size: 22px; border-radius: var(--r-lg); }
+.avatar img,
+.rail-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block; }
+.avatar.has-image { background: var(--c-surface-2); color: transparent; overflow: hidden; }
+.rail-avatar.has-image { background: var(--c-surface-2); overflow: hidden; padding: 0; }
+.avatar-upload-row { display: flex; align-items: center; gap: var(--sp-3); }
+.avatar-upload-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.buttonlike { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
 
 em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weight: 500; margin-left: var(--sp-1); }
 
@@ -724,7 +731,7 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
   background: var(--c-surface); border: 1px solid var(--c-line);
   border-radius: var(--r-lg); padding: var(--sp-6); box-shadow: var(--shadow-1);
 }
-.me-hero .avatar.large { grid-area: avatar; }
+.me-hero .avatar.large, .me-hero .me-avatar { grid-area: avatar; }
 .me-hero-text { grid-area: text; min-width: 0; }
 .me-hero-text h2 { font-size: 20px; }
 .me-hero-text small { display: block; margin-top: var(--sp-1); overflow-wrap: anywhere; }
@@ -1345,6 +1352,7 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   gap: var(--sp-2);
   min-width: 0;
 }
+.product-chat-title .avatar { width: 32px; height: 32px; font-size: 13px; border-radius: var(--r-md); }
 .product-chat-title h2 {
   max-width: min(360px, 52vw);
   text-align: center;
