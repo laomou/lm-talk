@@ -21,6 +21,7 @@ const router = useRouter()
 const { locale, t } = useI18n()
 const showSyncServiceEditor = ref(false)
 const showDataBackupEditor = ref(false)
+const profileStatus = computed(() => props.ctx.profileUpdateStatus.value)
 const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.nodeEntrySummaries.value.length === 0)
 const mailboxInboxErrorLines = computed(() => props.ctx.mailboxInboxErrorText.value
   .split('\n')
@@ -136,19 +137,20 @@ function onAvatarSelected(event: Event) {
           <UiField :label="t('settingsView.displayName')" for-id="display-name-input">
           <div class="inline-field">
             <input id="display-name-input" v-model="ctx.displayName.value" :aria-label="t('settingsView.displayName')" />
-            <button @click="ctx.saveMyProfile">{{ t('settingsView.save') }}</button>
+            <button :disabled="ctx.profileSaving.value" @click="ctx.saveMyProfile">{{ ctx.profileSaving.value ? t('settingsView.saving') : t('settingsView.save') }}</button>
           </div>
           </UiField>
           <UiField :label="t('settingsView.avatar')" :hint="t('settingsView.avatarHint')">
             <div class="avatar-upload-row">
               <UiAvatar size="large" :src="ctx.myProfileAvatarDataUrl.value" :name="ctx.displayName.value" :seed="ctx.identity.value?.user_id" />
               <div class="avatar-upload-actions">
-                <input id="avatar-input" class="sr-only" type="file" accept="image/*" @change="onAvatarSelected" />
-                <label for="avatar-input" class="secondary buttonlike">{{ t('settingsView.changeAvatar') }}</label>
-                <button class="secondary" :disabled="!ctx.myProfileAvatarDataUrl.value" @click="ctx.removeMyProfileAvatar">{{ t('settingsView.removeAvatar') }}</button>
+                <input id="avatar-input" class="sr-only" type="file" accept="image/*" :disabled="ctx.profileAvatarSaving.value" @change="onAvatarSelected" />
+                <label for="avatar-input" class="secondary buttonlike" :class="{ disabled: ctx.profileAvatarSaving.value }">{{ ctx.profileAvatarSaving.value ? t('settingsView.processingAvatar') : t('settingsView.changeAvatar') }}</label>
+                <button class="secondary" :disabled="!ctx.myProfileAvatarDataUrl.value || ctx.profileAvatarSaving.value" @click="ctx.removeMyProfileAvatar">{{ t('settingsView.removeAvatar') }}</button>
               </div>
             </div>
           </UiField>
+          <UiStatusBadge v-if="profileStatus" :tone="profileStatus.tone">{{ profileStatus.text }}</UiStatusBadge>
           <UiActionGroup>
             <button class="secondary" @click="ctx.showQr(ctx.myContactCardText.value, t('settingsView.myCard'))">{{ t('settingsView.myCard') }}</button>
           </UiActionGroup>

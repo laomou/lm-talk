@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { avatarColor, avatarInitial } from '../avatar'
 
 const props = defineProps<{
@@ -11,11 +11,17 @@ const props = defineProps<{
 
 const label = computed(() => avatarInitial(props.name, props.seed))
 const fallbackStyle = computed(() => ({ background: avatarColor(props.seed || props.name) }))
+const imageFailed = ref(false)
+const showImage = computed(() => Boolean(props.src) && !imageFailed.value)
+
+watch(() => props.src, () => {
+  imageFailed.value = false
+})
 </script>
 
 <template>
-  <span class="avatar" :class="{ large: props.size === 'large', 'has-image': Boolean(props.src) }" :style="props.src ? undefined : fallbackStyle">
-    <img v-if="props.src" :src="props.src" alt="" loading="lazy" decoding="async" />
+  <span class="avatar" :class="{ large: props.size === 'large', 'has-image': showImage }" :style="showImage ? undefined : fallbackStyle">
+    <img v-if="showImage" :src="props.src" alt="" loading="lazy" decoding="async" @error="imageFailed = true" />
     <span v-else>{{ label }}</span>
   </span>
 </template>

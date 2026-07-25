@@ -1573,3 +1573,8 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   white-space: nowrap;
   border: 0;
 }
+.buttonlike.disabled {
+  cursor: not-allowed;
+  opacity: .55;
+  pointer-events: none;
+}
