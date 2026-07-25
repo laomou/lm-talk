@@ -165,3 +165,38 @@ test('移动端可从二维码图片识别名片并回填添加好友输入框',
   await expect(page.getByLabel('对方名片')).toHaveValue(/^lm-contact-card-v1:/)
   await expect(page.getByRole('button', { name: '添加好友' })).toBeVisible()
 })
+
+test('个人资料头像可压缩上传并确认移除', async ({ page }) => {
+  const passphrase = 'playwright-avatar-local-passphrase'
+  await page.goto('/#/register')
+  await waitForWasm(page)
+  await page.getByLabel('注册提示词').fill(passphrase)
+  await page.getByRole('button', { name: '注册' }).click()
+  await page.getByRole('button', { name: '去登录' }).click()
+  await page.getByLabel('登录提示词').fill(passphrase)
+  await page.getByRole('button', { name: '登录' }).click()
+  await expect(page).toHaveURL(/#\/chat$/)
+
+  await page.locator('.rail-avatar[aria-label="打开我的设置"]').click()
+  await page.getByText('个人资料', { exact: true }).click()
+  await expect(page.getByText('支持图片，上传后自动压缩到 128×128，最大 64KB。')).toBeVisible()
+
+  const avatarSvg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><rect width="512" height="512" fill="#4c8df6"/><circle cx="256" cy="256" r="160" fill="#fff"/></svg>')
+  await page.setInputFiles('#avatar-input', { name: 'avatar.svg', mimeType: 'image/svg+xml', buffer: avatarSvg })
+  await expect(page.locator('.avatar-upload-row .avatar img')).toBeVisible({ timeout: 45_000 })
+  await expect(page.locator('.rail-avatar img')).toBeVisible()
+
+  await page.getByRole('button', { name: '移除头像' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toHaveText(/移除头像/)
+  await dialog.getByRole('button', { name: '取消' }).click()
+  await expect(page.locator('.avatar-upload-row .avatar img')).toBeVisible()
+
+  await page.getByRole('button', { name: '移除头像' }).click()
+  await dialog.getByRole('button', { name: '确定' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.locator('.avatar-upload-row .avatar img')).toHaveCount(0)
+  await expect(page.locator('.rail-avatar img')).toHaveCount(0)
+  await expect(page.locator('.avatar-upload-row .avatar')).toHaveText('M')
+})
