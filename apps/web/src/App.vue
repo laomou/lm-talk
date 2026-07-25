@@ -650,6 +650,9 @@ const ratchetSessions = ref<RatchetSessionItem[]>([])
 const pendingSecureSessionOffers = ref<PendingSecureSessionOfferItem[]>([])
 const processedMailboxIds = ref<ProcessedMailboxRecord[]>([])
 const mailboxFailedItems = ref<MailboxFailedItem[]>([])
+const profileSaving = ref(false)
+const profileAvatarSaving = ref(false)
+const profileUpdateStatus = ref<{ text: string; tone: 'success' | 'warning' | 'neutral' } | null>(null)
 const CONTACT_CARD_UPDATE_ACK_STALE_MS = 24 * 60 * 60 * 1000
 const CONTACT_CARD_DHT_FRESH_MS = 7 * 24 * 60 * 60 * 1000
 const MAX_PROFILE_AVATAR_BYTES = 64 * 1024
@@ -4634,24 +4637,41 @@ async function refreshMyContactCard() {
 }
 
 async function saveMyProfile() {
-  await runAsync('保存个人资料', async () => {
+  if (profileSaving.value) return
+  profileSaving.value = true
+  profileUpdateStatus.value = null
+  try {
     if (!backupText.value || !passphrase.value) throw new Error('请先登录')
     await exportMyCard()
     if (identity.value) rememberLocalIdentity(identity.value.user_id, displayName.value || 'Me', backupText.value)
     persist()
     appendLog('✅ 个人资料已更新')
+    profileUpdateStatus.value = { text: t('settingsView.profileSaved'), tone: 'success' }
     if (!nodeEnabled.value) {
       appendLog('⚠️ 消息同步未开启，新的联系人资料将在下次开启同步后发布')
+      profileUpdateStatus.value = { text: t('settingsView.profileSavedPendingSync'), tone: 'warning' }
       return
     }
-    await ensureOwnContactCardDhtRecord()
-    if (friendContacts.value.length) {
-      appendLog(`正在向 ${friendContacts.value.length} 个好友同步新的联系人资料`)
-      await fanoutMyContactCardUpdateToFriends({ force: true })
-      appendLog(`正在向 ${friendContacts.value.length} 个好友同步新的头像`)
-      await fanoutMyProfileAvatarUpdateToFriends({ force: true })
+    try {
+      await ensureOwnContactCardDhtRecord()
+      if (friendContacts.value.length) {
+        appendLog(`正在向 ${friendContacts.value.length} 个好友同步新的联系人资料`)
+        if (!await fanoutMyContactCardUpdateToFriends({ force: true })) throw new Error('联系人资料同步失败')
+        appendLog(`正在向 ${friendContacts.value.length} 个好友同步新的头像`)
+        if (!await fanoutMyProfileAvatarUpdateToFriends({ force: true })) throw new Error('头像同步失败')
+      }
+      profileUpdateStatus.value = { text: t('settingsView.profileSavedAndSynced'), tone: 'success' }
+    } catch (error) {
+      appendLog(`⚠️ 个人资料已保存，本次同步未完成：${userFacingError(error)}`)
+      profileUpdateStatus.value = { text: t('settingsView.profileSavedPendingSync'), tone: 'warning' }
     }
-  })
+  } catch (error) {
+    appendLog(`❌ 保存个人资料: ${userFacingError(error)}`)
+    profileUpdateStatus.value = { text: t('settingsView.profileSaveFailed'), tone: 'warning' }
+    showAlert(t('appDialog.profileSaveFailed'), userFacingError(error), 'error')
+  } finally {
+    profileSaving.value = false
+  }
 }
 
 function loadImageFromObjectUrl(url: string): Promise<HTMLImageElement> {
@@ -4725,40 +4745,61 @@ async function imageFileToAvatarDataUrl(file: File): Promise<string> {
 }
 
 async function setMyProfileAvatarFromFile(file: File) {
+  if (profileAvatarSaving.value) return
   if (!file.type.startsWith('image/')) {
     showAlert(t('appDialog.avatarProcessingFailed'), t('appDialog.avatarImageOnly'), 'error')
     return
   }
+  profileAvatarSaving.value = true
+  profileUpdateStatus.value = null
   let dataUrl = ''
   try {
     dataUrl = await imageFileToAvatarDataUrl(file)
   } catch (error) {
     showAlert(t('appDialog.avatarProcessingFailed'), userFacingError(error), 'error')
+    profileAvatarSaving.value = false
     return
   }
-  await runAsync('更新头像', async () => {
+  try {
     myProfileAvatarDataUrl.value = dataUrl
     persist()
     appendLog(`✅ 头像已更新并压缩到 ${formatBytes(utf8Bytes(dataUrl))}`)
+    profileUpdateStatus.value = { text: t('settingsView.avatarSaved'), tone: 'success' }
     if (nodeEnabled.value && friendContacts.value.length) {
-      appendLog(`正在向 ${friendContacts.value.length} 个好友同步新的头像`)
-      await fanoutMyProfileAvatarUpdateToFriends({ force: true })
+      try {
+        appendLog(`正在向 ${friendContacts.value.length} 个好友同步新的头像`)
+        if (!await fanoutMyProfileAvatarUpdateToFriends({ force: true })) throw new Error('头像同步失败')
+        profileUpdateStatus.value = { text: t('settingsView.avatarSavedAndSynced'), tone: 'success' }
+      } catch (error) {
+        appendLog(`⚠️ 头像已保存，本次同步未完成：${userFacingError(error)}`)
+        profileUpdateStatus.value = { text: t('settingsView.avatarSavedPendingSync'), tone: 'warning' }
+      }
     }
-  })
+  } finally {
+    profileAvatarSaving.value = false
+  }
 }
 
 async function removeMyProfileAvatar() {
   const ok = await showConfirm(t('appDialog.removeAvatarTitle'), t('appDialog.removeAvatarMessage'), true)
   if (!ok) return
-  await runAsync('移除头像', async () => {
+  if (profileAvatarSaving.value) return
+  profileAvatarSaving.value = true
+  profileUpdateStatus.value = null
+  try {
     myProfileAvatarDataUrl.value = ''
     persist()
     appendLog('✅ 头像已移除')
+    profileUpdateStatus.value = { text: t('settingsView.avatarRemoved'), tone: 'success' }
     if (nodeEnabled.value && friendContacts.value.length) {
       appendLog(`正在向 ${friendContacts.value.length} 个好友同步新的头像`)
-      await fanoutMyProfileAvatarUpdateToFriends({ force: true })
+      if (!await fanoutMyProfileAvatarUpdateToFriends({ force: true })) {
+        profileUpdateStatus.value = { text: t('settingsView.avatarSavedPendingSync'), tone: 'warning' }
+      }
     }
-  })
+  } finally {
+    profileAvatarSaving.value = false
+  }
 }
 
 async function reencryptCurrentIdentityBackup() {
@@ -4924,8 +4965,8 @@ async function retryStaleContactCardUpdateAcks() {
   })
 }
 
-async function fanoutMyContactCardUpdateToFriends(options: { force?: boolean } = {}) {
-  await runAsync('向好友分发联系人设备证书更新', async () => {
+async function fanoutMyContactCardUpdateToFriends(options: { force?: boolean } = {}): Promise<boolean> {
+  try {
     if (!myContactCardText.value.trim()) await refreshMyContactCard()
     if (!myContactCardText.value.trim()) throw new Error('请先生成我的联系人名片')
     const now = Date.now()
@@ -4933,7 +4974,7 @@ async function fanoutMyContactCardUpdateToFriends(options: { force?: boolean } =
       contactCardUpdateFanoutSkipCount.value += 1
       appendLog('联系人设备证书更新分发已节流，避免重复广播')
       persist()
-      return
+      return true
     }
     let sent = 0
     let queued = 0
@@ -4946,12 +4987,16 @@ async function fanoutMyContactCardUpdateToFriends(options: { force?: boolean } =
     lastContactCardUpdateFanoutAt.value = now
     appendLog(`联系人设备证书更新分发完成：已投递 ${sent}，queued ${queued}`)
     persist()
-  })
+    return true
+  } catch (error) {
+    appendLog(`❌ 向好友分发联系人设备证书更新: ${userFacingError(error)}`)
+    return false
+  }
 }
 
 
-async function fanoutMyProfileAvatarUpdateToFriends(options: { force?: boolean } = {}) {
-  await runAsync('向好友分发头像更新', async () => {
+async function fanoutMyProfileAvatarUpdateToFriends(options: { force?: boolean } = {}): Promise<boolean> {
+  try {
     let sent = 0
     let queued = 0
     for (const contact of friendContacts.value) {
@@ -4961,7 +5006,11 @@ async function fanoutMyProfileAvatarUpdateToFriends(options: { force?: boolean }
     }
     appendLog(`头像更新分发完成：已投递 ${sent}，queued ${queued}`)
     persist()
-  })
+    return true
+  } catch (error) {
+    appendLog(`❌ 向好友分发头像更新: ${userFacingError(error)}`)
+    return false
+  }
 }
 
 async function applyContactCardTextUpdate(cardText: string, sender: ContactItem, avatarDataUrl?: string) {
@@ -11261,7 +11310,7 @@ function logout() {
   void router.push('/login')
 }
 const appContext = {
-  goChatPage, goChatHome, goContactsPage, goSettingsPage, goSyncSettings, goDiagnosticsPage, goDiagnosticsBack, showAlert, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, saveMyProfile, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
+  goChatPage, goChatHome, goContactsPage, goSettingsPage, goSyncSettings, goDiagnosticsPage, goDiagnosticsBack, showAlert, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, saveMyProfile, profileSaving, profileAvatarSaving, profileUpdateStatus, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, webVersionText,
   nodeControlUrl, nodeUrlList, nodeEntrySummaries, nodeSettingsSummaryText, nodeTokenStorageText, nodeTokenCount, nodeMissingRemoteTokenCount, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake, autoReadReceipts,
   runtimeStatusText, pwaStatusText, inAppRuntimePolicyText, refreshRuntimeStatus, refreshPwaStatus,
