@@ -108,6 +108,7 @@ export default {
     enableSync: 'Enable sync',
     syncNow: 'Sync now',
     outbox: 'Outbox',
+    outboxQueued: 'Queued for retry: {count}',
     failed: 'Failed: {count}',
     diagnostics: 'Diagnostics',
     openDiagnostics: 'Open diagnostics',

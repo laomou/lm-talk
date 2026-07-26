@@ -108,6 +108,7 @@ export default {
     enableSync: '开启同步',
     syncNow: '立即同步',
     outbox: '待发送',
+    outboxQueued: '排队重试：{count}',
     failed: '失败：{count}',
     diagnostics: '诊断',
     openDiagnostics: '打开诊断工具',

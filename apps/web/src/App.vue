@@ -4434,10 +4434,10 @@ function classifyDeliveryError(e: unknown): string {
   return message || '投递失败'
 }
 
-function markOutboxSent(item: OutboxItem) {
+function markOutboxDelivered(item: OutboxItem, result: 'sent' | 'mailbox') {
   item.status = 'sent'
   const msg = messages.value.find((m) => m.id === item.message_id)
-  if (msg) msg.status = item.kind === 'direct-envelope' ? 'sent' : 'mailbox'
+  if (msg) msg.status = result === 'mailbox' ? 'mailbox' : 'sent'
 }
 
 function outboundPayloadBypassesStrictSendPolicy(kind: OutboxItem['kind'], payload: string): boolean {
@@ -7684,7 +7684,7 @@ async function retryOutboxItem(item: OutboxItem): Promise<boolean> {
   const result = await deliverPayloadToContact(contact, item.envelope_json, 'Outbox 重试', item.kind ?? 'direct-envelope')
   item.retry_count += 1
   if (result === 'sent' || result === 'mailbox') {
-    markOutboxSent(item)
+    markOutboxDelivered(item, result)
     return true
   }
   const retryable = result === 'queued' || isRetryableDeliveryError(lastDeliveryError)
@@ -7697,7 +7697,7 @@ async function retryOutboxItem(item: OutboxItem): Promise<boolean> {
     item.next_retry_at = undefined
     item.last_error = `已达到最大重试次数 ${MAX_OUTBOX_RETRY_COUNT}`
   } else {
-    item.next_retry_at = Date.now() + retryDelayMs(item.retry_count)
+    item.next_retry_at = retryable ? Date.now() + retryDelayMs(item.retry_count) : undefined
     item.last_error = result === 'failed' ? lastDeliveryError || '投递失败' : undefined
   }
   return false
@@ -7724,7 +7724,7 @@ async function retryDueOutboxNow() {
   // restored batch in that order can feed Ratchet envelopes out of sequence.
   // Preserve the original message creation order before redelivering.
   const dueItems = outbox.value
-    .filter((item) => item.status !== 'sent' && (item.next_retry_at ?? item.created_at) <= now)
+    .filter((item) => item.status === 'queued' && (item.next_retry_at ?? item.created_at) <= now)
     .sort(compareOutboxDeliveryOrder)
   for (const item of dueItems) {
     attempted += 1
