@@ -868,6 +868,8 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
 }
 .dialog-card {
   width: min(440px, 100%);
+  max-height: calc(100dvh - 2 * var(--sp-5));
+  overflow: auto;
   background: var(--c-surface);
   border: 1px solid var(--c-line);
   border-radius: 18px;
@@ -964,6 +966,10 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .rail-spacer { display: none; }
 
   .chat-shell { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr); }
+  .chat-main,
+  .product-contacts-main,
+  .detail-scroll { min-height: 0; }
+  .product-contacts-main { overflow: hidden; }
   .contacts-shell { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 40vh) minmax(0, 1fr); }
   .contacts-topbar { grid-column: auto; padding: var(--sp-3); }
   .sidebar,
@@ -972,6 +978,9 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .me-page { padding: var(--sp-5) var(--sp-4); }
   .contact-directory,
   .alpha-heading { width: min(640px, calc(100% - 32px)); }
+  .detail-scroll,
+  .conversation-list,
+  .messages { overscroll-behavior: contain; }
 }
 
 @media (max-width: 640px) {
@@ -1041,7 +1050,19 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .me-hero-actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
   .me-hero-actions button { min-width: 0; }
   .dialog-mask { padding: var(--sp-3); }
-  .dialog-card { padding: var(--sp-4); }
+  .dialog-card {
+    max-height: calc(100dvh - 2 * var(--sp-3));
+    padding: var(--sp-4);
+  }
+  .dialog-actions {
+    position: sticky;
+    bottom: calc(-1 * var(--sp-4));
+    margin: var(--sp-5) calc(-1 * var(--sp-4)) calc(-1 * var(--sp-4));
+    padding: var(--sp-3) var(--sp-4);
+    background: var(--c-surface);
+    border-top: 1px solid var(--c-line);
+  }
+  .dialog-actions button { flex: 1 1 0; min-width: 0; }
   .pwa-update-banner {
     bottom: calc(64px + env(safe-area-inset-bottom));
     align-items: flex-start;
@@ -1334,6 +1355,17 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   .emoji-panel { grid-template-columns: repeat(4, 1fr); }
   .pending-file-card { grid-template-columns: auto minmax(0, 1fr); }
   .pending-file-card button { grid-column: 1 / -1; }
+  .ui-notice {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    padding: var(--sp-2) var(--sp-3);
+  }
+  .ui-notice-actions {
+    grid-column: 1 / -1;
+    justify-content: stretch;
+    padding-left: 28px;
+  }
+  .ui-notice-actions button { flex: 1 1 auto; }
 }
 
 /* ---- Chat page stack alignment ------------------------------------------ */
