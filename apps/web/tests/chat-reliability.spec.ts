@@ -372,6 +372,24 @@ test('单聊附件在消息卡片中解密，刷新后可重新解密', async ({
     await expect(restoredAttachment.getByText('页面刷新后需要重新解密，才能预览或下载。')).toBeVisible()
     await restoredAttachment.getByRole('button', { name: '重试解密' }).click()
     await expect(restoredAttachment.getByRole('link', { name: '下载' })).toBeVisible({ timeout: 45_000 })
+
+    // The decrypted Blob URL is deliberately memory-only. Deleting the local
+    // transcript must revoke it as well, rather than leaving previews alive.
+    await bob.evaluate(() => {
+      const state = window as typeof window & { attachmentObjectUrls?: string[] }
+      state.attachmentObjectUrls = []
+      const revoke = URL.revokeObjectURL.bind(URL)
+      URL.revokeObjectURL = ((url: string) => {
+        state.attachmentObjectUrls?.push(url)
+        revoke(url)
+      }) as typeof URL.revokeObjectURL
+    })
+    await bob.getByRole('button', { name: '更多' }).click()
+    await bob.getByRole('menuitem', { name: '删除会话' }).click()
+    await bob.getByRole('dialog').getByRole('button', { name: '确定' }).click()
+    await expect(bob).toHaveURL(/#\/chat$/)
+    await expect.poll(() => bob.evaluate(() => (window as typeof window & { attachmentObjectUrls?: string[] }).attachmentObjectUrls?.length ?? 0))
+      .toBeGreaterThan(0)
   } finally {
     await aliceContext.close()
     await bobContext.close()
