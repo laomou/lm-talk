@@ -163,6 +163,7 @@ export default {
     messageSearchDescription: '输入关键词查找当前会话的消息。',
     noMessageMatchesTitle: '没有匹配的消息',
     noMessageMatchesDescription: '换个关键词试试。',
+    loadEarlierMessages: '加载更早的 {count} 条消息',
     noChatMatchesTitle: '没有匹配的聊天',
     noChatMatchesDescription: '换个名称或关键词试试。',
     searchChatDescription: '输入名称搜索聊天。',

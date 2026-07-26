@@ -20,6 +20,8 @@ const conversationMenuOpen = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 const composerTextarea = ref<HTMLTextAreaElement | null>(null)
 const emojis = ['😀', '😃', '😄', '😁', '🙂', '😉', '😊', '😍', '👍', '👏', '🙏', '💪', '🎉', '❤️', '🔥', '✅']
+const HISTORY_WINDOW_SIZE = 80
+const visibleMessageCount = ref(HISTORY_WINDOW_SIZE)
 type MessageStatusIcon = 'info' | 'check' | 'alert'
 
 function hmTime(ts: number) {
@@ -122,11 +124,17 @@ function messageStatusDetailText(message: any) {
   return parts.filter(Boolean).join(' · ')
 }
 
+const visibleMessages = computed(() => {
+  const messages = props.ctx.activeMessages.value
+  return messages.slice(Math.max(0, messages.length - visibleMessageCount.value))
+})
+const hiddenMessageCount = computed(() => Math.max(0, props.ctx.activeMessages.value.length - visibleMessages.value.length))
+
 // 把消息序列展开成「日期分割线 + 气泡」的渲染项
 const thread = computed(() => {
   const out: any[] = []
   let lastDay = ''
-  for (const m of props.ctx.activeMessages.value) {
+  for (const m of visibleMessages.value) {
     const day = new Date(m.created_at).toDateString()
     if (day !== lastDay) {
       out.push({ kind: 'sep', id: `sep-${day}-${m.id}`, label: dayLabel(m.created_at) })
@@ -164,9 +172,25 @@ function scrollToBottom() {
   }
   el.scrollTop = el.scrollHeight
 }
+
+function loadEarlierMessages() {
+  const el = messagesEl.value
+  if (!el || hiddenMessageCount.value === 0) return
+  const previousHeight = el.scrollHeight
+  const previousTop = el.scrollTop
+  visibleMessageCount.value += HISTORY_WINDOW_SIZE
+  void nextTick(() => {
+    el.scrollTop = previousTop + (el.scrollHeight - previousHeight)
+  })
+}
+
 watch(
-  () => [props.ctx.activeMessages.value.length, props.ctx.activePeerId?.value],
-  () => { if (!highlightedMessageId.value) void nextTick(scrollToBottom) },
+  () => [props.ctx.activePeerId?.value, props.ctx.activeMessages.value.at(-1)?.id],
+  ([peerId], previous = []) => {
+    const previousPeerId = previous[0]
+    if (peerId !== previousPeerId) visibleMessageCount.value = HISTORY_WINDOW_SIZE
+    if (!highlightedMessageId.value) void nextTick(scrollToBottom)
+  },
   { immediate: true },
 )
 watch(() => props.ctx.activePeerId?.value, () => { conversationMenuOpen.value = false })
@@ -230,14 +254,17 @@ function scrollToMessage(messageId: string) {
 }
 function locateMessage(messageId: string) {
   highlightedMessageId.value = messageId
+  const targetIndex = props.ctx.activeMessages.value.findIndex((message: any) => message.id === messageId)
+  if (targetIndex >= 0) visibleMessageCount.value = props.ctx.activeMessages.value.length - targetIndex
   const peerId = props.ctx.activePeerId.value
-  if (peerId) void router.push(`/chat/${encodeURIComponent(peerId)}`)
-  void nextTick(() => {
+  const showTarget = () => nextTick(() => {
     if (!scrollToMessage(messageId)) scrollToBottom()
     window.setTimeout(() => {
       if (highlightedMessageId.value === messageId) highlightedMessageId.value = ''
     }, 1800)
   })
+  if (peerId) void router.push(`/chat/${encodeURIComponent(peerId)}`).then(showTarget)
+  else void showTarget()
 }
 
 function sendAndClose() {
@@ -366,6 +393,12 @@ function deleteActiveConversation() {
 
     <div v-if="!messageSearchOpen" class="messages clean-messages" ref="messagesEl" role="log" :aria-label="t('chatView.messageList')" aria-live="polite">
       <template v-if="ctx.activeContact.value">
+        <button
+          v-if="hiddenMessageCount > 0"
+          class="load-earlier-messages"
+          type="button"
+          @click="loadEarlierMessages"
+        >{{ t('chatView.loadEarlierMessages', { count: hiddenMessageCount }) }}</button>
         <template v-for="item in thread" :key="item.id">
           <div v-if="item.kind === 'sep'" class="day-sep"><span>{{ item.label }}</span></div>
           <div v-else class="bubble" :class="[item.m.direction, { highlighted: highlightedMessageId === item.m.id }]" :data-message-id="item.m.id">
