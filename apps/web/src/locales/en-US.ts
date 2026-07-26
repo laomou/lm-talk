@@ -265,6 +265,8 @@ export default {
     localRuleQuarantined: 'Quarantined by local rules',
     restore: 'Restore',
     contacts: 'Contacts',
+    alphaIndexLabel: 'Contact alphabet index',
+    jumpToAlpha: 'Jump to {alpha}',
     noContactMatchesTitle: 'No matching contacts',
     noContactMatchesDescription: 'Try another name or ID.',
     add: 'Add',
