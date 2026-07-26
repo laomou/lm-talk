@@ -1281,32 +1281,131 @@ const strictE2eeReadinessIssues = computed(() => [
 ].slice(0, 12))
 
 
+async function retryContactSecurityUpdates(contact: ContactItem): Promise<{ pending: number; resent: number; errors: string[] }> {
+  const pending = contactCardUpdateFanoutRecords.value
+    .filter((record) => record.peer_user_id === contact.user_id && record.status !== 'acked')
+  let resent = 0
+  const errors: string[] = []
+  for (const record of pending) {
+    record.retry_count = Number(record.retry_count ?? 0) + 1
+    record.last_retry_at = Date.now()
+    try {
+      await sendContactCardUpdateToContact(contact)
+      resent += 1
+    } catch (error) {
+      errors.push(userFacingError(error))
+    }
+  }
+  return { pending: pending.length, resent, errors }
+}
+
+function showContactSecurityRefreshResult(contact: ContactItem, dhtError: string, updateErrors: string[]) {
+  const status = contactStrictE2eeStatus(contact)
+  const errors = [...(dhtError ? [dhtError] : []), ...updateErrors]
+  if (status.level === 'blocking') {
+    showAlert(t('settingsView.securityStillBlockedTitle'), `仍无法发送：${status.detail}`, 'error')
+    return
+  }
+  if (errors.length) {
+    showAlert(
+      t('settingsView.securityInfoPartialTitle'),
+      `部分安全信息暂时无法刷新：${errors.join('；')}。这不影响已有聊天；${status.level === 'advisory' ? status.detail : '可稍后重试。'}`,
+      'warning',
+    )
+    return
+  }
+  showAlert(
+    t('settingsView.securityInfoRefreshedTitle'),
+    status.level === 'advisory'
+      ? `核心安全条件已满足，聊天不受影响；${status.detail}`
+      : t('settingsView.securityInfoRefreshedMessage'),
+    'success',
+  )
+}
+
+async function refreshContactSecurityInfoForActiveContact() {
+  if (!activeContact.value || activeContact.value.state !== 'Friend') return
+  const contact = activeContact.value
+  let dhtError = ''
+  try {
+    if (contactCardDhtDiscoveryIsStale(contact)) {
+      await refreshContactCardDhtForContact(contact, { preserveUi: true })
+    }
+    const updateResult = await retryContactSecurityUpdates(contact)
+    persist()
+    appendLog(`当前联系人安全信息刷新完成：ContactCard DHT ${dhtError ? '失败' : '已刷新/无需刷新'}，重发设备更新 ${updateResult.resent}/${updateResult.pending}`)
+    showContactSecurityRefreshResult(contact, dhtError, updateResult.errors)
+  } catch (error) {
+    dhtError = userFacingError(error)
+    const updateResult = await retryContactSecurityUpdates(contact)
+    persist()
+    appendLog(`当前联系人安全信息刷新部分失败：${dhtError}`)
+    showContactSecurityRefreshResult(contact, dhtError, updateResult.errors)
+  }
+}
+
 async function repairStrictE2eeForActiveContact() {
   if (!activeContact.value || activeContact.value.state !== 'Friend') return
   const contact = activeContact.value
-  await runAsync('修复当前联系人严格 E2EE', async () => {
+  let dhtError = ''
+  let ownCertCreated = false
+  try {
     enableStrictE2eePolicy()
-    await ensureOwnDeviceCertForStrict('当前联系人严格 E2EE 修复')
-    let discovered = false
-    if (activeContactSealedSlotRiskFor(contact) === 'high' || contactCardDhtDiscoveryIsStale(contact)) {
-      try {
-        await discoverActiveContactDht()
-        discovered = true
-      } catch (error) {
-        appendLog(`当前联系人严格 E2EE 修复：DHT 刷新失败：${userFacingError(error)}`)
+    ownCertCreated = await ensureOwnDeviceCertForStrict('当前联系人安全状态修复')
+    if (activeContactSealedSlotRiskFor(contact) === 'high') {
+      await refreshContactCardDhtForContact(contact, { preserveUi: true })
+    }
+  } catch (error) {
+    dhtError = userFacingError(error)
+  }
+  const updateResult = await retryContactSecurityUpdates(contact)
+  persist()
+  const status = contactStrictE2eeStatus(contact)
+  appendLog(`当前联系人安全状态修复完成：本设备证书 ${ownCertCreated ? '已更新' : '无需更新'}，ContactCard DHT ${dhtError ? '失败' : '已刷新/无需刷新'}，重发设备更新 ${updateResult.resent}/${updateResult.pending}`)
+  if (status.level === 'blocking') {
+    showAlert(t('settingsView.securityStillBlockedTitle'), `仍无法发送：${status.detail}${dhtError ? `；刷新失败：${dhtError}` : ''}`, 'error')
+    return
+  }
+  if (dhtError || updateResult.errors.length) {
+    showContactSecurityRefreshResult(contact, dhtError, updateResult.errors)
+    return
+  }
+  showAlert(
+    t('settingsView.securityRepairedTitle'),
+    status.level === 'advisory'
+      ? `可以发送消息。${status.detail}`
+      : '可以发送消息。',
+    'success',
+  )
+}
+
+async function refreshStrictE2eeSecurityInfo() {
+  const contactsToRefresh = friendContacts.value.filter((contact) => contactStrictE2eeStatus(contact).level === 'advisory')
+  if (!contactsToRefresh.length) {
+    showAlert(t('settingsView.securityInfoUpToDateTitle'), t('settingsView.securityInfoUpToDateMessage'), 'success')
+    return
+  }
+  let refreshed = 0
+  const errors: string[] = []
+  for (const contact of contactsToRefresh) {
+    try {
+      if (contactCardDhtDiscoveryIsStale(contact)) {
+        await refreshContactCardDhtForContact(contact, { preserveUi: true })
       }
+      const updateResult = await retryContactSecurityUpdates(contact)
+      refreshed += 1
+      errors.push(...updateResult.errors.map((message) => `${contact.display_name || contact.user_id}：${message}`))
+    } catch (error) {
+      errors.push(`${contact.display_name || contact.user_id}：${userFacingError(error)}`)
     }
-    const pending = contactCardUpdateFanoutRecords.value.filter((record) => record.peer_user_id === contact.user_id && record.status !== 'acked')
-    let resent = 0
-    for (const record of pending) {
-      record.retry_count = Number(record.retry_count ?? 0) + 1
-      record.last_retry_at = Date.now()
-      await sendContactCardUpdateToContact(contact)
-      resent += 1
-    }
-    appendLog(`当前联系人严格 E2EE 修复完成：DHT ${discovered ? '已刷新' : '未刷新/无需刷新'}，重发设备更新 ${resent}/${pending.length}`)
-    persist()
-  })
+  }
+  persist()
+  appendLog(`批量刷新联系人安全信息完成：${refreshed}/${contactsToRefresh.length}`)
+  if (errors.length) {
+    showAlert(t('settingsView.securityInfoPartialTitle'), `已刷新 ${refreshed}/${contactsToRefresh.length} 个联系人；${errors.slice(0, 3).join('；')}。不影响已有聊天。`, 'warning')
+    return
+  }
+  showAlert(t('settingsView.securityInfoRefreshedTitle'), `已刷新 ${refreshed} 个联系人；聊天不受影响。`, 'success')
 }
 
 async function repairStrictE2eeForActiveGroup() {
@@ -10825,7 +10924,7 @@ const appContext = {
   prekeySignedId, prekeyOneTimeCount, prekeyBundleText, prekeyPrivateBundleJson, prekeySignedOneTimeRecordTexts, prekeyInfoText, x3dhInitialMessageJson,
   selectedOneTimePreKeyId, selectedSignedOneTimePreKeyRecordText, x3dhSharedSecretText, ratchetStateText, ratchetPeerStateText, ratchetLocalDhKeyPairJson, ratchetRemoteDhPublicKeyForInit,
   ratchetInitRole, ratchetHeaderText, ratchetEnvelopeText, ratchetPlainText, ratchetKeyText, ratchetRemoteDhPublicKey,
-  ratchetInfoText, safetyPolicy, enableStrictE2eePolicy, strictE2eePolicyEnabled, strictE2eeReadiness, strictE2eeReadinessIssues, strictE2eeReadinessReportText, strictE2eeReadinessSummaryReportText, copyStrictE2eeReadinessReport, copyStrictE2eeReadinessSummaryReport, downloadStrictE2eeReadinessReport, downloadStrictE2eeReadinessSummaryReport, openStrictE2eeReadinessIssue, repairStrictE2eeForActiveContact, repairStrictE2eeForActiveGroup, repairStrictE2eeBlockers, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, perDeviceEnvelopeSentCount, perDeviceEnvelopeReceivedCount, perDeviceEnvelopeDropCount, lastPerDeviceEnvelopeAt, lastPerDeviceEnvelopeDropAt, lastPerDeviceEnvelopeDropReason, contactCardUpdateFanoutCount, contactCardUpdateFanoutSkipCount, lastContactCardUpdateFanoutAt, contactCardUpdateFanoutRecords, contactCardUpdateFanoutAckCount, contactCardUpdatePendingAckCount, contactCardUpdateStaleAckCount, retryStaleContactCardUpdateAcks, contactCardUpdateAckStatusFor, contactStrictE2eeStatus, contactStrictE2eeStatusText, contactStrictE2eeRiskLevel, contactCardDhtDiscoveryIsStale, contactCardDhtAutoRefreshCount, lastContactCardDhtAutoRefreshAt, lastContactCardDhtAutoRefreshError, contactCardDhtAutoRefreshHistory, sealedSlotCoverageSummary, sealedSlotRiskContacts, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
+  ratchetInfoText, safetyPolicy, enableStrictE2eePolicy, strictE2eePolicyEnabled, strictE2eeReadiness, strictE2eeReadinessIssues, strictE2eeReadinessReportText, strictE2eeReadinessSummaryReportText, copyStrictE2eeReadinessReport, copyStrictE2eeReadinessSummaryReport, downloadStrictE2eeReadinessReport, downloadStrictE2eeReadinessSummaryReport, openStrictE2eeReadinessIssue, refreshContactSecurityInfoForActiveContact, refreshStrictE2eeSecurityInfo, repairStrictE2eeForActiveContact, repairStrictE2eeForActiveGroup, repairStrictE2eeBlockers, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, perDeviceEnvelopeSentCount, perDeviceEnvelopeReceivedCount, perDeviceEnvelopeDropCount, lastPerDeviceEnvelopeAt, lastPerDeviceEnvelopeDropAt, lastPerDeviceEnvelopeDropReason, contactCardUpdateFanoutCount, contactCardUpdateFanoutSkipCount, lastContactCardUpdateFanoutAt, contactCardUpdateFanoutRecords, contactCardUpdateFanoutAckCount, contactCardUpdatePendingAckCount, contactCardUpdateStaleAckCount, retryStaleContactCardUpdateAcks, contactCardUpdateAckStatusFor, contactStrictE2eeStatus, contactStrictE2eeStatusText, contactStrictE2eeRiskLevel, contactCardDhtDiscoveryIsStale, contactCardDhtAutoRefreshCount, lastContactCardDhtAutoRefreshAt, lastContactCardDhtAutoRefreshError, contactCardDhtAutoRefreshHistory, sealedSlotCoverageSummary, sealedSlotRiskContacts, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
   nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, fillMyContactCardDhtKeyInput, findActiveContactMailboxHint, findActiveContactContactCard, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxFailedRecoveryItems, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, retryMailboxFailedItem, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,

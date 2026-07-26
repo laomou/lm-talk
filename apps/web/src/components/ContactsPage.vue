@@ -262,7 +262,10 @@ watch(
             <small>{{ contactSecurityStatus(ctx.activeContact.value).label }}：{{ contactSecurityStatus(ctx.activeContact.value).detail }}</small>
             <small v-if="ctx.contactRevokedDeviceCount(ctx.activeContact.value)" class="danger-text">{{ t('contactsView.revokedDevices', { count: ctx.contactRevokedDeviceCount(ctx.activeContact.value) }) }}</small>
             <UiActionGroup v-if="contactSecurityStatus(ctx.activeContact.value).level !== 'ok'">
-              <button class="secondary" @click="ctx.repairStrictE2eeForActiveContact">{{ contactSecurityStatus(ctx.activeContact.value).level === 'advisory' ? '刷新安全信息' : '修复安全状态' }}</button>
+              <button
+                class="secondary"
+                @click="contactSecurityStatus(ctx.activeContact.value).level === 'advisory' ? ctx.refreshContactSecurityInfoForActiveContact() : ctx.repairStrictE2eeForActiveContact()"
+              >{{ contactSecurityStatus(ctx.activeContact.value).level === 'advisory' ? t('settingsView.refreshSecurityInfo') : t('settingsView.repairSendBlockers') }}</button>
             </UiActionGroup>
           </UiSection>
           <UiSection v-if="ctx.activeContact.value.state === 'Friend'" :title="t('contactsView.readReceipts')">

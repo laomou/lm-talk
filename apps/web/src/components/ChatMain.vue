@@ -300,7 +300,7 @@ function deleteActiveConversation() {
         <span>{{ contactSecurityStatus.detail }}</span>
       </div>
       <template v-if="contactSecurityStatus.level === 'advisory'" #actions>
-        <button class="secondary" @click="ctx.repairStrictE2eeForActiveContact">刷新安全信息</button>
+        <button class="secondary" @click="ctx.refreshContactSecurityInfoForActiveContact">{{ t('settingsView.refreshSecurityInfo') }}</button>
       </template>
       <template v-else #actions>
         <button @click="ctx.repairStrictE2eeForActiveContact">修复后重试</button>
