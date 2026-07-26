@@ -440,6 +440,56 @@ test('会话内搜索命中旧消息时会自动展开历史窗口并定位', as
   }
 })
 
+test('长会话默认窗口渲染并可加载更早消息', async ({ browser }) => {
+  const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const alicePassphrase = 'playwright-history-window-alice-passphrase'
+  const bobPassphrase = 'playwright-history-window-bob-passphrase'
+  const alice = await registerAndLogin(aliceContext, 'Alice', alicePassphrase)
+  const bob = await registerAndLogin(bobContext, 'Bob', bobPassphrase)
+
+  try {
+    const bobCard = await copyOwnCard(bob)
+    await alice.getByRole('button', { name: '打开通讯录' }).click()
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByLabel('对方名片').fill(bobCard)
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByRole('button', { name: '返回通讯录' }).click()
+
+    await bob.getByRole('button', { name: '打开通讯录' }).click()
+    await bob.getByRole('button', { name: '打开新的朋友' }).click()
+    await expect(bob.getByRole('button', { name: '同意' })).toBeVisible({ timeout: 45_000 })
+    await bob.getByRole('button', { name: '同意' }).click()
+    await bob.getByRole('button', { name: '返回通讯录' }).click()
+    await bob.locator('.directory-row.contact-row').click()
+    await bob.getByRole('button', { name: '发消息' }).click()
+    await expect(alice.locator('.directory-row.contact-row')).toBeVisible({ timeout: 45_000 })
+    await flushLocalPersistence(alice)
+    await flushLocalPersistence(bob)
+    await expect.poll(() => persistedTableCount(alice, 'ratchetSessions')).toBeGreaterThan(0)
+    await expect.poll(() => persistedTableCount(bob, 'ratchetSessions')).toBeGreaterThan(0)
+
+    await openOnlyContactConversation(alice)
+    const aliceMessages = alice.getByRole('log', { name: '消息列表' })
+    const messages = Array.from({ length: 90 }, (_, index) => `长历史消息 ${String(index + 1).padStart(3, '0')}`)
+    for (const text of messages) {
+      await alice.getByLabel('输入消息').fill(text)
+      await alice.getByRole('button', { name: '发送' }).click()
+      await expect(aliceMessages.getByText(text, { exact: true })).toBeVisible()
+    }
+
+    await expect(aliceMessages.getByText('长历史消息 090', { exact: true })).toBeVisible()
+    await expect(aliceMessages.getByText('长历史消息 001', { exact: true })).toHaveCount(0)
+    await expect(alice.getByRole('button', { name: '加载更早的 10 条消息' })).toBeVisible()
+    await alice.getByRole('button', { name: '加载更早的 10 条消息' }).click()
+    await expect(aliceMessages.getByText('长历史消息 001', { exact: true })).toBeVisible()
+    await expect(alice.getByRole('button', { name: /加载更早/ })).toHaveCount(0)
+  } finally {
+    await aliceContext.close()
+    await bobContext.close()
+  }
+})
+
 test('节点暂不可用后自动恢复批量消息、未读与已读状态', async ({ browser }) => {
   const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
   const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
