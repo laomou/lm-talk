@@ -1547,10 +1547,7 @@ onUnmounted(() => {
   ratchetCryptoWorker = null
   for (const pending of ratchetCryptoRequests.values()) pending.reject(new Error('Ratchet 解密 Worker 已停止'))
   ratchetCryptoRequests.clear()
-  fileCryptoWorker?.terminate()
-  fileCryptoWorker = null
-  for (const pending of fileCryptoRequests.values()) pending.reject(new Error('文件加密 Worker 已停止'))
-  fileCryptoRequests.clear()
+  fileCryptoRpc.dispose()
   fileMetadataCryptoRpc.dispose()
   legacyEnvelopeCryptoRpc.dispose()
 })
@@ -10496,10 +10493,7 @@ type FileCryptoDecryptResult = {
   bytes: ArrayBuffer
 }
 
-type FileCryptoWorkerResponse = {
-  id: number
-  ok: boolean
-  error?: string
+type FileCryptoWorkerResponse = WorkerRpcResponse & {
   filePackageText?: string
   name?: string
   mimeType?: string
@@ -10507,60 +10501,22 @@ type FileCryptoWorkerResponse = {
   bytes?: ArrayBuffer
 }
 
-let fileCryptoWorker: Worker | null = null
-let nextFileCryptoRequestId = 1
-const fileCryptoRequests = new Map<number, {
-  resolve: (value: FileCryptoCreateResult | FileCryptoDecryptResult) => void
-  reject: (reason?: unknown) => void
-}>()
+const fileCryptoRpc = new WorkerRpcClient<
+  Record<string, unknown>,
+  FileCryptoWorkerResponse
+>(() => new Worker(new URL('./fileCrypto.worker.ts', import.meta.url), { type: 'module' }), '文件加密 Worker')
 
-function getFileCryptoWorker(): Worker {
-  if (fileCryptoWorker) return fileCryptoWorker
-  const worker = new Worker(new URL('./fileCrypto.worker.ts', import.meta.url), { type: 'module' })
-  worker.onmessage = (event: MessageEvent<FileCryptoWorkerResponse>) => {
-    const response = event.data
-    const pending = fileCryptoRequests.get(response.id)
-    if (!pending) return
-    fileCryptoRequests.delete(response.id)
-    if (!response.ok) {
-      pending.reject(new Error(response.error || '文件加密处理失败'))
-      return
-    }
-    if (response.filePackageText) {
-      pending.resolve({ filePackageText: response.filePackageText })
-      return
-    }
-    if (response.bytes && response.name !== undefined && response.mimeType !== undefined) {
-      pending.resolve({ name: response.name, mimeType: response.mimeType, size: response.size, bytes: response.bytes })
-      return
-    }
-    pending.reject(new Error('文件加密处理返回无效结果'))
-  }
-  worker.onerror = (event) => {
-    const error = new Error(event.message || '文件加密 Worker 已停止')
-    for (const pending of fileCryptoRequests.values()) pending.reject(error)
-    fileCryptoRequests.clear()
-    worker.terminate()
-    if (fileCryptoWorker === worker) fileCryptoWorker = null
-  }
-  fileCryptoWorker = worker
-  return worker
-}
-
-function runFileCryptoWorker<T extends FileCryptoCreateResult | FileCryptoDecryptResult>(
+async function runFileCryptoWorker<T extends FileCryptoCreateResult | FileCryptoDecryptResult>(
   payload: Record<string, unknown>,
   transfer: Transferable[] = [],
 ): Promise<T> {
-  const id = nextFileCryptoRequestId++
-  return new Promise<T>((resolve, reject) => {
-    fileCryptoRequests.set(id, { resolve: resolve as (value: FileCryptoCreateResult | FileCryptoDecryptResult) => void, reject })
-    try {
-      getFileCryptoWorker().postMessage({ id, ...payload }, transfer)
-    } catch (error) {
-      fileCryptoRequests.delete(id)
-      reject(error)
-    }
-  })
+  const response = await fileCryptoRpc.request(payload, { transfer })
+  if (!response.ok) throw new Error(response.error || '文件加密处理失败')
+  if (response.filePackageText) return { filePackageText: response.filePackageText } as T
+  if (response.bytes && response.name !== undefined && response.mimeType !== undefined) {
+    return { name: response.name, mimeType: response.mimeType, size: response.size, bytes: response.bytes } as T
+  }
+  throw new Error('文件加密处理返回无效结果')
 }
 
 async function createFilePackageInWorker(options: {
