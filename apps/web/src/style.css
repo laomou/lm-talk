@@ -438,6 +438,7 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
   background: var(--c-canvas);
 }
 .chat-message-search-results { overflow: auto; padding: var(--sp-3); }
+.search-message-status { display: block; margin: 0 0 var(--sp-2); color: var(--c-ink-3); font-size: 12px; }
 .search-message-result {
   width: 100%;
   display: grid;
