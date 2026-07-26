@@ -524,7 +524,9 @@ function deleteActiveConversation() {
           <small v-if="ctx.isDangerousFileName(ctx.selectedFile.value.name)" class="danger-text">{{ t('chatView.dangerousFileWarning') }}</small>
         </div>
         <button class="secondary danger" @click="ctx.cancelSelectedFile">{{ t('chatView.delete') }}</button>
-        <button @click="ctx.sendSelectedFile">{{ t('chatView.sendFile') }}</button>
+        <button @click="ctx.fileTransferPhase.value === '失败' ? ctx.retrySelectedFileSend() : ctx.sendSelectedFile()">
+          {{ ctx.fileTransferPhase.value === '失败' ? t('chatView.retrySendFile') : t('chatView.sendFile') }}
+        </button>
       </div>
       <div class="composer-bar">
         <button class="composer-icon" :aria-label="t('chatView.chooseAttachment')" @click="togglePanel('attach')"><UiIcon name="add" /></button>
@@ -539,7 +541,8 @@ function deleteActiveConversation() {
       <div v-else-if="composerPanel === 'emoji'" class="composer-panel emoji-panel">
         <button v-for="emoji in emojis" :key="emoji" class="emoji-choice" @click="appendEmoji(emoji)">{{ emoji }}</button>
       </div>
-      <small v-if="ctx.fileProgressText.value" class="file-progress-line">{{ ctx.fileProgressText.value }}</small>
+      <small v-if="ctx.fileTransferPhase.value !== '待选择'" class="file-progress-line">{{ ctx.fileTransferPhase.value }} · {{ ctx.rtcFileStatus.value }}</small>
+      <small v-else-if="ctx.fileProgressText.value" class="file-progress-line">{{ ctx.fileProgressText.value }}</small>
       <small v-if="activeFileOutboxError" class="outbox-error">{{ t('chatView.fileSendFailed') }}：{{ activeFileOutboxError }}</small>
     </footer>
   </section>

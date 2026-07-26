@@ -510,6 +510,62 @@ test('连续持久化请求会被合并成少量写入', async ({ browser }) => 
   }
 })
 
+test('附件发送失败后可重试并最终送达', async ({ browser }) => {
+  const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const alicePassphrase = 'playwright-attachment-send-retry-alice-passphrase'
+  const bobPassphrase = 'playwright-attachment-send-retry-bob-passphrase'
+  const alice = await registerAndLogin(aliceContext, 'Alice', alicePassphrase)
+  const bob = await registerAndLogin(bobContext, 'Bob', bobPassphrase)
+  let restoreAliceTransport = false
+
+  try {
+    const bobCard = await copyOwnCard(bob)
+    await alice.getByRole('button', { name: '打开通讯录' }).click()
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByLabel('对方名片').fill(bobCard)
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByRole('button', { name: '返回通讯录' }).click()
+
+    await bob.getByRole('button', { name: '打开通讯录' }).click()
+    await bob.getByRole('button', { name: '打开新的朋友' }).click()
+    await expect(bob.getByRole('button', { name: '同意' })).toBeVisible({ timeout: 45_000 })
+    await bob.getByRole('button', { name: '同意' }).click()
+    await bob.getByRole('button', { name: '返回通讯录' }).click()
+    await bob.locator('.directory-row.contact-row').click()
+    await bob.getByRole('button', { name: '发消息' }).click()
+    await expect(alice.locator('.directory-row.contact-row')).toBeVisible({ timeout: 45_000 })
+    await openOnlyContactConversation(alice)
+    await alice.evaluate(() => (window as typeof window & { resetRtcForTests?: () => void }).resetRtcForTests?.())
+    await aliceContext.route('http://127.0.0.1:8787/api/**', async (route) => {
+      if (restoreAliceTransport) {
+        await route.continue()
+        return
+      }
+      await route.abort('connectionrefused')
+    })
+
+    await alice.getByLabel('选择附件').setInputFiles({
+      name: 'retry.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('attachment retry payload'),
+    })
+    await alice.getByRole('button', { name: '发送文件' }).click()
+    await expect(alice.getByRole('button', { name: '重试发送' })).toBeVisible({ timeout: 45_000 })
+
+    restoreAliceTransport = true
+    await alice.evaluate(() => window.dispatchEvent(new Event('online')))
+    await alice.getByRole('button', { name: '重试发送' }).click()
+    const bobAttachment = bob.locator('.bubble.in .message-attachment-card').filter({ hasText: 'retry.txt' }).first()
+    await expect(bobAttachment).toBeVisible({ timeout: 45_000 })
+    await bobAttachment.getByRole('button', { name: '解密文件' }).click()
+    await expect(bobAttachment.getByRole('link', { name: '下载' })).toBeVisible({ timeout: 45_000 })
+  } finally {
+    await aliceContext.close()
+    await bobContext.close()
+  }
+})
+
 test('节点暂不可用后自动恢复批量消息、未读与已读状态', async ({ browser }) => {
   const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
   const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })

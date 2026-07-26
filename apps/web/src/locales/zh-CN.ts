@@ -220,6 +220,7 @@ export default {
     inputMessage: '输入消息',
     send: '发送',
     sendFile: '发送文件',
+    retrySendFile: '重试发送',
     delete: '删除',
     dangerousFileWarning: '危险类型：接收方下载后请谨慎打开',
     encryptedFilePackage: '收到加密文件包',
