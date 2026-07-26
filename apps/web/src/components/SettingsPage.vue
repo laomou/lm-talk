@@ -26,15 +26,11 @@ const profileStatus = computed(() => props.ctx.profileUpdateStatus.value
     ? { text: t('settingsView.profileSavedPendingSync'), tone: 'warning' as const }
     : null))
 const showSyncEditor = computed(() => showSyncServiceEditor.value || props.ctx.nodeEntrySummaries.value.length === 0)
-const mailboxInboxErrorLines = computed(() => props.ctx.mailboxInboxErrorText.value
-  .split('\n')
-  .map((line: string) => line.trim())
-  .filter(Boolean))
 const syncStatus = computed(() => {
   if (!props.ctx.nodeEnabled.value) return { text: t('settingsView.syncDisabled'), tone: 'neutral' as const }
   if (props.ctx.nodeMissingRemoteTokenCount.value > 0) return { text: t('settingsView.syncNeedsConfig'), tone: 'warning' as const }
   const hasOutbox = props.ctx.outbox.value.some((item: any) => item.status !== 'sent')
-  const hasMailboxIssue = props.ctx.mailboxFailureSummaryText.value || props.ctx.mailboxInboxErrorText.value
+  const hasMailboxIssue = props.ctx.mailboxFailedCount.value > 0
   const hasSyncIssue = props.ctx.syncFailureSummaryText.value
   return hasOutbox || hasMailboxIssue || hasSyncIssue
     ? { text: t('settingsView.needsAction'), tone: 'warning' as const }
@@ -242,10 +238,10 @@ function onAvatarSelected(event: Event) {
         </UiSection>
         <UiSection class="sync-card" :title="t('settingsView.diagnostics')">
           <template #actions><button class="secondary" @click="ctx.goDiagnosticsPage('me-sync')">{{ t('settingsView.openDiagnostics') }}</button></template>
-          <small v-if="ctx.mailboxFailureSummaryText.value" class="danger-text">{{ ctx.mailboxFailureSummaryText.value }}</small>
-          <div v-if="mailboxInboxErrorLines.length" class="mailbox-error-lines">
-            <small v-for="(line, index) in mailboxInboxErrorLines" :key="`${index}-${line}`" class="danger-text">{{ line }}</small>
-          </div>
+          <small v-if="ctx.mailboxFailedCount.value">{{ t('settingsView.incomingRecoverySummary', { count: ctx.mailboxFailedCount.value, summary: ctx.mailboxFailureSummaryText.value || t('settingsView.incomingRecoveryFallback') }) }}</small>
+          <UiActionGroup v-if="ctx.mailboxFailedCount.value">
+            <button class="secondary" @click="ctx.retryFailedMailboxItems">{{ t('settingsView.retryMailboxFailures', { count: ctx.mailboxFailedCount.value }) }}</button>
+          </UiActionGroup>
           <small>{{ ctx.mailboxInboxStatus.value }}</small>
           <small>{{ ctx.mailboxQuotaStatusText.value }}</small>
         </UiSection>
