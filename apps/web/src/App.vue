@@ -930,7 +930,30 @@ const storageEstimateText = ref('尚未估算')
 const webVersionText = `Version ${__APP_VERSION__} (${__BUILD_REF__})`
 const selectedFile = ref<File | null>(null)
 const filePackageText = ref('')
-const attachmentDownloads = ref<Record<string, { url: string; name: string; mime: string; meta: string; preview_kind: string }>>({})
+type AttachmentDownload = { url: string; name: string; mime: string; meta: string; preview_kind: string }
+const attachmentDownloads = ref<Record<string, AttachmentDownload>>({})
+
+function releaseAttachmentDownloads(messageIds: Iterable<string>) {
+  const ids = new Set(messageIds)
+  if (ids.size === 0) return
+  const next = { ...attachmentDownloads.value }
+  for (const id of ids) {
+    const download = next[id]
+    if (!download) continue
+    URL.revokeObjectURL(download.url)
+    delete next[id]
+  }
+  attachmentDownloads.value = next
+}
+
+function releaseAllAttachmentDownloads() {
+  releaseAttachmentDownloads(Object.keys(attachmentDownloads.value))
+}
+
+function releaseAttachmentDownloadsForMessages(items: ChatMessage[]) {
+  releaseAttachmentDownloads(items.map((item) => item.id))
+}
+
 const rtcFileStatus = ref('未发送文件')
 const fileTransferPhase = ref('待选择')
 const fileProgressText = ref('')
@@ -1707,6 +1730,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopMailboxLongPoll()
+  releaseAllAttachmentDownloads()
   stopWatchingPwaUpdate?.()
   stopPersistenceCryptoWorker()
   persistenceSnapshotRpc.dispose()
@@ -2848,6 +2872,7 @@ async function loadPersistedState() {
 }
 
 function resetAccountScopedState() {
+  releaseAllAttachmentDownloads()
   contacts.value = []
   friendRequests.value = []
   groups.value = []
@@ -2911,6 +2936,7 @@ function resetAccountScopedState() {
 }
 
 async function clearPersisted() {
+  releaseAllAttachmentDownloads()
   resetPersistSnapshots()
   await idbDel('chat-state-v1')
   await idbDel('chat-state-schema-v1')
@@ -6444,6 +6470,7 @@ async function removeActiveGroup() {
   const ok = await showConfirm('退出群聊', `退出「${name}」并删除本地群消息和群密钥？这只影响本设备，不会通知其他成员。`, true)
   if (!ok) return
   groups.value = groups.value.filter((g) => g.group_id !== id)
+  releaseAttachmentDownloadsForMessages(messages.value.filter((m) => m.group_id === id))
   messages.value = messages.value.filter((m) => m.group_id !== id)
   groupSenderKeys.value = groupSenderKeys.value.filter((k) => k.group_id !== id)
   activeGroupId.value = groups.value[0]?.group_id ?? ''
@@ -6483,6 +6510,7 @@ async function leaveActiveGroupWithNotice() {
     appendLog(`退群通知发送完成：已发送 ${sent}，待发送 ${queued}，失败 ${failed}`)
   } finally {
     groups.value = groups.value.filter((g) => g.group_id !== group.group_id)
+    releaseAttachmentDownloadsForMessages(messages.value.filter((m) => m.group_id === group.group_id))
     messages.value = messages.value.filter((m) => m.group_id !== group.group_id)
     groupSenderKeys.value = groupSenderKeys.value.filter((k) => k.group_id !== group.group_id)
     activeGroupId.value = groups.value[0]?.group_id ?? ''
@@ -7662,6 +7690,7 @@ async function removeActiveContact() {
   if (!confirmed) return
   const id = contact.user_id
   contacts.value = contacts.value.filter((c) => c.user_id !== id)
+  releaseAttachmentDownloadsForMessages(messages.value.filter((m) => m.peer_user_id === id))
   messages.value = messages.value.filter((m) => m.peer_user_id !== id)
   ratchetSessions.value = ratchetSessions.value.filter((r) => r.peer_user_id !== id)
   activePeerId.value = contacts.value[0]?.user_id ?? ''
@@ -7676,10 +7705,12 @@ async function clearActiveConversation() {
   if (!confirmed) return
   if (activeGroup.value) {
     const groupId = activeGroup.value.group_id
+    releaseAttachmentDownloadsForMessages(messages.value.filter((m) => m.group_id === groupId))
     messages.value = messages.value.filter((m) => m.group_id !== groupId)
     activeGroupId.value = ''
   } else if (activeContact.value) {
     const peerId = activeContact.value.user_id
+    releaseAttachmentDownloadsForMessages(messages.value.filter((m) => m.peer_user_id === peerId))
     messages.value = messages.value.filter((m) => m.peer_user_id !== peerId)
     activePeerId.value = ''
   }
@@ -10803,8 +10834,7 @@ async function decryptAttachmentMessage(messageId: string) {
       contactCardText: contact.contact_card_text,
       filePackageText: text,
     })
-    const previous = attachmentDownloads.value[message.id]
-    if (previous?.url) URL.revokeObjectURL(previous.url)
+    releaseAttachmentDownloads([message.id])
     const bytes = new Uint8Array(out.bytes)
     const blob = new Blob([bytes], { type: out.mimeType || 'application/octet-stream' })
     const mime = out.mimeType || 'application/octet-stream'
