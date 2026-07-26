@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import UiIcon from './UiIcon.vue'
 import { useI18n } from 'vue-i18n'
+import { WorkerRpcClient, type WorkerRpcResponse } from '../workers/WorkerRpcClient'
 
 const emit = defineEmits<{ scanned: [value: string]; close: [] }>()
 const { t } = useI18n()
@@ -15,32 +16,28 @@ const cameraReady = ref(false)
 
 let stream: MediaStream | null = null
 let animationId = 0
-let decodeWorker: Worker | null = null
-let nextRequestId = 1
 let decoding = false
 let lastDecodeAt = 0
 
 const cameraSupported = computed(() => typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia))
 
-function getDecodeWorker() {
-  if (decodeWorker) return decodeWorker
-  decodeWorker = new Worker(new URL('../qrDecode.worker.ts', import.meta.url), { type: 'module' })
-  return decodeWorker
+type QrDecodeWorkerResponse = WorkerRpcResponse & {
+  value?: string
 }
 
-function decodePixels(pixels: Uint8ClampedArray, width: number, height: number): Promise<string> {
-  const id = nextRequestId++
-  const worker = getDecodeWorker()
-  return new Promise((resolve, reject) => {
-    const onMessage = (event: MessageEvent<{ id: number; ok: boolean; value?: string; error?: string }>) => {
-      if (event.data.id !== id) return
-      worker.removeEventListener('message', onMessage)
-      if (event.data.ok) resolve(event.data.value || '')
-      else reject(new Error(event.data.error || 'QR decode failed'))
-    }
-    worker.addEventListener('message', onMessage)
-    worker.postMessage({ id, pixels: pixels.buffer, width, height }, [pixels.buffer])
-  })
+const qrDecodeRpc = new WorkerRpcClient<
+  { pixels: ArrayBuffer; width: number; height: number },
+  QrDecodeWorkerResponse
+>(() => new Worker(new URL('../qrDecode.worker.ts', import.meta.url), { type: 'module' }), '二维码识别 Worker')
+
+async function decodePixels(pixels: Uint8ClampedArray, width: number, height: number): Promise<string> {
+  const pixelBuffer = pixels.buffer as ArrayBuffer
+  const response = await qrDecodeRpc.request(
+    { pixels: pixelBuffer, width, height },
+    { transfer: [pixelBuffer] },
+  )
+  if (response.ok) return response.value || ''
+  throw new Error(response.error || 'QR decode failed')
 }
 
 function cameraErrorText(error: unknown) {
@@ -159,8 +156,7 @@ function stopCamera() {
 onMounted(startCamera)
 onUnmounted(() => {
   stopCamera()
-  decodeWorker?.terminate()
-  decodeWorker = null
+  qrDecodeRpc.dispose()
 })
 </script>
 
