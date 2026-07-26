@@ -1469,6 +1469,24 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   line-height: 18px;
   text-align: center;
 }
+.conversation-delivery,
+.conversation-retry {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--c-ink-3);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.conversation-delivery.is-pending { color: var(--c-warning); }
+.conversation-retry {
+  color: var(--c-danger);
+  cursor: pointer;
+  padding: 0;
+}
+.conversation-retry:hover { text-decoration: underline; }
 .conversation-avatar-wrap {
   position: relative;
   display: inline-grid;
