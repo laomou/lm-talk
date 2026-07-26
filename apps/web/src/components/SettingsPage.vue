@@ -156,7 +156,7 @@ function onAvatarSelected(event: Event) {
           <UiStatusBadge v-if="profileStatus" :tone="profileStatus.tone">{{ profileStatus.text }}</UiStatusBadge>
           <UiActionGroup>
             <button v-if="ctx.profileSyncRetryAvailable.value" class="secondary" :disabled="ctx.profileSyncing.value" @click="ctx.retryMyProfileSync">{{ ctx.profileSyncing.value ? t('settingsView.syncingProfile') : t('settingsView.syncProfileNow') }}</button>
-            <button class="secondary" @click="ctx.showQr(ctx.myContactCardText.value, t('settingsView.myCard'))">{{ t('settingsView.myCard') }}</button>
+            <button class="secondary" @click="ctx.showMyContactCardQr">{{ t('settingsView.myCard') }}</button>
           </UiActionGroup>
         </UiSection>
       </template>

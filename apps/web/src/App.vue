@@ -12,6 +12,7 @@ import UiActionGroup from './components/UiActionGroup.vue'
 import QRCode from 'qrcode'
 import { applyPwaUpdate, onPwaUpdateReady, readPwaStatus } from './pwa'
 import { TABLES, idbDel, idbGet, idbSet, idbTableApplyChanges, idbTableClear, idbTableGet, idbTableGetAllByPrefix, idbTableReplaceByPrefix } from './idb'
+import { WorkerRpcClient, type WorkerRpcResponse } from './workers/WorkerRpcClient'
 
 type IdentityOutput = {
   user_id: string
@@ -1521,10 +1522,7 @@ onUnmounted(() => {
   stopMailboxLongPoll()
   stopWatchingPwaUpdate?.()
   stopPersistenceCryptoWorker()
-  persistenceSnapshotWorker?.terminate()
-  persistenceSnapshotWorker = null
-  for (const pending of persistenceSnapshotRequests.values()) pending.reject(new Error('本地存储快照 Worker 已停止'))
-  persistenceSnapshotRequests.clear()
+  persistenceSnapshotRpc.dispose()
   groupSenderCryptoWorker?.terminate()
   groupSenderCryptoWorker = null
   for (const pending of groupSenderCryptoRequests.values()) pending.reject(new Error('Sender Key Worker 已停止'))
@@ -1565,10 +1563,7 @@ onUnmounted(() => {
   ratchetEncryptWorker = null
   for (const pending of ratchetEncryptRequests.values()) pending.reject(new Error('Ratchet 加密 Worker 已停止'))
   ratchetEncryptRequests.clear()
-  backupCryptoWorker?.terminate()
-  backupCryptoWorker = null
-  for (const pending of backupCryptoRequests.values()) pending.reject(new Error('身份与安全备份 Worker 已停止'))
-  backupCryptoRequests.clear()
+  backupCryptoRpc.dispose()
   ratchetCryptoWorker?.terminate()
   ratchetCryptoWorker = null
   for (const pending of ratchetCryptoRequests.values()) pending.reject(new Error('Ratchet 解密 Worker 已停止'))
@@ -2373,44 +2368,16 @@ function resetPersistSnapshots() {
   persistSchemaMarked = false
 }
 
-type PersistenceSnapshotWorkerResponse = {
-  id: number
-  ok: boolean
+type PersistenceSnapshotWorkerResponse = WorkerRpcResponse & {
   signatures?: Array<[string, string]>
-  error?: string
 }
 
-let persistenceSnapshotWorker: Worker | null = null
-let nextPersistenceSnapshotRequestId = 1
-const persistenceSnapshotRequests = new Map<number, {
-  resolve: (value: Map<string, string>) => void
-  reject: (reason?: unknown) => void
-}>()
-
-function getPersistenceSnapshotWorker(): Worker {
-  if (persistenceSnapshotWorker) return persistenceSnapshotWorker
-  const worker = new Worker(new URL('./persistenceSnapshot.worker.ts', import.meta.url), { type: 'module' })
-  worker.onmessage = (event: MessageEvent<PersistenceSnapshotWorkerResponse>) => {
-    const response = event.data
-    const pending = persistenceSnapshotRequests.get(response.id)
-    if (!pending) return
-    persistenceSnapshotRequests.delete(response.id)
-    if (response.ok && response.signatures) pending.resolve(new Map(response.signatures))
-    else pending.reject(new Error(response.error || '本地存储快照 Worker 处理失败'))
-  }
-  worker.onerror = (event) => {
-    const error = new Error(event.message || '本地存储快照 Worker 已停止')
-    for (const pending of persistenceSnapshotRequests.values()) pending.reject(error)
-    persistenceSnapshotRequests.clear()
-    worker.terminate()
-    if (persistenceSnapshotWorker === worker) persistenceSnapshotWorker = null
-  }
-  persistenceSnapshotWorker = worker
-  return worker
-}
+const persistenceSnapshotRpc = new WorkerRpcClient<
+  { entries: Array<[string, unknown]> },
+  PersistenceSnapshotWorkerResponse
+>(new URL('./persistenceSnapshot.worker.ts', import.meta.url), '本地存储快照 Worker')
 
 function persistEntrySignatures(entries: Array<[string, unknown]>): Promise<Map<string, string>> {
-  const id = nextPersistenceSnapshotRequestId++
   // `toRaw` only unwraps the outer Vue proxy. Nested arrays/objects can still
   // be reactive proxies, which cannot cross a Worker boundary and previously
   // caused a DataCloneError before any table write occurred. JSON-compatible
@@ -2420,14 +2387,9 @@ function persistEntrySignatures(entries: Array<[string, unknown]>): Promise<Map<
     key,
     value == null ? value : JSON.parse(JSON.stringify(toRaw(value))),
   ] as [string, unknown])
-  return new Promise((resolve, reject) => {
-    persistenceSnapshotRequests.set(id, { resolve, reject })
-    try {
-      getPersistenceSnapshotWorker().postMessage({ id, entries: plainEntries })
-    } catch (error) {
-      persistenceSnapshotRequests.delete(id)
-      reject(error)
-    }
+  return persistenceSnapshotRpc.request({ entries: plainEntries }).then((response) => {
+    if (response.ok && response.signatures) return new Map(response.signatures)
+    throw new Error(response.error || '本地存储快照 Worker 处理失败')
   })
 }
 
@@ -2959,52 +2921,19 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`
 }
 
-type BackupCryptoWorkerResponse = {
-  id: number
-  ok: boolean
+type BackupCryptoWorkerResponse = WorkerRpcResponse & {
   value?: string
-  error?: string
 }
 
-let backupCryptoWorker: Worker | null = null
-let nextBackupCryptoRequestId = 1
-const backupCryptoRequests = new Map<number, {
-  resolve: (value: string) => void
-  reject: (reason?: unknown) => void
-}>()
-
-function getBackupCryptoWorker(): Worker {
-  if (backupCryptoWorker) return backupCryptoWorker
-  const worker = new Worker(new URL('./backupCrypto.worker.ts', import.meta.url), { type: 'module' })
-  worker.onmessage = (event: MessageEvent<BackupCryptoWorkerResponse>) => {
-    const response = event.data
-    const pending = backupCryptoRequests.get(response.id)
-    if (!pending) return
-    backupCryptoRequests.delete(response.id)
-    if (response.ok && typeof response.value === 'string') pending.resolve(response.value)
-    else pending.reject(new Error(response.error || '身份与安全备份 Worker 处理失败'))
-  }
-  worker.onerror = (event) => {
-    const error = new Error(event.message || '身份与安全备份 Worker 已停止')
-    for (const pending of backupCryptoRequests.values()) pending.reject(error)
-    backupCryptoRequests.clear()
-    worker.terminate()
-    if (backupCryptoWorker === worker) backupCryptoWorker = null
-  }
-  backupCryptoWorker = worker
-  return worker
-}
+const backupCryptoRpc = new WorkerRpcClient<
+  Record<string, string>,
+  BackupCryptoWorkerResponse
+>(new URL('./backupCrypto.worker.ts', import.meta.url), '身份与安全备份 Worker')
 
 function runBackupCryptoWorker(payload: Record<string, string>): Promise<string> {
-  const id = nextBackupCryptoRequestId++
-  return new Promise((resolve, reject) => {
-    backupCryptoRequests.set(id, { resolve, reject })
-    try {
-      getBackupCryptoWorker().postMessage({ id, ...payload })
-    } catch (error) {
-      backupCryptoRequests.delete(id)
-      reject(error)
-    }
+  return backupCryptoRpc.request(payload).then((response) => {
+    if (response.ok && typeof response.value === 'string') return response.value
+    throw new Error(response.error || '身份与安全备份 Worker 处理失败')
   })
 }
 
@@ -5464,6 +5393,18 @@ async function showQr(value: string, label: string) {
   } catch (e) {
     appendLog(`❌ 二维码生成失败：${String(e)}`)
   }
+}
+
+async function showMyContactCardQr() {
+  if (!myContactCardText.value.trim()) {
+    if (!backupText.value || !passphrase.value) {
+      showAlert(t('appDialog.cannotSend'), '当前身份名片尚未准备完成，请重新登录后再试。', 'error')
+      return
+    }
+    await exportMyCard()
+    persist()
+  }
+  await showQr(myContactCardText.value, t('settingsView.myCard'))
 }
 
 function closeQr() {
@@ -11383,7 +11324,7 @@ function logout() {
   void router.push('/login')
 }
 const appContext = {
-  goChatPage, goChatHome, goContactsPage, goSettingsPage, goSyncSettings, goDiagnosticsPage, goDiagnosticsBack, showAlert, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, saveMyProfile, retryMyProfileSync, profileSaving, profileAvatarSaving, profileSyncing, profileSyncPending, profileSyncRetryAvailable, profileUpdateStatus, reencryptCurrentIdentityBackup, myContactCardText, backupText, newIdentityPassphrase,
+  goChatPage, goChatHome, goContactsPage, goSettingsPage, goSyncSettings, goDiagnosticsPage, goDiagnosticsBack, showAlert, logout, log, identity, displayName, localIdentities, selectedLocalIdentityId, lastRegisteredIdentity, loginSelectedIdentity, importIdentityOnly, refreshMyContactCard, saveMyProfile, retryMyProfileSync, profileSaving, profileAvatarSaving, profileSyncing, profileSyncPending, profileSyncRetryAvailable, profileUpdateStatus, reencryptCurrentIdentityBackup, showMyContactCardQr, myContactCardText, backupText, newIdentityPassphrase,
   clearBrowserCaches, refreshStorageEstimate, storageEstimateText, webVersionText,
   nodeControlUrl, nodeUrlList, nodeEntrySummaries, nodeSettingsSummaryText, nodeTokenStorageText, nodeTokenCount, nodeMissingRemoteTokenCount, syncTriggerPolicyText, syncFailureSummaryText, syncRecoveryStatusText, syncRecoveryHistory, exportSyncRecoveryHistory, clearSyncRecoveryHistory, recoverSyncFailures, syncNow, toggleNodeEnabled, nodeEnabled, saveNetworkSettings, autoPublishPreKeyIfEnabled, autoMailboxTake, autoReadReceipts,
   runtimeStatusText, pwaStatusText, inAppRuntimePolicyText, refreshRuntimeStatus, refreshPwaStatus,
