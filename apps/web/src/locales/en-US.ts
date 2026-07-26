@@ -59,6 +59,8 @@ export default {
     avatarSavedAndSynced: 'Avatar saved and synced',
     avatarSavedPendingSync: 'Avatar saved; waiting for next sync',
     avatarRemoved: 'Avatar removed',
+    syncProfileNow: 'Sync now',
+    syncingProfile: 'Syncing…',
     myCard: 'My card',
     identityBackup: 'Identity backup',
     identityBackupDescription: 'Identity file and passphrase are both required. Losing either one makes this identity unrecoverable.',
