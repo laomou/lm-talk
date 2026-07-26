@@ -314,15 +314,26 @@ function deleteActiveConversation() {
     >
       <div class="notice-text">
         <b>{{ t('chatView.incomingRecoveryTitle', { count: ctx.activeMailboxFailedItems.value.length }) }}</b>
-        <span>{{ ctx.activeMailboxFailedItems.value[0].reason }}。{{ ctx.activeMailboxFailedItems.value[0].hint }}</span>
+        <span v-if="ctx.activeSessionRecoveryState.value === 'waiting'">{{ t('chatView.sessionRecoveryWaiting') }}</span>
+        <span v-else-if="ctx.activeSessionRecoveryState.value === 'recovered'">{{ t('chatView.sessionRecoveryComplete') }}</span>
+        <span v-else>{{ ctx.activeMailboxFailedItems.value[0].reason }}。{{ ctx.activeMailboxFailedItems.value[0].hint }}</span>
       </div>
       <template #actions>
         <button
-          v-if="ctx.activeMailboxFailedItems.value.some((item: any) => item.category === 'session')"
+          v-if="ctx.activeSessionRecoveryState.value === 'needed'"
           class="secondary"
           @click="ctx.retrySecureSessionForActiveContact"
         >{{ t('chatView.recoverSession') }}</button>
-        <button class="secondary" @click="ctx.retryMailboxFailuresForActiveContact">{{ t('chatView.retryIncoming') }}</button>
+        <button
+          v-if="ctx.activeSessionRecoveryState.value === 'recovered'"
+          class="secondary danger"
+          @click="ctx.discardUnrecoverableSessionFailuresForActiveContact"
+        >{{ t('chatView.ignoreOldMessages') }}</button>
+        <button
+          v-else-if="ctx.activeSessionRecoveryState.value === 'none'"
+          class="secondary"
+          @click="ctx.retryMailboxFailuresForActiveContact"
+        >{{ t('chatView.retryIncoming') }}</button>
       </template>
     </UiNotice>
 

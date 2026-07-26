@@ -576,6 +576,7 @@ const MAX_SIGNAL_BYTES = 256 * 1024
 const MAX_FILE_BYTES = 16 * 1024 * 1024
 const MAX_RTC_TEXT_BYTES = MAX_FILE_BYTES * 3
 const MAX_OUTBOX_RETRY_COUNT = 5
+const SECURE_SESSION_RECOVERY_COOLDOWN_MS = 60_000
 const NODE_FETCH_TIMEOUT_MS = 10_000
 const MAILBOX_LONG_POLL_WAIT_SECONDS = 25
 const MAILBOX_LONG_POLL_TIMEOUT_MS = 35_000
@@ -981,6 +982,19 @@ const activeMailboxFailedItems = computed(() => {
       reason: mailboxFailureDisplayText(item.reason),
       hint: mailboxFailureRecoveryHint(item.reason),
     }))
+})
+const activeSessionRecoveryState = computed(() => {
+  const contact = activeContact.value
+  if (!contact) return 'none' as const
+  const sessionFailures = mailboxFailedItems.value.filter((item) =>
+    String(item.message?.from_user_id ?? '') === contact.user_id
+    && mailboxFailureCategory(item.reason) === 'session',
+  )
+  if (!sessionFailures.length) return 'none' as const
+  if (pendingSecureSessionOfferFor(contact.user_id)) return 'waiting' as const
+  const newestFailureAt = Math.max(...sessionFailures.map((item) => item.last_failed_at))
+  if ((contact.last_secure_session_success_at ?? 0) >= newestFailureAt) return 'recovered' as const
+  return 'needed' as const
 })
 const activeGroup = computed(() => groups.value.find((g) => g.group_id === activeGroupId.value) ?? null)
 const activeRatchetSession = computed(() => activeContact.value ? ratchetSessionFor(activeContact.value.user_id) : null)
@@ -8200,6 +8214,7 @@ async function sendSecureSessionOfferToContact(contact: ContactItem) {
 function recoverSecureSessionForContact(contact: ContactItem) {
   if (!nodeEnabled.value || contact.state !== 'Friend') return
   if (pendingSecureSessionOfferFor(contact.user_id)) return
+  if (contact.last_secure_session_attempt_at && Date.now() - contact.last_secure_session_attempt_at < SECURE_SESSION_RECOVERY_COOLDOWN_MS) return
   void sendSecureSessionOfferToContact(contact)
     .then(() => {
       appendLog(`🔄 已向 ${contact.display_name || contact.user_id} 发起安全会话恢复`)
@@ -8219,13 +8234,16 @@ function retrySecureSessionForActiveContact() {
       return
     }
     const contact = activeContact.value
-    void sendSecureSessionOfferToContact(contact)
-      .then(() => {
-        toast('安全建链已重试', 'success')
-      })
-      .catch((e) => {
-        showAlert('安全建链重试失败', userFacingError(e), 'error')
-      })
+    if (pendingSecureSessionOfferFor(contact.user_id)) {
+      toast('正在等待对方的安全会话响应', 'info')
+      return
+    }
+    if (contact.last_secure_session_attempt_at && Date.now() - contact.last_secure_session_attempt_at < SECURE_SESSION_RECOVERY_COOLDOWN_MS) {
+      toast('安全会话恢复已在进行中，请稍候', 'info')
+      return
+    }
+    recoverSecureSessionForContact(contact)
+    toast('已发起安全会话恢复', 'success')
   })
 }
 
@@ -10352,6 +10370,33 @@ async function retryMailboxFailuresForActiveContact() {
   })
 }
 
+async function discardUnrecoverableSessionFailuresForActiveContact() {
+  if (!activeContact.value) return
+  const contact = activeContact.value
+  const items = mailboxFailedItems.value.filter((item) =>
+    String(item.message?.from_user_id ?? '') === contact.user_id
+    && mailboxFailureCategory(item.reason) === 'session',
+  )
+  if (!items.length) return
+  const confirmed = await showConfirm(
+    '忽略无法恢复的旧消息',
+    `这些消息来自恢复前的安全会话，无法用新会话解密。将从节点确认并不再重复提示；请让对方重发。确定忽略 ${items.length} 条消息吗？`,
+    true,
+  )
+  if (!confirmed) return
+  const deliveryIds = items.map((item) => item.delivery_id).filter((id): id is string => Boolean(id))
+  if (deliveryIds.length) await acknowledgeMailboxDeliveries(deliveryIds)
+  for (const item of items) {
+    rememberProcessedMailboxIds(mailboxDedupeIds(item.delivery_id, item.message_id))
+  }
+  mailboxFailedItems.value = mailboxFailedItems.value.filter((item) => !items.some((failed) => failed.id === item.id))
+  mailboxInboxStatus.value = `已忽略 ${items.length} 条恢复前的旧消息，请对方重发`
+  mailboxInboxErrorText.value = ''
+  mailboxFailureSummaryText.value = summarizeMailboxFailures(mailboxFailedItems.value.map((item) => item.reason))
+  appendLog(`已忽略 ${contact.display_name || contact.user_id} 的 ${items.length} 条恢复前 Ratchet 消息`)
+  persist()
+}
+
 async function recoverSyncFailures() {
   await runAsync('重试失败项', async () => {
     const actions: string[] = []
@@ -10971,7 +11016,7 @@ const appContext = {
   restoreQuarantinedFriendRequest, restoreAllQuarantinedFriendRequests, clearQuarantinedFriendRequests, incomingGroupInviteText, addIncomingGroupInvite,
   groupInvites, acceptGroupInvite, ignoreGroupInvite, contacts, activePeerId, selectContact,
   newGroupName, friendContacts, selectedGroupMembers, createGroup, groups, activeGroupId,
-  selectGroup, activeContact, activeMailboxFailedItems, activeGroup, activeRatchetSession, activeRatchetStatusText, activeContactSealedSlotStatusText, activeContactSealedSlotRiskLevel, activeStrictE2eeSendRiskText, activeStrictE2eeSendBlockingText, activeSecureSessionOutboxCount, activeGroupMembers, activeGroupWarningText, activeGroupStrictE2eeRiskText, groupStrictE2eeRiskTextFor, createGroupStrictE2eeRiskText, groupInviteStrictE2eeRiskText, blockReason, blockActiveContact, readReceiptsEnabledFor, setActiveContactReadReceipts,
+  selectGroup, activeContact, activeMailboxFailedItems, activeSessionRecoveryState, activeGroup, activeRatchetSession, activeRatchetStatusText, activeContactSealedSlotStatusText, activeContactSealedSlotRiskLevel, activeStrictE2eeSendRiskText, activeStrictE2eeSendBlockingText, activeSecureSessionOutboxCount, activeGroupMembers, activeGroupWarningText, activeGroupStrictE2eeRiskText, groupStrictE2eeRiskTextFor, createGroupStrictE2eeRiskText, groupInviteStrictE2eeRiskText, blockReason, blockActiveContact, readReceiptsEnabledFor, setActiveContactReadReceipts,
   unblockActiveContact, removeActiveContact, clearActiveConversation, createFriendRequestForActive, clearActiveFriendRequestError, createInviteForActiveGroup, groupInviteText, groupFanoutJson,
   removeActiveGroup, leaveActiveGroupWithNotice, messages, activeMessages, unreadCountForPeer, totalUnreadCount, totalUnreadBadgeText, badgeCountText, formatTime, formatDateTime, statusLabel, copyMessageEnvelope, perDeviceEnvelopeTargetCount, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
@@ -10989,7 +11034,7 @@ const appContext = {
   ratchetInfoText, safetyPolicy, enableStrictE2eePolicy, strictE2eePolicyEnabled, strictE2eeReadiness, strictE2eeReadinessIssues, strictE2eeReadinessReportText, strictE2eeReadinessSummaryReportText, copyStrictE2eeReadinessReport, copyStrictE2eeReadinessSummaryReport, downloadStrictE2eeReadinessReport, downloadStrictE2eeReadinessSummaryReport, openStrictE2eeReadinessIssue, refreshContactSecurityInfoForActiveContact, refreshStrictE2eeSecurityInfo, repairStrictE2eeForActiveContact, repairStrictE2eeForActiveGroup, repairStrictE2eeBlockers, contactRevokedDeviceCount, contactKnownRevokedDeviceCount, contactActiveDeviceIds, contactRevokedDeviceIds, contactRevokedDeviceDetails, unmarkActiveContactRevokedDevice, contactAllKnownDevicesRevoked, verifiedFriendContactCount, unverifiedFriendContactCount, unverifiedIncomingDropCount, clearUnverifiedIncomingDropStats, lastUnverifiedIncomingDropAt, lastUnverifiedIncomingDropFrom, revokedDeviceIncomingDropCount, clearRevokedDeviceIncomingDropStats, lastRevokedDeviceIncomingDropAt, lastRevokedDeviceIncomingDropFrom, perDeviceEnvelopeSentCount, perDeviceEnvelopeReceivedCount, perDeviceEnvelopeDropCount, lastPerDeviceEnvelopeAt, lastPerDeviceEnvelopeDropAt, lastPerDeviceEnvelopeDropReason, contactCardUpdateFanoutCount, contactCardUpdateFanoutSkipCount, lastContactCardUpdateFanoutAt, contactCardUpdateFanoutRecords, contactCardUpdateFanoutAckCount, contactCardUpdatePendingAckCount, contactCardUpdateStaleAckCount, retryStaleContactCardUpdateAcks, contactCardUpdateAckStatusFor, contactStrictE2eeStatus, contactStrictE2eeStatusText, contactStrictE2eeRiskLevel, contactCardDhtDiscoveryIsStale, contactCardDhtAutoRefreshCount, lastContactCardDhtAutoRefreshAt, lastContactCardDhtAutoRefreshError, contactCardDhtAutoRefreshHistory, sealedSlotCoverageSummary, sealedSlotRiskContacts, peerAddressesText, peerMailboxKey, peerAnnounceText, peerAnnounceInspectPublicKey,
   peerAnnounceInfoText, publicPeerId, publicPeerAddressesText, publicPeerCapabilities, publicPeerAnnounceText, publicPeerAnnounceInspectPublicKey,
   publicPeerAnnounceInfoText, mailboxKind, mailboxCiphertext, mailboxMessageText, mailboxMessageInspectPublicKey, mailboxMessageInfoText,
-  nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, fillMyContactCardDhtKeyInput, findActiveContactMailboxHint, findActiveContactContactCard, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxFailedRecoveryItems, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, retryMailboxFailedItem, retryMailboxFailuresForActiveContact, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
+  nodeClosestTarget, nodeDhtFindValueKey, nodeDhtKeyKind, nodeDhtKeyValue, nodeDhtFindValueStatusText, nodeDhtOperationHistory, nodeDhtOperationHistoryImportText, nodeDhtOperationHistoryImportStatus, exportDhtOperationHistory, copyDhtOperationHistory, importDhtOperationHistory, clearDhtOperationHistory, fillMyPreKeyDhtKeyInput, fillMyMailboxHintDhtKeyInput, fillMyContactCardDhtKeyInput, findActiveContactMailboxHint, findActiveContactContactCard, findActiveContactPreKey, discoverActiveContactDht, clearActiveContactDhtRisk, fillCurrentPublicPeerDhtKeyInput, publishAndCheckMyPublicPeerDht, deriveDhtKeyForFindValue, deriveAndFindDhtValueNow, nodeClosestInfoText, nodeRoutingRefreshStatusText, nodeDhtReplicationStatusText, nodeDhtMaintenanceStatusText, runDhtFindValueNow, runDhtMaintenanceNow, runDhtRoutingRefreshNow, runDhtReplicationNow, discoveredMailboxHintUrl, addDiscoveredMailboxHintToSyncServices, nodeMailboxTakeUserId, nodeMailboxTakeInfoText, mailboxInboxStatus, mailboxQuotaStatusText, mailboxQuotaPressureLevel, mailboxInboxErrorText, mailboxFailureSummaryText, mailboxDedupeCount, mailboxFailedCount, mailboxFailedRecoveryItems, mailboxDedupeStatusText, clearProcessedMailboxIds, retryFailedMailboxItems, retryMailboxFailedItem, retryMailboxFailuresForActiveContact, discardUnrecoverableSessionFailuresForActiveContact, clearFailedMailboxItems, nodePreKeyUserId, nodePreKeyStatusText,
   nodeSyncPeerUrl, nodeSyncSnapshotText, nodeSyncStatusText, lastNodeSnapshotSyncAt, nodeSnapshotSyncFreshnessText, nodeSnapshotSyncFreshnessLevel, prekeyStatusSummary, prekeyAutoStateText, prekeyAutoErrorText, createMyPreKeyBundleText, inspectPreKeyBundleText, retryPreKeyAutoPublish, publishAndCheckMyPreKeyDht, publishAndCheckMyMailboxHintDht, publishAndCheckMyContactCardDht, publishAndCheckAllMyDht, clearPreKeyRawState, copyText,
   showQr, createX3dhInitialMessageText, deriveX3dhResponderSecretText, createRatchetPairForActiveContact, createRatchetFromSharedSecretText, generateRatchetDhKeyPairText,
   createRatchetFromSharedSecretWithKeysText, inspectRatchetStateText, ratchetNextSendKeyText, ratchetNextRecvKeyText, ratchetEncryptEnvelopeText, ratchetDecryptEnvelopeText,
