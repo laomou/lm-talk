@@ -498,6 +498,16 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
   background: var(--c-canvas);
   display: flex; flex-direction: column; align-items: flex-start;
 }
+.load-earlier-messages {
+  align-self: center;
+  margin: 0 0 var(--sp-4);
+  padding: 5px 10px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--c-surface-muted);
+  color: var(--c-primary-ink);
+  font-size: 12px;
+}
 .chat-thread-empty { align-self: stretch; flex: 1 1 auto; }
 .bubble {
   max-width: min(68%, 560px);

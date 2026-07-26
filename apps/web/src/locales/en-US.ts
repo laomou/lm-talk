@@ -163,6 +163,7 @@ export default {
     messageSearchDescription: 'Enter keywords to search this conversation.',
     noMessageMatchesTitle: 'No matching messages',
     noMessageMatchesDescription: 'Try another keyword.',
+    loadEarlierMessages: 'Load {count} earlier messages',
     noChatMatchesTitle: 'No matching chats',
     noChatMatchesDescription: 'Try another name or keyword.',
     searchChatDescription: 'Enter a name to search chats.',
