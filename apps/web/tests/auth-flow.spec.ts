@@ -145,7 +145,6 @@ test('移动端可从二维码图片识别名片并回填添加好友输入框',
   const qrDataUrl = await qrDialog.locator('img[alt="二维码"]').getAttribute('src')
   expect(qrDataUrl).toMatch(/^data:image\/png;base64,/)
   await qrDialog.getByRole('button', { name: '关闭', exact: true }).click()
-  await page.getByRole('button', { name: '返回我' }).click()
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('button', { name: '打开通讯录' }).click()
