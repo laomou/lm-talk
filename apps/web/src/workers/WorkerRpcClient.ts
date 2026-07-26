@@ -7,6 +7,12 @@ export type WorkerRpcResponse = {
 type PendingRequest<T> = {
   resolve: (value: T) => void
   reject: (reason?: unknown) => void
+  timeoutId: ReturnType<typeof setTimeout> | null
+}
+
+export type WorkerRpcRequestOptions = {
+  transfer?: Transferable[]
+  timeoutMs?: number
 }
 
 export class WorkerRpcClient<TRequest extends object, TResponse extends WorkerRpcResponse> {
@@ -17,24 +23,40 @@ export class WorkerRpcClient<TRequest extends object, TResponse extends WorkerRp
   constructor(
     private readonly createWorker: () => Worker,
     private readonly label: string,
+    private readonly defaultTimeoutMs = 60_000,
   ) {}
 
-  request(payload: TRequest): Promise<TResponse> {
+  request(payload: TRequest, options: WorkerRpcRequestOptions = {}): Promise<TResponse> {
     const id = this.nextRequestId++
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
+      const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs
+      const pending: PendingRequest<TResponse> = {
+        resolve,
+        reject,
+        timeoutId: null,
+      }
+      if (timeoutMs > 0) {
+        pending.timeoutId = setTimeout(() => {
+          if (this.pending.get(id) !== pending) return
+          this.pending.delete(id)
+          reject(new Error(`${this.label} 请求超时`))
+        }, timeoutMs)
+      }
+      this.pending.set(id, pending)
       try {
-        this.getWorker().postMessage({ id, ...payload })
+        this.getWorker().postMessage({ id, ...payload }, options.transfer ?? [])
       } catch (error) {
-        this.pending.delete(id)
-        reject(error)
+        this.rejectPending(id, error)
       }
     })
   }
 
   dispose(reason = `${this.label} 已停止`) {
     const error = new Error(reason)
-    for (const pending of this.pending.values()) pending.reject(error)
+    for (const pending of this.pending.values()) {
+      this.clearPendingTimeout(pending)
+      pending.reject(error)
+    }
     this.pending.clear()
     this.worker?.terminate()
     this.worker = null
@@ -48,6 +70,7 @@ export class WorkerRpcClient<TRequest extends object, TResponse extends WorkerRp
       const pending = this.pending.get(response.id)
       if (!pending) return
       this.pending.delete(response.id)
+      this.clearPendingTimeout(pending)
       pending.resolve(response)
     }
     worker.onerror = (event) => {
@@ -55,5 +78,17 @@ export class WorkerRpcClient<TRequest extends object, TResponse extends WorkerRp
     }
     this.worker = worker
     return worker
+  }
+
+  private rejectPending(id: number, reason: unknown) {
+    const pending = this.pending.get(id)
+    if (!pending) return
+    this.pending.delete(id)
+    this.clearPendingTimeout(pending)
+    pending.reject(reason)
+  }
+
+  private clearPendingTimeout(pending: PendingRequest<TResponse>) {
+    if (pending.timeoutId !== null) clearTimeout(pending.timeoutId)
   }
 }
