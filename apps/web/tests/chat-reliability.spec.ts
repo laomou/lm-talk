@@ -322,6 +322,62 @@ test('保存头像后会自动同步到好友列表和聊天页', async ({ brows
   }
 })
 
+test('单聊附件在消息卡片中解密，刷新后可重新解密', async ({ browser }) => {
+  const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const alicePassphrase = 'playwright-attachment-alice-passphrase'
+  const bobPassphrase = 'playwright-attachment-bob-passphrase'
+  const alice = await registerAndLogin(aliceContext, 'Alice', alicePassphrase)
+  const bob = await registerAndLogin(bobContext, 'Bob', bobPassphrase)
+
+  try {
+    const bobCard = await copyOwnCard(bob)
+    await alice.getByRole('button', { name: '打开通讯录' }).click()
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByLabel('对方名片').fill(bobCard)
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByRole('button', { name: '返回通讯录' }).click()
+
+    await bob.getByRole('button', { name: '打开通讯录' }).click()
+    await bob.getByRole('button', { name: '打开新的朋友' }).click()
+    await expect(bob.getByRole('button', { name: '同意' })).toBeVisible({ timeout: 45_000 })
+    await bob.getByRole('button', { name: '同意' }).click()
+    await bob.getByRole('button', { name: '返回通讯录' }).click()
+    await bob.locator('.directory-row.contact-row').click()
+    await bob.getByRole('button', { name: '发消息' }).click()
+    await expect(alice.locator('.directory-row.contact-row')).toBeVisible({ timeout: 45_000 })
+    await flushLocalPersistence(alice)
+    await flushLocalPersistence(bob)
+    await expect.poll(() => persistedTableCount(alice, 'ratchetSessions')).toBeGreaterThan(0)
+    await expect.poll(() => persistedTableCount(bob, 'ratchetSessions')).toBeGreaterThan(0)
+
+    await openOnlyContactConversation(alice)
+    await alice.getByLabel('选择附件').setInputFiles({
+      name: 'hello.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('lm-talk encrypted attachment'),
+    })
+    await alice.getByRole('button', { name: '发送文件' }).click()
+    await expect(alice.getByRole('log', { name: '消息列表' }).getByText('hello.txt', { exact: true })).toBeVisible()
+
+    await expect(bob.getByRole('log', { name: '消息列表' }).getByText('hello.txt', { exact: true }))
+      .toBeVisible({ timeout: 45_000 })
+    const bobAttachment = bob.locator('.bubble.in .message-attachment-card').filter({ hasText: 'hello.txt' })
+    await bobAttachment.getByRole('button', { name: '解密文件' }).click()
+    await expect(bobAttachment.getByRole('link', { name: '下载' })).toBeVisible({ timeout: 45_000 })
+
+    await flushLocalPersistence(bob)
+    await reloadAndLogin(bob, bobPassphrase)
+    const restoredAttachment = bob.locator('.bubble.in .message-attachment-card').filter({ hasText: 'hello.txt' })
+    await expect(restoredAttachment.getByText('页面刷新后需要重新解密，才能预览或下载。')).toBeVisible()
+    await restoredAttachment.getByRole('button', { name: '重试解密' }).click()
+    await expect(restoredAttachment.getByRole('link', { name: '下载' })).toBeVisible({ timeout: 45_000 })
+  } finally {
+    await aliceContext.close()
+    await bobContext.close()
+  }
+})
+
 test('节点暂不可用后自动恢复批量消息、未读与已读状态', async ({ browser }) => {
   const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
   const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })

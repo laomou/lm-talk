@@ -82,6 +82,18 @@ function attachmentInfo(message: any) {
 function attachmentDownload(message: any) {
   return props.ctx.attachmentDownloads.value[message.id]
 }
+function attachmentHint(message: any) {
+  if (message.direction !== 'in') return ''
+  if (message.attachment_error) return message.attachment_error
+  if (attachmentDownload(message)) return t('chatView.decryptedFileHint')
+  if (message.attachment_decrypted_at) return t('chatView.attachmentNeedsRedecryptHint')
+  return t('chatView.encryptedFileHint')
+}
+function attachmentActionLabel(message: any) {
+  return message.attachment_error || message.attachment_decrypted_at
+    ? t('chatView.retryDecryptFile')
+    : t('chatView.decryptFile')
+}
 
 
 function messageOutboxItems(message: any) {
@@ -363,14 +375,16 @@ function deleteActiveConversation() {
                 <div class="file-card-main">
                   <b>{{ attachmentInfo(item.m).name }}</b>
                   <small>{{ attachmentInfo(item.m).label }}</small>
-                  <small v-if="item.m.direction === 'in' && !attachmentDownload(item.m)">{{ t('chatView.encryptedFileHint') }}</small>
-                  <small v-else-if="item.m.direction === 'in'">{{ t('chatView.decryptedFileHint') }}</small>
+                  <small
+                    v-if="item.m.direction === 'in'"
+                    :class="{ 'attachment-error': item.m.attachment_error }"
+                  >{{ attachmentHint(item.m) }}</small>
                 </div>
                 <button
                   v-if="item.m.direction === 'in' && !attachmentDownload(item.m)"
                   class="secondary"
                   @click="ctx.decryptAttachmentMessage(item.m.id)"
-                >{{ t('chatView.decryptFile') }}</button>
+                >{{ attachmentActionLabel(item.m) }}</button>
                 <a
                   v-else-if="item.m.direction === 'in'"
                   :href="attachmentDownload(item.m).url"

@@ -190,6 +190,8 @@ type ChatMessage = {
   attachment_mime?: string
   attachment_size?: number
   attachment_decrypted_at?: number
+  attachment_error?: string
+  attachment_error_at?: number
   target_device_ids?: string[]
   per_device_envelope_json?: string
   per_device_envelope_version?: number
@@ -10803,9 +10805,12 @@ function attachmentMessageInfo(message: ChatMessage) {
 }
 
 async function decryptAttachmentMessage(messageId: string) {
-  await runAsync('解密文件包', async () => {
-    const message = messages.value.find((item) => item.id === messageId && item.direction === 'in')
-    if (!message?.envelope_json) throw new Error('附件消息不存在或没有加密文件包')
+  const message = messages.value.find((item) => item.id === messageId && item.direction === 'in')
+  if (!message) return
+  message.attachment_error = undefined
+  message.attachment_error_at = undefined
+  try {
+    if (!message.envelope_json) throw new Error('附件消息不存在或没有加密文件包')
     const contact = contacts.value.find((item) => item.user_id === message.peer_user_id)
     if (!contact) throw new Error('找不到附件发送者联系人')
     if (!allowIncomingFromContact(contact)) {
@@ -10858,6 +10863,8 @@ async function decryptAttachmentMessage(messageId: string) {
     message.attachment_mime = mime
     message.attachment_size = out.size ?? bytes.length
     message.attachment_decrypted_at = Date.now()
+    message.attachment_error = undefined
+    message.attachment_error_at = undefined
     receivedFileUrl.value = download.url
     receivedFileName.value = download.name
     receivedFileMime.value = download.mime
@@ -10868,7 +10875,14 @@ async function decryptAttachmentMessage(messageId: string) {
     rtcFileStatus.value = `已解密文件：${out.name}`
     appendLog(`已解密文件：${out.name}`)
     persist()
-  })
+  } catch (error) {
+    message.attachment_error = t('chatView.attachmentDecryptFailed')
+    message.attachment_error_at = Date.now()
+    fileTransferPhase.value = '失败'
+    rtcFileStatus.value = t('chatView.attachmentDecryptFailed')
+    appendLog(`❌ 解密文件包: ${userFacingError(error)}`)
+    persist()
+  }
 }
 
 async function receiveFilePackageMessage(filePackage: string, sender: ContactItem) {
