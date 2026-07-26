@@ -266,6 +266,8 @@ export default {
     localRuleQuarantined: '本地规则隔离',
     restore: '恢复',
     contacts: '联系人',
+    alphaIndexLabel: '联系人字母索引',
+    jumpToAlpha: '跳到 {alpha} 组',
     noContactMatchesTitle: '没有匹配的联系人',
     noContactMatchesDescription: '换个名称或 ID 试试。',
     add: '添加',

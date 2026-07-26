@@ -1253,6 +1253,7 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 }
 .contacts-mobile-bar h2 { text-align: center; }
 .icon-actions { justify-self: end; display: flex; gap: var(--sp-1); }
+.contacts-home-scroll { position: relative; }
 .contact-directory {
   /*
    * Match the same responsive column as .me-inner. On a narrow Web content
@@ -1346,9 +1347,40 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   width: min(640px, calc(100% - 48px));
   margin: var(--sp-3) auto 0;
   padding: var(--sp-2) var(--sp-5);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--c-canvas);
+  backdrop-filter: blur(8px);
   color: var(--c-ink-3);
   font-size: 12px;
 }
+.contacts-alpha-index {
+  position: fixed;
+  right: calc(8px + env(safe-area-inset-right));
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 4;
+  display: grid;
+  gap: 1px;
+  padding: 5px 3px;
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-pill);
+  background: var(--c-surface);
+  box-shadow: var(--shadow-1);
+}
+.contacts-alpha-index button {
+  min-width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--c-primary-ink);
+  font-size: 11px;
+  line-height: 20px;
+}
+.contacts-alpha-index button:hover { background: var(--c-primary-soft); }
 .request-badge {
   min-width: 22px;
   height: 22px;
@@ -1397,8 +1429,10 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 
 @media (max-width: 640px) {
   .contacts-mobile-bar { padding: var(--sp-2) var(--sp-3); min-height: 52px; }
-  .contact-directory { padding-top: var(--sp-2); }
+  .contact-directory { padding-top: var(--sp-2); padding-right: 20px; }
   .directory-row { padding: 10px var(--sp-3); grid-template-columns: auto minmax(0, 1fr) auto auto; }
+  .contacts-alpha-index { right: calc(2px + env(safe-area-inset-right)); padding: 4px 2px; }
+  .contacts-alpha-index button { min-width: 18px; height: 18px; font-size: 10px; line-height: 18px; }
   .composer-bar { gap: var(--sp-1); }
   .composer-icon,
   .send-icon { width: 34px; min-width: 34px; height: 34px; }

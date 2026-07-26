@@ -22,6 +22,7 @@ const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const scannerOpen = ref(false)
+const contactListEl = ref<HTMLElement | null>(null)
 const isSearchPage = computed(() => route.path === '/contacts/search')
 type View = 'home' | 'friends' | 'search' | 'add' | 'detail' | 'group-invites'
 const view = computed<View>(() => {
@@ -55,13 +56,30 @@ const groupedContacts = computed(() => {
     if (b === '#') return -1
     return a.localeCompare(b)
   })
-  return sortedKeys.map((key) => ({ key, items: groups.get(key) || [] }))
+  return sortedKeys.map((key) => ({
+    key,
+    items: (groups.get(key) || []).slice().sort(compareContacts),
+  }))
 })
+const alphaIndex = computed(() => groupedContacts.value.map((group) => group.key))
 
+function contactSortName(contact: any) {
+  return `${contact.display_name || contact.user_id || ''}`.trim()
+}
+function compareContacts(left: any, right: any) {
+  return contactSortName(left).localeCompare(contactSortName(right), undefined, { sensitivity: 'base', numeric: true })
+}
 function contactInitial(contact: any) {
-  const name = `${contact.display_name || contact.user_id || ''}`.trim()
+  const name = contactSortName(contact)
   const first = name[0]?.toUpperCase()
   return first && /[A-Z]/.test(first) ? first : '#'
+}
+function alphaDomId(key: string) {
+  return `contacts-alpha-${key === '#' ? 'other' : key}`
+}
+function scrollToAlpha(key: string) {
+  const target = contactListEl.value?.querySelector<HTMLElement>(`#${alphaDomId(key)}`)
+  target?.scrollIntoView({ block: 'start', behavior: 'smooth' })
 }
 function trustIconName(contact: any) {
   return props.ctx.contactAllKnownDevicesRevoked(contact) ? 'alert' : 'lock'
@@ -118,12 +136,18 @@ watch(
   },
   { immediate: true },
 )
+watch(
+  () => route.path,
+  (path) => {
+    if (path !== '/contacts/search') keyword.value = ''
+  },
+)
 </script>
 
 <template>
   <div class="contacts-shell product-contacts-shell">
     <main class="detail-col contacts-wide product-contacts-main">
-      <section v-if="view === 'home' && !isSearchPage" class="detail-scroll">
+      <section v-if="view === 'home' && !isSearchPage" ref="contactListEl" class="detail-scroll contacts-home-scroll">
         <header class="contacts-mobile-bar">
           <span></span>
           <h2>{{ t('contactsView.title') }}</h2>
@@ -138,7 +162,7 @@ watch(
           <UiNavRow :icon="t('contactsView.groupInvitesIcon')" :badge="groupInviteCount || undefined" :aria-label="t('contactsView.openGroupInvites')" @click="router.push('/contacts/group-invites')">{{ t('contactsView.groupInvites') }}</UiNavRow>
 
           <template v-for="group in groupedContacts" :key="group.key">
-            <h3 class="alpha-heading">{{ group.key }}</h3>
+            <h3 :id="alphaDomId(group.key)" class="alpha-heading" tabindex="-1">{{ group.key }}</h3>
             <button
               v-for="c in group.items"
               :key="c.user_id"
@@ -158,6 +182,15 @@ watch(
 
           <UiEmptyState v-if="groupedContacts.length === 0" :title="t('contactsView.noFriendsTitle')" :description="t('contactsView.noFriendsDescription')" />
         </div>
+        <nav v-if="alphaIndex.length > 1" class="contacts-alpha-index" :aria-label="t('contactsView.alphaIndexLabel')">
+          <button
+            v-for="key in alphaIndex"
+            :key="key"
+            type="button"
+            :aria-label="t('contactsView.jumpToAlpha', { alpha: key })"
+            @click="scrollToAlpha(key)"
+          >{{ key }}</button>
+        </nav>
       </section>
 
       <section v-else-if="view === 'friends'" class="detail-scroll">
