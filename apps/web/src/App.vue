@@ -1527,10 +1527,7 @@ onUnmounted(() => {
   groupSenderCryptoWorker = null
   for (const pending of groupSenderCryptoRequests.values()) pending.reject(new Error('Sender Key Worker 已停止'))
   groupSenderCryptoRequests.clear()
-  deviceSlotCryptoWorker?.terminate()
-  deviceSlotCryptoWorker = null
-  for (const pending of deviceSlotCryptoRequests.values()) pending.reject(new Error('分设备密文 Worker 已停止'))
-  deviceSlotCryptoRequests.clear()
+  deviceSlotCryptoRpc.dispose()
   identitySignatureRpc.dispose()
   friendRequestCryptoRpc.dispose()
   groupEventCryptoRpc.dispose()
@@ -1554,14 +1551,8 @@ onUnmounted(() => {
   fileCryptoWorker = null
   for (const pending of fileCryptoRequests.values()) pending.reject(new Error('文件加密 Worker 已停止'))
   fileCryptoRequests.clear()
-  fileMetadataCryptoWorker?.terminate()
-  fileMetadataCryptoWorker = null
-  for (const pending of fileMetadataCryptoRequests.values()) pending.reject(new Error('文件元数据 Worker 已停止'))
-  fileMetadataCryptoRequests.clear()
-  legacyEnvelopeCryptoWorker?.terminate()
-  legacyEnvelopeCryptoWorker = null
-  for (const pending of legacyEnvelopeCryptoRequests.values()) pending.reject(new Error('兼容消息加密 Worker 已停止'))
-  legacyEnvelopeCryptoRequests.clear()
+  fileMetadataCryptoRpc.dispose()
+  legacyEnvelopeCryptoRpc.dispose()
 })
 
 function appendLog(line: string) {
@@ -6608,53 +6599,19 @@ function encryptRatchetEnvelopeForContact(contact: ContactItem, conversationId: 
   return task
 }
 
-type LegacyEnvelopeCryptoWorkerResponse = {
-  id: number
-  ok: boolean
+type LegacyEnvelopeCryptoWorkerResponse = WorkerRpcResponse & {
   value?: string
-  error?: string
 }
 
-let legacyEnvelopeCryptoWorker: Worker | null = null
-let nextLegacyEnvelopeCryptoRequestId = 1
-const legacyEnvelopeCryptoRequests = new Map<number, {
-  resolve: (value: string) => void
-  reject: (reason?: unknown) => void
-}>()
+const legacyEnvelopeCryptoRpc = new WorkerRpcClient<
+  Record<string, string>,
+  LegacyEnvelopeCryptoWorkerResponse
+>(() => new Worker(new URL('./legacyEnvelopeCrypto.worker.ts', import.meta.url), { type: 'module' }), '兼容消息加密 Worker')
 
-function getLegacyEnvelopeCryptoWorker(): Worker {
-  if (legacyEnvelopeCryptoWorker) return legacyEnvelopeCryptoWorker
-  const worker = new Worker(new URL('./legacyEnvelopeCrypto.worker.ts', import.meta.url), { type: 'module' })
-  worker.onmessage = (event: MessageEvent<LegacyEnvelopeCryptoWorkerResponse>) => {
-    const response = event.data
-    const pending = legacyEnvelopeCryptoRequests.get(response.id)
-    if (!pending) return
-    legacyEnvelopeCryptoRequests.delete(response.id)
-    if (response.ok && typeof response.value === 'string') pending.resolve(response.value)
-    else pending.reject(new Error(response.error || '兼容消息加密 Worker 处理失败'))
-  }
-  worker.onerror = (event) => {
-    const error = new Error(event.message || '兼容消息加密 Worker 已停止')
-    for (const pending of legacyEnvelopeCryptoRequests.values()) pending.reject(error)
-    legacyEnvelopeCryptoRequests.clear()
-    worker.terminate()
-    if (legacyEnvelopeCryptoWorker === worker) legacyEnvelopeCryptoWorker = null
-  }
-  legacyEnvelopeCryptoWorker = worker
-  return worker
-}
-
-function runLegacyEnvelopeCryptoWorker(payload: Record<string, string>): Promise<string> {
-  const id = nextLegacyEnvelopeCryptoRequestId++
-  return new Promise((resolve, reject) => {
-    legacyEnvelopeCryptoRequests.set(id, { resolve, reject })
-    try {
-      getLegacyEnvelopeCryptoWorker().postMessage({ id, ...payload })
-    } catch (error) {
-      legacyEnvelopeCryptoRequests.delete(id)
-      reject(error)
-    }
-  })
+async function runLegacyEnvelopeCryptoWorker(payload: Record<string, string>): Promise<string> {
+  const response = await legacyEnvelopeCryptoRpc.request(payload)
+  if (response.ok && typeof response.value === 'string') return response.value
+  throw new Error(response.error || '兼容消息加密 Worker 处理失败')
 }
 
 function encryptLegacyEnvelopeInWorker(contactCardText: string, conversationId: string, text: string): Promise<string> {
@@ -7005,13 +6962,6 @@ function perDeviceEnvelopeSigningPayload(envelope: PerDeviceEnvelopeV1): string 
   })
 }
 
-type DeviceSlotCryptoWorkerResponse = {
-  id: number
-  ok: boolean
-  value?: string
-  error?: string
-}
-
 type IdentitySignatureWorkerResponse = WorkerRpcResponse & {
   value?: string | boolean
 }
@@ -7360,46 +7310,19 @@ function reencryptIdentityBackupInWorker(backupText: string, passphrase: string,
   })
 }
 
-let deviceSlotCryptoWorker: Worker | null = null
-let nextDeviceSlotCryptoRequestId = 1
-const deviceSlotCryptoRequests = new Map<number, {
-  resolve: (value: string) => void
-  reject: (reason?: unknown) => void
-}>()
-
-function getDeviceSlotCryptoWorker(): Worker {
-  if (deviceSlotCryptoWorker) return deviceSlotCryptoWorker
-  const worker = new Worker(new URL('./deviceSlotCrypto.worker.ts', import.meta.url), { type: 'module' })
-  worker.onmessage = (event: MessageEvent<DeviceSlotCryptoWorkerResponse>) => {
-    const response = event.data
-    const pending = deviceSlotCryptoRequests.get(response.id)
-    if (!pending) return
-    deviceSlotCryptoRequests.delete(response.id)
-    if (response.ok && typeof response.value === 'string') pending.resolve(response.value)
-    else pending.reject(new Error(response.error || '分设备密文 Worker 处理失败'))
-  }
-  worker.onerror = (event) => {
-    const error = new Error(event.message || '分设备密文 Worker 已停止')
-    for (const pending of deviceSlotCryptoRequests.values()) pending.reject(error)
-    deviceSlotCryptoRequests.clear()
-    worker.terminate()
-    if (deviceSlotCryptoWorker === worker) deviceSlotCryptoWorker = null
-  }
-  deviceSlotCryptoWorker = worker
-  return worker
+type DeviceSlotCryptoWorkerRpcResponse = WorkerRpcResponse & {
+  value?: string
 }
 
-function runDeviceSlotCryptoWorker(payload: Record<string, string>): Promise<string> {
-  const id = nextDeviceSlotCryptoRequestId++
-  return new Promise((resolve, reject) => {
-    deviceSlotCryptoRequests.set(id, { resolve, reject })
-    try {
-      getDeviceSlotCryptoWorker().postMessage({ id, ...payload })
-    } catch (error) {
-      deviceSlotCryptoRequests.delete(id)
-      reject(error)
-    }
-  })
+const deviceSlotCryptoRpc = new WorkerRpcClient<
+  Record<string, string>,
+  DeviceSlotCryptoWorkerRpcResponse
+>(() => new Worker(new URL('./deviceSlotCrypto.worker.ts', import.meta.url), { type: 'module' }), '分设备密文 Worker')
+
+async function runDeviceSlotCryptoWorker(payload: Record<string, string>): Promise<string> {
+  const response = await deviceSlotCryptoRpc.request(payload)
+  if (response.ok && typeof response.value === 'string') return response.value
+  throw new Error(response.error || '分设备密文 Worker 处理失败')
 }
 
 function sealDeviceSlotInWorker(deviceBoxPublicKey: string, aad: string, ciphertext: string): Promise<string> {
@@ -10693,62 +10616,19 @@ async function decryptFilePackageInWorker(options: {
   return runFileCryptoWorker<FileCryptoDecryptResult>({ type: 'decrypt', ...options })
 }
 
-type FileMetadataCryptoWorkerResponse = {
-  id: number
-  ok: boolean
+type FileMetadataCryptoWorkerResponse = WorkerRpcResponse & {
   value?: string
-  error?: string
 }
 
-let fileMetadataCryptoWorker: Worker | null = null
-let nextFileMetadataCryptoRequestId = 1
-const fileMetadataCryptoRequests = new Map<number, {
-  resolve: (value: string) => void
-  reject: (reason?: unknown) => void
-}>()
+const fileMetadataCryptoRpc = new WorkerRpcClient<
+  { filePackageText: string },
+  FileMetadataCryptoWorkerResponse
+>(() => new Worker(new URL('./fileMetadataCrypto.worker.ts', import.meta.url), { type: 'module' }), '文件元数据 Worker')
 
-function getFileMetadataCryptoWorker(): Worker {
-  if (fileMetadataCryptoWorker) return fileMetadataCryptoWorker
-  const worker = new Worker(new URL('./fileMetadataCrypto.worker.ts', import.meta.url), { type: 'module' })
-  worker.onmessage = (event: MessageEvent<FileMetadataCryptoWorkerResponse>) => {
-    const response = event.data
-    const pending = fileMetadataCryptoRequests.get(response.id)
-    if (!pending) return
-    fileMetadataCryptoRequests.delete(response.id)
-    if (response.ok && typeof response.value === 'string') pending.resolve(response.value)
-    else pending.reject(new Error(response.error || '文件元数据 Worker 处理失败'))
-  }
-  worker.onerror = (event) => {
-    const error = new Error(event.message || '文件元数据 Worker 已停止')
-    for (const pending of fileMetadataCryptoRequests.values()) pending.reject(error)
-    fileMetadataCryptoRequests.clear()
-    worker.terminate()
-    if (fileMetadataCryptoWorker === worker) fileMetadataCryptoWorker = null
-  }
-  fileMetadataCryptoWorker = worker
-  return worker
-}
-
-function inspectFilePackageInWorker<T = any>(filePackageText: string): Promise<T> {
-  const id = nextFileMetadataCryptoRequestId++
-  return new Promise<T>((resolve, reject) => {
-    fileMetadataCryptoRequests.set(id, {
-      resolve: (value) => {
-        try {
-          resolve(JSON.parse(value) as T)
-        } catch (error) {
-          reject(error)
-        }
-      },
-      reject,
-    })
-    try {
-      getFileMetadataCryptoWorker().postMessage({ id, filePackageText })
-    } catch (error) {
-      fileMetadataCryptoRequests.delete(id)
-      reject(error)
-    }
-  })
+async function inspectFilePackageInWorker<T = any>(filePackageText: string): Promise<T> {
+  const response = await fileMetadataCryptoRpc.request({ filePackageText })
+  if (!response.ok || typeof response.value !== 'string') throw new Error(response.error || '文件元数据 Worker 处理失败')
+  return JSON.parse(response.value) as T
 }
 
 function filePreviewKind(name: string, mime: string): string {
