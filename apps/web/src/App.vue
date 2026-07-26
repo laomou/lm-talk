@@ -1537,10 +1537,7 @@ onUnmounted(() => {
   identityLifecycleCryptoRpc.dispose()
   ratchetEncryptRpc.dispose()
   backupCryptoRpc.dispose()
-  ratchetCryptoWorker?.terminate()
-  ratchetCryptoWorker = null
-  for (const pending of ratchetCryptoRequests.values()) pending.reject(new Error('Ratchet 解密 Worker 已停止'))
-  ratchetCryptoRequests.clear()
+  ratchetCryptoRpc.dispose()
   fileCryptoRpc.dispose()
   fileMetadataCryptoRpc.dispose()
   legacyEnvelopeCryptoRpc.dispose()
@@ -6570,58 +6567,24 @@ async function encryptEnvelopeForOutgoingContact(contact: ContactItem, conversat
   return encryptEnvelopeForContact(contact, conversationId, text)
 }
 
-type RatchetCryptoWorkerResponse = {
-  id: number
-  ok: boolean
+type RatchetCryptoWorkerResponse = WorkerRpcResponse & {
   state_text?: string
   plain_json?: string
-  error?: string
 }
 
-let ratchetCryptoWorker: Worker | null = null
-let nextRatchetCryptoRequestId = 1
-const ratchetCryptoRequests = new Map<number, {
-  resolve: (value: { stateText: string; plainJson: string }) => void
-  reject: (reason?: unknown) => void
-}>()
 const ratchetDecryptChains = new Map<string, Promise<unknown>>()
 
-function getRatchetCryptoWorker(): Worker {
-  if (ratchetCryptoWorker) return ratchetCryptoWorker
-  const worker = new Worker(new URL('./ratchetCrypto.worker.ts', import.meta.url), { type: 'module' })
-  worker.onmessage = (event: MessageEvent<RatchetCryptoWorkerResponse>) => {
-    const response = event.data
-    const pending = ratchetCryptoRequests.get(response.id)
-    if (!pending) return
-    ratchetCryptoRequests.delete(response.id)
-    if (response.ok && response.state_text !== undefined && response.plain_json !== undefined) {
-      pending.resolve({ stateText: response.state_text, plainJson: response.plain_json })
-    } else {
-      pending.reject(new Error(response.error || 'Ratchet 解密 Worker 处理失败'))
-    }
-  }
-  worker.onerror = (event) => {
-    const error = new Error(event.message || 'Ratchet 解密 Worker 已停止')
-    for (const pending of ratchetCryptoRequests.values()) pending.reject(error)
-    ratchetCryptoRequests.clear()
-    worker.terminate()
-    if (ratchetCryptoWorker === worker) ratchetCryptoWorker = null
-  }
-  ratchetCryptoWorker = worker
-  return worker
-}
+const ratchetCryptoRpc = new WorkerRpcClient<
+  { stateText: string; envelopeText: string },
+  RatchetCryptoWorkerResponse
+>(() => new Worker(new URL('./ratchetCrypto.worker.ts', import.meta.url), { type: 'module' }), 'Ratchet 解密 Worker')
 
-function decryptRatchetEnvelopeInWorker(stateText: string, envelopeText: string): Promise<{ stateText: string; plainJson: string }> {
-  const id = nextRatchetCryptoRequestId++
-  return new Promise((resolve, reject) => {
-    ratchetCryptoRequests.set(id, { resolve, reject })
-    try {
-      getRatchetCryptoWorker().postMessage({ id, stateText, envelopeText })
-    } catch (error) {
-      ratchetCryptoRequests.delete(id)
-      reject(error)
-    }
-  })
+async function decryptRatchetEnvelopeInWorker(stateText: string, envelopeText: string): Promise<{ stateText: string; plainJson: string }> {
+  const response = await ratchetCryptoRpc.request({ stateText, envelopeText })
+  if (response.ok && response.state_text !== undefined && response.plain_json !== undefined) {
+    return { stateText: response.state_text, plainJson: response.plain_json }
+  }
+  throw new Error(response.error || 'Ratchet 解密 Worker 处理失败')
 }
 
 function decryptRatchetEnvelopeForContact(sender: ContactItem, envelopeText: string): Promise<any> {
