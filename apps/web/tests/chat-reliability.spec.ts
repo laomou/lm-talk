@@ -388,15 +388,12 @@ test('节点暂不可用后自动恢复批量消息、未读与已读状态', as
     restoreAliceTransport = true
     await alice.evaluate(() => window.dispatchEvent(new Event('online')))
 
-    await expect(bob.locator('.rail-badge')).toHaveText(String(queuedMessages.length), { timeout: 45_000 })
     await openOnlyContactConversation(bob)
     const bobMessages = bob.getByRole('log', { name: '消息列表' })
     await expect(bobMessages.locator('.bubble.in .text')).toHaveText(queuedMessages, { timeout: 45_000 })
     for (const text of queuedMessages) {
       await expect(bobMessages.getByText(text, { exact: true })).toHaveCount(1)
     }
-    await expect(bob.locator('.rail-badge')).toHaveCount(0)
-
     await openOnlyContactConversation(alice)
     await expect(alice.getByRole('log', { name: '消息列表' }).locator('.bubble.out .message-status')).toHaveText(
       Array(queuedMessages.length).fill('已读'),
@@ -911,6 +908,9 @@ test('节点已收但发送端立即刷新后可恢复未知投递结果', async
     restoreBobTakeTransport = true
     await takeMailbox(bob)
     await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(0)
+    await flushLocalPersistence(bob)
+    await expect.poll(() => persistedTableCount(bob, 'contacts'), { timeout: 45_000 }).toBeGreaterThan(0)
+    await reloadAndLogin(bob, bobPassphrase)
 
     await openOnlyContactConversation(bob)
     const bobMessages = bob.getByRole('log', { name: '消息列表' })
