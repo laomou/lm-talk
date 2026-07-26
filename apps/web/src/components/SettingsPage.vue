@@ -51,8 +51,13 @@ const strictSecurityStatus = computed(() => {
   if (readiness.advisory) return { text: t('settingsView.securityRefreshSuggested'), tone: 'warning' as const }
   return { text: t('settingsView.securityNormal'), tone: 'success' as const }
 })
-const pendingOutboxCount = computed(() => props.ctx.outbox.value.filter((item: any) => item.status !== 'sent').length)
+const pendingOutboxCount = computed(() => props.ctx.outbox.value.filter((item: any) => item.status === 'queued').length)
 const failedOutboxCount = computed(() => props.ctx.outbox.value.filter((item: any) => item.status === 'failed').length)
+const outboxStatus = computed(() => {
+  if (failedOutboxCount.value > 0) return { count: failedOutboxCount.value, tone: 'danger' as const }
+  if (pendingOutboxCount.value > 0) return { count: pendingOutboxCount.value, tone: 'warning' as const }
+  return { count: 0, tone: 'neutral' as const }
+})
 const retrySyncIssueText = computed(() => {
   if (pendingOutboxCount.value > 0) return props.ctx.nodeEnabled.value ? t('settingsView.retryPendingOutbox', { count: pendingOutboxCount.value }) : t('settingsView.requeuePendingOutbox', { count: pendingOutboxCount.value })
   if (props.ctx.mailboxFailedCount.value > 0) return t('settingsView.retryMailboxFailures', { count: props.ctx.mailboxFailedCount.value })
@@ -226,7 +231,8 @@ function onAvatarSelected(event: Event) {
           </UiActionGroup>
         </UiSection>
         <UiSection class="sync-card" :title="t('settingsView.outbox')">
-          <template #actions><UiStatusBadge :tone="pendingOutboxCount ? 'warning' : 'neutral'">{{ pendingOutboxCount }}</UiStatusBadge></template>
+          <template #actions><UiStatusBadge :tone="outboxStatus.tone">{{ outboxStatus.count }}</UiStatusBadge></template>
+          <small v-if="pendingOutboxCount">{{ t('settingsView.outboxQueued', { count: pendingOutboxCount }) }}</small>
           <small>{{ t('settingsView.failed', { count: failedOutboxCount }) }}</small>
           <small v-if="ctx.syncFailureSummaryText.value" class="danger-text">{{ ctx.syncFailureSummaryText.value }}</small>
           <UiActionGroup>
