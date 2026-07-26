@@ -490,6 +490,26 @@ test('长会话默认窗口渲染并可加载更早消息', async ({ browser }) 
   }
 })
 
+test('连续持久化请求会被合并成少量写入', async ({ browser }) => {
+  const context = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const page = await registerAndLogin(context, 'Alice', 'playwright-persist-merge-passphrase')
+
+  try {
+    const before = await page.evaluate(() => (window as typeof window & { getPersistMetricsForTests?: () => { flushes: number } }).getPersistMetricsForTests?.()?.flushes ?? 0)
+    await page.evaluate(async () => {
+      const win = window as typeof window & { setDhtDiagnosticsForTests?: (status: string, history?: string[]) => void; flushPersistForTests?: () => Promise<void> }
+      for (let i = 0; i < 12; i += 1) {
+        win.setDhtDiagnosticsForTests?.(`persist-burst-${i}`, [`item-${i}`])
+      }
+      await win.flushPersistForTests?.()
+    })
+    const after = await page.evaluate(() => (window as typeof window & { getPersistMetricsForTests?: () => { flushes: number } }).getPersistMetricsForTests?.()?.flushes ?? 0)
+    expect(after - before).toBeLessThanOrEqual(3)
+  } finally {
+    await context.close()
+  }
+})
+
 test('节点暂不可用后自动恢复批量消息、未读与已读状态', async ({ browser }) => {
   const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
   const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
