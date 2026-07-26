@@ -463,6 +463,7 @@ test('接收端 ACK 中断后自动去重并清空 Mailbox', async ({ browser })
 
     await openOnlyContactConversation(alice)
     const texts = ['ACK 恢复第一条', '📬']
+    const persistedMessagesBefore = await persistedTableCount(bob, 'messages')
     for (const text of texts) {
       await alice.getByLabel('输入消息').fill(text)
       await alice.getByRole('button', { name: '发送' }).click()
@@ -470,7 +471,8 @@ test('接收端 ACK 中断后自动去重并清空 Mailbox', async ({ browser })
 
     await expect.poll(() => ackAttempts, { timeout: 45_000 }).toBeGreaterThanOrEqual(1)
     await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(texts.length)
-    await expect(bob.locator('.rail-badge')).toHaveText(String(texts.length), { timeout: 45_000 })
+    await flushLocalPersistence(bob)
+    await expect.poll(() => persistedTableCount(bob, 'messages'), { timeout: 45_000 }).toBe(persistedMessagesBefore + texts.length)
     // Reload after the ACK failure. The received messages and dedupe records
     // must survive locally; the next real mailbox take sees the same delivery,
     // skips duplicate rendering, and sends the replacement ACK.
@@ -907,6 +909,7 @@ test('节点已收但发送端立即刷新后可恢复未知投递结果', async
     // legitimately contains two outer deliveries, while Bob renders it once.
     await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBeGreaterThanOrEqual(2)
     restoreBobTakeTransport = true
+    await takeMailbox(bob)
     await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(0)
 
     await openOnlyContactConversation(bob)
