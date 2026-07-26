@@ -1523,10 +1523,7 @@ onUnmounted(() => {
   stopWatchingPwaUpdate?.()
   stopPersistenceCryptoWorker()
   persistenceSnapshotRpc.dispose()
-  groupSenderCryptoWorker?.terminate()
-  groupSenderCryptoWorker = null
-  for (const pending of groupSenderCryptoRequests.values()) pending.reject(new Error('Sender Key Worker 已停止'))
-  groupSenderCryptoRequests.clear()
+  groupSenderCryptoRpc.dispose()
   deviceSlotCryptoRpc.dispose()
   identitySignatureRpc.dispose()
   friendRequestCryptoRpc.dispose()
@@ -5702,66 +5699,30 @@ async function encryptGroupSenderText(group: GroupItem, text: string): Promise<s
   return task as Promise<string>
 }
 
-type GroupSenderCryptoWorkerResponse = {
-  id: number
-  ok: boolean
+type GroupSenderCryptoWorkerResponse = WorkerRpcResponse & {
   state_json?: string
   plain_json?: string
   envelope_json?: string
   distribution_text?: string
-  error?: string
 }
 
-let groupSenderCryptoWorker: Worker | null = null
-let nextGroupSenderCryptoRequestId = 1
-const groupSenderCryptoRequests = new Map<number, {
-  resolve: (value: { stateText: string; plainJson?: string; envelopeJson?: string; distributionText?: string }) => void
-  reject: (reason?: unknown) => void
-}>()
 const groupSenderDecryptChains = new Map<string, Promise<unknown>>()
 const groupSenderEncryptChains = new Map<string, Promise<unknown>>()
 
-function getGroupSenderCryptoWorker(): Worker {
-  if (groupSenderCryptoWorker) return groupSenderCryptoWorker
-  const worker = new Worker(new URL('./groupSenderCrypto.worker.ts', import.meta.url), { type: 'module' })
-  worker.onmessage = (event: MessageEvent<GroupSenderCryptoWorkerResponse>) => {
-    const response = event.data
-    const pending = groupSenderCryptoRequests.get(response.id)
-    if (!pending) return
-    groupSenderCryptoRequests.delete(response.id)
-    if (response.ok && response.state_json !== undefined) {
-      pending.resolve({
-        stateText: response.state_json,
-        plainJson: response.plain_json,
-        envelopeJson: response.envelope_json,
-        distributionText: response.distribution_text,
-      })
-    } else {
-      pending.reject(new Error(response.error || 'Sender Key Worker 处理失败'))
-    }
-  }
-  worker.onerror = (event) => {
-    const error = new Error(event.message || 'Sender Key Worker 已停止')
-    for (const pending of groupSenderCryptoRequests.values()) pending.reject(error)
-    groupSenderCryptoRequests.clear()
-    worker.terminate()
-    if (groupSenderCryptoWorker === worker) groupSenderCryptoWorker = null
-  }
-  groupSenderCryptoWorker = worker
-  return worker
-}
+const groupSenderCryptoRpc = new WorkerRpcClient<
+  Record<string, string>,
+  GroupSenderCryptoWorkerResponse
+>(() => new Worker(new URL('./groupSenderCrypto.worker.ts', import.meta.url), { type: 'module' }), 'Sender Key Worker')
 
-function runGroupSenderCryptoWorker(payload: Record<string, string>): Promise<{ stateText: string; plainJson?: string; envelopeJson?: string; distributionText?: string }> {
-  const id = nextGroupSenderCryptoRequestId++
-  return new Promise((resolve, reject) => {
-    groupSenderCryptoRequests.set(id, { resolve, reject })
-    try {
-      getGroupSenderCryptoWorker().postMessage({ id, ...payload })
-    } catch (error) {
-      groupSenderCryptoRequests.delete(id)
-      reject(error)
-    }
-  })
+async function runGroupSenderCryptoWorker(payload: Record<string, string>): Promise<{ stateText: string; plainJson?: string; envelopeJson?: string; distributionText?: string }> {
+  const response = await groupSenderCryptoRpc.request(payload)
+  if (!response.ok || response.state_json === undefined) throw new Error(response.error || 'Sender Key Worker 处理失败')
+  return {
+    stateText: response.state_json,
+    plainJson: response.plain_json,
+    envelopeJson: response.envelope_json,
+    distributionText: response.distribution_text,
+  }
 }
 
 async function decryptGroupSenderEnvelopeInWorker(stateText: string, envelopeText: string): Promise<{ stateText: string; plainJson: string }> {
