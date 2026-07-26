@@ -1532,22 +1532,13 @@ onUnmounted(() => {
   for (const pending of deviceSlotCryptoRequests.values()) pending.reject(new Error('分设备密文 Worker 已停止'))
   deviceSlotCryptoRequests.clear()
   identitySignatureRpc.dispose()
-  friendRequestCryptoWorker?.terminate()
-  friendRequestCryptoWorker = null
-  for (const pending of friendRequestCryptoRequests.values()) pending.reject(new Error('好友请求 Worker 已停止'))
-  friendRequestCryptoRequests.clear()
-  groupEventCryptoWorker?.terminate()
-  groupEventCryptoWorker = null
-  for (const pending of groupEventCryptoRequests.values()) pending.reject(new Error('群邀请与事件 Worker 已停止'))
-  groupEventCryptoRequests.clear()
+  friendRequestCryptoRpc.dispose()
+  groupEventCryptoRpc.dispose()
   secureSessionCryptoWorker?.terminate()
   secureSessionCryptoWorker = null
   for (const pending of secureSessionCryptoRequests.values()) pending.reject(new Error('安全会话 Worker 已停止'))
   secureSessionCryptoRequests.clear()
-  contactCardCryptoWorker?.terminate()
-  contactCardCryptoWorker = null
-  for (const pending of contactCardCryptoRequests.values()) pending.reject(new Error('联系人 Worker 已停止'))
-  contactCardCryptoRequests.clear()
+  contactCardCryptoRpc.dispose()
   messageMetadataCryptoRpc.dispose()
   identityLifecycleCryptoRpc.dispose()
   ratchetEncryptWorker?.terminate()
@@ -7048,55 +7039,21 @@ async function verifyIdentityTextSignatureInWorker(identityPublicKey: string, pa
   return value
 }
 
-type FriendRequestCryptoWorkerResponse = {
-  id: number
-  ok: boolean
+type FriendRequestCryptoWorkerResponse = WorkerRpcResponse & {
   request_text?: string
   response_text?: string
   info_json?: string
-  error?: string
 }
 
-let friendRequestCryptoWorker: Worker | null = null
-let nextFriendRequestCryptoRequestId = 1
-const friendRequestCryptoRequests = new Map<number, {
-  resolve: (value: FriendRequestCryptoWorkerResponse) => void
-  reject: (reason?: unknown) => void
-}>()
+const friendRequestCryptoRpc = new WorkerRpcClient<
+  Record<string, string>,
+  FriendRequestCryptoWorkerResponse
+>(() => new Worker(new URL('./friendRequestCrypto.worker.ts', import.meta.url), { type: 'module' }), '好友请求 Worker')
 
-function getFriendRequestCryptoWorker(): Worker {
-  if (friendRequestCryptoWorker) return friendRequestCryptoWorker
-  const worker = new Worker(new URL('./friendRequestCrypto.worker.ts', import.meta.url), { type: 'module' })
-  worker.onmessage = (event: MessageEvent<FriendRequestCryptoWorkerResponse>) => {
-    const response = event.data
-    const pending = friendRequestCryptoRequests.get(response.id)
-    if (!pending) return
-    friendRequestCryptoRequests.delete(response.id)
-    if (response.ok) pending.resolve(response)
-    else pending.reject(new Error(response.error || '好友请求 Worker 处理失败'))
-  }
-  worker.onerror = (event) => {
-    const error = new Error(event.message || '好友请求 Worker 已停止')
-    for (const pending of friendRequestCryptoRequests.values()) pending.reject(error)
-    friendRequestCryptoRequests.clear()
-    worker.terminate()
-    if (friendRequestCryptoWorker === worker) friendRequestCryptoWorker = null
-  }
-  friendRequestCryptoWorker = worker
-  return worker
-}
-
-function runFriendRequestCryptoWorker(payload: Record<string, string>): Promise<FriendRequestCryptoWorkerResponse> {
-  const id = nextFriendRequestCryptoRequestId++
-  return new Promise((resolve, reject) => {
-    friendRequestCryptoRequests.set(id, { resolve, reject })
-    try {
-      getFriendRequestCryptoWorker().postMessage({ id, ...payload })
-    } catch (error) {
-      friendRequestCryptoRequests.delete(id)
-      reject(error)
-    }
-  })
+async function runFriendRequestCryptoWorker(payload: Record<string, string>): Promise<FriendRequestCryptoWorkerResponse> {
+  const response = await friendRequestCryptoRpc.request(payload)
+  if (response.ok) return response
+  throw new Error(response.error || '好友请求 Worker 处理失败')
 }
 
 async function createFriendRequestInWorker(
@@ -7136,53 +7093,19 @@ async function inspectFriendResponseInWorker<T = any>(responseText: string, cont
   return JSON.parse(response.info_json) as T
 }
 
-type GroupEventCryptoWorkerResponse = {
-  id: number
-  ok: boolean
+type GroupEventCryptoWorkerResponse = WorkerRpcResponse & {
   value?: string
-  error?: string
 }
 
-let groupEventCryptoWorker: Worker | null = null
-let nextGroupEventCryptoRequestId = 1
-const groupEventCryptoRequests = new Map<number, {
-  resolve: (value: string) => void
-  reject: (reason?: unknown) => void
-}>()
+const groupEventCryptoRpc = new WorkerRpcClient<
+  Record<string, string>,
+  GroupEventCryptoWorkerResponse
+>(() => new Worker(new URL('./groupEventCrypto.worker.ts', import.meta.url), { type: 'module' }), '群邀请与事件 Worker')
 
-function getGroupEventCryptoWorker(): Worker {
-  if (groupEventCryptoWorker) return groupEventCryptoWorker
-  const worker = new Worker(new URL('./groupEventCrypto.worker.ts', import.meta.url), { type: 'module' })
-  worker.onmessage = (event: MessageEvent<GroupEventCryptoWorkerResponse>) => {
-    const response = event.data
-    const pending = groupEventCryptoRequests.get(response.id)
-    if (!pending) return
-    groupEventCryptoRequests.delete(response.id)
-    if (response.ok && typeof response.value === 'string') pending.resolve(response.value)
-    else pending.reject(new Error(response.error || '群邀请与事件 Worker 处理失败'))
-  }
-  worker.onerror = (event) => {
-    const error = new Error(event.message || '群邀请与事件 Worker 已停止')
-    for (const pending of groupEventCryptoRequests.values()) pending.reject(error)
-    groupEventCryptoRequests.clear()
-    worker.terminate()
-    if (groupEventCryptoWorker === worker) groupEventCryptoWorker = null
-  }
-  groupEventCryptoWorker = worker
-  return worker
-}
-
-function runGroupEventCryptoWorker(payload: Record<string, string>): Promise<string> {
-  const id = nextGroupEventCryptoRequestId++
-  return new Promise((resolve, reject) => {
-    groupEventCryptoRequests.set(id, { resolve, reject })
-    try {
-      getGroupEventCryptoWorker().postMessage({ id, ...payload })
-    } catch (error) {
-      groupEventCryptoRequests.delete(id)
-      reject(error)
-    }
-  })
+async function runGroupEventCryptoWorker(payload: Record<string, string>): Promise<string> {
+  const response = await groupEventCryptoRpc.request(payload)
+  if (response.ok && typeof response.value === 'string') return response.value
+  throw new Error(response.error || '群邀请与事件 Worker 处理失败')
 }
 
 function createGroupInviteInWorker(backupText: string, passphrase: string, groupId: string, groupName: string, memberIdsJson: string): Promise<string> {
@@ -7262,53 +7185,19 @@ async function runSecureSessionCryptoJson<T = any>(payload: Record<string, strin
   return JSON.parse(await runSecureSessionCryptoWorker(payload)) as T
 }
 
-type ContactCardCryptoWorkerResponse = {
-  id: number
-  ok: boolean
+type ContactCardCryptoWorkerResponse = WorkerRpcResponse & {
   value?: string
-  error?: string
 }
 
-let contactCardCryptoWorker: Worker | null = null
-let nextContactCardCryptoRequestId = 1
-const contactCardCryptoRequests = new Map<number, {
-  resolve: (value: string) => void
-  reject: (reason?: unknown) => void
-}>()
+const contactCardCryptoRpc = new WorkerRpcClient<
+  Record<string, string>,
+  ContactCardCryptoWorkerResponse
+>(() => new Worker(new URL('./contactCardCrypto.worker.ts', import.meta.url), { type: 'module' }), '联系人 Worker')
 
-function getContactCardCryptoWorker(): Worker {
-  if (contactCardCryptoWorker) return contactCardCryptoWorker
-  const worker = new Worker(new URL('./contactCardCrypto.worker.ts', import.meta.url), { type: 'module' })
-  worker.onmessage = (event: MessageEvent<ContactCardCryptoWorkerResponse>) => {
-    const response = event.data
-    const pending = contactCardCryptoRequests.get(response.id)
-    if (!pending) return
-    contactCardCryptoRequests.delete(response.id)
-    if (response.ok && typeof response.value === 'string') pending.resolve(response.value)
-    else pending.reject(new Error(response.error || '联系人 Worker 处理失败'))
-  }
-  worker.onerror = (event) => {
-    const error = new Error(event.message || '联系人 Worker 已停止')
-    for (const pending of contactCardCryptoRequests.values()) pending.reject(error)
-    contactCardCryptoRequests.clear()
-    worker.terminate()
-    if (contactCardCryptoWorker === worker) contactCardCryptoWorker = null
-  }
-  contactCardCryptoWorker = worker
-  return worker
-}
-
-function runContactCardCryptoWorker(payload: Record<string, string>): Promise<string> {
-  const id = nextContactCardCryptoRequestId++
-  return new Promise((resolve, reject) => {
-    contactCardCryptoRequests.set(id, { resolve, reject })
-    try {
-      getContactCardCryptoWorker().postMessage({ id, ...payload })
-    } catch (error) {
-      contactCardCryptoRequests.delete(id)
-      reject(error)
-    }
-  })
+async function runContactCardCryptoWorker(payload: Record<string, string>): Promise<string> {
+  const response = await contactCardCryptoRpc.request(payload)
+  if (response.ok && typeof response.value === 'string') return response.value
+  throw new Error(response.error || '联系人 Worker 处理失败')
 }
 
 async function runContactCardCryptoJson<T = any>(payload: Record<string, string>): Promise<T> {
