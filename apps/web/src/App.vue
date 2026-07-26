@@ -2592,30 +2592,44 @@ async function persistStateTables() {
   }
 }
 
+const PERSIST_DEBOUNCE_MS = 120
 let persistChain: Promise<void> = Promise.resolve()
 let persistTimer: number | undefined
 let persistPending = false
+let persistRunning = false
+let persistFlushCount = 0
+
+function schedulePersistenceFlush(delay = PERSIST_DEBOUNCE_MS) {
+  if (persistTimer !== undefined) return
+  persistTimer = window.setTimeout(() => {
+    persistTimer = undefined
+    void flushPendingPersistence()
+  }, delay)
+}
 
 function flushPendingPersistence() {
+  if (persistRunning) return persistChain
+  persistRunning = true
   persistChain = persistChain
     .catch(() => undefined)
     .then(async () => {
-      while (persistPending) {
-        persistPending = false
-        await persistStateTables()
-      }
+      if (!persistPending) return
+      persistPending = false
+      persistFlushCount += 1
+      await persistStateTables()
     })
     .catch((e) => appendLog(`❌ IndexedDB 保存失败：${String(e)}`))
+    .finally(() => {
+      persistRunning = false
+      if (persistPending) schedulePersistenceFlush()
+    })
   return persistChain
 }
 
 function persist() {
   persistPending = true
-  if (persistTimer !== undefined) return
-  persistTimer = window.setTimeout(() => {
-    persistTimer = undefined
-    void flushPendingPersistence()
-  }, 120)
+  if (persistRunning) return
+  schedulePersistenceFlush()
 }
 
 async function flushPendingPersistenceNow() {
@@ -2623,8 +2637,14 @@ async function flushPendingPersistenceNow() {
     window.clearTimeout(persistTimer)
     persistTimer = undefined
   }
-  if (persistPending) await flushPendingPersistence()
-  else await persistChain
+  while (persistPending || persistRunning) {
+    if (!persistRunning) await flushPendingPersistence()
+    await persistChain
+    if (persistTimer !== undefined) {
+      window.clearTimeout(persistTimer)
+      persistTimer = undefined
+    }
+  }
 }
 
 if (typeof window !== 'undefined') {
@@ -2635,6 +2655,11 @@ if (typeof window !== 'undefined') {
     nodeDhtOperationHistory.value = history
     persist()
   }
+  ;(window as any).getPersistMetricsForTests = () => ({
+    flushes: persistFlushCount,
+    pending: persistPending,
+    running: persistRunning,
+  })
   ;(window as any).mergeMessagesForTests = mergeMessagesForState
   ;(window as any).mergeContactDeviceAndTrustStateForTests = mergeContactDeviceAndTrustState
   ;(window as any).contactAllKnownDevicesRevokedForTests = contactAllKnownDevicesRevoked
