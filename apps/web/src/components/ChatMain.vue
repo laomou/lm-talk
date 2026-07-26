@@ -70,6 +70,18 @@ function filePreviewLabel(name?: string, mime?: string) {
 function selectedFileLabel(file: File) {
   return `${filePreviewLabel(file.name, file.type)} · ${file.type || 'application/octet-stream'} · ${props.ctx.formatBytes(file.size)}`
 }
+function isAttachmentMessage(message: any) {
+  return Boolean(message.attachment_name || message.attachment_mime || /^\[文件\]\s/.test(message.text || ''))
+}
+function attachmentInfo(message: any) {
+  const name = message.attachment_name || String(message.text || '').replace(/^\[文件\]\s*/, '').replace(/\s+\([^)]*\)$/, '') || t('chatView.attachment')
+  const mime = message.attachment_mime || 'application/octet-stream'
+  const size = Number(message.attachment_size ?? 0)
+  return { name, mime, size, label: `${filePreviewLabel(name, mime)} · ${props.ctx.formatBytes(size)}` }
+}
+function attachmentDownload(message: any) {
+  return props.ctx.attachmentDownloads.value[message.id]
+}
 
 
 function messageOutboxItems(message: any) {
@@ -345,7 +357,35 @@ function deleteActiveConversation() {
         <template v-for="item in thread" :key="item.id">
           <div v-if="item.kind === 'sep'" class="day-sep"><span>{{ item.label }}</span></div>
           <div v-else class="bubble" :class="[item.m.direction, { highlighted: highlightedMessageId === item.m.id }]" :data-message-id="item.m.id">
-            <div class="text">{{ item.m.text }}</div>
+            <template v-if="isAttachmentMessage(item.m)">
+              <div class="message-attachment-card">
+                <div class="file-icon">{{ filePreviewLabel(attachmentInfo(item.m).name, attachmentInfo(item.m).mime).slice(0, 1) }}</div>
+                <div class="file-card-main">
+                  <b>{{ attachmentInfo(item.m).name }}</b>
+                  <small>{{ attachmentInfo(item.m).label }}</small>
+                  <small v-if="item.m.direction === 'in' && !attachmentDownload(item.m)">{{ t('chatView.encryptedFileHint') }}</small>
+                  <small v-else-if="item.m.direction === 'in'">{{ t('chatView.decryptedFileHint') }}</small>
+                </div>
+                <button
+                  v-if="item.m.direction === 'in' && !attachmentDownload(item.m)"
+                  class="secondary"
+                  @click="ctx.decryptAttachmentMessage(item.m.id)"
+                >{{ t('chatView.decryptFile') }}</button>
+                <a
+                  v-else-if="item.m.direction === 'in'"
+                  :href="attachmentDownload(item.m).url"
+                  :download="attachmentDownload(item.m).name"
+                  @click="ctx.markAttachmentDownloaded(item.m.id)"
+                >{{ t('chatView.download') }}</a>
+                <img
+                  v-if="item.m.direction === 'in' && attachmentDownload(item.m)?.mime.startsWith('image/')"
+                  class="message-attachment-preview"
+                  :src="attachmentDownload(item.m).url"
+                  :alt="attachmentDownload(item.m).name"
+                />
+              </div>
+            </template>
+            <div v-else class="text">{{ item.m.text }}</div>
             <small class="bubble-meta">
               <span>{{ hmTime(item.m.created_at) }}</span>
               <span
@@ -388,34 +428,6 @@ function deleteActiveConversation() {
         </div>
         <button class="secondary danger" @click="ctx.cancelSelectedFile">{{ t('chatView.delete') }}</button>
         <button @click="ctx.sendSelectedFile">{{ t('chatView.sendFile') }}</button>
-      </div>
-      <div v-if="ctx.pendingFilePackageText.value && !ctx.receivedFileUrl.value" class="received-file-card pending">
-        <div class="file-icon">{{ t('chatView.encryptedFileIcon') }}</div>
-        <div class="file-card-main">
-          <b>{{ t('chatView.encryptedFilePackage') }}</b>
-          <small v-if="ctx.pendingFileMeta.value">{{ ctx.pendingFileMeta.value }}</small>
-          <small>{{ t('chatView.encryptedFileHint') }}</small>
-        </div>
-        <button class="secondary" @click="ctx.decryptIncomingFilePackage">{{ t('chatView.decryptFile') }}</button>
-      </div>
-      <div v-if="ctx.receivedFileUrl.value" class="received-file-card ready">
-        <div class="file-icon">{{ filePreviewLabel(ctx.receivedFileName.value, ctx.receivedFileMime.value).slice(0, 1) }}</div>
-        <div class="file-card-main">
-          <b>{{ ctx.receivedFileName.value }}</b>
-          <small>{{ filePreviewLabel(ctx.receivedFileName.value, ctx.receivedFileMime.value) }} · {{ ctx.receivedFileMeta.value }}</small>
-          <small>{{ t('chatView.decryptedFileHint') }}</small>
-        </div>
-        <a :href="ctx.receivedFileUrl.value" :download="ctx.receivedFileName.value" @click="ctx.markReceivedFileDownloaded">{{ t('chatView.download') }}</a>
-        <img
-          v-if="ctx.receivedFileMime.value.startsWith('image/')"
-          class="received-file-preview"
-          :src="ctx.receivedFileUrl.value"
-          :alt="ctx.receivedFileName.value"
-        />
-        <div v-else class="received-file-placeholder">
-          <b>{{ ctx.receivedFilePreviewKind.value }}</b>
-          <small>{{ t('chatView.nonImagePreviewHint') }}</small>
-        </div>
       </div>
       <div class="composer-bar">
         <button class="composer-icon" :aria-label="t('chatView.chooseAttachment')" @click="togglePanel('attach')"><UiIcon name="add" /></button>
