@@ -13,6 +13,28 @@ const router = useRouter()
 const { locale, t } = useI18n()
 const searchOpen = computed(() => route.path === '/chat/search')
 
+type DeliveryTone = 'failed' | 'pending'
+type ConversationItem = {
+  type: 'contact'
+  id: string
+  data: any
+  active: boolean
+  name: string
+  preview: string
+  time: string
+  ts: number
+  lastId: string
+  unread: number
+  unreadText: string
+  pending: number
+  failed: number
+  deliveryText: string
+  deliveryTone: DeliveryTone | ''
+  trustIcon: 'alert' | 'lock'
+  trustTitle: string
+  trustRevoked: boolean
+}
+
 const conversationStats = computed(() => {
   const lastByUser = new Map<string, any>()
   const unreadByUser = new Map<string, number>()
@@ -36,46 +58,7 @@ const conversationStats = computed(() => {
   return { lastByUser, unreadByUser, pendingByUser, failedByUser }
 })
 
-const conversations = computed(() => {
-  const items: any[] = []
-  for (const c of props.ctx.contacts.value) {
-    const last = conversationStats.value.lastByUser.get(c.user_id)
-    const unread = conversationStats.value.unreadByUser.get(c.user_id) ?? 0
-    const pending = conversationStats.value.pendingByUser.get(c.user_id) ?? 0
-    const failed = conversationStats.value.failedByUser.get(c.user_id) ?? 0
-    const isActive = c.user_id === props.ctx.activePeerId.value
-    if (!last && !isActive && !pending && !failed) continue
-    items.push({ type: 'contact', id: c.user_id, data: c, last, unread, pending, failed, ts: last?.created_at ?? 0 })
-  }
-  return items.sort((a, b) => b.ts - a.ts)
-})
-
-const filtered = computed(() => {
-  const q = keyword.value.trim().toLowerCase()
-  if (!q) return conversations.value
-  return conversations.value.filter((it) => `${it.data.display_name || ''} ${it.id}`.toLowerCase().includes(q))
-})
-
-function convName(it: any) {
-  return it.data.display_name || t('chatView.unnamed')
-}
-function trustBadgeIcon(it: any): 'alert' | 'lock' {
-  return props.ctx.contactAllKnownDevicesRevoked(it.data) ? 'alert' : 'lock'
-}
-function trustBadgeTitle(it: any) {
-  if (it.type !== 'contact' || it.data.state !== 'Friend') return ''
-  return props.ctx.contactAllKnownDevicesRevoked(it.data) ? t('securityStatus.abnormal') : t('securityStatus.normal')
-}
-function convPreview(it: any) {
-  if (it.last) {
-    return it.last.text
-  }
-  if (it.data.state === 'RequestSent') return t('chatView.waitingApproval')
-  if (it.data.state === 'Blocked') return t('chatView.blocked')
-  if (it.data.state !== 'Friend') return t('chatView.notFriend')
-  return t('chatView.noPreview')
-}
-function convTime(ts: number) {
+function formatConversationTime(ts: number) {
   if (!ts) return ''
   const d = new Date(ts)
   const now = new Date()
@@ -87,143 +70,143 @@ function convTime(ts: number) {
   if (d.getFullYear() === now.getFullYear()) return new Intl.DateTimeFormat(locale.value, { month: 'numeric', day: 'numeric' }).format(d)
   return new Intl.DateTimeFormat(locale.value, { year: 'numeric', month: 'numeric', day: 'numeric' }).format(d)
 }
-function isActive(it: any) {
-  return it.id === props.ctx.activePeerId.value
+
+function conversationPreview(contact: any, last: any) {
+  if (last) return last.text
+  if (contact.state === 'RequestSent') return t('chatView.waitingApproval')
+  if (contact.state === 'Blocked') return t('chatView.blocked')
+  if (contact.state !== 'Friend') return t('chatView.notFriend')
+  return t('chatView.noPreview')
 }
-function unreadCount(it: any) {
-  return it.type === 'contact' ? Number(it.unread ?? 0) : 0
-}
-function deliveryState(it: any) {
-  if (it.failed) return { text: t('chatView.conversationFailed', { count: it.failed }), tone: 'failed' }
-  if (it.pending) return { text: t('chatView.conversationPending', { count: it.pending }), tone: 'pending' }
-  return null
-}
-function select(it: any) {
+
+const conversations = computed<ConversationItem[]>(() => {
+  const stats = conversationStats.value
+  const activePeerId = props.ctx.activePeerId.value
+  const items: ConversationItem[] = []
+  for (const contact of props.ctx.contacts.value) {
+    const last = stats.lastByUser.get(contact.user_id)
+    const unread = stats.unreadByUser.get(contact.user_id) ?? 0
+    const pending = stats.pendingByUser.get(contact.user_id) ?? 0
+    const failed = stats.failedByUser.get(contact.user_id) ?? 0
+    const active = contact.user_id === activePeerId
+    if (!last && !active && !pending && !failed) continue
+    const trustRevoked = contact.state === 'Friend' ? props.ctx.contactAllKnownDevicesRevoked(contact) : false
+    const deliveryTone: DeliveryTone | '' = failed ? 'failed' : pending ? 'pending' : ''
+    items.push({
+      type: 'contact',
+      id: contact.user_id,
+      data: contact,
+      active,
+      name: contact.display_name || t('chatView.unnamed'),
+      preview: conversationPreview(contact, last),
+      time: formatConversationTime(last?.created_at ?? 0),
+      ts: last?.created_at ?? 0,
+      lastId: last?.id ?? '',
+      unread,
+      unreadText: unread ? props.ctx.badgeCountText(unread) : '',
+      pending,
+      failed,
+      deliveryText: failed
+        ? t('chatView.conversationFailed', { count: failed })
+        : pending
+          ? t('chatView.conversationPending', { count: pending })
+          : '',
+      deliveryTone,
+      trustIcon: trustRevoked ? 'alert' : 'lock',
+      trustTitle: contact.state === 'Friend' ? (trustRevoked ? t('securityStatus.abnormal') : t('securityStatus.normal')) : '',
+      trustRevoked,
+    })
+  }
+  return items.sort((a, b) => b.ts - a.ts)
+})
+
+const filtered = computed(() => {
+  const q = keyword.value.trim().toLowerCase()
+  if (!q) return conversations.value
+  return conversations.value.filter((it) => `${it.name} ${it.id}`.toLowerCase().includes(q))
+})
+
+function select(it: ConversationItem) {
   props.ctx.selectContact(it.id)
   void router.push(`/chat/${encodeURIComponent(it.id)}`)
 }
-function selectOnKeydown(event: KeyboardEvent, it: any) {
+function selectOnKeydown(event: KeyboardEvent, it: ConversationItem) {
   if (event.key !== 'Enter' && event.key !== ' ') return
   event.preventDefault()
   select(it)
 }
-function retryConversation(event: Event, it: any) {
+function retryConversation(event: Event, it: ConversationItem) {
   event.stopPropagation()
   props.ctx.retryOutboxForPeer(it.id)
 }
 </script>
 
 <template>
-  <aside v-if="!searchOpen" class="sidebar wechat-sidebar">
-    <header class="list-col-header product-chat-list-header">
+  <aside class="sidebar wechat-sidebar" :class="{ 'chat-search-page': searchOpen }">
+    <header v-if="!searchOpen" class="list-col-header product-chat-list-header">
       <span></span>
       <h2>{{ t('chatView.title') }}</h2>
       <button class="icon-btn" :aria-label="t('chatView.searchChat')" :title="t('chatView.searchChat')" @click="router.push('/chat/search')"><UiIcon name="search" /></button>
     </header>
-    <section class="conversation-list only-conversations">
-      <div
-        v-for="it in filtered"
-        :key="it.type + ':' + it.id"
-        class="contact"
-        :class="{ active: isActive(it) }"
-        role="button"
-        tabindex="0"
-        :aria-current="isActive(it) ? 'true' : undefined"
-        @click="select(it)"
-        @keydown="selectOnKeydown($event, it)"
-      >
-        <span class="conversation-avatar-wrap">
-          <UiAvatar :src="it.data.avatar_data_url" :name="convName(it)" :seed="it.id" />
-          <em v-if="unreadCount(it)" class="conversation-avatar-badge">{{ props.ctx.badgeCountText(unreadCount(it)) }}</em>
-        </span>
-        <span class="contact-main">
-          <b>
-            <span class="conv-name">
-              {{ convName(it) }}
-              <em v-if="it.data.state === 'RequestSent'">{{ t('chatView.waitingApprovalBadge') }}</em>
-              <em v-else-if="it.data.state === 'Blocked'">{{ t('chatView.blocked') }}</em>
-              <em
-                v-else-if="it.type === 'contact' && it.data.state === 'Friend'"
-                class="strict-badge"
-                :class="{ danger: props.ctx.contactAllKnownDevicesRevoked(it.data) }"
-                :title="trustBadgeTitle(it)"
-              ><UiIcon :name="trustBadgeIcon(it)" size="12" /></em>
-            </span>
-            <span v-if="it.ts" class="conv-time">{{ convTime(it.ts) }}</span>
-          </b>
-          <small class="conv-preview">
-            <span>{{ convPreview(it) }}</span>
-            <button
-              v-if="deliveryState(it)?.tone === 'failed'"
-              class="conversation-retry"
-              type="button"
-              :title="deliveryState(it)?.text"
-              :aria-label="t('chatView.retryConversation')"
-              @click="retryConversation($event, it)"
-            >{{ t('chatView.retry') }}</button>
-            <em v-else-if="deliveryState(it)" class="conversation-delivery" :class="`is-${deliveryState(it)?.tone}`">{{ deliveryState(it)?.text }}</em>
-            <em v-if="unreadCount(it)" class="conversation-badge">{{ props.ctx.badgeCountText(unreadCount(it)) }}</em>
-          </small>
-        </span>
-      </div>
-
-      <UiEmptyState v-if="filtered.length === 0" :title="t('chatView.noChatsTitle')" :description="t('chatView.noChatsDescription')" />
-    </section>
-  </aside>
-
-  <aside v-else class="sidebar wechat-sidebar chat-search-page">
-    <header class="list-col-header product-chat-search-header">
+    <header v-else class="list-col-header product-chat-search-header">
       <button class="back-btn" :aria-label="t('chatView.backToChat')" @click="router.push('/chat')"><UiIcon name="back" /></button>
       <input v-model="keyword" type="search" :aria-label="t('chatView.searchChat')" :placeholder="t('chatView.searchChat')" autofocus />
     </header>
+
     <section class="conversation-list only-conversations">
       <div
         v-for="it in filtered"
         :key="it.type + ':' + it.id"
+        v-memo="[it.active, it.lastId, it.unread, it.pending, it.failed, it.name, it.data.avatar_data_url, it.data.state, it.trustRevoked, it.time]"
         class="contact"
-        :class="{ active: isActive(it) }"
+        :class="{ active: it.active }"
         role="button"
         tabindex="0"
-        :aria-current="isActive(it) ? 'true' : undefined"
+        :aria-current="it.active ? 'true' : undefined"
         @click="select(it)"
         @keydown="selectOnKeydown($event, it)"
       >
         <span class="conversation-avatar-wrap">
-          <UiAvatar :src="it.data.avatar_data_url" :name="convName(it)" :seed="it.id" />
-          <em v-if="unreadCount(it)" class="conversation-avatar-badge">{{ props.ctx.badgeCountText(unreadCount(it)) }}</em>
+          <UiAvatar :src="it.data.avatar_data_url" :name="it.name" :seed="it.id" />
+          <em v-if="it.unread" class="conversation-avatar-badge">{{ it.unreadText }}</em>
         </span>
         <span class="contact-main">
           <b>
             <span class="conv-name">
-              {{ convName(it) }}
+              {{ it.name }}
               <em v-if="it.data.state === 'RequestSent'">{{ t('chatView.waitingApprovalBadge') }}</em>
               <em v-else-if="it.data.state === 'Blocked'">{{ t('chatView.blocked') }}</em>
               <em
-                v-else-if="it.type === 'contact' && it.data.state === 'Friend'"
+                v-else-if="it.data.state === 'Friend'"
                 class="strict-badge"
-                :class="{ danger: props.ctx.contactAllKnownDevicesRevoked(it.data) }"
-                :title="trustBadgeTitle(it)"
-              ><UiIcon :name="trustBadgeIcon(it)" size="12" /></em>
+                :class="{ danger: it.trustRevoked }"
+                :title="it.trustTitle"
+              ><UiIcon :name="it.trustIcon" size="12" /></em>
             </span>
-            <span v-if="it.ts" class="conv-time">{{ convTime(it.ts) }}</span>
+            <span v-if="it.time" class="conv-time">{{ it.time }}</span>
           </b>
           <small class="conv-preview">
-            <span>{{ convPreview(it) }}</span>
+            <span>{{ it.preview }}</span>
             <button
-              v-if="deliveryState(it)?.tone === 'failed'"
+              v-if="it.deliveryTone === 'failed'"
               class="conversation-retry"
               type="button"
-              :title="deliveryState(it)?.text"
+              :title="it.deliveryText"
               :aria-label="t('chatView.retryConversation')"
               @click="retryConversation($event, it)"
             >{{ t('chatView.retry') }}</button>
-            <em v-else-if="deliveryState(it)" class="conversation-delivery" :class="`is-${deliveryState(it)?.tone}`">{{ deliveryState(it)?.text }}</em>
-            <em v-if="unreadCount(it)" class="conversation-badge">{{ props.ctx.badgeCountText(unreadCount(it)) }}</em>
+            <em v-else-if="it.deliveryTone" class="conversation-delivery" :class="`is-${it.deliveryTone}`">{{ it.deliveryText }}</em>
+            <em v-if="it.unread" class="conversation-badge">{{ it.unreadText }}</em>
           </small>
         </span>
       </div>
 
-      <UiEmptyState v-if="filtered.length === 0" :icon="keyword ? 'search' : 'info'" :title="keyword ? t('chatView.noChatMatchesTitle') : t('chatView.searchChat')" :description="keyword ? t('chatView.noChatMatchesDescription') : t('chatView.searchChatDescription')" />
+      <UiEmptyState
+        v-if="filtered.length === 0"
+        :icon="searchOpen && keyword ? 'search' : undefined"
+        :title="searchOpen && keyword ? t('chatView.noChatMatchesTitle') : searchOpen ? t('chatView.searchChat') : t('chatView.noChatsTitle')"
+        :description="searchOpen && keyword ? t('chatView.noChatMatchesDescription') : searchOpen ? t('chatView.searchChatDescription') : t('chatView.noChatsDescription')"
+      />
     </section>
   </aside>
 </template>
