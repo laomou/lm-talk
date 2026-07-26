@@ -1531,10 +1531,7 @@ onUnmounted(() => {
   deviceSlotCryptoWorker = null
   for (const pending of deviceSlotCryptoRequests.values()) pending.reject(new Error('分设备密文 Worker 已停止'))
   deviceSlotCryptoRequests.clear()
-  identitySignatureWorker?.terminate()
-  identitySignatureWorker = null
-  for (const pending of identitySignatureRequests.values()) pending.reject(new Error('身份签名 Worker 已停止'))
-  identitySignatureRequests.clear()
+  identitySignatureRpc.dispose()
   friendRequestCryptoWorker?.terminate()
   friendRequestCryptoWorker = null
   for (const pending of friendRequestCryptoRequests.values()) pending.reject(new Error('好友请求 Worker 已停止'))
@@ -1551,14 +1548,8 @@ onUnmounted(() => {
   contactCardCryptoWorker = null
   for (const pending of contactCardCryptoRequests.values()) pending.reject(new Error('联系人 Worker 已停止'))
   contactCardCryptoRequests.clear()
-  messageMetadataCryptoWorker?.terminate()
-  messageMetadataCryptoWorker = null
-  for (const pending of messageMetadataCryptoRequests.values()) pending.reject(new Error('消息元数据 Worker 已停止'))
-  messageMetadataCryptoRequests.clear()
-  identityLifecycleCryptoWorker?.terminate()
-  identityLifecycleCryptoWorker = null
-  for (const pending of identityLifecycleCryptoRequests.values()) pending.reject(new Error('身份生命周期 Worker 已停止'))
-  identityLifecycleCryptoRequests.clear()
+  messageMetadataCryptoRpc.dispose()
+  identityLifecycleCryptoRpc.dispose()
   ratchetEncryptWorker?.terminate()
   ratchetEncryptWorker = null
   for (const pending of ratchetEncryptRequests.values()) pending.reject(new Error('Ratchet 加密 Worker 已停止'))
@@ -7030,53 +7021,19 @@ type DeviceSlotCryptoWorkerResponse = {
   error?: string
 }
 
-type IdentitySignatureWorkerResponse = {
-  id: number
-  ok: boolean
+type IdentitySignatureWorkerResponse = WorkerRpcResponse & {
   value?: string | boolean
-  error?: string
 }
 
-let identitySignatureWorker: Worker | null = null
-let nextIdentitySignatureRequestId = 1
-const identitySignatureRequests = new Map<number, {
-  resolve: (value: string | boolean) => void
-  reject: (reason?: unknown) => void
-}>()
+const identitySignatureRpc = new WorkerRpcClient<
+  Record<string, string>,
+  IdentitySignatureWorkerResponse
+>(new URL('./identitySignature.worker.ts', import.meta.url), '身份签名 Worker')
 
-function getIdentitySignatureWorker(): Worker {
-  if (identitySignatureWorker) return identitySignatureWorker
-  const worker = new Worker(new URL('./identitySignature.worker.ts', import.meta.url), { type: 'module' })
-  worker.onmessage = (event: MessageEvent<IdentitySignatureWorkerResponse>) => {
-    const response = event.data
-    const pending = identitySignatureRequests.get(response.id)
-    if (!pending) return
-    identitySignatureRequests.delete(response.id)
-    if (response.ok && (typeof response.value === 'string' || typeof response.value === 'boolean')) pending.resolve(response.value)
-    else pending.reject(new Error(response.error || '身份签名 Worker 处理失败'))
-  }
-  worker.onerror = (event) => {
-    const error = new Error(event.message || '身份签名 Worker 已停止')
-    for (const pending of identitySignatureRequests.values()) pending.reject(error)
-    identitySignatureRequests.clear()
-    worker.terminate()
-    if (identitySignatureWorker === worker) identitySignatureWorker = null
-  }
-  identitySignatureWorker = worker
-  return worker
-}
-
-function runIdentitySignatureWorker(payload: Record<string, string>): Promise<string | boolean> {
-  const id = nextIdentitySignatureRequestId++
-  return new Promise((resolve, reject) => {
-    identitySignatureRequests.set(id, { resolve, reject })
-    try {
-      getIdentitySignatureWorker().postMessage({ id, ...payload })
-    } catch (error) {
-      identitySignatureRequests.delete(id)
-      reject(error)
-    }
-  })
+async function runIdentitySignatureWorker(payload: Record<string, string>): Promise<string | boolean> {
+  const response = await identitySignatureRpc.request(payload)
+  if (response.ok && (typeof response.value === 'string' || typeof response.value === 'boolean')) return response.value
+  throw new Error(response.error || '身份签名 Worker 处理失败')
 }
 
 async function signIdentityTextInWorker(backupText: string, passphrase: string, payload: string): Promise<string> {
@@ -7394,53 +7351,19 @@ async function inspectDeviceRevokeInWorker<T = DeviceRevokeInfo>(revokeText: str
   return runContactCardCryptoJson<T>({ operation: 'inspectDeviceRevoke', revokeText, identityPublicKey })
 }
 
-type MessageMetadataCryptoWorkerResponse = {
-  id: number
-  ok: boolean
+type MessageMetadataCryptoWorkerResponse = WorkerRpcResponse & {
   value?: string
-  error?: string
 }
 
-let messageMetadataCryptoWorker: Worker | null = null
-let nextMessageMetadataCryptoRequestId = 1
-const messageMetadataCryptoRequests = new Map<number, {
-  resolve: (value: string) => void
-  reject: (reason?: unknown) => void
-}>()
+const messageMetadataCryptoRpc = new WorkerRpcClient<
+  Record<string, string>,
+  MessageMetadataCryptoWorkerResponse
+>(new URL('./messageMetadataCrypto.worker.ts', import.meta.url), '消息元数据 Worker')
 
-function getMessageMetadataCryptoWorker(): Worker {
-  if (messageMetadataCryptoWorker) return messageMetadataCryptoWorker
-  const worker = new Worker(new URL('./messageMetadataCrypto.worker.ts', import.meta.url), { type: 'module' })
-  worker.onmessage = (event: MessageEvent<MessageMetadataCryptoWorkerResponse>) => {
-    const response = event.data
-    const pending = messageMetadataCryptoRequests.get(response.id)
-    if (!pending) return
-    messageMetadataCryptoRequests.delete(response.id)
-    if (response.ok && typeof response.value === 'string') pending.resolve(response.value)
-    else pending.reject(new Error(response.error || '消息元数据 Worker 处理失败'))
-  }
-  worker.onerror = (event) => {
-    const error = new Error(event.message || '消息元数据 Worker 已停止')
-    for (const pending of messageMetadataCryptoRequests.values()) pending.reject(error)
-    messageMetadataCryptoRequests.clear()
-    worker.terminate()
-    if (messageMetadataCryptoWorker === worker) messageMetadataCryptoWorker = null
-  }
-  messageMetadataCryptoWorker = worker
-  return worker
-}
-
-function runMessageMetadataCryptoWorker(payload: Record<string, string>): Promise<string> {
-  const id = nextMessageMetadataCryptoRequestId++
-  return new Promise((resolve, reject) => {
-    messageMetadataCryptoRequests.set(id, { resolve, reject })
-    try {
-      getMessageMetadataCryptoWorker().postMessage({ id, ...payload })
-    } catch (error) {
-      messageMetadataCryptoRequests.delete(id)
-      reject(error)
-    }
-  })
+async function runMessageMetadataCryptoWorker(payload: Record<string, string>): Promise<string> {
+  const response = await messageMetadataCryptoRpc.request(payload)
+  if (response.ok && typeof response.value === 'string') return response.value
+  throw new Error(response.error || '消息元数据 Worker 处理失败')
 }
 
 async function runMessageMetadataCryptoJson<T = any>(payload: Record<string, string>): Promise<T> {
@@ -7512,53 +7435,19 @@ async function inspectPublicPeerAnnounceInWorker<T = any>(announceText: string, 
   return runMessageMetadataCryptoJson<T>({ operation: 'inspectPublicPeerAnnounce', announceText, identityPublicKey })
 }
 
-type IdentityLifecycleCryptoWorkerResponse = {
-  id: number
-  ok: boolean
+type IdentityLifecycleCryptoWorkerResponse = WorkerRpcResponse & {
   value?: string
-  error?: string
 }
 
-let identityLifecycleCryptoWorker: Worker | null = null
-let nextIdentityLifecycleCryptoRequestId = 1
-const identityLifecycleCryptoRequests = new Map<number, {
-  resolve: (value: string) => void
-  reject: (reason?: unknown) => void
-}>()
+const identityLifecycleCryptoRpc = new WorkerRpcClient<
+  Record<string, string>,
+  IdentityLifecycleCryptoWorkerResponse
+>(new URL('./identityLifecycleCrypto.worker.ts', import.meta.url), '身份生命周期 Worker')
 
-function getIdentityLifecycleCryptoWorker(): Worker {
-  if (identityLifecycleCryptoWorker) return identityLifecycleCryptoWorker
-  const worker = new Worker(new URL('./identityLifecycleCrypto.worker.ts', import.meta.url), { type: 'module' })
-  worker.onmessage = (event: MessageEvent<IdentityLifecycleCryptoWorkerResponse>) => {
-    const response = event.data
-    const pending = identityLifecycleCryptoRequests.get(response.id)
-    if (!pending) return
-    identityLifecycleCryptoRequests.delete(response.id)
-    if (response.ok && typeof response.value === 'string') pending.resolve(response.value)
-    else pending.reject(new Error(response.error || '身份生命周期 Worker 处理失败'))
-  }
-  worker.onerror = (event) => {
-    const error = new Error(event.message || '身份生命周期 Worker 已停止')
-    for (const pending of identityLifecycleCryptoRequests.values()) pending.reject(error)
-    identityLifecycleCryptoRequests.clear()
-    worker.terminate()
-    if (identityLifecycleCryptoWorker === worker) identityLifecycleCryptoWorker = null
-  }
-  identityLifecycleCryptoWorker = worker
-  return worker
-}
-
-function runIdentityLifecycleCryptoWorker(payload: Record<string, string>): Promise<string> {
-  const id = nextIdentityLifecycleCryptoRequestId++
-  return new Promise((resolve, reject) => {
-    identityLifecycleCryptoRequests.set(id, { resolve, reject })
-    try {
-      getIdentityLifecycleCryptoWorker().postMessage({ id, ...payload })
-    } catch (error) {
-      identityLifecycleCryptoRequests.delete(id)
-      reject(error)
-    }
-  })
+async function runIdentityLifecycleCryptoWorker(payload: Record<string, string>): Promise<string> {
+  const response = await identityLifecycleCryptoRpc.request(payload)
+  if (response.ok && typeof response.value === 'string') return response.value
+  throw new Error(response.error || '身份生命周期 Worker 处理失败')
 }
 
 async function runIdentityLifecycleCryptoJson<T>(payload: Record<string, string>): Promise<T> {
