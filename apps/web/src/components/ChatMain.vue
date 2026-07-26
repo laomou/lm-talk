@@ -159,6 +159,18 @@ function trustIconName(contact: any) {
 function trustTitle(contact: any) {
   return props.ctx.contactAllKnownDevicesRevoked(contact) ? t('securityStatus.abnormal') : t('securityStatus.normal')
 }
+const contactSecurityStatus = computed(() => {
+  const contact = props.ctx.activeContact.value
+  return contact ? props.ctx.contactStrictE2eeStatus(contact) : null
+})
+function contactSecurityTone(status: any) {
+  if (status?.level === 'blocking') return 'danger'
+  if (status?.level === 'advisory') return 'warning'
+  return 'success'
+}
+function contactSecurityIcon(status: any): 'alert' | 'check' {
+  return status?.level === 'ok' ? 'check' : 'alert'
+}
 function appendEmoji(emoji: string) {
   const el = composerTextarea.value
   const text = props.ctx.composerText.value || ''
@@ -275,6 +287,23 @@ function deleteActiveConversation() {
         <button v-if="ctx.activeContact.value.state !== 'RequestSent' && ctx.activeContact.value.state !== 'Blocked'" @click="ctx.createFriendRequestForActive">{{ t('chatView.sendFriendRequest') }}</button>
         <button v-if="ctx.activeContact.value.last_friend_request_error" class="secondary" @click="ctx.clearActiveFriendRequestError">{{ t('chatView.clearRequestError') }}</button>
         <button v-if="ctx.activeContact.value.state === 'Blocked'" @click="ctx.unblockActiveContact">{{ t('chatView.unblock') }}</button>
+      </template>
+    </UiNotice>
+
+    <UiNotice
+      v-else-if="!messageSearchOpen && contactSecurityStatus && contactSecurityStatus.level !== 'ok'"
+      compact
+      :tone="contactSecurityTone(contactSecurityStatus)"
+    >
+      <div class="notice-text">
+        <b>{{ contactSecurityStatus.label }}</b>
+        <span>{{ contactSecurityStatus.detail }}</span>
+      </div>
+      <template v-if="contactSecurityStatus.level === 'advisory'" #actions>
+        <button class="secondary" @click="ctx.repairStrictE2eeForActiveContact">刷新安全信息</button>
+      </template>
+      <template v-else #actions>
+        <button @click="ctx.repairStrictE2eeForActiveContact">修复后重试</button>
       </template>
     </UiNotice>
 
