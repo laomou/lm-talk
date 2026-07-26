@@ -45,6 +45,12 @@ const backupStatus = computed(() => {
   if (props.ctx.fullDataBackupFreshnessLevel.value === 'warning') return { text: t('settingsView.backupSuggested'), tone: 'warning' as const }
   return { text: t('settingsView.backedUp'), tone: 'success' as const }
 })
+const strictSecurityStatus = computed(() => {
+  const readiness = props.ctx.strictE2eeReadiness.value
+  if (!readiness.ready) return { text: t('settingsView.securityBlocked'), tone: 'danger' as const }
+  if (readiness.advisory) return { text: t('settingsView.securityRefreshSuggested'), tone: 'warning' as const }
+  return { text: t('settingsView.securityNormal'), tone: 'success' as const }
+})
 const pendingOutboxCount = computed(() => props.ctx.outbox.value.filter((item: any) => item.status !== 'sent').length)
 const failedOutboxCount = computed(() => props.ctx.outbox.value.filter((item: any) => item.status === 'failed').length)
 const retrySyncIssueText = computed(() => {
@@ -183,7 +189,12 @@ function onAvatarSelected(event: Event) {
       <template v-else-if="view === 'security'">
         <UiPageHeader :title="t('me.security')" :back-label="t('settingsView.backToMe')" @back="backHome" />
         <UiSection class="sync-card" :title="t('settingsView.securityStatus')" :description="t('settingsView.securityStatusDescription')">
-          <template #actions><UiStatusBadge tone="success">{{ t('settingsView.autoProtect') }}</UiStatusBadge></template>
+          <template #actions><UiStatusBadge :tone="strictSecurityStatus.tone">{{ strictSecurityStatus.text }}</UiStatusBadge></template>
+          <small>{{ ctx.strictE2eeReadiness.value.text }}</small>
+          <UiActionGroup v-if="!ctx.strictE2eeReadiness.value.ready || ctx.strictE2eeReadiness.value.advisory">
+            <button v-if="!ctx.strictE2eeReadiness.value.ready" @click="ctx.repairStrictE2eeBlockers">{{ t('settingsView.repairSendBlockers') }}</button>
+            <button v-else class="secondary" @click="ctx.refreshStrictE2eeSecurityInfo">{{ t('settingsView.refreshSecurityInfo') }}</button>
+          </UiActionGroup>
         </UiSection>
         <UiSection class="sync-card" :title="t('settingsView.device')">
           <small>{{ t('settingsView.currentDevice', { device: ctx.myDeviceId.value || t('settingsView.notGenerated') }) }}</small>
