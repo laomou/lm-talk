@@ -220,6 +220,7 @@ export default {
     inputMessage: 'Message',
     send: 'Send',
     sendFile: 'Send file',
+    retrySendFile: 'Retry send',
     delete: 'Delete',
     dangerousFileWarning: 'Risky file type: the recipient should be careful after downloading',
     encryptedFilePackage: 'Encrypted file package received',

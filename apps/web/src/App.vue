@@ -2661,6 +2661,7 @@ if (typeof window !== 'undefined') {
     running: persistRunning,
   })
   ;(window as any).mergeMessagesForTests = mergeMessagesForState
+  ;(window as any).resetRtcForTests = resetRtc
   ;(window as any).mergeContactDeviceAndTrustStateForTests = mergeContactDeviceAndTrustState
   ;(window as any).contactAllKnownDevicesRevokedForTests = contactAllKnownDevicesRevoked
   ;(window as any).takeMailboxForTests = takeMailboxFromNodeNow
@@ -10994,6 +10995,16 @@ async function sendSelectedFile() {
   if (await createFilePackageForActive()) await sendFilePackageOverRtc()
 }
 
+async function retrySelectedFileSend() {
+  if (!selectedFile.value && !filePackageText.value.trim()) throw new Error('没有可重试的文件')
+  if (activeContact.value && !(await confirmStrictE2eeSendRiskIfNeeded(activeContact.value))) {
+    appendLog('已取消重试发送文件：严格 E2EE 风险未确认')
+    return
+  }
+  if (filePackageText.value.trim()) await sendFilePackageOverRtc()
+  else await sendSelectedFile()
+}
+
 async function copySignal(value: string) {
   await copyText(value, 'Signal')
 }
@@ -11080,7 +11091,7 @@ const appContext = {
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
   flushOutboxForActive, retryOutboxForMessage, retryOutboxForPeer, retryAllOutbox, cancelOutboxForActive, cancelOutboxForMessage, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
-  receiveEnvelope, onFileSelected, cancelSelectedFile, selectedFile, formatBytes, isDangerousFileName, createFilePackageForActive, sendFilePackageOverRtc, sendSelectedFile, filePackageText, rtcFileStatus, fileTransferPhase, fileProgressText,
+  receiveEnvelope, onFileSelected, cancelSelectedFile, selectedFile, formatBytes, isDangerousFileName, createFilePackageForActive, sendFilePackageOverRtc, sendSelectedFile, retrySelectedFileSend, filePackageText, rtcFileStatus, fileTransferPhase, fileProgressText,
   decryptAttachmentMessage, receiveFilePackageMessage, markAttachmentDownloaded, attachmentDownloads,
   createGroupSenderKeyForActiveGroup, groupSenderDistributionText, importGroupSenderKeyForActiveContact, groupSenderEncryptDebug, groupSenderDecryptDebug, createGroupSenderDistributionFanoutForActiveGroup,
   groupSenderDistributionFanoutJson, groupSenderDistributionFanoutItems, groupSenderEnvelopeText, groupSenderPlainText, groupRenameText, createRenameGroupEvent,
