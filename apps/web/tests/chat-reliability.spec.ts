@@ -490,6 +490,50 @@ test('长会话默认窗口渲染并可加载更早消息', async ({ browser }) 
   }
 })
 
+test('聊天消息操作统一到同一菜单入口', async ({ browser }) => {
+  const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const alicePassphrase = 'playwright-message-menu-alice-passphrase'
+  const bobPassphrase = 'playwright-message-menu-bob-passphrase'
+  const alice = await registerAndLogin(aliceContext, 'Alice', alicePassphrase)
+  const bob = await registerAndLogin(bobContext, 'Bob', bobPassphrase)
+
+  try {
+    const bobCard = await copyOwnCard(bob)
+    await alice.getByRole('button', { name: '打开通讯录' }).click()
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByLabel('对方名片').fill(bobCard)
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByRole('button', { name: '返回通讯录' }).click()
+
+    await bob.getByRole('button', { name: '打开通讯录' }).click()
+    await bob.getByRole('button', { name: '打开新的朋友' }).click()
+    await expect(bob.getByRole('button', { name: '同意' })).toBeVisible({ timeout: 45_000 })
+    await bob.getByRole('button', { name: '同意' }).click()
+    await bob.getByRole('button', { name: '返回通讯录' }).click()
+    await bob.locator('.directory-row.contact-row').click()
+    await bob.getByRole('button', { name: '发消息' }).click()
+    await expect(alice.locator('.directory-row.contact-row')).toBeVisible({ timeout: 45_000 })
+    await openOnlyContactConversation(alice)
+
+    await alice.getByLabel('输入消息').fill('菜单里的这条消息')
+    await alice.getByRole('button', { name: '发送' }).click()
+    const bubble = alice.locator('.bubble.out').last()
+    await expect(bubble.getByText('菜单里的这条消息', { exact: true })).toBeVisible()
+    await bubble.getByRole('button', { name: '更多' }).click()
+    await expect(alice.getByRole('menuitem', { name: '复制文本' })).toBeVisible()
+    await expect(alice.getByRole('menuitem', { name: '复制密文' })).toBeVisible()
+    await expect(alice.getByRole('menuitem', { name: '删除消息' })).toBeVisible()
+    await alice.getByRole('menuitem', { name: '删除消息' }).click()
+    await expect(alice.getByRole('dialog')).toBeVisible({ timeout: 45_000 })
+    await alice.getByRole('dialog').getByRole('button', { name: '确定' }).click()
+    await expect(bubble.getByText('菜单里的这条消息', { exact: true })).toHaveCount(0, { timeout: 45_000 })
+  } finally {
+    await aliceContext.close()
+    await bobContext.close()
+  }
+})
+
 test('连续持久化请求会被合并成少量写入', async ({ browser }) => {
   const context = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
   const page = await registerAndLogin(context, 'Alice', 'playwright-persist-merge-passphrase')
