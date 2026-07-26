@@ -1531,10 +1531,7 @@ onUnmounted(() => {
   identitySignatureRpc.dispose()
   friendRequestCryptoRpc.dispose()
   groupEventCryptoRpc.dispose()
-  secureSessionCryptoWorker?.terminate()
-  secureSessionCryptoWorker = null
-  for (const pending of secureSessionCryptoRequests.values()) pending.reject(new Error('安全会话 Worker 已停止'))
-  secureSessionCryptoRequests.clear()
+  secureSessionCryptoRpc.dispose()
   contactCardCryptoRpc.dispose()
   messageMetadataCryptoRpc.dispose()
   identityLifecycleCryptoRpc.dispose()
@@ -7046,53 +7043,19 @@ function createGroupPolicyStateInWorker(groupId: string, groupName: string, invi
   return runGroupEventCryptoWorker({ type: 'createPolicyState', groupId, groupName, inviterUserId, memberIdsJson })
 }
 
-type SecureSessionCryptoWorkerResponse = {
-  id: number
-  ok: boolean
+type SecureSessionCryptoWorkerResponse = WorkerRpcResponse & {
   value?: string
-  error?: string
 }
 
-let secureSessionCryptoWorker: Worker | null = null
-let nextSecureSessionCryptoRequestId = 1
-const secureSessionCryptoRequests = new Map<number, {
-  resolve: (value: string) => void
-  reject: (reason?: unknown) => void
-}>()
+const secureSessionCryptoRpc = new WorkerRpcClient<
+  Record<string, string>,
+  SecureSessionCryptoWorkerResponse
+>(() => new Worker(new URL('./secureSessionCrypto.worker.ts', import.meta.url), { type: 'module' }), '安全会话 Worker')
 
-function getSecureSessionCryptoWorker(): Worker {
-  if (secureSessionCryptoWorker) return secureSessionCryptoWorker
-  const worker = new Worker(new URL('./secureSessionCrypto.worker.ts', import.meta.url), { type: 'module' })
-  worker.onmessage = (event: MessageEvent<SecureSessionCryptoWorkerResponse>) => {
-    const response = event.data
-    const pending = secureSessionCryptoRequests.get(response.id)
-    if (!pending) return
-    secureSessionCryptoRequests.delete(response.id)
-    if (response.ok && typeof response.value === 'string') pending.resolve(response.value)
-    else pending.reject(new Error(response.error || '安全会话 Worker 处理失败'))
-  }
-  worker.onerror = (event) => {
-    const error = new Error(event.message || '安全会话 Worker 已停止')
-    for (const pending of secureSessionCryptoRequests.values()) pending.reject(error)
-    secureSessionCryptoRequests.clear()
-    worker.terminate()
-    if (secureSessionCryptoWorker === worker) secureSessionCryptoWorker = null
-  }
-  secureSessionCryptoWorker = worker
-  return worker
-}
-
-function runSecureSessionCryptoWorker(payload: Record<string, string>): Promise<string> {
-  const id = nextSecureSessionCryptoRequestId++
-  return new Promise((resolve, reject) => {
-    secureSessionCryptoRequests.set(id, { resolve, reject })
-    try {
-      getSecureSessionCryptoWorker().postMessage({ id, ...payload })
-    } catch (error) {
-      secureSessionCryptoRequests.delete(id)
-      reject(error)
-    }
-  })
+async function runSecureSessionCryptoWorker(payload: Record<string, string>): Promise<string> {
+  const response = await secureSessionCryptoRpc.request(payload)
+  if (response.ok && typeof response.value === 'string') return response.value
+  throw new Error(response.error || '安全会话 Worker 处理失败')
 }
 
 async function runSecureSessionCryptoJson<T = any>(payload: Record<string, string>): Promise<T> {
