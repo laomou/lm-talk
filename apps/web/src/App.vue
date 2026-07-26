@@ -8217,6 +8217,26 @@ function retryAllOutbox() {
   })
 }
 
+function retryOutboxForPeer(peerId: string) {
+  run('重试会话待发送队列', () => {
+    const pending = outbox.value.filter((item) => item.peer_user_id === peerId && item.status !== 'sent')
+    if (pending.length === 0) throw new Error('该会话没有待发送内容')
+    const messageIds = new Set(pending.map((item) => item.message_id).filter(Boolean))
+    for (const item of pending) {
+      item.status = 'queued'
+      item.next_retry_at = Date.now()
+      item.last_error = undefined
+      if (item.retry_count >= MAX_OUTBOX_RETRY_COUNT) item.retry_count = Math.max(0, MAX_OUTBOX_RETRY_COUNT - 1)
+    }
+    for (const msg of messages.value) {
+      if (messageIds.has(msg.id) && msg.direction === 'out' && msg.status === 'failed') msg.status = 'queued'
+    }
+    void retryDueOutbox()
+    appendLog(`已触发会话重试：${pending.length} 个投递项`)
+    persist()
+  })
+}
+
 function cancelOutboxForActive() {
   run('取消当前联系人待发送队列', () => {
     if (!activeContact.value) throw new Error('请选择联系人')
@@ -11380,7 +11400,7 @@ const appContext = {
   removeActiveGroup, leaveActiveGroupWithNotice, messages, activeMessages, unreadCountForPeer, totalUnreadCount, totalUnreadBadgeText, badgeCountText, formatTime, formatDateTime, statusLabel, copyMessageEnvelope, perDeviceEnvelopeTargetCount, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
-  flushOutboxForActive, retryOutboxForMessage, retryAllOutbox, cancelOutboxForActive, cancelOutboxForMessage, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
+  flushOutboxForActive, retryOutboxForMessage, retryOutboxForPeer, retryAllOutbox, cancelOutboxForActive, cancelOutboxForMessage, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
   receiveEnvelope, onFileSelected, cancelSelectedFile, selectedFile, formatBytes, isDangerousFileName, createFilePackageForActive, sendFilePackageOverRtc, sendSelectedFile, filePackageText, rtcFileStatus, fileTransferPhase, fileProgressText,
   incomingFilePackageText, pendingFilePackageText, pendingFileMeta, inspectIncomingFilePackage, decryptIncomingFilePackage, markReceivedFileDownloaded, receivedFileUrl, receivedFileName, receivedFileMeta, receivedFileMime, receivedFilePreviewKind, filePackageInfoText,
   createGroupSenderKeyForActiveGroup, groupSenderDistributionText, importGroupSenderKeyForActiveContact, groupSenderEncryptDebug, groupSenderDecryptDebug, createGroupSenderDistributionFanoutForActiveGroup,

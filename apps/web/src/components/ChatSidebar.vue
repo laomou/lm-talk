@@ -16,6 +16,8 @@ const searchOpen = computed(() => route.path === '/chat/search')
 const conversationStats = computed(() => {
   const lastByUser = new Map<string, any>()
   const unreadByUser = new Map<string, number>()
+  const pendingByUser = new Map<string, number>()
+  const failedByUser = new Map<string, number>()
   for (const message of props.ctx.messages.value) {
     if (message.group_id) continue
     const prev = lastByUser.get(message.peer_user_id)
@@ -26,7 +28,12 @@ const conversationStats = computed(() => {
       unreadByUser.set(message.peer_user_id, (unreadByUser.get(message.peer_user_id) ?? 0) + 1)
     }
   }
-  return { lastByUser, unreadByUser }
+  for (const item of props.ctx.outbox.value) {
+    if (item.status === 'sent') continue
+    const target = item.status === 'failed' ? failedByUser : pendingByUser
+    target.set(item.peer_user_id, (target.get(item.peer_user_id) ?? 0) + 1)
+  }
+  return { lastByUser, unreadByUser, pendingByUser, failedByUser }
 })
 
 const conversations = computed(() => {
@@ -34,9 +41,11 @@ const conversations = computed(() => {
   for (const c of props.ctx.contacts.value) {
     const last = conversationStats.value.lastByUser.get(c.user_id)
     const unread = conversationStats.value.unreadByUser.get(c.user_id) ?? 0
+    const pending = conversationStats.value.pendingByUser.get(c.user_id) ?? 0
+    const failed = conversationStats.value.failedByUser.get(c.user_id) ?? 0
     const isActive = c.user_id === props.ctx.activePeerId.value
-    if (!last && !isActive) continue
-    items.push({ type: 'contact', id: c.user_id, data: c, last, unread, ts: last?.created_at ?? 0 })
+    if (!last && !isActive && !pending && !failed) continue
+    items.push({ type: 'contact', id: c.user_id, data: c, last, unread, pending, failed, ts: last?.created_at ?? 0 })
   }
   return items.sort((a, b) => b.ts - a.ts)
 })
@@ -84,9 +93,23 @@ function isActive(it: any) {
 function unreadCount(it: any) {
   return it.type === 'contact' ? Number(it.unread ?? 0) : 0
 }
+function deliveryState(it: any) {
+  if (it.failed) return { text: t('chatView.conversationFailed', { count: it.failed }), tone: 'failed' }
+  if (it.pending) return { text: t('chatView.conversationPending', { count: it.pending }), tone: 'pending' }
+  return null
+}
 function select(it: any) {
   props.ctx.selectContact(it.id)
   void router.push(`/chat/${encodeURIComponent(it.id)}`)
+}
+function selectOnKeydown(event: KeyboardEvent, it: any) {
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  event.preventDefault()
+  select(it)
+}
+function retryConversation(event: Event, it: any) {
+  event.stopPropagation()
+  props.ctx.retryOutboxForPeer(it.id)
 }
 </script>
 
@@ -98,13 +121,16 @@ function select(it: any) {
       <button class="icon-btn" :aria-label="t('chatView.searchChat')" :title="t('chatView.searchChat')" @click="router.push('/chat/search')"><UiIcon name="search" /></button>
     </header>
     <section class="conversation-list only-conversations">
-      <button
+      <div
         v-for="it in filtered"
         :key="it.type + ':' + it.id"
         class="contact"
         :class="{ active: isActive(it) }"
+        role="button"
+        tabindex="0"
         :aria-current="isActive(it) ? 'true' : undefined"
         @click="select(it)"
+        @keydown="selectOnKeydown($event, it)"
       >
         <span class="conversation-avatar-wrap">
           <UiAvatar :src="it.data.avatar_data_url" :name="convName(it)" :seed="it.id" />
@@ -127,10 +153,19 @@ function select(it: any) {
           </b>
           <small class="conv-preview">
             <span>{{ convPreview(it) }}</span>
+            <button
+              v-if="deliveryState(it)?.tone === 'failed'"
+              class="conversation-retry"
+              type="button"
+              :title="deliveryState(it)?.text"
+              :aria-label="t('chatView.retryConversation')"
+              @click="retryConversation($event, it)"
+            >{{ t('chatView.retry') }}</button>
+            <em v-else-if="deliveryState(it)" class="conversation-delivery" :class="`is-${deliveryState(it)?.tone}`">{{ deliveryState(it)?.text }}</em>
             <em v-if="unreadCount(it)" class="conversation-badge">{{ props.ctx.badgeCountText(unreadCount(it)) }}</em>
           </small>
         </span>
-      </button>
+      </div>
 
       <UiEmptyState v-if="filtered.length === 0" :title="t('chatView.noChatsTitle')" :description="t('chatView.noChatsDescription')" />
     </section>
@@ -142,13 +177,16 @@ function select(it: any) {
       <input v-model="keyword" type="search" :aria-label="t('chatView.searchChat')" :placeholder="t('chatView.searchChat')" autofocus />
     </header>
     <section class="conversation-list only-conversations">
-      <button
+      <div
         v-for="it in filtered"
         :key="it.type + ':' + it.id"
         class="contact"
         :class="{ active: isActive(it) }"
+        role="button"
+        tabindex="0"
         :aria-current="isActive(it) ? 'true' : undefined"
         @click="select(it)"
+        @keydown="selectOnKeydown($event, it)"
       >
         <span class="conversation-avatar-wrap">
           <UiAvatar :src="it.data.avatar_data_url" :name="convName(it)" :seed="it.id" />
@@ -171,10 +209,19 @@ function select(it: any) {
           </b>
           <small class="conv-preview">
             <span>{{ convPreview(it) }}</span>
+            <button
+              v-if="deliveryState(it)?.tone === 'failed'"
+              class="conversation-retry"
+              type="button"
+              :title="deliveryState(it)?.text"
+              :aria-label="t('chatView.retryConversation')"
+              @click="retryConversation($event, it)"
+            >{{ t('chatView.retry') }}</button>
+            <em v-else-if="deliveryState(it)" class="conversation-delivery" :class="`is-${deliveryState(it)?.tone}`">{{ deliveryState(it)?.text }}</em>
             <em v-if="unreadCount(it)" class="conversation-badge">{{ props.ctx.badgeCountText(unreadCount(it)) }}</em>
           </small>
         </span>
-      </button>
+      </div>
 
       <UiEmptyState v-if="filtered.length === 0" :icon="keyword ? 'search' : 'info'" :title="keyword ? t('chatView.noChatMatchesTitle') : t('chatView.searchChat')" :description="keyword ? t('chatView.noChatMatchesDescription') : t('chatView.searchChatDescription')" />
     </section>
