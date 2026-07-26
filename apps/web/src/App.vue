@@ -186,6 +186,10 @@ type ChatMessage = {
   delivered_at?: number
   read_at?: number
   file_downloaded_at?: number
+  attachment_name?: string
+  attachment_mime?: string
+  attachment_size?: number
+  attachment_decrypted_at?: number
   target_device_ids?: string[]
   per_device_envelope_json?: string
   per_device_envelope_version?: number
@@ -934,6 +938,7 @@ const receivedFileMeta = ref('')
 const receivedFileMime = ref('')
 const receivedFilePreviewKind = ref('')
 const receivedFileMessageId = ref('')
+const attachmentDownloads = ref<Record<string, { url: string; name: string; mime: string; meta: string; preview_kind: string }>>({})
 const rtcFileStatus = ref('未发送文件')
 const fileTransferPhase = ref('待选择')
 const fileProgressText = ref('')
@@ -7965,10 +7970,8 @@ async function handleRtcText(value: string) {
     ensureUiTextSize('WebRTC 消息', value, MAX_RTC_TEXT_BYTES)
     const parsed = JSON.parse(value) as { type?: string }
     if (parsed?.type === 'lm-file-package-v1') {
-      incomingFilePackageText.value = value
-      appendLog('收到 WebRTC 文件包，自动解析并尝试解密')
-      await inspectIncomingFilePackage()
-      await decryptIncomingFilePackage()
+      if (!activeContact.value) throw new Error('请选择文件发送者联系人')
+      await receiveFilePackageMessage(value, activeContact.value)
       return
     }
   } catch {
@@ -10063,11 +10066,7 @@ async function handleMailboxPayload(item: any): Promise<{ handled: boolean; deli
         persist()
         return { handled: true, deliveryId, event: 'other', reason }
       }
-      pendingFilePackageText.value = ciphertext
-      incomingFilePackageText.value = ciphertext
-      await inspectIncomingFilePackage()
-      fileTransferPhase.value = '待解密'
-      rtcFileStatus.value = '收到文件包，点击后解密'
+      await receiveFilePackageMessage(ciphertext, sender)
       return { handled: true, deliveryId, event: 'file' }
     }
     if (parsed?.type === 'lm-secure-session-response-v1') {
@@ -10790,14 +10789,29 @@ async function inspectIncomingFilePackage() {
   })
 }
 
-async function decryptIncomingFilePackage() {
+function attachmentMessageInfo(message: ChatMessage) {
+  const name = message.attachment_name || message.text.replace(/^\[文件\]\s*/, '').replace(/\s+\([^)]*\)$/, '') || '未命名文件'
+  const mime = message.attachment_mime || 'application/octet-stream'
+  const size = Number(message.attachment_size ?? 0)
+  return {
+    name,
+    mime,
+    size,
+    meta: `${mime} · ${formatBytes(size)}`,
+    preview_kind: filePreviewKind(name, mime),
+  }
+}
+
+async function decryptAttachmentMessage(messageId: string) {
   await runAsync('解密文件包', async () => {
-    if (!activeContact.value) throw new Error('请选择发送者联系人')
-    if (!allowIncomingFromContact(activeContact.value)) {
-      throw new Error(`安全策略阻止解密非好友或已撤销联系人文件：${activeContact.value.display_name || activeContact.value.user_id}`)
+    const message = messages.value.find((item) => item.id === messageId && item.direction === 'in')
+    if (!message?.envelope_json) throw new Error('附件消息不存在或没有加密文件包')
+    const contact = contacts.value.find((item) => item.user_id === message.peer_user_id)
+    if (!contact) throw new Error('找不到附件发送者联系人')
+    if (!allowIncomingFromContact(contact)) {
+      throw new Error(`安全策略阻止解密非好友或已撤销联系人文件：${contact.display_name || contact.user_id}`)
     }
-    const text = pendingFilePackageText.value.trim() || incomingFilePackageText.value.trim() || filePackageText.value.trim()
-    if (!text) throw new Error('请粘贴文件包 JSON')
+    const text = message.envelope_json
     ensureUiTextSize('文件包', text, MAX_RTC_TEXT_BYTES)
     let manifestName = ''
     try {
@@ -10824,38 +10838,65 @@ async function decryptIncomingFilePackage() {
     const out = await decryptFilePackageInWorker({
       backupText: backupText.value,
       passphrase: passphrase.value,
-      contactCardText: activeContact.value.contact_card_text,
+      contactCardText: contact.contact_card_text,
       filePackageText: text,
     })
-    if (receivedFileUrl.value) URL.revokeObjectURL(receivedFileUrl.value)
+    const previous = attachmentDownloads.value[message.id]
+    if (previous?.url) URL.revokeObjectURL(previous.url)
     const bytes = new Uint8Array(out.bytes)
     const blob = new Blob([bytes], { type: out.mimeType || 'application/octet-stream' })
-    receivedFileUrl.value = URL.createObjectURL(blob)
-    receivedFileName.value = out.name
-    receivedFileMime.value = out.mimeType || 'application/octet-stream'
-    receivedFileMeta.value = `${receivedFileMime.value} · ${formatBytes(out.size ?? bytes.length)}`
-    receivedFilePreviewKind.value = filePreviewKind(out.name, receivedFileMime.value)
-    if (activeContact.value) {
-      const msg: ChatMessage = {
-        id: newId(),
-        conversation_id: `conv-${activeContact.value.user_id}`,
-        peer_user_id: activeContact.value.user_id,
-        direction: 'in',
-        text: `[文件] ${out.name} (${formatBytes(out.size ?? bytes.length)})`,
-        envelope_json: text,
-        status: 'received',
-        created_at: Date.now(),
-      }
-      messages.value.push(msg)
-      receivedFileMessageId.value = msg.id
+    const mime = out.mimeType || 'application/octet-stream'
+    const download = {
+      url: URL.createObjectURL(blob),
+      name: out.name,
+      mime,
+      meta: `${mime} · ${formatBytes(out.size ?? bytes.length)}`,
+      preview_kind: filePreviewKind(out.name, mime),
     }
-    pendingFilePackageText.value = ''
-    pendingFileMeta.value = ''
+    attachmentDownloads.value = { ...attachmentDownloads.value, [message.id]: download }
+    message.attachment_name = out.name
+    message.attachment_mime = mime
+    message.attachment_size = out.size ?? bytes.length
+    message.attachment_decrypted_at = Date.now()
+    receivedFileUrl.value = download.url
+    receivedFileName.value = download.name
+    receivedFileMime.value = download.mime
+    receivedFileMeta.value = download.meta
+    receivedFilePreviewKind.value = download.preview_kind
+    receivedFileMessageId.value = message.id
     fileTransferPhase.value = '已接收'
     rtcFileStatus.value = `已解密文件：${out.name}`
     appendLog(`已解密文件：${out.name}`)
     persist()
   })
+}
+
+async function receiveFilePackageMessage(filePackage: string, sender: ContactItem) {
+  const info = await inspectFilePackageInWorker<{ manifest?: { name?: string; mime_type?: string; size?: number } }>(filePackage)
+  const manifest = info.manifest
+  messages.value.push({
+    id: newId(),
+    conversation_id: `conv-${sender.user_id}`,
+    peer_user_id: sender.user_id,
+    direction: 'in',
+    text: `[文件] ${manifest?.name || '未命名文件'} (${formatBytes(manifest?.size ?? 0)})`,
+    envelope_json: filePackage,
+    attachment_name: manifest?.name,
+    attachment_mime: manifest?.mime_type,
+    attachment_size: manifest?.size,
+    status: 'received',
+    created_at: Date.now(),
+  })
+  fileTransferPhase.value = '待解密'
+  rtcFileStatus.value = '收到文件包，可在消息中解密'
+  appendLog(`收到文件包：${manifest?.name || '未命名文件'}`)
+  persist()
+}
+
+async function decryptIncomingFilePackage() {
+  const pending = messages.value.find((item) => item.direction === 'in' && item.envelope_json === (pendingFilePackageText.value || incomingFilePackageText.value))
+  if (!pending) throw new Error('没有可解密的附件消息')
+  await decryptAttachmentMessage(pending.id)
 }
 
 function markReceivedFileDownloaded() {
@@ -10870,12 +10911,21 @@ function markReceivedFileDownloaded() {
   persist()
 }
 
+function markAttachmentDownloaded(messageId: string) {
+  const download = attachmentDownloads.value[messageId]
+  if (!download) return
+  receivedFileMessageId.value = messageId
+  receivedFileName.value = download.name
+  receivedFileMeta.value = download.meta
+  markReceivedFileDownloaded()
+}
+
 async function sendFilePackageOverRtc() {
   await runAsync('发送文件包', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
     requireVerifiedContactForSend(activeContact.value)
     if (!filePackageText.value.trim()) throw new Error('请先生成文件包')
-    const info = await inspectFilePackageInWorker<{ manifest: { name: string; size: number } }>(filePackageText.value)
+    const info = await inspectFilePackageInWorker<{ manifest: { name: string; mime_type?: string; size: number } }>(filePackageText.value)
     const msg: ChatMessage = {
       id: newId(),
       conversation_id: `conv-${activeContact.value.user_id}`,
@@ -10883,6 +10933,9 @@ async function sendFilePackageOverRtc() {
       direction: 'out',
       text: `[文件] ${info.manifest.name} (${formatBytes(info.manifest.size)})`,
       envelope_json: filePackageText.value,
+      attachment_name: info.manifest.name,
+      attachment_mime: info.manifest.mime_type,
+      attachment_size: info.manifest.size,
       target_device_ids: contactActiveDeviceIds(activeContact.value),
       status: 'queued',
       created_at: Date.now(),
@@ -11023,7 +11076,7 @@ const appContext = {
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
   flushOutboxForActive, retryOutboxForMessage, retryOutboxForPeer, retryAllOutbox, cancelOutboxForActive, cancelOutboxForMessage, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
   receiveEnvelope, onFileSelected, cancelSelectedFile, selectedFile, formatBytes, isDangerousFileName, createFilePackageForActive, sendFilePackageOverRtc, sendSelectedFile, filePackageText, rtcFileStatus, fileTransferPhase, fileProgressText,
-  incomingFilePackageText, pendingFilePackageText, pendingFileMeta, inspectIncomingFilePackage, decryptIncomingFilePackage, markReceivedFileDownloaded, receivedFileUrl, receivedFileName, receivedFileMeta, receivedFileMime, receivedFilePreviewKind, filePackageInfoText,
+  incomingFilePackageText, pendingFilePackageText, pendingFileMeta, inspectIncomingFilePackage, decryptIncomingFilePackage, decryptAttachmentMessage, receiveFilePackageMessage, markReceivedFileDownloaded, markAttachmentDownloaded, attachmentDownloads, receivedFileUrl, receivedFileName, receivedFileMeta, receivedFileMime, receivedFilePreviewKind, filePackageInfoText,
   createGroupSenderKeyForActiveGroup, groupSenderDistributionText, importGroupSenderKeyForActiveContact, groupSenderEncryptDebug, groupSenderDecryptDebug, createGroupSenderDistributionFanoutForActiveGroup,
   groupSenderDistributionFanoutJson, groupSenderDistributionFanoutItems, groupSenderEnvelopeText, groupSenderPlainText, groupRenameText, createRenameGroupEvent,
   groupEventText, applyGroupEventText, createGroupEventFanout, groupEventFanoutJson, groupEventFanoutItems, incomingGroupEventText, clearActiveGroupEventError,
