@@ -2366,7 +2366,7 @@ type PersistenceSnapshotWorkerResponse = WorkerRpcResponse & {
 const persistenceSnapshotRpc = new WorkerRpcClient<
   { entries: Array<[string, unknown]> },
   PersistenceSnapshotWorkerResponse
->(new URL('./persistenceSnapshot.worker.ts', import.meta.url), '本地存储快照 Worker')
+>(() => new Worker(new URL('./persistenceSnapshot.worker.ts', import.meta.url), { type: 'module' }), '本地存储快照 Worker')
 
 function persistEntrySignatures(entries: Array<[string, unknown]>): Promise<Map<string, string>> {
   // `toRaw` only unwraps the outer Vue proxy. Nested arrays/objects can still
@@ -2919,7 +2919,7 @@ type BackupCryptoWorkerResponse = WorkerRpcResponse & {
 const backupCryptoRpc = new WorkerRpcClient<
   Record<string, string>,
   BackupCryptoWorkerResponse
->(new URL('./backupCrypto.worker.ts', import.meta.url), '身份与安全备份 Worker')
+>(() => new Worker(new URL('./backupCrypto.worker.ts', import.meta.url), { type: 'module' }), '身份与安全备份 Worker')
 
 function runBackupCryptoWorker(payload: Record<string, string>): Promise<string> {
   return backupCryptoRpc.request(payload).then((response) => {
@@ -7028,7 +7028,7 @@ type IdentitySignatureWorkerResponse = WorkerRpcResponse & {
 const identitySignatureRpc = new WorkerRpcClient<
   Record<string, string>,
   IdentitySignatureWorkerResponse
->(new URL('./identitySignature.worker.ts', import.meta.url), '身份签名 Worker')
+>(() => new Worker(new URL('./identitySignature.worker.ts', import.meta.url), { type: 'module' }), '身份签名 Worker')
 
 async function runIdentitySignatureWorker(payload: Record<string, string>): Promise<string | boolean> {
   const response = await identitySignatureRpc.request(payload)
@@ -7358,7 +7358,7 @@ type MessageMetadataCryptoWorkerResponse = WorkerRpcResponse & {
 const messageMetadataCryptoRpc = new WorkerRpcClient<
   Record<string, string>,
   MessageMetadataCryptoWorkerResponse
->(new URL('./messageMetadataCrypto.worker.ts', import.meta.url), '消息元数据 Worker')
+>(() => new Worker(new URL('./messageMetadataCrypto.worker.ts', import.meta.url), { type: 'module' }), '消息元数据 Worker')
 
 async function runMessageMetadataCryptoWorker(payload: Record<string, string>): Promise<string> {
   const response = await messageMetadataCryptoRpc.request(payload)
@@ -7442,7 +7442,7 @@ type IdentityLifecycleCryptoWorkerResponse = WorkerRpcResponse & {
 const identityLifecycleCryptoRpc = new WorkerRpcClient<
   Record<string, string>,
   IdentityLifecycleCryptoWorkerResponse
->(new URL('./identityLifecycleCrypto.worker.ts', import.meta.url), '身份生命周期 Worker')
+>(() => new Worker(new URL('./identityLifecycleCrypto.worker.ts', import.meta.url), { type: 'module' }), '身份生命周期 Worker')
 
 async function runIdentityLifecycleCryptoWorker(payload: Record<string, string>): Promise<string> {
   const response = await identityLifecycleCryptoRpc.request(payload)

@@ -15,7 +15,7 @@ export class WorkerRpcClient<TRequest extends object, TResponse extends WorkerRp
   private readonly pending = new Map<number, PendingRequest<TResponse>>()
 
   constructor(
-    private readonly source: URL,
+    private readonly createWorker: () => Worker,
     private readonly label: string,
   ) {}
 
@@ -42,7 +42,7 @@ export class WorkerRpcClient<TRequest extends object, TResponse extends WorkerRp
 
   private getWorker(): Worker {
     if (this.worker) return this.worker
-    const worker = new Worker(this.source, { type: 'module' })
+    const worker = this.createWorker()
     worker.onmessage = (event: MessageEvent<TResponse>) => {
       const response = event.data
       const pending = this.pending.get(response.id)
