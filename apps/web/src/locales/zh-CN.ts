@@ -174,6 +174,7 @@ export default {
     deleteMessage: '删除消息',
     retrySend: '重试发送',
     cancelSend: '取消发送',
+    jumpToLatest: '查看最新消息',
     noChatMatchesTitle: '没有匹配的聊天',
     noChatMatchesDescription: '换个名称或关键词试试。',
     searchChatDescription: '输入名称搜索聊天。',

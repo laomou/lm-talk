@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import UiPageHeader from './UiPageHeader.vue'
 import UiIcon from './UiIcon.vue'
 import UiEmptyState from './UiEmptyState.vue'
@@ -21,6 +21,9 @@ const composerPanel = ref<'none' | 'attach' | 'emoji'>('none')
 const highlightedMessageId = ref('')
 const conversationMenuOpen = ref(false)
 const messageMenuOpenId = ref('')
+const stickToBottom = ref(true)
+const showJumpToLatest = ref(false)
+const keyboardInset = ref(0)
 const fileInput = ref<HTMLInputElement | null>(null)
 const composerTextarea = ref<HTMLTextAreaElement | null>(null)
 const emojis = ['😀', '😃', '😄', '😁', '🙂', '😉', '😊', '😍', '👍', '👏', '🙏', '💪', '🎉', '❤️', '🔥', '✅']
@@ -227,6 +230,28 @@ const activeFileOutboxError = computed(() => {
 
 
 const messagesEl = ref<HTMLElement | null>(null)
+let keyboardViewportCleanup = () => {}
+
+function updateKeyboardInset() {
+  const viewport = window.visualViewport
+  if (!viewport) {
+    keyboardInset.value = 0
+    return
+  }
+  keyboardInset.value = Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop))
+}
+
+function isMessagesNearBottom() {
+  const el = messagesEl.value
+  if (!el) return true
+  return el.scrollHeight - (el.scrollTop + el.clientHeight) < 24
+}
+
+function syncMessagesScrollState() {
+  stickToBottom.value = isMessagesNearBottom()
+  if (stickToBottom.value) showJumpToLatest.value = false
+}
+
 function scrollToBottom() {
   const el = messagesEl.value
   if (!el) return
@@ -234,9 +259,12 @@ function scrollToBottom() {
   // previous conversation's scroll position so the empty state starts at top.
   if (!props.ctx.activePeerId?.value) {
     el.scrollTop = 0
+    stickToBottom.value = false
     return
   }
   el.scrollTop = el.scrollHeight
+  stickToBottom.value = true
+  showJumpToLatest.value = false
 }
 
 function loadEarlierMessages() {
@@ -247,15 +275,59 @@ function loadEarlierMessages() {
   visibleMessageCount.value += HISTORY_WINDOW_SIZE
   void nextTick(() => {
     el.scrollTop = previousTop + (el.scrollHeight - previousHeight)
+    syncMessagesScrollState()
   })
 }
+
+function jumpToLatest() {
+  scrollToBottom()
+}
+
+function onMessagesScroll() {
+  syncMessagesScrollState()
+}
+
+function onComposerFocus() {
+  showJumpToLatest.value = false
+  void nextTick(scrollToBottom)
+}
+
+onMounted(() => {
+  updateKeyboardInset()
+  const viewport = window.visualViewport
+  if (!viewport) return
+  const onViewportChange = () => updateKeyboardInset()
+  viewport.addEventListener('resize', onViewportChange)
+  viewport.addEventListener('scroll', onViewportChange)
+  keyboardViewportCleanup = () => {
+    viewport.removeEventListener('resize', onViewportChange)
+    viewport.removeEventListener('scroll', onViewportChange)
+  }
+})
+
+onUnmounted(() => {
+  keyboardViewportCleanup()
+})
 
 watch(
   () => [props.ctx.activePeerId?.value, props.ctx.activeMessages.value.at(-1)?.id],
   ([peerId], previous = []) => {
     const previousPeerId = previous[0]
-    if (peerId !== previousPeerId) visibleMessageCount.value = HISTORY_WINDOW_SIZE
-    if (!highlightedMessageId.value) void nextTick(scrollToBottom)
+    if (peerId !== previousPeerId) {
+      visibleMessageCount.value = HISTORY_WINDOW_SIZE
+      stickToBottom.value = true
+      showJumpToLatest.value = false
+      if (!highlightedMessageId.value) void nextTick(scrollToBottom)
+      return
+    }
+    const lastMessage = props.ctx.activeMessages.value.at(-1)
+    if (!lastMessage || highlightedMessageId.value) return
+    if (stickToBottom.value || lastMessage.direction === 'out') {
+      showJumpToLatest.value = false
+      void nextTick(scrollToBottom)
+      return
+    }
+    showJumpToLatest.value = true
   },
   { immediate: true },
 )
@@ -348,6 +420,8 @@ function messageSearchPreview(message: any) {
 function sendAndClose() {
   props.ctx.sendMessage()
   composerPanel.value = 'none'
+  stickToBottom.value = true
+  showJumpToLatest.value = false
 }
 function deleteActiveConversation() {
   conversationMenuOpen.value = false
@@ -475,7 +549,7 @@ function deleteActiveConversation() {
 
 
 
-    <div v-if="!messageSearchOpen" class="messages clean-messages" ref="messagesEl" role="log" :aria-label="t('chatView.messageList')" aria-live="polite">
+    <div v-if="!messageSearchOpen" class="messages clean-messages" ref="messagesEl" role="log" :aria-label="t('chatView.messageList')" aria-live="polite" @scroll.passive="onMessagesScroll">
       <template v-if="ctx.activeContact.value">
         <button
           v-if="hiddenMessageCount > 0"
@@ -544,6 +618,7 @@ function deleteActiveConversation() {
           </div>
         </template>
         <UiEmptyState v-if="ctx.activeMessages.value.length === 0" class="chat-thread-empty" :title="t('chatView.noMessagesTitle')" :description="t('chatView.noMessagesDescription')" />
+        <button v-if="showJumpToLatest" class="jump-to-latest" type="button" @click="jumpToLatest">{{ t('chatView.jumpToLatest') }}</button>
       </template>
 
       <section v-else class="chat-empty-state">
@@ -553,7 +628,7 @@ function deleteActiveConversation() {
       </section>
     </div>
 
-    <footer class="composer clean-composer product-composer" v-if="!messageSearchOpen && ctx.activeContact.value && ctx.activeContact.value.state === 'Friend'">
+    <footer class="composer clean-composer product-composer" v-if="!messageSearchOpen && ctx.activeContact.value && ctx.activeContact.value.state === 'Friend'" :style="{ '--chat-keyboard-inset': `${keyboardInset}px` }">
       <input ref="fileInput" class="hidden-file-input" type="file" :aria-label="t('chatView.selectAttachment')" @change="onHiddenFileChange" />
       <div v-if="ctx.selectedFile.value" class="selected-file-card pending-file-card">
         <div class="file-icon">{{ filePreviewLabel(ctx.selectedFile.value.name, ctx.selectedFile.value.type).slice(0, 1) }}</div>
@@ -569,7 +644,7 @@ function deleteActiveConversation() {
       </div>
       <div class="composer-bar">
         <button class="composer-icon" :aria-label="t('chatView.chooseAttachment')" @click="togglePanel('attach')"><UiIcon name="add" /></button>
-        <textarea ref="composerTextarea" v-model="ctx.composerText.value" rows="1" :aria-label="t('chatView.inputMessage')" :placeholder="t('chatView.inputMessage') + '…'" @keydown="onComposerKeydown" />
+        <textarea ref="composerTextarea" v-model="ctx.composerText.value" rows="1" :aria-label="t('chatView.inputMessage')" :placeholder="t('chatView.inputMessage') + '…'" @keydown="onComposerKeydown" @focus="onComposerFocus" />
         <button class="composer-icon" :aria-label="t('chatView.chooseEmoji')" @click="togglePanel('emoji')"><UiIcon name="smile" /></button>
         <button class="send-icon" :disabled="!ctx.composerText.value.trim()" :aria-label="t('chatView.send')" @click="sendAndClose"><UiIcon name="send" /></button>
       </div>

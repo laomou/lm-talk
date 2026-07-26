@@ -499,6 +499,19 @@ em { color: var(--c-primary-ink); font-style: normal; font-size: 11px; font-weig
   background: var(--c-canvas);
   display: flex; flex-direction: column; align-items: flex-start;
 }
+.jump-to-latest {
+  position: sticky;
+  bottom: calc(var(--sp-3) + env(safe-area-inset-bottom));
+  align-self: center;
+  margin-top: auto;
+  padding: 7px 12px;
+  border: 1px solid var(--c-line-strong);
+  border-radius: var(--r-pill);
+  background: var(--c-surface);
+  color: var(--c-primary-ink);
+  box-shadow: var(--shadow-2);
+  z-index: 3;
+}
 .load-earlier-messages {
   align-self: center;
   margin: 0 0 var(--sp-4);
@@ -1170,7 +1183,7 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
   flex-direction: column;
   align-items: stretch;
   gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-3) calc(var(--sp-2) + env(safe-area-inset-bottom));
+  padding: var(--sp-2) var(--sp-3) calc(var(--sp-2) + env(safe-area-inset-bottom) + var(--chat-keyboard-inset, 0px));
 }
 .composer-bar {
   display: grid;

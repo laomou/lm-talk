@@ -174,6 +174,7 @@ export default {
     deleteMessage: 'Delete message',
     retrySend: 'Retry send',
     cancelSend: 'Cancel send',
+    jumpToLatest: 'Jump to latest',
     noChatMatchesTitle: 'No matching chats',
     noChatMatchesDescription: 'Try another name or keyword.',
     searchChatDescription: 'Enter a name to search chats.',
