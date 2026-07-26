@@ -930,16 +930,6 @@ const storageEstimateText = ref('尚未估算')
 const webVersionText = `Version ${__APP_VERSION__} (${__BUILD_REF__})`
 const selectedFile = ref<File | null>(null)
 const filePackageText = ref('')
-const incomingFilePackageText = ref('')
-const pendingFilePackageText = ref('')
-const pendingFileMeta = ref('')
-const filePackageInfoText = ref('')
-const receivedFileName = ref('')
-const receivedFileUrl = ref('')
-const receivedFileMeta = ref('')
-const receivedFileMime = ref('')
-const receivedFilePreviewKind = ref('')
-const receivedFileMessageId = ref('')
 const attachmentDownloads = ref<Record<string, { url: string; name: string; mime: string; meta: string; preview_kind: string }>>({})
 const rtcFileStatus = ref('未发送文件')
 const fileTransferPhase = ref('待选择')
@@ -10681,8 +10671,6 @@ function onFileSelected(event: Event) {
 function cancelSelectedFile() {
   selectedFile.value = null
   filePackageText.value = ''
-  filePackageInfoText.value = ''
-  pendingFileMeta.value = ''
   fileProgressText.value = ''
   fileTransferPhase.value = '待选择'
   rtcFileStatus.value = '未发送文件'
@@ -10691,7 +10679,6 @@ function cancelSelectedFile() {
 function clearSelectedFileDraft(keepProgress = false) {
   selectedFile.value = null
   filePackageText.value = ''
-  filePackageInfoText.value = ''
   if (!keepProgress) fileProgressText.value = ''
 }
 
@@ -10764,7 +10751,6 @@ async function createFilePackageForActive(): Promise<boolean> {
       bytes: bytes.buffer as ArrayBuffer,
     })
     filePackageText.value = workerResult.filePackageText
-    filePackageInfoText.value = JSON.stringify(await inspectFilePackageInWorker(filePackageText.value), null, 2)
     fileTransferPhase.value = '待发送'
     fileProgressText.value = `封装完成 · ${formatBytes(fileByteLength)}`
     rtcFileStatus.value = '文件包已生成，可复制或 WebRTC 发送'
@@ -10773,35 +10759,6 @@ async function createFilePackageForActive(): Promise<boolean> {
   })
   if (!ok) fileTransferPhase.value = '失败'
   return ok
-}
-
-async function inspectIncomingFilePackage() {
-  await runAsync('解析文件包', async () => {
-    const text = incomingFilePackageText.value.trim() || filePackageText.value.trim()
-    if (!text) throw new Error('请粘贴文件包 JSON')
-    ensureUiTextSize('文件包', text, MAX_RTC_TEXT_BYTES)
-    const info = await inspectFilePackageInWorker<{ manifest?: { name?: string; mime_type?: string; size?: number } }>(text)
-    filePackageInfoText.value = JSON.stringify(info, null, 2)
-    const manifest = info.manifest
-    if (manifest) {
-      const packageBytes = new TextEncoder().encode(text).byteLength
-      pendingFileMeta.value = `${manifest.name || '未命名文件'} · ${manifest.mime_type || 'application/octet-stream'} · ${formatBytes(manifest.size ?? 0)} · 加密包 ${formatBytes(packageBytes)}`
-      fileProgressText.value = `待解密 · 加密包 ${formatBytes(packageBytes)}`
-    }
-  })
-}
-
-function attachmentMessageInfo(message: ChatMessage) {
-  const name = message.attachment_name || message.text.replace(/^\[文件\]\s*/, '').replace(/\s+\([^)]*\)$/, '') || '未命名文件'
-  const mime = message.attachment_mime || 'application/octet-stream'
-  const size = Number(message.attachment_size ?? 0)
-  return {
-    name,
-    mime,
-    size,
-    meta: `${mime} · ${formatBytes(size)}`,
-    preview_kind: filePreviewKind(name, mime),
-  }
 }
 
 async function decryptAttachmentMessage(messageId: string) {
@@ -10865,12 +10822,6 @@ async function decryptAttachmentMessage(messageId: string) {
     message.attachment_decrypted_at = Date.now()
     message.attachment_error = undefined
     message.attachment_error_at = undefined
-    receivedFileUrl.value = download.url
-    receivedFileName.value = download.name
-    receivedFileMime.value = download.mime
-    receivedFileMeta.value = download.meta
-    receivedFilePreviewKind.value = download.preview_kind
-    receivedFileMessageId.value = message.id
     fileTransferPhase.value = '已接收'
     rtcFileStatus.value = `已解密文件：${out.name}`
     appendLog(`已解密文件：${out.name}`)
@@ -10907,31 +10858,16 @@ async function receiveFilePackageMessage(filePackage: string, sender: ContactIte
   persist()
 }
 
-async function decryptIncomingFilePackage() {
-  const pending = messages.value.find((item) => item.direction === 'in' && item.envelope_json === (pendingFilePackageText.value || incomingFilePackageText.value))
-  if (!pending) throw new Error('没有可解密的附件消息')
-  await decryptAttachmentMessage(pending.id)
-}
-
-function markReceivedFileDownloaded() {
-  if (!receivedFileName.value) return
-  const downloadedAt = Date.now()
-  const msg = messages.value.find((item) => item.id === receivedFileMessageId.value)
-  if (msg) msg.file_downloaded_at = downloadedAt
-  fileTransferPhase.value = '已下载'
-  rtcFileStatus.value = `已触发下载：${receivedFileName.value}`
-  fileProgressText.value = receivedFileMeta.value ? `下载文件 · ${receivedFileMeta.value}` : '下载文件'
-  appendLog(`已触发文件下载：${receivedFileName.value}`)
-  persist()
-}
-
 function markAttachmentDownloaded(messageId: string) {
+  const message = messages.value.find((item) => item.id === messageId)
   const download = attachmentDownloads.value[messageId]
-  if (!download) return
-  receivedFileMessageId.value = messageId
-  receivedFileName.value = download.name
-  receivedFileMeta.value = download.meta
-  markReceivedFileDownloaded()
+  if (!message || !download) return
+  message.file_downloaded_at = Date.now()
+  fileTransferPhase.value = '已下载'
+  rtcFileStatus.value = `已触发下载：${download.name}`
+  fileProgressText.value = `下载文件 · ${download.meta}`
+  appendLog(`已触发文件下载：${download.name}`)
+  persist()
 }
 
 async function sendFilePackageOverRtc() {
@@ -11090,7 +11026,7 @@ const appContext = {
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
   flushOutboxForActive, retryOutboxForMessage, retryOutboxForPeer, retryAllOutbox, cancelOutboxForActive, cancelOutboxForMessage, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
   receiveEnvelope, onFileSelected, cancelSelectedFile, selectedFile, formatBytes, isDangerousFileName, createFilePackageForActive, sendFilePackageOverRtc, sendSelectedFile, filePackageText, rtcFileStatus, fileTransferPhase, fileProgressText,
-  incomingFilePackageText, pendingFilePackageText, pendingFileMeta, inspectIncomingFilePackage, decryptIncomingFilePackage, decryptAttachmentMessage, receiveFilePackageMessage, markReceivedFileDownloaded, markAttachmentDownloaded, attachmentDownloads, receivedFileUrl, receivedFileName, receivedFileMeta, receivedFileMime, receivedFilePreviewKind, filePackageInfoText,
+  decryptAttachmentMessage, receiveFilePackageMessage, markAttachmentDownloaded, attachmentDownloads,
   createGroupSenderKeyForActiveGroup, groupSenderDistributionText, importGroupSenderKeyForActiveContact, groupSenderEncryptDebug, groupSenderDecryptDebug, createGroupSenderDistributionFanoutForActiveGroup,
   groupSenderDistributionFanoutJson, groupSenderDistributionFanoutItems, groupSenderEnvelopeText, groupSenderPlainText, groupRenameText, createRenameGroupEvent,
   groupEventText, applyGroupEventText, createGroupEventFanout, groupEventFanoutJson, groupEventFanoutItems, incomingGroupEventText, clearActiveGroupEventError,
