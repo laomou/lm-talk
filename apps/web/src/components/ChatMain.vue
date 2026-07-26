@@ -13,7 +13,10 @@ const router = useRouter()
 const { locale, t } = useI18n()
 const contactName = (userId: string) => props.ctx.contacts.value.find((c: any) => c.user_id === userId)?.display_name || userId
 const messageSearch = ref('')
+const messageSearchQuery = ref('')
+const messageSearchPending = ref(false)
 const messageSearchOpen = computed(() => route.path === '/chat/search/messages')
+const MAX_MESSAGE_SEARCH_RESULTS = 50
 const composerPanel = ref<'none' | 'attach' | 'emoji'>('none')
 const highlightedMessageId = ref('')
 const conversationMenuOpen = ref(false)
@@ -144,10 +147,39 @@ const thread = computed(() => {
   }
   return out
 })
+watch(messageSearch, (value, _, onCleanup) => {
+  const q = value.trim()
+  if (!q) {
+    messageSearchQuery.value = ''
+    messageSearchPending.value = false
+    return
+  }
+  messageSearchPending.value = true
+  const timer = window.setTimeout(() => {
+    messageSearchQuery.value = q.toLowerCase()
+    messageSearchPending.value = false
+  }, 180)
+  onCleanup(() => window.clearTimeout(timer))
+})
+
 const messageSearchResults = computed(() => {
-  const q = messageSearch.value.trim().toLowerCase()
+  const q = messageSearchQuery.value
   if (!q) return []
-  return props.ctx.activeMessages.value.filter((m: any) => `${m.text || ''}`.toLowerCase().includes(q))
+  return props.ctx.activeMessages.value
+    .filter((m: any) => `${m.text || ''}`.toLowerCase().includes(q))
+    .slice(0, MAX_MESSAGE_SEARCH_RESULTS)
+})
+const messageSearchTotalMatches = computed(() => {
+  const q = messageSearchQuery.value
+  if (!q) return 0
+  return props.ctx.activeMessages.value.filter((m: any) => `${m.text || ''}`.toLowerCase().includes(q)).length
+})
+const messageSearchHasMore = computed(() => messageSearchTotalMatches.value > messageSearchResults.value.length)
+const messageSearchStatus = computed(() => {
+  if (!messageSearch.value.trim()) return ''
+  if (messageSearchPending.value) return t('chatView.searchingMessages')
+  if (messageSearchHasMore.value) return t('chatView.searchResultsLimited', { count: MAX_MESSAGE_SEARCH_RESULTS })
+  return t('chatView.searchResultsCount', { count: messageSearchTotalMatches.value })
 })
 
 const activeFileOutboxError = computed(() => {
@@ -267,6 +299,18 @@ function locateMessage(messageId: string) {
   else void showTarget()
 }
 
+function messageSearchPreview(message: any) {
+  const text = String(message.text || '')
+  const q = messageSearchQuery.value
+  if (!q) return text.slice(0, 160)
+  const lower = text.toLowerCase()
+  const index = lower.indexOf(q)
+  if (index < 0) return text.slice(0, 160)
+  const start = Math.max(0, index - 20)
+  const end = Math.min(text.length, index + q.length + 40)
+  return `${start > 0 ? '…' : ''}${text.slice(start, end)}${end < text.length ? '…' : ''}`
+}
+
 function sendAndClose() {
   props.ctx.sendMessage()
   composerPanel.value = 'none'
@@ -310,11 +354,17 @@ function deleteActiveConversation() {
       <div class="chat-message-search-results">
         <UiEmptyState v-if="!messageSearch" :title="t('chatView.searchMessages')" :description="t('chatView.messageSearchDescription')" />
         <template v-else>
+          <small v-if="messageSearchStatus" class="search-message-status">{{ messageSearchStatus }}</small>
+          <UiEmptyState
+            v-if="!messageSearchPending && messageSearchResults.length === 0"
+            icon="search"
+            :title="t('chatView.noMessageMatchesTitle')"
+            :description="t('chatView.noMessageMatchesDescription')"
+          />
           <button v-for="message in messageSearchResults" :key="message.id" class="search-message-result" @click="locateMessage(message.id)">
             <span>{{ message.direction === 'out' ? t('chatView.me') : contactName(message.peer_user_id) }} · {{ hmTime(message.created_at) }}</span>
-            <b>{{ message.text }}</b>
+            <b>{{ messageSearchPreview(message) }}</b>
           </button>
-          <UiEmptyState v-if="messageSearchResults.length === 0" icon="search" :title="t('chatView.noMessageMatchesTitle')" :description="t('chatView.noMessageMatchesDescription')" />
         </template>
       </div>
     </section>

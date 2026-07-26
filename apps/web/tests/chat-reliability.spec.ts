@@ -396,6 +396,50 @@ test('单聊附件在消息卡片中解密，刷新后可重新解密', async ({
   }
 })
 
+test('会话内搜索命中旧消息时会自动展开历史窗口并定位', async ({ browser }) => {
+  const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const alicePassphrase = 'playwright-search-window-alice-passphrase'
+  const bobPassphrase = 'playwright-search-window-bob-passphrase'
+  const alice = await registerAndLogin(aliceContext, 'Alice', alicePassphrase)
+  const bob = await registerAndLogin(bobContext, 'Bob', bobPassphrase)
+
+  try {
+    const bobCard = await copyOwnCard(bob)
+    await alice.getByRole('button', { name: '打开通讯录' }).click()
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByLabel('对方名片').fill(bobCard)
+    await alice.getByRole('button', { name: '添加好友' }).click()
+    await alice.getByRole('button', { name: '返回通讯录' }).click()
+
+    await bob.getByRole('button', { name: '打开通讯录' }).click()
+    await bob.getByRole('button', { name: '打开新的朋友' }).click()
+    await expect(bob.getByRole('button', { name: '同意' })).toBeVisible({ timeout: 45_000 })
+    await bob.getByRole('button', { name: '同意' }).click()
+    await bob.getByRole('button', { name: '返回通讯录' }).click()
+    await bob.locator('.directory-row.contact-row').click()
+    await bob.getByRole('button', { name: '发消息' }).click()
+    await expect(alice.locator('.directory-row.contact-row')).toBeVisible({ timeout: 45_000 })
+    await openOnlyContactConversation(alice)
+
+    const batch = Array.from({ length: 90 }, (_, index) => `历史窗口消息 ${index + 1}`)
+    for (const text of batch) {
+      await bob.getByLabel('输入消息').fill(text)
+      await bob.getByRole('button', { name: '发送' }).click()
+    }
+
+    await alice.getByRole('button', { name: '搜索聊天记录' }).click()
+    await alice.getByLabel('搜索聊天记录').fill('历史窗口消息')
+    await expect(alice.getByText('仅显示前 50 条结果')).toBeVisible({ timeout: 45_000 })
+    await alice.locator('.search-message-result').filter({ hasText: '历史窗口消息 1' }).first().click()
+    await expect(alice.getByRole('log', { name: '消息列表' }).getByText('历史窗口消息 1', { exact: true }))
+      .toBeVisible({ timeout: 45_000 })
+  } finally {
+    await aliceContext.close()
+    await bobContext.close()
+  }
+})
+
 test('节点暂不可用后自动恢复批量消息、未读与已读状态', async ({ browser }) => {
   const aliceContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
   const bobContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
