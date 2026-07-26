@@ -307,6 +307,25 @@ function deleteActiveConversation() {
       </template>
     </UiNotice>
 
+    <UiNotice
+      v-else-if="!messageSearchOpen && ctx.activeMailboxFailedItems.value.length"
+      compact
+      tone="warning"
+    >
+      <div class="notice-text">
+        <b>{{ t('chatView.incomingRecoveryTitle', { count: ctx.activeMailboxFailedItems.value.length }) }}</b>
+        <span>{{ ctx.activeMailboxFailedItems.value[0].reason }}。{{ ctx.activeMailboxFailedItems.value[0].hint }}</span>
+      </div>
+      <template #actions>
+        <button
+          v-if="ctx.activeMailboxFailedItems.value.some((item: any) => item.category === 'session')"
+          class="secondary"
+          @click="ctx.retrySecureSessionForActiveContact"
+        >{{ t('chatView.recoverSession') }}</button>
+        <button class="secondary" @click="ctx.retryMailboxFailuresForActiveContact">{{ t('chatView.retryIncoming') }}</button>
+      </template>
+    </UiNotice>
+
 
 
 
