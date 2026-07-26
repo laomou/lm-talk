@@ -20,6 +20,7 @@ const MAX_MESSAGE_SEARCH_RESULTS = 50
 const composerPanel = ref<'none' | 'attach' | 'emoji'>('none')
 const highlightedMessageId = ref('')
 const conversationMenuOpen = ref(false)
+const messageMenuOpenId = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
 const composerTextarea = ref<HTMLTextAreaElement | null>(null)
 const emojis = ['😀', '😃', '😄', '😁', '🙂', '😉', '😊', '😍', '👍', '👏', '🙏', '💪', '🎉', '❤️', '🔥', '✅']
@@ -116,6 +117,39 @@ function messageOutboxError(message: any) {
 }
 function canManageMessageOutbox(message: any) {
   return messageOutboxCount(message) > 0
+}
+
+function toggleMessageMenu(messageId: string) {
+  messageMenuOpenId.value = messageMenuOpenId.value === messageId ? '' : messageId
+}
+
+function closeMessageMenu() {
+  messageMenuOpenId.value = ''
+}
+
+async function copyMessageText(message: any) {
+  await props.ctx.copyText(message.text || '', t('chatView.messageText'))
+  closeMessageMenu()
+}
+
+async function copyMessageEnvelope(message: any) {
+  await props.ctx.copyMessageEnvelope(message)
+  closeMessageMenu()
+}
+
+async function deleteMessage(messageId: string) {
+  await props.ctx.deleteChatMessage(messageId)
+  closeMessageMenu()
+}
+
+function retryMessageOutbox(messageId: string) {
+  props.ctx.retryOutboxForMessage(messageId)
+  closeMessageMenu()
+}
+
+function cancelMessageOutbox(messageId: string) {
+  props.ctx.cancelOutboxForMessage(messageId)
+  closeMessageMenu()
 }
 
 function messageStatusDetailText(message: any) {
@@ -225,7 +259,7 @@ watch(
   },
   { immediate: true },
 )
-watch(() => props.ctx.activePeerId?.value, () => { conversationMenuOpen.value = false })
+watch(() => props.ctx.activePeerId?.value, () => { conversationMenuOpen.value = false; messageMenuOpenId.value = '' })
 
 // Enter 发送，Shift+Enter 换行；输入法组词中的 Enter 不触发发送
 function onComposerKeydown(e: KeyboardEvent) {
@@ -496,11 +530,16 @@ function deleteActiveConversation() {
               </span>
               <span v-if="item.m.file_downloaded_at"> · {{ t('chatView.downloadedAt', { time: ctx.formatDateTime(item.m.file_downloaded_at) }) }}</span>
             </small>
-            <div v-if="canManageMessageOutbox(item.m)" class="bubble-actions">
+            <div class="bubble-actions">
               <small v-if="messageOutboxError(item.m)" class="outbox-error">{{ messageOutboxError(item.m) }}</small>
-              <span>{{ t('chatView.outboxItemsPending', { count: messageOutboxCount(item.m) }) }}</span>
-              <button class="secondary" @click="ctx.retryOutboxForMessage(item.m.id)">{{ t('chatView.retry') }}</button>
-              <button class="secondary danger" @click="ctx.cancelOutboxForMessage(item.m.id)">{{ t('chatView.cancel') }}</button>
+              <button class="icon-btn message-more-btn" :aria-label="t('chatView.more')" :title="t('chatView.more')" :aria-expanded="messageMenuOpenId === item.m.id ? 'true' : 'false'" @click="toggleMessageMenu(item.m.id)"><UiIcon name="more" /></button>
+              <div v-if="messageMenuOpenId === item.m.id" class="message-action-menu" role="menu">
+                <button role="menuitem" @click="copyMessageText(item.m)">{{ t('chatView.copyMessageText') }}</button>
+                <button v-if="item.m.envelope_json" role="menuitem" @click="copyMessageEnvelope(item.m)">{{ t('chatView.copyMessageEnvelope') }}</button>
+                <button role="menuitem" class="danger" @click="deleteMessage(item.m.id)">{{ t('chatView.deleteMessage') }}</button>
+                <button v-if="canManageMessageOutbox(item.m)" role="menuitem" @click="retryMessageOutbox(item.m.id)">{{ t('chatView.retrySend') }}</button>
+                <button v-if="canManageMessageOutbox(item.m)" role="menuitem" class="danger" @click="cancelMessageOutbox(item.m.id)">{{ t('chatView.cancelSend') }}</button>
+              </div>
             </div>
           </div>
         </template>

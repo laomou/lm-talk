@@ -5251,6 +5251,25 @@ async function copyMessageEnvelope(message: ChatMessage) {
   }
 }
 
+async function deleteChatMessage(messageId: string) {
+  await runAsync('删除消息', async () => {
+    const message = messages.value.find((item) => item.id === messageId)
+    if (!message) throw new Error('找不到要删除的消息')
+    const label = message.attachment_name || message.text || '消息'
+    const confirmed = await showConfirm(
+      t('appDialog.deleteMessageTitle'),
+      t('appDialog.deleteMessageMessage', { name: label.slice(0, 80) }),
+      true,
+    )
+    if (!confirmed) return
+    releaseAttachmentDownloads([message.id])
+    messages.value = messages.value.filter((item) => item.id !== message.id)
+    outbox.value = outbox.value.filter((item) => item.message_id !== message.id)
+    appendLog(`已删除消息：${label.slice(0, 80)}`)
+    persist()
+  })
+}
+
 function statusLabel(status: MessageStatus) {
   switch (status) {
     case 'queued': return '待发送'
@@ -11076,7 +11095,7 @@ const appContext = {
   newGroupName, friendContacts, selectedGroupMembers, createGroup, groups, activeGroupId,
   selectGroup, activeContact, activeMailboxFailedItems, activeSessionRecoveryState, activeGroup, activeRatchetSession, activeRatchetStatusText, activeContactSealedSlotStatusText, activeContactSealedSlotRiskLevel, activeStrictE2eeSendRiskText, activeStrictE2eeSendBlockingText, activeSecureSessionOutboxCount, activeGroupMembers, activeGroupWarningText, activeGroupStrictE2eeRiskText, groupStrictE2eeRiskTextFor, createGroupStrictE2eeRiskText, groupInviteStrictE2eeRiskText, blockReason, blockActiveContact, readReceiptsEnabledFor, setActiveContactReadReceipts,
   unblockActiveContact, removeActiveContact, clearActiveConversation, createFriendRequestForActive, clearActiveFriendRequestError, createInviteForActiveGroup, groupInviteText, groupFanoutJson,
-  removeActiveGroup, leaveActiveGroupWithNotice, messages, activeMessages, unreadCountForPeer, totalUnreadCount, totalUnreadBadgeText, badgeCountText, formatTime, formatDateTime, statusLabel, copyMessageEnvelope, perDeviceEnvelopeTargetCount, composerText,
+  removeActiveGroup, leaveActiveGroupWithNotice, messages, activeMessages, unreadCountForPeer, totalUnreadCount, totalUnreadBadgeText, badgeCountText, formatTime, formatDateTime, statusLabel, copyMessageEnvelope, deleteChatMessage, perDeviceEnvelopeTargetCount, composerText,
   sendMessage, incomingDeviceRevokeText, applyDeviceRevokeToActiveContact, rtcStatus, createRtcOfferForActive, acceptRtcOfferForActive,
   applyRtcAnswerForActive, resetRtc, localSignalText, copySignal, remoteSignalText, outbox,
   flushOutboxForActive, retryOutboxForMessage, retryOutboxForPeer, retryAllOutbox, cancelOutboxForActive, cancelOutboxForMessage, clearSentOutbox, friendRequestText, createFriendRequestForActiveLocalOnly, incomingFriendResponseText, applyFriendResponse, inboundEnvelopeText,
