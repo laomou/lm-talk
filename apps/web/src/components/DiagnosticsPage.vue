@@ -3,8 +3,10 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import UiPageHeader from './UiPageHeader.vue'
 import UiSection from './UiSection.vue'
-import UiActionGroup from './UiActionGroup.vue'
 import UiStatusBadge from './UiStatusBadge.vue'
+import DiagnosticsStatRow from './DiagnosticsStatRow.vue'
+import DiagnosticsOptionRow from './DiagnosticsOptionRow.vue'
+import DiagnosticsActionBar from './DiagnosticsActionBar.vue'
 
 const props = defineProps<{ ctx: any }>()
 const { t } = useI18n()
@@ -185,52 +187,59 @@ async function runDiagnostics() {
 
       <UiSection :title="t('diagnosticsView.runtimeStatus')">
         <div class="diagnostic-list">
-          <div class="diagnostic-row">
-            <span><b>{{ t('diagnosticsView.currentAccount') }}</b><small>{{ ctx.identity.value?.user_id }}</small></span>
-            <strong>{{ ctx.displayName.value || t('diagnosticsView.unnamed') }}</strong>
-          </div>
-          <div class="diagnostic-row">
-            <span><b>{{ t('diagnosticsView.messageSync') }}</b><small>{{ ctx.nodeUrlList().length ? ctx.nodeUrlList().join('，') : t('diagnosticsView.syncNotConfigured') }}</small></span>
+          <DiagnosticsStatRow :title="t('diagnosticsView.currentAccount')" :description="ctx.identity.value?.user_id || ''">
+            <template #value>
+              <strong>{{ ctx.displayName.value || t('diagnosticsView.unnamed') }}</strong>
+            </template>
+          </DiagnosticsStatRow>
+          <DiagnosticsStatRow :title="t('diagnosticsView.messageSync')" :description="ctx.nodeUrlList().length ? ctx.nodeUrlList().join('，') : t('diagnosticsView.syncNotConfigured')">
+            <template #value>
             <UiStatusBadge :tone="ctx.nodeEnabled.value ? 'success' : 'neutral'">{{ ctx.nodeEnabled.value ? t('diagnosticsView.enabled') : t('diagnosticsView.disabled') }}</UiStatusBadge>
-          </div>
-          <div class="diagnostic-row">
-            <span><b>{{ t('diagnosticsView.outbox') }}</b><small>{{ t('diagnosticsView.totalQueue', { count: ctx.outbox.value.length }) }}</small></span>
-            <strong>{{ ctx.outbox.value.filter((x: any) => x.status !== 'sent').length }}</strong>
-          </div>
-          <div class="diagnostic-row">
-            <span><b>{{ t('diagnosticsView.newFriends') }}</b><small>{{ t('diagnosticsView.groupInvites', { count: ctx.groupInvites.value.length }) }}</small></span>
-            <strong>{{ ctx.visibleFriendRequests.value.length }}</strong>
-          </div>
-          <div class="diagnostic-row">
-            <span><b>{{ t('diagnosticsView.junkRequests') }}</b><small>{{ t('diagnosticsView.dedupeRecords', { count: ctx.mailboxDedupeCount.value }) }}</small></span>
-            <strong>{{ ctx.quarantinedFriendRequests.value.length }}</strong>
-          </div>
-          <div class="diagnostic-row">
-            <span><b>{{ t('diagnosticsView.dhtStatus') }}</b><small>{{ ctx.nodePeerHealthStatusText.value }}</small></span>
-            <UiStatusBadge :tone="ctx.nodePeerHealthRiskLevel.value === 'ok' ? 'success' : ctx.nodePeerHealthRiskLevel.value === 'warning' ? 'warning' : 'danger'">{{ ctx.nodePeerHealthRiskLevel.value === 'ok' ? t('diagnosticsView.normal') : ctx.nodePeerHealthRiskLevel.value === 'warning' ? t('diagnosticsView.warning') : t('diagnosticsView.abnormal') }}</UiStatusBadge>
-          </div>
-          <div class="diagnostic-row">
-            <span><b>{{ t('diagnosticsView.groupStrictE2ee') }}</b><small>{{ t('diagnosticsView.groupRiskSummary', { count: ctx.groups.value.length }) }}</small></span>
-            <strong>{{ ctx.groups.value.filter((g: any) => ctx.groupStrictE2eeRiskTextFor(g)).length }}</strong>
-          </div>
+            </template>
+          </DiagnosticsStatRow>
+          <DiagnosticsStatRow :title="t('diagnosticsView.outbox')" :description="t('diagnosticsView.totalQueue', { count: ctx.outbox.value.length })">
+            <template #value>
+              <strong>{{ ctx.outbox.value.filter((x: any) => x.status !== 'sent').length }}</strong>
+            </template>
+          </DiagnosticsStatRow>
+          <DiagnosticsStatRow :title="t('diagnosticsView.newFriends')" :description="t('diagnosticsView.groupInvites', { count: ctx.groupInvites.value.length })">
+            <template #value>
+              <strong>{{ ctx.visibleFriendRequests.value.length }}</strong>
+            </template>
+          </DiagnosticsStatRow>
+          <DiagnosticsStatRow :title="t('diagnosticsView.junkRequests')" :description="t('diagnosticsView.dedupeRecords', { count: ctx.mailboxDedupeCount.value })">
+            <template #value>
+              <strong>{{ ctx.quarantinedFriendRequests.value.length }}</strong>
+            </template>
+          </DiagnosticsStatRow>
+          <DiagnosticsStatRow :title="t('diagnosticsView.dhtStatus')" :description="ctx.nodePeerHealthStatusText.value">
+            <template #value>
+              <UiStatusBadge :tone="ctx.nodePeerHealthRiskLevel.value === 'ok' ? 'success' : ctx.nodePeerHealthRiskLevel.value === 'warning' ? 'warning' : 'danger'">{{ ctx.nodePeerHealthRiskLevel.value === 'ok' ? t('diagnosticsView.normal') : ctx.nodePeerHealthRiskLevel.value === 'warning' ? t('diagnosticsView.warning') : t('diagnosticsView.abnormal') }}</UiStatusBadge>
+            </template>
+          </DiagnosticsStatRow>
+          <DiagnosticsStatRow :title="t('diagnosticsView.groupStrictE2ee')" :description="t('diagnosticsView.groupRiskSummary', { count: ctx.groups.value.length })">
+            <template #value>
+              <strong>{{ ctx.groups.value.filter((g: any) => ctx.groupStrictE2eeRiskTextFor(g)).length }}</strong>
+            </template>
+          </DiagnosticsStatRow>
         </div>
       </UiSection>
 
       <UiSection :title="t('diagnosticsView.reportTitle')" :description="t('diagnosticsView.reportDescription')">
-        <label class="check-row diagnostic-option">
+        <DiagnosticsOptionRow>
           <input v-model="redactDiagnosticReport" type="checkbox" />
           {{ t('diagnosticsView.redactAccountAndServices') }}
-        </label>
-        <label class="check-row diagnostic-option">
+        </DiagnosticsOptionRow>
+        <DiagnosticsOptionRow>
           <input v-model="diagnosticSummaryOnly" type="checkbox" />
           {{ t('diagnosticsView.summaryOnly') }}
-        </label>
-        <UiActionGroup>
+        </DiagnosticsOptionRow>
+        <DiagnosticsActionBar>
           <button @click="runDiagnostics">{{ t('diagnosticsView.generateReport') }}</button>
           <button class="secondary" :disabled="!diagnosticReport" @click="ctx.copyText(diagnosticReport, t('diagnosticsView.reportTitle'))">{{ t('diagnosticsView.copyReport') }}</button>
           <button class="secondary" :disabled="!diagnosticReport" @click="showDiagnosticReport = !showDiagnosticReport">{{ showDiagnosticReport ? t('diagnosticsView.hidePreview') : t('diagnosticsView.showPreview') }}</button>
           <button class="secondary" @click="ctx.syncNow">{{ t('diagnosticsView.syncNow') }}</button>
-        </UiActionGroup>
+        </DiagnosticsActionBar>
         <textarea v-if="diagnosticReport && showDiagnosticReport" v-model="diagnosticReport" class="mono" rows="12" readonly />
       </UiSection>
 
