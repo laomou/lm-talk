@@ -150,6 +150,7 @@ export default {
     closeMessageSearch: 'Close message search',
     closeSearch: 'Close search',
     more: 'More',
+    messageActions: 'Message actions',
     deleteConversation: 'Delete conversation',
     unnamedContact: 'Unnamed contact',
     unnamed: 'Unnamed',

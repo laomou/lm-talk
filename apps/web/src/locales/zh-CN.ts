@@ -150,6 +150,7 @@ export default {
     closeMessageSearch: '关闭会话内搜索',
     closeSearch: '关闭搜索',
     more: '更多',
+    messageActions: '消息操作',
     deleteConversation: '删除会话',
     unnamedContact: '未命名联系人',
     unnamed: '未命名',

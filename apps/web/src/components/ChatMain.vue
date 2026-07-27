@@ -620,7 +620,7 @@ function deleteActiveConversation() {
             </small>
             <div class="bubble-actions">
               <small v-if="messageOutboxError(item.m)" class="outbox-error">{{ messageOutboxError(item.m) }}</small>
-              <button class="icon-btn message-more-btn" :aria-label="t('chatView.more')" :title="t('chatView.more')" :aria-expanded="messageMenuOpenId === item.m.id ? 'true' : 'false'" @click="toggleMessageMenu(item.m.id)"><UiIcon name="more" /></button>
+              <button class="icon-btn message-more-btn" :aria-label="t('chatView.messageActions')" :title="t('chatView.messageActions')" :aria-expanded="messageMenuOpenId === item.m.id ? 'true' : 'false'" @click="toggleMessageMenu(item.m.id)"><UiIcon name="more" /></button>
               <div v-if="messageMenuOpenId === item.m.id" class="message-action-menu" role="menu">
                 <button role="menuitem" @click="copyMessageText(item.m)">{{ t('chatView.copyMessageText') }}</button>
                 <button v-if="item.m.envelope_json" role="menuitem" @click="copyMessageEnvelope(item.m)">{{ t('chatView.copyMessageEnvelope') }}</button>
