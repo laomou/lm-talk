@@ -992,9 +992,18 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 .warning { background: var(--c-warn-bg); border: 1px solid var(--c-warn-line); border-radius: var(--r-md); padding: var(--sp-3); color: var(--c-warn-ink); }
 .log { margin-top: var(--sp-4); font-family: var(--font-mono); font-size: 12px; color: var(--c-ink-2); }
 
+/* ---- Mobile PWA shell --------------------------------------------------- */
+@supports (padding: max(0px)) {
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    background: var(--c-canvas);
+  }
+}
+
 /* ---- Responsive --------------------------------------------------------- */
 @media (max-width: 850px) {
-  .app-shell { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) 60px; }
+  .app-shell { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) 60px; min-height: 100dvh; }
   /*
    * Keep the rail at the bottom on narrow screens. The rail precedes the
    * content in the DOM for the desktop two-column layout, so explicit grid
@@ -1034,7 +1043,7 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--c-surf
 }
 
 @media (max-width: 640px) {
-  .app-shell { grid-template-rows: minmax(0, 1fr) calc(56px + env(safe-area-inset-bottom)); }
+  .app-shell { grid-template-rows: minmax(0, 1fr) calc(56px + env(safe-area-inset-bottom)); min-height: 100dvh; }
   .rail-item span { font-size: 10px; }
   .rail-item svg { width: 20px; height: 20px; }
 
