@@ -2665,6 +2665,8 @@ if (typeof window !== 'undefined') {
   ;(window as any).mergeContactDeviceAndTrustStateForTests = mergeContactDeviceAndTrustState
   ;(window as any).contactAllKnownDevicesRevokedForTests = contactAllKnownDevicesRevoked
   ;(window as any).takeMailboxForTests = takeMailboxFromNodeNow
+  ;(window as any).seedFriendContactsForTests = seedFriendContactsForTests
+  ;(window as any).openFirstContactConversationForTests = openFirstContactConversationForTests
 }
 
 async function writeStateToTables(state: PersistedState, options: { preserveConversationData?: boolean } = {}) {
@@ -5269,6 +5271,30 @@ async function deleteChatMessage(messageId: string) {
     appendLog(`已删除消息：${label.slice(0, 80)}`)
     persist()
   })
+}
+
+function seedFriendContactsForTests(items: Array<{ user_id: string; display_name: string }>) {
+  contacts.value = items.map((item) => ({
+    user_id: item.user_id,
+    display_name: item.display_name,
+    fingerprint: `test-fingerprint-${item.user_id}`,
+    identity_public_key: `test-identity-${item.user_id}`,
+    x25519_public_key: `test-x25519-${item.user_id}`,
+    device_count: 0,
+    contact_card_text: `lm-contact-card-v1:test:${item.user_id}`,
+    kind: 'contact',
+    state: 'Friend',
+  } satisfies ContactItem))
+  persist()
+}
+
+
+async function openFirstContactConversationForTests() {
+  const contact = contacts.value.find((item) => item.state === 'Friend') ?? contacts.value.find((item) => item.kind === 'contact')
+  if (!contact) throw new Error('没有可打开的联系人')
+  activePeerId.value = contact.user_id
+  activeGroupId.value = ''
+  await router.push(`/chat/${encodeURIComponent(contact.user_id)}`)
 }
 
 function statusLabel(status: MessageStatus) {
