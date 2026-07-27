@@ -7,6 +7,7 @@ import UiActionGroup from './components/UiActionGroup.vue'
 import { applyPwaUpdate, onPwaUpdateReady, readPwaStatus } from './pwa'
 import { TABLES, idbDel, idbGet, idbSet, idbTableApplyChanges, idbTableClear, idbTableGet, idbTableGetAllByPrefix, idbTableReplaceByPrefix } from './idb'
 import { WorkerRpcClient, type WorkerRpcResponse } from './workers/WorkerRpcClient'
+import { CONTACT_CARD_DHT_FRESH_MS, CONTACT_CARD_UPDATE_ACK_STALE_MS, DHT_OPERATION_HISTORY_IMPORT_MAX_RECORDS, DHT_OPERATION_HISTORY_ITEM_MAX_CHARS, DHT_OPERATION_HISTORY_MAX_RECORDS, FILE_BASE64_CHUNK_BYTES, FRIEND_REQUEST_LONG_RATE_LIMIT, FRIEND_REQUEST_LONG_RATE_WINDOW_MS, FRIEND_REQUEST_RATE_LIMIT, FRIEND_REQUEST_RATE_WINDOW_MS, GROUP_EVENT_PAYLOAD_PREFIX, GROUP_SENDER_KEY_PAYLOAD_PREFIX, LOCAL_IDENTITIES_KEY, MAILBOX_DEDUPE_MAX_RECORDS, MAILBOX_DEDUPE_RETENTION_MS, MAILBOX_HINT_BACKGROUND_REFRESH_DELAY_MS, MAILBOX_LONG_POLL_TIMEOUT_MS, MAILBOX_LONG_POLL_WAIT_SECONDS, MAX_CONTACT_CARD_BYTES, MAX_FILE_BYTES, MAX_OUTBOX_RETRY_COUNT, MAX_PROFILE_AVATAR_BYTES, MAX_RTC_TEXT_BYTES, MAX_SIGNAL_BYTES, MAX_TEXT_MESSAGE_BYTES, NODE_FETCH_TIMEOUT_MS, PERSIST_DEBOUNCE_MS, PROFILE_AVATAR_DIMENSION, SECURE_SESSION_RECOVERY_COOLDOWN_MS } from './app-constants'
 import type { IdentityOutput, RestoreOutput, ReencryptIdentityBackupOutput, DeviceOutput, DeviceRevokeInfo, DeviceCertItem, ContactInfo, ContactItem, FilterLevel, FilterAction, SafetyPolicy, GroupInviteItem, FriendRequestItem, FriendRequestRateRecord, GroupItem, GroupSenderKeyItem, MessageStatus, ChatMessage, OutgoingMessageJob, PerDeviceEnvelopeV1, MessageReceiptSyncItem, RatchetSessionItem, PendingSecureSessionOfferItem, OutboxItem, OutboxSyncSummary, MailboxFailedItem, MailboxFailureCategory, ContactCardUpdateFanoutRecord, ContactCardDhtAutoRefreshRecord, ProcessedMailboxRecord, PersistedState, IdentityAndSecurityBackupState, PersistedMeta, SelfSyncPackage, SelfSyncRequestPackage, SelfSyncCachedPackage, SelfSyncRequestRecord, LocalIdentityRecord, EncryptedStringV1 } from './app-types'
 
 const LoginPage = defineAsyncComponent(() => import('./components/LoginPage.vue'))
@@ -15,7 +16,6 @@ const ContactsPage = defineAsyncComponent(() => import('./components/ContactsPag
 const SettingsPage = defineAsyncComponent(() => import('./components/SettingsPage.vue'))
 const DiagnosticsPage = defineAsyncComponent(() => import('./components/DiagnosticsPage.vue'))
 
-const LOCAL_IDENTITIES_KEY = 'lm-talk-local-identities-v1'
 
 const ready = ref(false)
 const loggedIn = ref(false)
@@ -58,32 +58,11 @@ const alertDialog = ref<AlertDialogState>({ open: false, title: '', message: '',
 const confirmDialog = ref<ConfirmDialogState>({ open: false, title: '', message: '', danger: false })
 const loginPage = ref<{ focusPassphrase: () => void } | null>(null)
 
-const MAX_TEXT_MESSAGE_BYTES = 64 * 1024
-const MAX_CONTACT_CARD_BYTES = 32 * 1024
-const FRIEND_REQUEST_RATE_WINDOW_MS = 10 * 60 * 1000
-const FRIEND_REQUEST_RATE_LIMIT = 3
-const FRIEND_REQUEST_LONG_RATE_WINDOW_MS = 24 * 60 * 60 * 1000
-const FRIEND_REQUEST_LONG_RATE_LIMIT = 5
-const MAILBOX_DEDUPE_MAX_RECORDS = 1000
-const DHT_OPERATION_HISTORY_MAX_RECORDS = 8
-const DHT_OPERATION_HISTORY_IMPORT_MAX_RECORDS = 32
-const DHT_OPERATION_HISTORY_ITEM_MAX_CHARS = 240
-const MAILBOX_DEDUPE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
-const MAX_SIGNAL_BYTES = 256 * 1024
-const MAX_FILE_BYTES = 16 * 1024 * 1024
-const MAX_RTC_TEXT_BYTES = MAX_FILE_BYTES * 3
-const MAX_OUTBOX_RETRY_COUNT = 5
-const SECURE_SESSION_RECOVERY_COOLDOWN_MS = 60_000
-const NODE_FETCH_TIMEOUT_MS = 10_000
-const MAILBOX_LONG_POLL_WAIT_SECONDS = 25
-const MAILBOX_LONG_POLL_TIMEOUT_MS = 35_000
 
 function nodeFetchTimeoutMs(): number {
   const override = typeof window !== 'undefined' ? Number((window as any).nodeFetchTimeoutMsForTests) : 0
   return Number.isFinite(override) && override > 0 ? override : NODE_FETCH_TIMEOUT_MS
 }
-const GROUP_EVENT_PAYLOAD_PREFIX = 'lm-group-event-message-v1:'
-const GROUP_SENDER_KEY_PAYLOAD_PREFIX = 'lm-group-sender-key-message-v1:'
 
 const passphrase = ref('')
 const newIdentityPassphrase = ref('')
@@ -162,10 +141,6 @@ const profileSyncRetryAvailable = computed(() => Boolean(
   && nodeEnabled.value
   && friendContacts.value.length,
 ))
-const CONTACT_CARD_UPDATE_ACK_STALE_MS = 24 * 60 * 60 * 1000
-const CONTACT_CARD_DHT_FRESH_MS = 7 * 24 * 60 * 60 * 1000
-const MAX_PROFILE_AVATAR_BYTES = 64 * 1024
-const PROFILE_AVATAR_DIMENSION = 128
 const contactCardUpdateFanoutRecords = ref<ContactCardUpdateFanoutRecord[]>([])
 let outboxRetryTimer: number | undefined
 let outboxRetryChain: Promise<void> = Promise.resolve()
@@ -2076,7 +2051,6 @@ async function persistStateTables() {
   }
 }
 
-const PERSIST_DEBOUNCE_MS = 120
 let persistChain: Promise<void> = Promise.resolve()
 let persistTimer: number | undefined
 let persistPending = false
@@ -3647,7 +3621,6 @@ async function discoverMailboxHintForContact(contact: ContactItem): Promise<stri
   return undefined
 }
 
-const MAILBOX_HINT_BACKGROUND_REFRESH_DELAY_MS = 5_000
 const scheduledMailboxHintRefreshes = new Set<string>()
 
 function refreshMailboxHintInBackground(contact: ContactItem) {
@@ -10158,7 +10131,6 @@ async function takeMailboxFromNode() {
   startMailboxLongPoll()
 }
 
-const FILE_BASE64_CHUNK_BYTES = 3 * 256 * 1024
 type FileCryptoCreateResult = {
   filePackageText: string
 }
