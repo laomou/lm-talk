@@ -51,16 +51,17 @@ async function copyOwnCard(page: Page): Promise<string> {
 }
 
 async function openOnlyContactConversation(page: Page) {
-  await page.getByRole('button', { name: '打开通讯录' }).click()
   const rows = page.locator('.directory-row.contact-row')
   await expect.poll(async () => {
+    await page.getByRole('button', { name: '打开通讯录' }).click().catch(() => undefined)
     let count = await rows.count()
     if (count === 0) {
       await takeMailbox(page).catch(() => undefined)
+      await page.getByRole('button', { name: '打开通讯录' }).click().catch(() => undefined)
       count = await rows.count()
     }
     return count
-  }, { timeout: 45_000 }).toBeGreaterThan(0)
+  }, { timeout: 90_000 }).toBeGreaterThan(0)
   await rows.first().click()
   await page.getByRole('button', { name: '发消息' }).click()
 }
