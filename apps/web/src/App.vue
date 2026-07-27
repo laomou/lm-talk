@@ -10,6 +10,7 @@ import { WorkerRpcClient, type WorkerRpcResponse } from './workers/WorkerRpcClie
 import { CONTACT_CARD_DHT_FRESH_MS, CONTACT_CARD_UPDATE_ACK_STALE_MS, DHT_OPERATION_HISTORY_IMPORT_MAX_RECORDS, DHT_OPERATION_HISTORY_ITEM_MAX_CHARS, DHT_OPERATION_HISTORY_MAX_RECORDS, FILE_BASE64_CHUNK_BYTES, FRIEND_REQUEST_LONG_RATE_LIMIT, FRIEND_REQUEST_LONG_RATE_WINDOW_MS, FRIEND_REQUEST_RATE_LIMIT, FRIEND_REQUEST_RATE_WINDOW_MS, GROUP_EVENT_PAYLOAD_PREFIX, GROUP_SENDER_KEY_PAYLOAD_PREFIX, LOCAL_IDENTITIES_KEY, MAILBOX_DEDUPE_MAX_RECORDS, MAILBOX_DEDUPE_RETENTION_MS, MAILBOX_HINT_BACKGROUND_REFRESH_DELAY_MS, MAILBOX_LONG_POLL_TIMEOUT_MS, MAILBOX_LONG_POLL_WAIT_SECONDS, MAX_CONTACT_CARD_BYTES, MAX_FILE_BYTES, MAX_OUTBOX_RETRY_COUNT, MAX_PROFILE_AVATAR_BYTES, MAX_RTC_TEXT_BYTES, MAX_SIGNAL_BYTES, MAX_TEXT_MESSAGE_BYTES, NODE_FETCH_TIMEOUT_MS, PERSIST_DEBOUNCE_MS, PROFILE_AVATAR_DIMENSION, SECURE_SESSION_RECOVERY_COOLDOWN_MS } from './app-constants'
 import { ensureUiTextSize, formatBytes, newId, randomBase64Url, safeJson, utf8Bytes } from './app-utils'
 import { activeContactSealedSlotRiskFor, contactActiveDeviceIds, contactAllKnownDevicesRevoked, contactCardDeviceCerts, contactKnownRevokedDeviceCount, contactRevokedDeviceCount, contactRevokedDeviceDetails, contactRevokedDeviceIds, contactSealedSlotStatusText, mergeContactCard } from './contact-utils'
+import { mailboxDedupeIds, mailboxEventSummaryText, mailboxFailureCategory, mailboxFailureDisplayText, mailboxFailureRecoveryHint } from './mailbox-utils'
 import type { IdentityOutput, RestoreOutput, ReencryptIdentityBackupOutput, DeviceOutput, DeviceRevokeInfo, DeviceCertItem, ContactInfo, ContactItem, FilterLevel, FilterAction, SafetyPolicy, GroupInviteItem, FriendRequestItem, FriendRequestRateRecord, GroupItem, GroupSenderKeyItem, MessageStatus, ChatMessage, OutgoingMessageJob, PerDeviceEnvelopeV1, MessageReceiptSyncItem, RatchetSessionItem, PendingSecureSessionOfferItem, OutboxItem, OutboxSyncSummary, MailboxFailedItem, MailboxFailureCategory, ContactCardUpdateFanoutRecord, ContactCardDhtAutoRefreshRecord, ProcessedMailboxRecord, PersistedState, IdentityAndSecurityBackupState, PersistedMeta, SelfSyncPackage, SelfSyncRequestPackage, SelfSyncCachedPackage, SelfSyncRequestRecord, LocalIdentityRecord, EncryptedStringV1 } from './app-types'
 
 const LoginPage = defineAsyncComponent(() => import('./components/LoginPage.vue'))
@@ -308,34 +309,6 @@ watch([loggedIn, nodeEnabled, autoMailboxTake], () => {
 watch([currentPage, activePeerId], () => {
   if (currentPage.value === 'chat' && activePeerId.value) markPeerConversationRead(activePeerId.value)
 })
-function mailboxFailureRecoveryHint(reason: string): string {
-  if (/本地安全会话尚未建立|Ratchet Session/i.test(reason)) return '正在自动恢复安全会话；恢复后可继续接收新消息，请对方重发这条消息。'
-  if (/未知联系人|not-a-friend|还不是好友/.test(reason)) return '先添加/恢复联系人，再重试该 Mailbox 项。'
-  if (/安全策略/.test(reason)) return '确认联系人状态和设备信息后再重试。'
-  if (/sealed slot|设备|device/i.test(reason)) return '刷新 ContactCard DHT 或等待设备证书更新后重试。'
-  if (/群|group/i.test(reason)) return '先接受群邀请或修复群成员状态，再重试。'
-  if (/过期|expired/i.test(reason)) return '该载荷可能已过期；建议清空失败项。'
-  if (/解密|签名|invalid|signature/i.test(reason)) return '载荷验签/解密失败；保留诊断报告后可清空。'
-  return '修复对应联系人/群聊/同步状态后点击重试。'
-}
-function mailboxFailureCategory(reason: string): MailboxFailureCategory {
-  if (/本地安全会话尚未建立|Ratchet Session/i.test(reason)) return 'session'
-  if (/未知联系人|not-a-friend|还不是好友|已拉黑联系人/.test(reason)) return 'contact'
-  if (/安全策略|sealed slot|设备|device/i.test(reason)) return 'security'
-  if (/过期|expired/i.test(reason)) return 'expired'
-  if (/解密|签名|invalid|signature|cryptographic operation failed/i.test(reason)) return 'decrypt'
-  return 'other'
-}
-function mailboxFailureDisplayText(reason: string): string {
-  switch (mailboxFailureCategory(reason)) {
-    case 'session': return '安全会话暂未就绪'
-    case 'contact': return '联系人状态需要处理'
-    case 'security': return '联系人安全信息需要处理'
-    case 'expired': return '消息已过期'
-    case 'decrypt': return '消息暂时无法解密'
-    default: return '消息暂时无法处理'
-  }
-}
 const mailboxFailedRecoveryItems = computed(() => mailboxFailedItems.value.slice(0, 12).map((item) => ({
   id: item.id,
   delivery_id: item.delivery_id || '',
@@ -9510,33 +9483,6 @@ async function handleMailboxPayload(item: any): Promise<{ handled: boolean; deli
   const reason = `未知类型：${kind || 'unknown'}`
   appendLog(`mailbox 消息类型 ${kind || 'unknown'} 已放入载荷输入框`)
   return { handled: false, deliveryId, reason }
-}
-
-function mailboxEventSummaryText(events: MailboxEventKind[]): string {
-  const count = (kind: MailboxEventKind) => events.filter((event) => event === kind).length
-  const parts = [
-    ['消息', count('message')],
-    ['文件', count('file')],
-    ['好友请求', count('friend-request')],
-    ['好友通过', count('friend-response')],
-    ['群邀请', count('group-invite')],
-    ['安全会话', count('secure-session')],
-    ['身份与安全备份', count('data-backup')],
-    ['自同步', count('self-sync')],
-    ['回执', count('delivery-ack') + count('read-receipt')],
-  ].filter(([, n]) => Number(n) > 0).map(([label, n]) => `${label} ${n}`)
-  return parts.length ? parts.join('，') : `已处理 ${events.length} 条`
-}
-
-function mailboxDedupeIds(deliveryId?: string, messageId?: string, protocolMessageId?: string, profileUpdateId?: string): string[] {
-  return [
-    deliveryId,
-    messageId ? `message:${messageId}` : '',
-    protocolMessageId ? `protocol:${protocolMessageId}` : '',
-    profileUpdateId ? `profile:${profileUpdateId}` : '',
-  ]
-    .map((id) => (id || '').trim())
-    .filter(Boolean)
 }
 
 function rememberProcessedMailboxIds(ids: string[]) {
