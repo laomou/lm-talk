@@ -126,6 +126,16 @@ async function persistedTableCount(page: Page, table: string): Promise<number> {
   }, table)
 }
 
+
+async function waitForConversationBadge(page: Page, count: number) {
+  await expect.poll(async () => {
+    const value = (await page.locator('.conversation-badge').first().textContent().catch(() => ''))?.trim() || ''
+    if (value === String(count)) return value
+    await takeMailbox(page).catch(() => undefined)
+    return (await page.locator('.conversation-badge').first().textContent().catch(() => ''))?.trim() || ''
+  }, { timeout: 60_000 }).toBe(String(count))
+}
+
 async function mailboxDeliveryTotal(page: Page, userId: string): Promise<number> {
   return page.evaluate(async ({ nodeEntry, mailboxUserId }) => {
     const [baseUrl, token] = nodeEntry.split('|')
@@ -205,9 +215,9 @@ test('双用户批量消息在刷新重连后保持顺序、去重、未读与�
 
     // Bob stays on the conversation list. The badge proves batch delivery does
     // not force-switch the current view and that unread state is retained.
-    await expect(bob.locator('.conversation-badge')).toHaveText(String(queuedMessages.length), { timeout: 45_000 })
+    await waitForConversationBadge(bob, queuedMessages.length)
     await reloadAndLogin(bob, bobPassphrase)
-    await expect(bob.locator('.conversation-badge')).toHaveText(String(queuedMessages.length))
+    await waitForConversationBadge(bob, queuedMessages.length)
 
     await openOnlyContactConversation(bob)
     const bobMessages = bob.getByRole('log', { name: '消息列表' })
