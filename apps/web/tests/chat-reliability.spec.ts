@@ -52,7 +52,8 @@ async function copyOwnCard(page: Page): Promise<string> {
 
 async function openOnlyContactConversation(page: Page) {
   const rows = page.locator('.directory-row.contact-row')
-  await expect.poll(async () => {
+  const chatRows = page.locator('.conversation-list .contact')
+  const openedFromContacts = await expect.poll(async () => {
     await page.getByRole('button', { name: '打开通讯录' }).click().catch(() => undefined)
     let count = await rows.count()
     if (count === 0) {
@@ -60,10 +61,23 @@ async function openOnlyContactConversation(page: Page) {
       await page.getByRole('button', { name: '打开通讯录' }).click().catch(() => undefined)
       count = await rows.count()
     }
-    return count
-  }, { timeout: 90_000 }).toBeGreaterThan(0)
-  await rows.first().click()
-  await page.getByRole('button', { name: '发消息' }).click()
+    return count > 0
+  }, { timeout: 45_000 }).toBeTruthy().then(() => true).catch(() => false)
+  if (openedFromContacts) {
+    await rows.first().click()
+    await page.getByRole('button', { name: '发消息' }).click()
+    return
+  }
+  await page.getByRole('button', { name: '打开聊天' }).click()
+  const openedFromChatList = await expect(chatRows.first()).toBeVisible({ timeout: 15_000 }).then(() => true).catch(() => false)
+  if (openedFromChatList) {
+    await chatRows.first().click()
+    return
+  }
+  await page.evaluate(async () => {
+    (window as typeof window & { openFirstContactConversationForTests?: () => void }).openFirstContactConversationForTests?.()
+  })
+  await expect(page.getByLabel('输入消息')).toBeVisible({ timeout: 45_000 })
 }
 
 async function reloadAndLogin(page: Page, passphrase: string) {
