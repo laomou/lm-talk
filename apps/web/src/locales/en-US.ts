@@ -76,7 +76,7 @@ export default {
     fullDataBackupText: 'Identity and security backup text',
     fullDataBackupPlaceholder: 'Generate a backup, or paste lm-data-backup-v1 text to import',
 
-    securityStatus: 'Security status',
+  securityStatus: 'Security status',
     securityStatusDescription: 'Encrypted chats are created after friendship is established. Revoked devices or security changes are shown in contacts and chats.',
     securityBlocked: 'Sending blocked',
     securityRefreshSuggested: 'Refresh suggested',
@@ -139,6 +139,7 @@ export default {
   sendDangerousFileTitle: 'Send risky file type', sendDangerousFileMessage: 'File “{name}” is an executable/script-like high-risk type. LM Talk will not auto-open attachments, but the recipient may trigger system risk after downloading. Continue?',
   decryptDangerousFileTitle: 'Decrypt risky file type', decryptDangerousFileMessage: 'File “{name}” is an executable/script-like high-risk type. Decrypt and create a download link only if you trust the source. Continue?',
   },
+  trustStatus: { verified: 'Verified', unverified: 'Verify', blocked: 'Security issue' },
   securityStatus: { normal: 'Security status normal', abnormal: 'Security status abnormal' },
   chatView: {
     title: 'Chats',

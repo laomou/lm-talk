@@ -81,21 +81,28 @@ function scrollToAlpha(key: string) {
   const target = contactListEl.value?.querySelector<HTMLElement>(`#${alphaDomId(key)}`)
   target?.scrollIntoView({ block: 'start', behavior: 'smooth' })
 }
-function trustIconName(contact: any) {
-  return props.ctx.contactAllKnownDevicesRevoked(contact) ? 'alert' : 'lock'
+function trustLevel(contact: any): 'verified' | 'unverified' | 'blocked' {
+  const status = props.ctx.contactStrictE2eeStatus(contact)
+  if (status.level === 'blocking') return 'blocked'
+  return contact.fingerprint_verified_at ? 'verified' : 'unverified'
 }
 function trustTitle(contact: any) {
-  return props.ctx.contactAllKnownDevicesRevoked(contact) ? t('securityStatus.abnormal') : t('securityStatus.normal')
+  const level = trustLevel(contact)
+  return level === 'verified'
+    ? t('trustStatus.verified')
+    : level === 'blocked'
+      ? t('trustStatus.blocked')
+      : t('trustStatus.unverified')
 }
 function contactSecurityStatus(contact: any) {
   return props.ctx.contactStrictE2eeStatus(contact)
 }
 function contactSecurityTone(contact: any) {
-  const level = contactSecurityStatus(contact).level
-  return level === 'blocking' ? 'danger' : level === 'advisory' ? 'warning' : 'success'
+  const level = trustLevel(contact)
+  return level === 'verified' ? 'success' : level === 'blocked' ? 'danger' : 'warning'
 }
 function contactSecurityIcon(contact: any): 'alert' | 'check' {
-  return contactSecurityStatus(contact).level === 'ok' ? 'check' : 'alert'
+  return trustLevel(contact) === 'verified' ? 'check' : 'alert'
 }
 function shortId(value?: string) {
   if (!value) return ''
@@ -175,7 +182,7 @@ watch(
                 <b>{{ c.display_name || t('contactsView.unnamed') }}</b>
                 <small>{{ shortId(c.user_id) }}</small>
               </span>
-              <UiStatusBadge :tone="contactSecurityTone(c)" :title="contactSecurityStatus(c).detail" :aria-label="contactSecurityStatus(c).label"><UiIcon :name="contactSecurityIcon(c)" size="13" /></UiStatusBadge>
+              <UiStatusBadge :tone="contactSecurityTone(c)" :title="trustTitle(c)" :aria-label="trustTitle(c)"><UiIcon :name="contactSecurityIcon(c)" size="13" /></UiStatusBadge>
               <span class="chevron">›</span>
             </button>
           </template>
@@ -238,7 +245,7 @@ watch(
           <button v-for="c in visibleContacts" :key="c.user_id" class="directory-row contact-row" @click="openContact(c.user_id)">
             <UiAvatar :src="c.avatar_data_url" :name="c.display_name" :seed="c.user_id" />
             <span class="directory-main"><b>{{ c.display_name || t('contactsView.unnamed') }}</b><small>{{ shortId(c.user_id) }}</small></span>
-            <UiStatusBadge :tone="contactSecurityTone(c)" :title="contactSecurityStatus(c).detail" :aria-label="contactSecurityStatus(c).label"><UiIcon :name="contactSecurityIcon(c)" size="13" /></UiStatusBadge>
+            <UiStatusBadge :tone="contactSecurityTone(c)" :title="trustTitle(c)" :aria-label="trustTitle(c)"><UiIcon :name="contactSecurityIcon(c)" size="13" /></UiStatusBadge>
             <span class="chevron">›</span>
           </button>
           <UiEmptyState v-if="visibleContacts.length === 0" icon="search" :title="t('contactsView.noContactMatchesTitle')" :description="t('contactsView.noContactMatchesDescription')" />
@@ -284,14 +291,14 @@ watch(
           <UiAvatar size="large" :src="ctx.activeContact.value.avatar_data_url" :name="ctx.activeContact.value.display_name" :seed="ctx.activeContact.value.user_id" />
           <div class="detail-hero-text">
             <h2>{{ ctx.activeContact.value.display_name || t('contactsView.unnamed') }}</h2>
-            <UiStatusBadge v-if="ctx.activeContact.value.state === 'Friend'" :tone="contactSecurityTone(ctx.activeContact.value)" :title="contactSecurityStatus(ctx.activeContact.value).detail" :aria-label="contactSecurityStatus(ctx.activeContact.value).label"><UiIcon :name="contactSecurityIcon(ctx.activeContact.value)" size="13" /></UiStatusBadge>
+            <UiStatusBadge v-if="ctx.activeContact.value.state === 'Friend'" :tone="contactSecurityTone(ctx.activeContact.value)" :title="trustTitle(ctx.activeContact.value)" :aria-label="trustTitle(ctx.activeContact.value)"><UiIcon :name="contactSecurityIcon(ctx.activeContact.value)" size="13" /></UiStatusBadge>
             <small>{{ shortId(ctx.activeContact.value.user_id) }}</small>
           </div>
         </div>
         <div class="detail-body narrow contact-detail-centered">
           <button class="primary-action" @click="ctx.selectContact(ctx.activeContact.value.user_id); ctx.goChatPage()">{{ t('contactsView.sendMessage') }}</button>
           <UiSection v-if="ctx.activeContact.value.state === 'Friend'" :title="t('contactsView.securityStatus')">
-            <template #actions><UiStatusBadge :tone="contactSecurityTone(ctx.activeContact.value)" :title="contactSecurityStatus(ctx.activeContact.value).detail" :aria-label="contactSecurityStatus(ctx.activeContact.value).label"><UiIcon :name="contactSecurityIcon(ctx.activeContact.value)" size="13" /></UiStatusBadge></template>
+            <template #actions><UiStatusBadge :tone="contactSecurityTone(ctx.activeContact.value)" :title="trustTitle(ctx.activeContact.value)" :aria-label="trustTitle(ctx.activeContact.value)"><UiIcon :name="contactSecurityIcon(ctx.activeContact.value)" size="13" /></UiStatusBadge></template>
             <small>{{ contactSecurityStatus(ctx.activeContact.value).label }}：{{ contactSecurityStatus(ctx.activeContact.value).detail }}</small>
             <small v-if="ctx.contactRevokedDeviceCount(ctx.activeContact.value)" class="danger-text">{{ t('contactsView.revokedDevices', { count: ctx.contactRevokedDeviceCount(ctx.activeContact.value) }) }}</small>
             <UiActionGroup v-if="contactSecurityStatus(ctx.activeContact.value).level !== 'ok'">

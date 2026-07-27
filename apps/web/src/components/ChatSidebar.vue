@@ -90,7 +90,10 @@ const conversations = computed<ConversationItem[]>(() => {
     const failed = stats.failedByUser.get(contact.user_id) ?? 0
     const active = contact.user_id === activePeerId
     if (!last && !active && !pending && !failed) continue
-    const trustRevoked = contact.state === 'Friend' ? props.ctx.contactAllKnownDevicesRevoked(contact) : false
+    const trustLevel = contact.state === 'Friend'
+      ? (props.ctx.contactStrictE2eeStatus(contact).level === 'blocking' ? 'blocked' : (contact.fingerprint_verified_at ? 'verified' : 'unverified'))
+      : 'unverified'
+    const trustRevoked = trustLevel !== 'verified'
     const deliveryTone: DeliveryTone | '' = failed ? 'failed' : pending ? 'pending' : ''
     items.push({
       type: 'contact',
@@ -112,8 +115,8 @@ const conversations = computed<ConversationItem[]>(() => {
           ? t('chatView.conversationPending', { count: pending })
           : '',
       deliveryTone,
-      trustIcon: trustRevoked ? 'alert' : 'lock',
-      trustTitle: contact.state === 'Friend' ? (trustRevoked ? t('securityStatus.abnormal') : t('securityStatus.normal')) : '',
+      trustIcon: trustLevel === 'blocked' ? 'alert' : 'lock',
+      trustTitle: contact.state === 'Friend' ? (trustLevel === 'verified' ? t('trustStatus.verified') : trustLevel === 'blocked' ? t('trustStatus.blocked') : t('trustStatus.unverified')) : '',
       trustRevoked,
     })
   }

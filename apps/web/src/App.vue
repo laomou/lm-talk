@@ -1154,7 +1154,7 @@ function contactStrictE2eeStatus(contact: ContactItem): {
   if (blockers.length) {
     return {
       level: 'blocking',
-      label: '发送受阻',
+      label: '暂不能安全发送',
       detail: blockers.join('；'),
     }
   }
@@ -1162,13 +1162,13 @@ function contactStrictE2eeStatus(contact: ContactItem): {
   if (advisories.length) {
     return {
       level: 'advisory',
-      label: '安全信息待刷新',
-      detail: `不影响聊天：${advisories.join('；')}`,
+      label: '建议刷新安全信息',
+      detail: '不影响聊天，可在联系人详情刷新安全信息。',
     }
   }
   return {
     level: 'ok',
-    label: '安全状态正常',
+    label: '可安全聊天',
     detail: '核心安全条件已满足。',
   }
 }
