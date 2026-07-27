@@ -17,6 +17,8 @@ import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{ ctx: any }>()
 const keyword = ref('')
+const debouncedKeyword = ref('')
+const contactSearchPending = ref(false)
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
@@ -24,6 +26,7 @@ const QrScanner = defineAsyncComponent(() => import('./QrScanner.vue'))
 const scannerOpen = ref(false)
 const contactListEl = ref<HTMLElement | null>(null)
 const isSearchPage = computed(() => route.path === '/contacts/search')
+const CONTACT_SEARCH_LIMIT = 50
 type View = 'home' | 'friends' | 'search' | 'add' | 'detail' | 'group-invites'
 const view = computed<View>(() => {
   if (route.path === '/contacts/new-friends') return 'friends'
@@ -36,12 +39,19 @@ const view = computed<View>(() => {
 
 const requestCount = computed(() => props.ctx.visibleFriendRequests.value.length)
 const groupInviteCount = computed(() => props.ctx.groupInvites.value.length)
-const contactQuery = computed(() => keyword.value.trim().toLowerCase())
+const contactQuery = computed(() => debouncedKeyword.value.trim().toLowerCase())
 const friendContacts = computed(() => props.ctx.contacts.value.filter((c: any) => c.state === 'Friend'))
 const visibleContacts = computed(() => {
   const q = contactQuery.value
   if (!q) return friendContacts.value
   return friendContacts.value.filter((c: any) => `${c.display_name || ''} ${c.user_id || ''}`.toLowerCase().includes(q))
+})
+const searchVisibleContacts = computed(() => isSearchPage.value ? visibleContacts.value.slice(0, CONTACT_SEARCH_LIMIT) : visibleContacts.value)
+const contactSearchStatus = computed(() => {
+  if (!keyword.value.trim()) return ''
+  if (contactSearchPending.value) return t('contactsView.searchingContacts')
+  if (visibleContacts.value.length > searchVisibleContacts.value.length) return t('contactsView.searchResultsLimited', { count: CONTACT_SEARCH_LIMIT })
+  return t('contactsView.searchResultsCount', { count: visibleContacts.value.length })
 })
 const groupedContacts = computed(() => {
   const groups = new Map<string, any[]>()
@@ -149,6 +159,20 @@ watch(
     if (path !== '/contacts/search') keyword.value = ''
   },
 )
+watch(keyword, (value, _, onCleanup) => {
+  const q = value.trim()
+  if (!q) {
+    debouncedKeyword.value = ''
+    contactSearchPending.value = false
+    return
+  }
+  contactSearchPending.value = true
+  const timer = window.setTimeout(() => {
+    debouncedKeyword.value = q
+    contactSearchPending.value = false
+  }, 160)
+  onCleanup(() => window.clearTimeout(timer))
+})
 </script>
 
 <template>
@@ -242,13 +266,14 @@ watch(
         </UiPageHeader>
         <div class="contact-directory search-directory">
           <h3 class="alpha-heading">{{ t('contactsView.contacts') }}</h3>
-          <button v-for="c in visibleContacts" :key="c.user_id" class="directory-row contact-row" @click="openContact(c.user_id)">
+          <small v-if="contactSearchStatus" class="contact-search-status">{{ contactSearchStatus }}</small>
+          <button v-for="c in searchVisibleContacts" :key="c.user_id" class="directory-row contact-row" @click="openContact(c.user_id)">
             <UiAvatar :src="c.avatar_data_url" :name="c.display_name" :seed="c.user_id" />
             <span class="directory-main"><b>{{ c.display_name || t('contactsView.unnamed') }}</b><small>{{ shortId(c.user_id) }}</small></span>
             <UiStatusBadge :tone="contactSecurityTone(c)" :title="trustTitle(c)" :aria-label="trustTitle(c)"><UiIcon :name="contactSecurityIcon(c)" size="13" /></UiStatusBadge>
             <span class="chevron">›</span>
           </button>
-          <UiEmptyState v-if="visibleContacts.length === 0" icon="search" :title="t('contactsView.noContactMatchesTitle')" :description="t('contactsView.noContactMatchesDescription')" />
+          <UiEmptyState v-if="!contactSearchPending && searchVisibleContacts.length === 0" icon="search" :title="t('contactsView.noContactMatchesTitle')" :description="t('contactsView.noContactMatchesDescription')" />
         </div>
       </section>
 
