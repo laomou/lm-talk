@@ -3,15 +3,15 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { setLocale, type SupportedLocale } from '../i18n'
-import UiPageHeader from './UiPageHeader.vue'
-import UiListRow from './UiListRow.vue'
-import UiStatusBadge from './UiStatusBadge.vue'
 import UiCard from './UiCard.vue'
 import UiField from './UiField.vue'
 import UiSection from './UiSection.vue'
 import UiActionGroup from './UiActionGroup.vue'
-import UiListGroup from './UiListGroup.vue'
+import UiStatusBadge from './UiStatusBadge.vue'
 import UiAvatar from './UiAvatar.vue'
+import MeHero from './MeHero.vue'
+import MeHomeRow from './MeHomeRow.vue'
+import MeSubPageHeader from './MeSubPageHeader.vue'
 
 const props = defineProps<{ ctx: any }>()
 type MeView = 'home' | 'profile' | 'backup' | 'security' | 'sync' | 'settings' | 'about'
@@ -111,38 +111,29 @@ function onAvatarSelected(event: Event) {
   <div class="me-page">
     <div class="me-inner">
       <template v-if="view === 'home'">
-        <header class="me-hero">
-          <UiAvatar class="me-avatar" size="large" :src="ctx.myProfileAvatarDataUrl.value" :name="ctx.displayName.value" :seed="ctx.identity.value?.user_id" />
-          <div class="me-hero-text">
-            <h2>{{ ctx.displayName.value || t('settingsView.unnamed') }}</h2>
-            <small>{{ ctx.identity.value?.user_id }}</small>
-          </div>
-        </header>
+        <MeHero
+          :avatar-src="ctx.myProfileAvatarDataUrl.value"
+          :display-name="ctx.displayName.value"
+          :user-id="ctx.identity.value?.user_id"
+          :unnamed-label="t('settingsView.unnamed')"
+        />
 
         <UiCard>
-          <UiListGroup class="product-me-rows">
-            <UiListRow @click="router.push('/me/profile')">{{ t('me.profile') }}</UiListRow>
-            <UiListRow @click="router.push('/me/backup')">
-              {{ t('me.backup') }}
-              <template #end><UiStatusBadge compact :tone="backupStatus.tone">{{ backupStatus.text }}</UiStatusBadge><span class="chevron">›</span></template>
-            </UiListRow>
-            <UiListRow @click="router.push('/me/security')">{{ t('me.security') }}</UiListRow>
-            <UiListRow @click="router.push('/me/sync')">
-              {{ t('me.sync') }}
-              <template #end><UiStatusBadge compact :tone="syncStatus.tone">{{ syncStatus.text }}</UiStatusBadge><span class="chevron">›</span></template>
-            </UiListRow>
-            <UiListRow @click="router.push('/me/preferences')">{{ t('me.settings') }}</UiListRow>
-            <UiListRow @click="router.push('/me/about')">{{ t('me.about') }}</UiListRow>
-          </UiListGroup>
+          <MeHomeRow :label="t('me.profile')" @click="router.push('/me/profile')" />
+          <MeHomeRow :label="t('me.backup')" :status-text="backupStatus.text" :status-tone="backupStatus.tone" @click="router.push('/me/backup')" />
+          <MeHomeRow :label="t('me.security')" @click="router.push('/me/security')" />
+          <MeHomeRow :label="t('me.sync')" :status-text="syncStatus.text" :status-tone="syncStatus.tone" @click="router.push('/me/sync')" />
+          <MeHomeRow :label="t('me.settings')" @click="router.push('/me/preferences')" />
+          <MeHomeRow :label="t('me.about')" @click="router.push('/me/about')" />
         </UiCard>
 
         <UiCard>
-          <UiListRow danger :aria-label="t('me.logout')" @click="ctx.logout">{{ t('me.logout') }}</UiListRow>
+          <MeHomeRow danger :label="t('me.logout')" :aria-label="t('me.logout')" @click="ctx.logout" />
         </UiCard>
       </template>
 
       <template v-else-if="view === 'profile'">
-        <UiPageHeader :title="t('settingsView.profileTitle')" :back-label="t('settingsView.backToMe')" @back="backHome" />
+        <MeSubPageHeader :title="t('settingsView.profileTitle')" :back-label="t('settingsView.backToMe')" @back="backHome" />
         <UiSection :title="t('settingsView.myProfile')">
           <UiField :label="t('settingsView.displayName')" for-id="display-name-input">
           <div class="inline-field">
@@ -169,7 +160,7 @@ function onAvatarSelected(event: Event) {
       </template>
 
       <template v-else-if="view === 'backup'">
-        <UiPageHeader :title="t('settingsView.identityBackup')" :back-label="t('settingsView.backToMe')" @back="backHome" />
+        <MeSubPageHeader :title="t('settingsView.identityBackup')" :back-label="t('settingsView.backToMe')" @back="backHome" />
         <UiSection :title="t('settingsView.identityBackup')" :description="t('settingsView.identityBackupDescription')">
           <template #actions><button class="secondary" @click="ctx.showQr(ctx.backupText.value, t('settingsView.exportIdentity'))">{{ t('settingsView.exportIdentity') }}</button></template>
         </UiSection>
@@ -188,7 +179,7 @@ function onAvatarSelected(event: Event) {
       </template>
 
       <template v-else-if="view === 'security'">
-        <UiPageHeader :title="t('me.security')" :back-label="t('settingsView.backToMe')" @back="backHome" />
+        <MeSubPageHeader :title="t('me.security')" :back-label="t('settingsView.backToMe')" @back="backHome" />
         <UiSection class="sync-card" :title="t('settingsView.securityStatus')" :description="t('settingsView.securityStatusDescription')">
           <template #actions><UiStatusBadge :tone="strictSecurityStatus.tone">{{ strictSecurityStatus.text }}</UiStatusBadge></template>
           <small>{{ ctx.strictE2eeReadiness.value.text }}</small>
@@ -204,9 +195,9 @@ function onAvatarSelected(event: Event) {
       </template>
 
       <template v-else-if="view === 'sync'">
-        <UiPageHeader :title="t('me.sync')" :back-label="t('settingsView.backToMe')" @back="backHome">
+        <MeSubPageHeader :title="t('me.sync')" :back-label="t('settingsView.backToMe')" @back="backHome">
           <template #end><UiStatusBadge compact :tone="syncStatus.tone">{{ syncStatus.text }}</UiStatusBadge></template>
-        </UiPageHeader>
+        </MeSubPageHeader>
         <UiSection class="sync-card" :title="t('settingsView.messageSync')">
           <template #actions><UiStatusBadge :tone="ctx.nodeEnabled.value ? 'success' : 'neutral'">{{ ctx.nodeEnabled.value ? t('settingsView.enabled') : t('settingsView.syncDisabled') }}</UiStatusBadge></template>
           <div v-if="ctx.nodeEntrySummaries.value.length && !showSyncEditor" class="outbox-list">
@@ -248,7 +239,7 @@ function onAvatarSelected(event: Event) {
       </template>
 
       <template v-else-if="view === 'settings'">
-        <UiPageHeader :title="t('me.settings')" :back-label="t('common.backToMe')" @back="backHome" />
+        <MeSubPageHeader :title="t('me.settings')" :back-label="t('common.backToMe')" @back="backHome" />
         <UiSection class="sync-card" :title="t('me.language')" :description="t('me.languageDescription')">
           <UiField :label="t('me.language')" for-id="locale-select">
             <select id="locale-select" :value="locale" aria-label="Language" @change="changeLocale">
@@ -266,7 +257,7 @@ function onAvatarSelected(event: Event) {
       </template>
 
       <template v-else-if="view === 'about'">
-        <UiPageHeader :title="t('settingsView.about')" :back-label="t('settingsView.backToMe')" @back="backHome" />
+        <MeSubPageHeader :title="t('settingsView.about')" :back-label="t('settingsView.backToMe')" @back="backHome" />
         <UiCard class="about-card">
           <h2>LM Talk Web</h2>
           <p>{{ ctx.webVersionText }}</p>
