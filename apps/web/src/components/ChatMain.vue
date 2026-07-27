@@ -339,11 +339,25 @@ function onComposerKeydown(e: KeyboardEvent) {
   e.preventDefault()
   props.ctx.sendMessage()
 }
+function trustLevel(contact: any): 'verified' | 'unverified' | 'blocked' {
+  const status = props.ctx.contactStrictE2eeStatus(contact)
+  if (status.level === 'blocking') return 'blocked'
+  return contact.fingerprint_verified_at ? 'verified' : 'unverified'
+}
 function trustIconName(contact: any) {
-  return props.ctx.contactAllKnownDevicesRevoked(contact) ? 'alert' : 'lock'
+  return trustLevel(contact) === 'blocked' ? 'alert' : 'lock'
 }
 function trustTitle(contact: any) {
-  return props.ctx.contactAllKnownDevicesRevoked(contact) ? t('securityStatus.abnormal') : t('securityStatus.normal')
+  const level = trustLevel(contact)
+  return level === 'verified'
+    ? t('trustStatus.verified')
+    : level === 'blocked'
+      ? t('trustStatus.blocked')
+      : t('trustStatus.unverified')
+}
+function trustBadgeTone(contact: any): 'success' | 'warning' | 'danger' {
+  const level = trustLevel(contact)
+  return level === 'verified' ? 'success' : level === 'blocked' ? 'danger' : 'warning'
 }
 const contactSecurityStatus = computed(() => {
   const contact = props.ctx.activeContact.value
@@ -436,7 +450,7 @@ function deleteActiveConversation() {
       <div class="chat-title-block product-chat-title">
         <UiAvatar :src="ctx.activeContact.value.avatar_data_url" :name="ctx.activeContact.value.display_name" :seed="ctx.activeContact.value.user_id" />
         <h2>{{ ctx.activeContact.value.display_name || t('chatView.unnamedContact') }}</h2>
-        <UiStatusBadge :tone="ctx.contactAllKnownDevicesRevoked(ctx.activeContact.value) ? 'warning' : 'success'" compact :title="trustTitle(ctx.activeContact.value)" :aria-label="trustTitle(ctx.activeContact.value)"><UiIcon :name="trustIconName(ctx.activeContact.value)" size="13" /></UiStatusBadge>
+        <UiStatusBadge :tone="trustBadgeTone(ctx.activeContact.value)" compact :title="trustTitle(ctx.activeContact.value)" :aria-label="trustTitle(ctx.activeContact.value)"><UiIcon :name="trustIconName(ctx.activeContact.value)" size="13" /></UiStatusBadge>
       </div>
       <div class="chat-header-actions product-chat-actions">
         <button
@@ -500,7 +514,7 @@ function deleteActiveConversation() {
     </UiNotice>
 
     <UiNotice
-      v-else-if="!messageSearchOpen && contactSecurityStatus && contactSecurityStatus.level !== 'ok'"
+      v-else-if="!messageSearchOpen && contactSecurityStatus && contactSecurityStatus.level === 'blocking'"
       compact
       :tone="contactSecurityTone(contactSecurityStatus)"
     >

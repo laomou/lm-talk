@@ -76,7 +76,7 @@ export default {
     fullDataBackupText: '身份与安全备份文本',
     fullDataBackupPlaceholder: '点击生成备份，或粘贴 lm-data-backup-v1 文本后导入',
 
-    securityStatus: '安全状态',
+  securityStatus: '安全状态',
     securityStatusDescription: '好友关系建立后会自动创建加密会话。对方设备被撤销或安全信息异常时，会在联系人和聊天中提示。',
     securityBlocked: '发送受阻',
     securityRefreshSuggested: '建议刷新',
@@ -139,6 +139,7 @@ export default {
   sendDangerousFileTitle: '发送危险类型文件', sendDangerousFileMessage: '文件「{name}」属于可执行/安装脚本等高风险类型。LM Talk 不会自动打开附件，但接收方下载后可能触发系统风险。确认继续发送？',
   decryptDangerousFileTitle: '解密危险类型文件', decryptDangerousFileMessage: '文件「{name}」属于可执行/安装脚本等高风险类型。确认来源可信后再解密并生成下载链接。继续？',
   },
+  trustStatus: { verified: '已核验', unverified: '需核验', blocked: '安全异常' },
   securityStatus: { normal: '安全状态正常', abnormal: '安全状态异常' },
   chatView: {
     title: '聊天',
