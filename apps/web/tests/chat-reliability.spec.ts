@@ -75,18 +75,19 @@ async function openOnlyContactConversation(page: Page) {
     return
   }
   await expect.poll(async () => {
-    return page.evaluate(async () => {
+    await page.evaluate(async () => {
       try {
         await (window as typeof window & { openFirstContactConversationForTests?: () => Promise<void> }).openFirstContactConversationForTests?.()
-        return true
       } catch {
         await (window as typeof window & { takeMailboxForTests?: () => Promise<void> }).takeMailboxForTests?.().catch(() => undefined)
-        return false
       }
     })
-  }, { timeout: 60_000 }).toBeTruthy()
+    if (await page.getByLabel('输入消息').isVisible().catch(() => false)) return true
+    await takeMailbox(page).catch(() => undefined)
+    return page.getByLabel('输入消息').isVisible().catch(() => false)
+  }, { timeout: 90_000 }).toBeTruthy()
   await expect(page).toHaveURL(/#\/chat\//, { timeout: 15_000 })
-  await expect(page.getByLabel('输入消息')).toBeVisible({ timeout: 45_000 })
+  await expect(page.getByLabel('输入消息')).toBeVisible({ timeout: 15_000 })
 }
 
 async function reloadAndLogin(page: Page, passphrase: string) {
