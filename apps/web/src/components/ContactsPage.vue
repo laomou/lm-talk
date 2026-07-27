@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import UiPageHeader from './UiPageHeader.vue'
 import UiListRow from './UiListRow.vue'
 import UiStatusBadge from './UiStatusBadge.vue'
@@ -12,7 +12,6 @@ import UiActionGroup from './UiActionGroup.vue'
 import UiListGroup from './UiListGroup.vue'
 import UiNavRow from './UiNavRow.vue'
 import UiAvatar from './UiAvatar.vue'
-import QrScanner from './QrScanner.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 
@@ -21,6 +20,7 @@ const keyword = ref('')
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const QrScanner = defineAsyncComponent(() => import('./QrScanner.vue'))
 const scannerOpen = ref(false)
 const contactListEl = ref<HTMLElement | null>(null)
 const isSearchPage = computed(() => route.path === '/contacts/search')

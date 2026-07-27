@@ -1,18 +1,18 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, toRaw, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, toRaw, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import LoginPage from './components/LoginPage.vue'
-import ChatPage from './components/ChatPage.vue'
-import DiagnosticsPage from './components/DiagnosticsPage.vue'
-import ContactsPage from './components/ContactsPage.vue'
-import SettingsPage from './components/SettingsPage.vue'
 import UiDialog from './components/UiDialog.vue'
 import UiActionGroup from './components/UiActionGroup.vue'
-import QRCode from 'qrcode'
 import { applyPwaUpdate, onPwaUpdateReady, readPwaStatus } from './pwa'
 import { TABLES, idbDel, idbGet, idbSet, idbTableApplyChanges, idbTableClear, idbTableGet, idbTableGetAllByPrefix, idbTableReplaceByPrefix } from './idb'
 import { WorkerRpcClient, type WorkerRpcResponse } from './workers/WorkerRpcClient'
+
+const LoginPage = defineAsyncComponent(() => import('./components/LoginPage.vue'))
+const ChatPage = defineAsyncComponent(() => import('./components/ChatPage.vue'))
+const ContactsPage = defineAsyncComponent(() => import('./components/ContactsPage.vue'))
+const SettingsPage = defineAsyncComponent(() => import('./components/SettingsPage.vue'))
+const DiagnosticsPage = defineAsyncComponent(() => import('./components/DiagnosticsPage.vue'))
 
 type IdentityOutput = {
   user_id: string
@@ -5563,6 +5563,7 @@ function upsertFriendRequestWithLocalRateLimit(item: FriendRequestItem, now = Da
 async function showQr(value: string, label: string) {
   try {
     if (!value) throw new Error('内容为空')
+    const { default: QRCode } = await import('qrcode')
     qrTitle.value = label
     qrRawText.value = value
     qrDataUrl.value = await QRCode.toDataURL(value, {
