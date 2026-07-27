@@ -11,6 +11,7 @@ import { CONTACT_CARD_DHT_FRESH_MS, CONTACT_CARD_UPDATE_ACK_STALE_MS, DHT_OPERAT
 import { ensureUiTextSize, formatBytes, newId, randomBase64Url, safeJson, utf8Bytes } from './app-utils'
 import { activeContactSealedSlotRiskFor, contactActiveDeviceIds, contactAllKnownDevicesRevoked, contactCardDeviceCerts, contactKnownRevokedDeviceCount, contactRevokedDeviceCount, contactRevokedDeviceDetails, contactRevokedDeviceIds, contactSealedSlotStatusText, mergeContactCard } from './contact-utils'
 import { mailboxDedupeIds, mailboxEventSummaryText, mailboxFailureCategory, mailboxFailureDisplayText, mailboxFailureRecoveryHint } from './mailbox-utils'
+import { isLoopbackNodeUrl, nodeEntriesFromControlUrl, nodeEntryLine, nodeTokenForUrl, nodeUrlListFromEntries, type NodeEntry } from './node-utils'
 import type { IdentityOutput, RestoreOutput, ReencryptIdentityBackupOutput, DeviceOutput, DeviceRevokeInfo, DeviceCertItem, ContactInfo, ContactItem, FilterLevel, FilterAction, SafetyPolicy, GroupInviteItem, FriendRequestItem, FriendRequestRateRecord, GroupItem, GroupSenderKeyItem, MessageStatus, ChatMessage, OutgoingMessageJob, PerDeviceEnvelopeV1, MessageReceiptSyncItem, RatchetSessionItem, PendingSecureSessionOfferItem, OutboxItem, OutboxSyncSummary, MailboxFailedItem, MailboxFailureCategory, ContactCardUpdateFanoutRecord, ContactCardDhtAutoRefreshRecord, ProcessedMailboxRecord, PersistedState, IdentityAndSecurityBackupState, PersistedMeta, SelfSyncPackage, SelfSyncRequestPackage, SelfSyncCachedPackage, SelfSyncRequestRecord, LocalIdentityRecord, EncryptedStringV1 } from './app-types'
 
 const LoginPage = defineAsyncComponent(() => import('./components/LoginPage.vue'))
@@ -3268,7 +3269,6 @@ async function refreshOutgoingMailboxDeliveryStatusesFromNode() {
   }
 }
 
-type NodeEntry = { url: string; token: string }
 type NodeEntrySummary = { url: string; token_configured: boolean; missing_remote_token: boolean }
 class NodeRequestError extends Error {
   status?: number
@@ -3287,34 +3287,10 @@ class NodeRequestError extends Error {
 }
 
 function nodeEntries(): NodeEntry[] {
-  return nodeControlUrl.value
-    .split(/[\n,]+/)
-    .map((x, index) => ({ raw: x.trim(), line: index + 1 }))
-    .filter((item) => item.raw)
-    .map(({ raw, line }) => {
-      // 每行：<url> 或 <url>|<令牌>（令牌对应节点的 --control-token）
-      const [url, token] = raw.split('|').map((s) => s.trim())
-      try {
-        const parsed = new URL(url)
-        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('protocol')
-      } catch {
-        throw new Error(`同步服务第 ${line} 行地址无效，请使用 http:// 或 https:// 开头的完整地址`)
-      }
-      return { url, token: token || '' }
-    })
-    .filter((e) => e.url)
+  return nodeEntriesFromControlUrl(nodeControlUrl.value)
 }
-function nodeEntryLine(e: NodeEntry): string { return e.token ? `${e.url}|${e.token}` : e.url }
 function nodeUrlList(): string[] {
-  return nodeEntries().map((e) => e.url)
-}
-function isLoopbackNodeUrl(url: string): boolean {
-  try {
-    const host = new URL(url).hostname.toLowerCase()
-    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]'
-  } catch {
-    return false
-  }
+  return nodeUrlListFromEntries(nodeEntries())
 }
 const nodeSettingsSummaryText = computed(() => {
   let entries: NodeEntry[]
@@ -3363,9 +3339,9 @@ const nodeTokenStorageText = computed(() => {
   return tokenCount ? `已配置 ${tokenCount} 个令牌；令牌只保存在本机浏览器，诊断报告默认不导出。` : ''
 })
 function nodeTokenFor(url: string): string {
-  const base = url.replace(/\/$/, '')
-  return nodeEntries().find((e) => e.url.replace(/\/$/, '') === base)?.token || ''
+  return nodeTokenForUrl(nodeEntries(), url)
 }
+
 
 function primaryNodeUrl(): string {
   return nodeUrlList()[0] ?? ''
