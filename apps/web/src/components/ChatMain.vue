@@ -4,6 +4,8 @@ import UiPageHeader from './UiPageHeader.vue'
 import UiIcon from './UiIcon.vue'
 import UiEmptyState from './UiEmptyState.vue'
 import UiAvatar from './UiAvatar.vue'
+import ChatAttachmentCard from './ChatAttachmentCard.vue'
+import PendingFileCard from './PendingFileCard.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 
@@ -575,34 +577,20 @@ function deleteActiveConversation() {
           <div v-if="item.kind === 'sep'" class="day-sep"><span>{{ item.label }}</span></div>
           <div v-else class="bubble" :class="[item.m.direction, { highlighted: highlightedMessageId === item.m.id }]" :data-message-id="item.m.id">
             <template v-if="isAttachmentMessage(item.m)">
-              <div class="message-attachment-card">
-                <div class="file-icon">{{ filePreviewLabel(attachmentInfo(item.m).name, attachmentInfo(item.m).mime).slice(0, 1) }}</div>
-                <div class="file-card-main">
-                  <b>{{ attachmentInfo(item.m).name }}</b>
-                  <small>{{ attachmentInfo(item.m).label }}</small>
-                  <small
-                    v-if="item.m.direction === 'in'"
-                    :class="{ 'attachment-error': item.m.attachment_error }"
-                  >{{ attachmentHint(item.m) }}</small>
-                </div>
-                <button
-                  v-if="item.m.direction === 'in' && !attachmentDownload(item.m)"
-                  class="secondary"
-                  @click="ctx.decryptAttachmentMessage(item.m.id)"
-                >{{ attachmentActionLabel(item.m) }}</button>
-                <a
-                  v-else-if="item.m.direction === 'in'"
-                  :href="attachmentDownload(item.m).url"
-                  :download="attachmentDownload(item.m).name"
-                  @click="ctx.markAttachmentDownloaded(item.m.id)"
-                >{{ t('chatView.download') }}</a>
-                <img
-                  v-if="item.m.direction === 'in' && attachmentDownload(item.m)?.mime.startsWith('image/')"
-                  class="message-attachment-preview"
-                  :src="attachmentDownload(item.m).url"
-                  :alt="attachmentDownload(item.m).name"
-                />
-              </div>
+              <ChatAttachmentCard
+                :icon="filePreviewLabel(attachmentInfo(item.m).name, attachmentInfo(item.m).mime).slice(0, 1)"
+                :name="attachmentInfo(item.m).name"
+                :label="attachmentInfo(item.m).label"
+                :hint="item.m.direction === 'in' ? attachmentHint(item.m) : ''"
+                :danger-hint="Boolean(item.m.attachment_error)"
+                :download-url="item.m.direction === 'in' && attachmentDownload(item.m) ? attachmentDownload(item.m).url : undefined"
+                :download-name="item.m.direction === 'in' && attachmentDownload(item.m) ? attachmentDownload(item.m).name : undefined"
+                :preview-url="item.m.direction === 'in' && attachmentDownload(item.m)?.mime.startsWith('image/') ? attachmentDownload(item.m).url : undefined"
+                :preview-alt="item.m.direction === 'in' && attachmentDownload(item.m) ? attachmentDownload(item.m).name : undefined"
+                :action-label="item.m.direction === 'in' && !attachmentDownload(item.m) ? attachmentActionLabel(item.m) : ''"
+                :download-label="t('chatView.download')"
+                @action="ctx.decryptAttachmentMessage(item.m.id)"
+              />
             </template>
             <div v-else class="text">{{ item.m.text }}</div>
             <small class="bubble-meta">
@@ -644,18 +632,18 @@ function deleteActiveConversation() {
 
     <footer class="composer clean-composer product-composer" v-if="!messageSearchOpen && ctx.activeContact.value && ctx.activeContact.value.state === 'Friend'" :style="{ '--chat-keyboard-inset': `${keyboardInset}px` }">
       <input ref="fileInput" class="hidden-file-input" type="file" :aria-label="t('chatView.selectAttachment')" @change="onHiddenFileChange" />
-      <div v-if="ctx.selectedFile.value" class="selected-file-card pending-file-card">
-        <div class="file-icon">{{ filePreviewLabel(ctx.selectedFile.value.name, ctx.selectedFile.value.type).slice(0, 1) }}</div>
-        <div class="file-card-main">
-          <b>{{ ctx.selectedFile.value.name }}</b>
-          <small>{{ selectedFileLabel(ctx.selectedFile.value) }}</small>
-          <small v-if="ctx.isDangerousFileName(ctx.selectedFile.value.name)" class="danger-text">{{ t('chatView.dangerousFileWarning') }}</small>
-        </div>
-        <button class="secondary danger" @click="ctx.cancelSelectedFile">{{ t('chatView.delete') }}</button>
-        <button @click="ctx.fileTransferPhase.value === '失败' ? ctx.retrySelectedFileSend() : ctx.sendSelectedFile()">
-          {{ ctx.fileTransferPhase.value === '失败' ? t('chatView.retrySendFile') : t('chatView.sendFile') }}
-        </button>
-      </div>
+      <PendingFileCard
+        v-if="ctx.selectedFile.value"
+        :icon="filePreviewLabel(ctx.selectedFile.value.name, ctx.selectedFile.value.type).slice(0, 1)"
+        :name="ctx.selectedFile.value.name"
+        :label="selectedFileLabel(ctx.selectedFile.value)"
+        :dangerous="ctx.isDangerousFileName(ctx.selectedFile.value.name)"
+        :transfer-label="t('chatView.dangerousFileWarning')"
+        :send-label="ctx.fileTransferPhase.value === '失败' ? t('chatView.retrySendFile') : t('chatView.sendFile')"
+        :delete-label="t('chatView.delete')"
+        @delete="ctx.cancelSelectedFile"
+        @send="ctx.fileTransferPhase.value === '失败' ? ctx.retrySelectedFileSend() : ctx.sendSelectedFile()"
+      />
       <div class="composer-bar">
         <button class="composer-icon" :aria-label="t('chatView.chooseAttachment')" @click="togglePanel('attach')"><UiIcon name="add" /></button>
         <textarea ref="composerTextarea" v-model="ctx.composerText.value" rows="1" :aria-label="t('chatView.inputMessage')" :placeholder="t('chatView.inputMessage') + '…'" @keydown="onComposerKeydown" @focus="onComposerFocus" />
