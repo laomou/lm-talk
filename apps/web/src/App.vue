@@ -8,7 +8,8 @@ import { applyPwaUpdate, onPwaUpdateReady, readPwaStatus } from './pwa'
 import { TABLES, idbDel, idbGet, idbSet, idbTableApplyChanges, idbTableClear, idbTableGet, idbTableGetAllByPrefix, idbTableReplaceByPrefix } from './idb'
 import { WorkerRpcClient, type WorkerRpcResponse } from './workers/WorkerRpcClient'
 import { CONTACT_CARD_DHT_FRESH_MS, CONTACT_CARD_UPDATE_ACK_STALE_MS, DHT_OPERATION_HISTORY_IMPORT_MAX_RECORDS, DHT_OPERATION_HISTORY_ITEM_MAX_CHARS, DHT_OPERATION_HISTORY_MAX_RECORDS, FILE_BASE64_CHUNK_BYTES, FRIEND_REQUEST_LONG_RATE_LIMIT, FRIEND_REQUEST_LONG_RATE_WINDOW_MS, FRIEND_REQUEST_RATE_LIMIT, FRIEND_REQUEST_RATE_WINDOW_MS, GROUP_EVENT_PAYLOAD_PREFIX, GROUP_SENDER_KEY_PAYLOAD_PREFIX, LOCAL_IDENTITIES_KEY, MAILBOX_DEDUPE_MAX_RECORDS, MAILBOX_DEDUPE_RETENTION_MS, MAILBOX_HINT_BACKGROUND_REFRESH_DELAY_MS, MAILBOX_LONG_POLL_TIMEOUT_MS, MAILBOX_LONG_POLL_WAIT_SECONDS, MAX_CONTACT_CARD_BYTES, MAX_FILE_BYTES, MAX_OUTBOX_RETRY_COUNT, MAX_PROFILE_AVATAR_BYTES, MAX_RTC_TEXT_BYTES, MAX_SIGNAL_BYTES, MAX_TEXT_MESSAGE_BYTES, NODE_FETCH_TIMEOUT_MS, PERSIST_DEBOUNCE_MS, PROFILE_AVATAR_DIMENSION, SECURE_SESSION_RECOVERY_COOLDOWN_MS } from './app-constants'
-import { base64UrlToString, ensureUiTextSize, formatBytes, newId, randomBase64Url, safeJson, utf8Bytes } from './app-utils'
+import { ensureUiTextSize, formatBytes, newId, randomBase64Url, safeJson, utf8Bytes } from './app-utils'
+import { activeContactSealedSlotRiskFor, contactActiveDeviceIds, contactAllKnownDevicesRevoked, contactCardDeviceCerts, contactKnownRevokedDeviceCount, contactRevokedDeviceCount, contactRevokedDeviceDetails, contactRevokedDeviceIds, contactSealedSlotStatusText, mergeContactCard } from './contact-utils'
 import type { IdentityOutput, RestoreOutput, ReencryptIdentityBackupOutput, DeviceOutput, DeviceRevokeInfo, DeviceCertItem, ContactInfo, ContactItem, FilterLevel, FilterAction, SafetyPolicy, GroupInviteItem, FriendRequestItem, FriendRequestRateRecord, GroupItem, GroupSenderKeyItem, MessageStatus, ChatMessage, OutgoingMessageJob, PerDeviceEnvelopeV1, MessageReceiptSyncItem, RatchetSessionItem, PendingSecureSessionOfferItem, OutboxItem, OutboxSyncSummary, MailboxFailedItem, MailboxFailureCategory, ContactCardUpdateFanoutRecord, ContactCardDhtAutoRefreshRecord, ProcessedMailboxRecord, PersistedState, IdentityAndSecurityBackupState, PersistedMeta, SelfSyncPackage, SelfSyncRequestPackage, SelfSyncCachedPackage, SelfSyncRequestRecord, LocalIdentityRecord, EncryptedStringV1 } from './app-types'
 
 const LoginPage = defineAsyncComponent(() => import('./components/LoginPage.vue'))
@@ -490,23 +491,6 @@ const activeRatchetStatusText = computed(() => {
   if (activeContact.value.state !== 'Friend') return '未建链'
   return activeRatchetSession.value ? '已建链' : '未建链'
 })
-
-function contactSealedSlotStatusText(contact: ContactItem): string {
-  const activeDeviceIds = contactActiveDeviceIds(contact)
-  if (activeDeviceIds.length === 0) return '联系人没有活跃设备证书，无法使用 sealed slot 投递。'
-  const certs = contact.device_certs ?? []
-  const sealed = activeDeviceIds.filter((deviceId) => certs.find((cert) => cert.device_id === deviceId)?.device_box_public_key).length
-  if (sealed === activeDeviceIds.length) return `sealed slot 就绪：${sealed}/${activeDeviceIds.length} 个活跃设备支持设备级加密。`
-  return `兼容模式风险：${activeDeviceIds.length - sealed}/${activeDeviceIds.length} 个活跃设备缺少 device_box_public_key，将使用 placeholder/fallback；可在设置中开启“仅发送到支持 sealed slot 的设备”阻止降级。`
-}
-
-
-function activeContactSealedSlotRiskFor(contact: ContactItem): 'ok' | 'high' {
-  const activeDeviceIds = contactActiveDeviceIds(contact)
-  if (activeDeviceIds.length === 0) return 'high'
-  const certs = contact.device_certs ?? []
-  return activeDeviceIds.some((deviceId) => !certs.find((cert) => cert.device_id === deviceId)?.device_box_public_key) ? 'high' : 'ok'
-}
 
 const activeContactSealedSlotStatusText = computed(() => activeContact.value ? contactSealedSlotStatusText(activeContact.value) : '')
 const activeContactSealedSlotRiskLevel = computed(() => activeContact.value ? activeContactSealedSlotRiskFor(activeContact.value) : 'none')
@@ -1403,16 +1387,6 @@ function run(label: string, fn: () => void, onError?: (message: string) => boole
 function normalizePassphrase(value: string): string {
   return value.normalize('NFKC').trim().replace(/\s+/gu, ' ')
 }
-
-function contactCardDeviceCerts(cardText: string): DeviceCertItem[] {
-  try {
-    const payload = cardText.slice('lm-contact-card-v1:'.length)
-    const parsed = JSON.parse(base64UrlToString(payload)) as { device_certs?: DeviceCertItem[] }
-    return Array.isArray(parsed.device_certs) ? parsed.device_certs : []
-  } catch { return [] }
-}
-
-
 
 function isEncryptedString(value: unknown): value is EncryptedStringV1 {
   return Boolean(value && typeof value === 'object' && (value as any).__lm_enc_v1 === true)
@@ -4376,30 +4350,6 @@ async function reencryptCurrentIdentityBackup() {
   })
 }
 
-function mergeContactCard(existing: ContactItem | undefined, info: ContactInfo, cardText: string): ContactItem {
-  if (existing && existing.identity_public_key !== info.identity_public_key) {
-    throw new Error('拒绝更新：Contact Card identity_public_key 与已有联系人不一致')
-  }
-  return {
-    ...(existing ?? {}),
-    ...info,
-    contact_card_text: cardText,
-    kind: 'contact',
-    state: existing?.state ?? 'LocalOnly',
-    pending_request_id: existing?.pending_request_id,
-    revoked_device_ids: existing?.revoked_device_ids,
-    device_revocations: existing?.device_revocations,
-    block_reason: existing?.block_reason,
-    read_receipts: existing?.read_receipts ?? 'default',
-    fingerprint_verified_at: existing?.fingerprint_verified_at,
-    fingerprint_verified_note: existing?.fingerprint_verified_note,
-    device_certs: info.device_certs ?? contactCardDeviceCerts(cardText),
-    avatar_data_url: existing?.avatar_data_url,
-  }
-}
-
-
-
 async function installOwnDeviceCert(out: DeviceOutput) {
   myDeviceId.value = out.device_id
   myDeviceCertJson.value = out.device_cert_json
@@ -4764,24 +4714,6 @@ async function confirmOutgoingTextIfNeeded(text: string): Promise<boolean> {
   return showConfirm(t('appDialog.riskyContentTitle'), reason, filterRank(action) >= filterRank('Hide'))
 }
 
-function contactRevokedDeviceIds(contact: ContactItem): string[] {
-  const revoked = new Set(contact.revoked_device_ids ?? [])
-  for (const item of contact.device_revocations ?? []) revoked.add(item.device_id)
-  const known = (contact.device_certs ?? []).map((cert) => cert.device_id).filter((deviceId) => revoked.has(deviceId))
-  const knownSet = new Set(known)
-  const unknown = [...revoked].filter((deviceId) => !knownSet.has(deviceId))
-  return [...known, ...unknown]
-}
-
-function contactRevokedDeviceDetails(contact: ContactItem): DeviceRevokeInfo[] {
-  const byId = new Map((contact.device_revocations ?? []).map((item) => [item.device_id, item]))
-  return contactRevokedDeviceIds(contact).map((deviceId) => byId.get(deviceId) ?? {
-    user_id: contact.user_id,
-    device_id: deviceId,
-    created_at: 0,
-  })
-}
-
 async function unmarkActiveContactRevokedDevice(deviceId: string) {
   await runAsync('解除联系人设备撤销标记', async () => {
     if (!activeContact.value) throw new Error('请选择联系人')
@@ -4799,28 +4731,9 @@ async function unmarkActiveContactRevokedDevice(deviceId: string) {
   })
 }
 
-function contactActiveDeviceIds(contact: ContactItem): string[] {
-  const revoked = new Set(contact.revoked_device_ids ?? [])
-  return (contact.device_certs ?? [])
-    .map((cert) => cert.device_id)
-    .filter((deviceId) => !revoked.has(deviceId))
-}
 
-function contactRevokedDeviceCount(contact: ContactItem): number {
-  return contactRevokedDeviceIds(contact).length
-}
 
-function contactKnownRevokedDeviceCount(contact: ContactItem): number {
-  const revoked = new Set(contact.revoked_device_ids ?? [])
-  return (contact.device_certs ?? []).filter((cert) => revoked.has(cert.device_id)).length
-}
 
-function contactAllKnownDevicesRevoked(contact: ContactItem): boolean {
-  const certs = contact.device_certs ?? []
-  if (certs.length === 0) return false
-  const revoked = new Set(contact.revoked_device_ids ?? [])
-  return certs.every((cert) => revoked.has(cert.device_id))
-}
 
 function requireContactHasActiveDevice(contact: ContactItem) {
   if (!contactAllKnownDevicesRevoked(contact)) return
