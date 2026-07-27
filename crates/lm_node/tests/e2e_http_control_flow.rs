@@ -126,9 +126,9 @@ fn http_control_plane_syncs_prekeys_and_mailbox_between_nodes() {
     wait_for_health(&base_a);
     wait_for_health(&base_b);
 
-    let health = http_request(&base_a, "GET", "/api/health", "");
+    let health = wait_for_health_body(&base_a);
     assert_eq!(health.status, 200);
-    assert!(health.body.contains("http-node-a"));
+    assert!(health.body.contains("http-node-a"), "{}", health.body);
     let health_body: serde_json::Value = serde_json::from_str(&health.body).unwrap();
     assert_eq!(health_body["dht_record_capacity"].as_u64().unwrap(), 4096);
 
@@ -926,15 +926,22 @@ fn free_port() -> u16 {
 }
 
 fn wait_for_health(addr: &str) {
+    let _ = wait_for_health_body(addr);
+}
+
+fn wait_for_health_body(addr: &str) -> HttpResponse {
     let deadline = Instant::now() + Duration::from_secs(10);
+    let mut last_response: Option<HttpResponse> = None;
     loop {
         if let Ok(response) = try_http_request(addr, "GET", "/api/health", "")
             && response.status == 200
         {
-            return;
+            return response;
+        } else if let Ok(response) = try_http_request(addr, "GET", "/api/health", "") {
+            last_response = Some(response);
         }
         if Instant::now() >= deadline {
-            panic!("timed out waiting for node health at {addr}");
+            panic!("timed out waiting for node health at {addr}; last_response={last_response:?}");
         }
         thread::sleep(Duration::from_millis(50));
     }
