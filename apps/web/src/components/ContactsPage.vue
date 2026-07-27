@@ -12,6 +12,7 @@ import UiActionGroup from './UiActionGroup.vue'
 import UiListGroup from './UiListGroup.vue'
 import UiNavRow from './UiNavRow.vue'
 import UiAvatar from './UiAvatar.vue'
+import TrustBadge from './TrustBadge.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 
@@ -316,14 +317,14 @@ watch(keyword, (value, _, onCleanup) => {
           <UiAvatar size="large" :src="ctx.activeContact.value.avatar_data_url" :name="ctx.activeContact.value.display_name" :seed="ctx.activeContact.value.user_id" />
           <div class="detail-hero-text">
             <h2>{{ ctx.activeContact.value.display_name || t('contactsView.unnamed') }}</h2>
-            <UiStatusBadge v-if="ctx.activeContact.value.state === 'Friend'" :tone="contactSecurityTone(ctx.activeContact.value)" :title="trustTitle(ctx.activeContact.value)" :aria-label="trustTitle(ctx.activeContact.value)"><UiIcon :name="contactSecurityIcon(ctx.activeContact.value)" size="13" /></UiStatusBadge>
+            <TrustBadge v-if="ctx.activeContact.value.state === 'Friend'" :level="trustLevel(ctx.activeContact.value)" compact />
             <small>{{ shortId(ctx.activeContact.value.user_id) }}</small>
           </div>
         </div>
         <div class="detail-body narrow contact-detail-centered">
           <button class="primary-action" @click="ctx.selectContact(ctx.activeContact.value.user_id); ctx.goChatPage()">{{ t('contactsView.sendMessage') }}</button>
           <UiSection v-if="ctx.activeContact.value.state === 'Friend'" :title="t('contactsView.securityStatus')">
-            <template #actions><UiStatusBadge :tone="contactSecurityTone(ctx.activeContact.value)" :title="trustTitle(ctx.activeContact.value)" :aria-label="trustTitle(ctx.activeContact.value)"><UiIcon :name="contactSecurityIcon(ctx.activeContact.value)" size="13" /></UiStatusBadge></template>
+            <template #actions><TrustBadge :level="trustLevel(ctx.activeContact.value)" compact /></template>
             <small>{{ contactSecurityStatus(ctx.activeContact.value).label }}：{{ contactSecurityStatus(ctx.activeContact.value).detail }}</small>
             <small v-if="ctx.contactRevokedDeviceCount(ctx.activeContact.value)" class="danger-text">{{ t('contactsView.revokedDevices', { count: ctx.contactRevokedDeviceCount(ctx.activeContact.value) }) }}</small>
             <UiActionGroup v-if="contactSecurityStatus(ctx.activeContact.value).level !== 'ok'">

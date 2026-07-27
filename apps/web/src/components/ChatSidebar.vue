@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import UiIcon from './UiIcon.vue'
 import UiEmptyState from './UiEmptyState.vue'
 import UiAvatar from './UiAvatar.vue'
+import TrustBadge from './TrustBadge.vue'
 
 const props = defineProps<{ ctx: any }>()
 const keyword = ref('')
@@ -30,9 +31,7 @@ type ConversationItem = {
   failed: number
   deliveryText: string
   deliveryTone: DeliveryTone | ''
-  trustIcon: 'alert' | 'lock'
-  trustTitle: string
-  trustRevoked: boolean
+  trustLevel: 'verified' | 'unverified' | 'blocked'
 }
 
 const conversationStats = computed(() => {
@@ -93,7 +92,6 @@ const conversations = computed<ConversationItem[]>(() => {
     const trustLevel = contact.state === 'Friend'
       ? (props.ctx.contactStrictE2eeStatus(contact).level === 'blocking' ? 'blocked' : (contact.fingerprint_verified_at ? 'verified' : 'unverified'))
       : 'unverified'
-    const trustRevoked = trustLevel !== 'verified'
     const deliveryTone: DeliveryTone | '' = failed ? 'failed' : pending ? 'pending' : ''
     items.push({
       type: 'contact',
@@ -115,9 +113,7 @@ const conversations = computed<ConversationItem[]>(() => {
           ? t('chatView.conversationPending', { count: pending })
           : '',
       deliveryTone,
-      trustIcon: trustLevel === 'blocked' ? 'alert' : 'lock',
-      trustTitle: contact.state === 'Friend' ? (trustLevel === 'verified' ? t('trustStatus.verified') : trustLevel === 'blocked' ? t('trustStatus.blocked') : t('trustStatus.unverified')) : '',
-      trustRevoked,
+      trustLevel,
     })
   }
   return items.sort((a, b) => b.ts - a.ts)
@@ -160,7 +156,7 @@ function retryConversation(event: Event, it: ConversationItem) {
       <div
         v-for="it in filtered"
         :key="it.type + ':' + it.id"
-        v-memo="[it.active, it.lastId, it.unread, it.pending, it.failed, it.name, it.data.avatar_data_url, it.data.state, it.trustRevoked, it.time]"
+        v-memo="[it.active, it.lastId, it.unread, it.pending, it.failed, it.name, it.data.avatar_data_url, it.data.state, it.trustLevel, it.time]"
         class="contact"
         :class="{ active: it.active }"
         role="button"
@@ -182,9 +178,8 @@ function retryConversation(event: Event, it: ConversationItem) {
               <em
                 v-else-if="it.data.state === 'Friend'"
                 class="strict-badge"
-                :class="{ danger: it.trustRevoked }"
-                :title="it.trustTitle"
-              ><UiIcon :name="it.trustIcon" size="12" /></em>
+                :class="{ danger: it.trustLevel !== 'verified' }"
+              ><TrustBadge :level="it.trustLevel" compact /></em>
             </span>
             <span v-if="it.time" class="conv-time">{{ it.time }}</span>
           </b>

@@ -4,6 +4,7 @@ import UiPageHeader from './UiPageHeader.vue'
 import UiIcon from './UiIcon.vue'
 import UiEmptyState from './UiEmptyState.vue'
 import UiAvatar from './UiAvatar.vue'
+import TrustBadge from './TrustBadge.vue'
 import ChatAttachmentCard from './ChatAttachmentCard.vue'
 import PendingFileCard from './PendingFileCard.vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -452,7 +453,7 @@ function deleteActiveConversation() {
       <div class="chat-title-block product-chat-title">
         <UiAvatar :src="ctx.activeContact.value.avatar_data_url" :name="ctx.activeContact.value.display_name" :seed="ctx.activeContact.value.user_id" />
         <h2>{{ ctx.activeContact.value.display_name || t('chatView.unnamedContact') }}</h2>
-        <UiStatusBadge :tone="trustBadgeTone(ctx.activeContact.value)" compact :title="trustTitle(ctx.activeContact.value)" :aria-label="trustTitle(ctx.activeContact.value)"><UiIcon :name="trustIconName(ctx.activeContact.value)" size="13" /></UiStatusBadge>
+        <TrustBadge :level="trustLevel(ctx.activeContact.value)" compact />
       </div>
       <div class="chat-header-actions product-chat-actions">
         <button
