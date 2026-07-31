@@ -15,6 +15,7 @@ import { isAbortError, mailboxFailedItemId, processMailboxBatch, summarizeMailbo
 import { isLoopbackNodeUrl, nodeEntriesFromControlUrl, nodeEntryLine, nodeTokenForUrl, nodeUrlListFromEntries, type NodeEntry } from './node-utils'
 import { createPersistenceCodecs, normalizeProcessedMailboxRecords as normalizePersistedMailboxRecords } from './persistence-codecs'
 import { createOutboxItem as buildOutboxItem, dueOutboxItems, isRetryableDeliveryError as isRetryableOutboxError, mailboxKindForOutboxKind as mailboxKindForOutbox, retryDelayMs as outboxRetryDelayMs } from './outbox-utils'
+import { friendRequestQuarantineReason as calculateFriendRequestQuarantineReason, recordFriendRequestRate as recordFriendRequestRateInUtils, upsertFriendRequest as upsertFriendRequestInUtils } from './friend-request-utils'
 import { KeyedTaskQueue, ratchetSessionFor as findRatchetSession, removeRatchetSession as withoutRatchetSession, saveRatchetSession as withRatchetSession } from './ratchet-runtime'
 import type { IdentityOutput, RestoreOutput, ReencryptIdentityBackupOutput, DeviceOutput, DeviceRevokeInfo, DeviceCertItem, ContactInfo, ContactItem, FilterLevel, FilterAction, SafetyPolicy, GroupInviteItem, FriendRequestItem, FriendRequestRateRecord, GroupItem, GroupSenderKeyItem, MessageStatus, ChatMessage, OutgoingMessageJob, PerDeviceEnvelopeV1, MessageReceiptSyncItem, RatchetSessionItem, PendingSecureSessionOfferItem, OutboxItem, OutboxSyncSummary, MailboxFailedItem, MailboxFailureCategory, ContactCardUpdateFanoutRecord, ContactCardDhtAutoRefreshRecord, ProcessedMailboxRecord, PersistedState, IdentityAndSecurityBackupState, PersistedMeta, SelfSyncPackage, SelfSyncRequestPackage, SelfSyncCachedPackage, SelfSyncRequestRecord, LocalIdentityRecord, EncryptedStringV1 } from './app-types'
 
@@ -4618,51 +4619,40 @@ const strictE2eePolicyEnabled = computed(() => Boolean(
 ))
 
 function recordFriendRequestRate(fromUserId: string, now = Date.now()): FriendRequestRateRecord {
-  const activeRecords = friendRequestRateRecords.value.filter((record) =>
-    now - record.first_seen_at <= FRIEND_REQUEST_LONG_RATE_WINDOW_MS || record.from_user_id === fromUserId,
+  const result = recordFriendRequestRateInUtils(
+    friendRequestRateRecords.value,
+    fromUserId,
+    { shortWindowMs: FRIEND_REQUEST_RATE_WINDOW_MS, longWindowMs: FRIEND_REQUEST_LONG_RATE_WINDOW_MS, longLimit: FRIEND_REQUEST_LONG_RATE_LIMIT },
+    now,
   )
-  friendRequestRateRecords.value = activeRecords
-  let record = friendRequestRateRecords.value.find((item) => item.from_user_id === fromUserId)
-  if (!record || now - record.first_seen_at > FRIEND_REQUEST_LONG_RATE_WINDOW_MS) {
-    record = { from_user_id: fromUserId, first_seen_at: now, last_seen_at: now, count: 0 }
-    friendRequestRateRecords.value.push(record)
-  }
-  record.count += 1
-  record.last_seen_at = now
-  return record
+  friendRequestRateRecords.value = result.records
+  return result.record
 }
 
 function friendRequestQuarantineReason(info: Pick<FriendRequestItem, 'from_user_id' | 'request_id' | 'created_at'>, recordLongRate: boolean, now = Date.now()): string | undefined {
-  const recentSameSourceCount = friendRequests.value.filter((req) =>
-    req.from_user_id === info.from_user_id &&
-    req.request_id !== info.request_id &&
-    now - req.created_at <= FRIEND_REQUEST_RATE_WINDOW_MS,
-  ).length
-  if (recentSameSourceCount >= 1) {
-    const windowMinutes = Math.round(FRIEND_REQUEST_RATE_WINDOW_MS / 60_000)
-    return `同一来源 ${windowMinutes} 分钟内已有 ${recentSameSourceCount} 条未处理请求`
-  }
-  if (!recordLongRate) return undefined
-  const rateRecord = recordFriendRequestRate(info.from_user_id, now)
-  if (rateRecord.count > FRIEND_REQUEST_LONG_RATE_LIMIT) {
-    const windowHours = Math.round(FRIEND_REQUEST_LONG_RATE_WINDOW_MS / 60 / 60 / 1000)
-    return `同一来源 ${windowHours} 小时内已有 ${rateRecord.count} 条请求`
-  }
-  return undefined
+  const result = calculateFriendRequestQuarantineReason(
+    friendRequests.value,
+    info,
+    friendRequestRateRecords.value,
+    recordLongRate,
+    { shortWindowMs: FRIEND_REQUEST_RATE_WINDOW_MS, longWindowMs: FRIEND_REQUEST_LONG_RATE_WINDOW_MS, longLimit: FRIEND_REQUEST_LONG_RATE_LIMIT },
+    now,
+  )
+  friendRequestRateRecords.value = result.records
+  return result.reason
 }
 
 function upsertFriendRequestWithLocalRateLimit(item: FriendRequestItem, now = Date.now()) {
-  const index = friendRequests.value.findIndex((req) => req.request_id === item.request_id)
-  const existing = index >= 0 ? friendRequests.value[index] : undefined
-  const quarantineReason = friendRequestQuarantineReason(item, index < 0, now)
-  const next: FriendRequestItem = {
-    ...item,
-    quarantined: existing?.quarantined || Boolean(quarantineReason),
-    quarantine_reason: existing?.quarantine_reason || quarantineReason,
-  }
-  if (index >= 0) friendRequests.value[index] = next
-  else friendRequests.value.unshift(next)
-  return next
+  const result = upsertFriendRequestInUtils(
+    friendRequests.value,
+    item,
+    friendRequestRateRecords.value,
+    { shortWindowMs: FRIEND_REQUEST_RATE_WINDOW_MS, longWindowMs: FRIEND_REQUEST_LONG_RATE_WINDOW_MS, longLimit: FRIEND_REQUEST_LONG_RATE_LIMIT },
+    now,
+  )
+  friendRequests.value = result.requests
+  friendRequestRateRecords.value = result.records
+  return result.item
 }
 
 async function showQr(value: string, label: string) {
