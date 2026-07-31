@@ -9574,7 +9574,7 @@ async function runMailboxLongPoll() {
     mailboxLongPollRunning = false
     if (shouldMailboxLongPoll()) {
       const delay = mailboxLongPollFailures > 0
-        ? Math.min(30_000, 1_000 * 2 ** Math.min(mailboxLongPollFailures, 5))
+        ? Math.min(10_000, 1_000 * 2 ** Math.min(mailboxLongPollFailures, 4))
         : 50
       mailboxLongPollTimer = window.setTimeout(() => {
         mailboxLongPollTimer = undefined
