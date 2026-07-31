@@ -13,6 +13,7 @@ import { activeContactSealedSlotRiskFor, contactActiveDeviceIds, contactAllKnown
 import { mailboxDedupeIds, mailboxEventSummaryText, mailboxFailureCategory, mailboxFailureDisplayText, mailboxFailureRecoveryHint } from './mailbox-utils'
 import { isLoopbackNodeUrl, nodeEntriesFromControlUrl, nodeEntryLine, nodeTokenForUrl, nodeUrlListFromEntries, type NodeEntry } from './node-utils'
 import { createPersistenceCodecs, normalizeProcessedMailboxRecords as normalizePersistedMailboxRecords } from './persistence-codecs'
+import { compareOutboxDeliveryOrder as compareOutboxItems, createOutboxItem as buildOutboxItem, isRetryableDeliveryError as isRetryableOutboxError, mailboxKindForOutboxKind as mailboxKindForOutbox, retryDelayMs as outboxRetryDelayMs } from './outbox-utils'
 import type { IdentityOutput, RestoreOutput, ReencryptIdentityBackupOutput, DeviceOutput, DeviceRevokeInfo, DeviceCertItem, ContactInfo, ContactItem, FilterLevel, FilterAction, SafetyPolicy, GroupInviteItem, FriendRequestItem, FriendRequestRateRecord, GroupItem, GroupSenderKeyItem, MessageStatus, ChatMessage, OutgoingMessageJob, PerDeviceEnvelopeV1, MessageReceiptSyncItem, RatchetSessionItem, PendingSecureSessionOfferItem, OutboxItem, OutboxSyncSummary, MailboxFailedItem, MailboxFailureCategory, ContactCardUpdateFanoutRecord, ContactCardDhtAutoRefreshRecord, ProcessedMailboxRecord, PersistedState, IdentityAndSecurityBackupState, PersistedMeta, SelfSyncPackage, SelfSyncRequestPackage, SelfSyncCachedPackage, SelfSyncRequestRecord, LocalIdentityRecord, EncryptedStringV1 } from './app-types'
 
 const LoginPage = defineAsyncComponent(() => import('./components/LoginPage.vue'))
@@ -3393,20 +3394,7 @@ async function pushMailboxPayload(to: ContactItem, kind: string, payload: string
 }
 
 function createOutboxItem(contact: ContactItem, payload: string, messageId?: string, kind: OutboxItem['kind'] = 'direct-envelope'): OutboxItem {
-  const now = Date.now()
-  return {
-    id: newId(),
-    peer_user_id: contact.user_id,
-    envelope_json: payload,
-    message_id: messageId,
-    kind,
-    status: 'queued',
-    created_at: now,
-    delivery_order: nextOutboxDeliveryOrder++,
-    retry_count: 0,
-    next_retry_at: now,
-    expires_at: now + 7 * 24 * 3600 * 1000,
-  }
+  return buildOutboxItem(contact, payload, newId, nextOutboxDeliveryOrder++, messageId, kind)
 }
 
 function queueOutboxItem(contact: ContactItem, payload: string, messageId?: string, kind: OutboxItem['kind'] = 'direct-envelope'): OutboxItem {
@@ -3429,13 +3417,7 @@ function queueOutboxItem(contact: ContactItem, payload: string, messageId?: stri
 }
 
 function mailboxKindForOutboxKind(kind: OutboxItem['kind']): string {
-  if (kind === 'group-fanout') return 'group-fanout'
-  if (kind === 'delivery-receipt') return 'delivery-receipt'
-  if (kind === 'read-receipt') return 'read-receipt'
-  if (kind === 'contact-update') return 'contact-update'
-  if (kind === 'file-package') return 'other'
-  if (kind === 'other') return 'other'
-  return 'direct-envelope'
+  return mailboxKindForOutbox(kind)
 }
 
 function readReceiptsEnabledFor(contact: ContactItem): boolean {
@@ -3662,33 +3644,20 @@ function resendAckForDuplicateMailboxMessage(message: any, deliveryId?: string):
 }
 
 function retryDelayMs(retryCount: number): number {
-  return [30_000, 2 * 60_000, 10 * 60_000, 60 * 60_000, 6 * 60 * 60_000][Math.min(retryCount, 4)]
+  return outboxRetryDelayMs(retryCount)
 }
 
 function isRetryableDeliveryError(errorText: string): boolean {
-  return errorText === '网络失败'
-    || errorText === '节点错误'
-    || errorText === '节点拒绝：请求过于频繁'
+  return isRetryableOutboxError(errorText)
 }
 
 function outboxDeliveryTimestamp(item: OutboxItem): number {
-  if (item.message_id) {
-    const message = messages.value.find((candidate) => candidate.id === item.message_id)
-    if (message?.created_at) return message.created_at
-  }
-  return item.created_at
+  const message = item.message_id ? messages.value.find((candidate) => candidate.id === item.message_id) : undefined
+  return message?.created_at || item.created_at
 }
 
 function compareOutboxDeliveryOrder(left: OutboxItem, right: OutboxItem): number {
-  if (left.delivery_order !== undefined && right.delivery_order !== undefined) {
-    const deliveryOrderDelta = left.delivery_order - right.delivery_order
-    if (deliveryOrderDelta !== 0) return deliveryOrderDelta
-  }
-  const timestampDelta = outboxDeliveryTimestamp(left) - outboxDeliveryTimestamp(right)
-  if (timestampDelta !== 0) return timestampDelta
-  const createdAtDelta = left.created_at - right.created_at
-  if (createdAtDelta !== 0) return createdAtDelta
-  return left.id.localeCompare(right.id)
+  return compareOutboxItems(left, right, new Map(messages.value.map((message) => [message.id, message])))
 }
 
 function compareConversationMessageOrder(left: ChatMessage, right: ChatMessage): number {
