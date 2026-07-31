@@ -12,6 +12,7 @@ import { ensureUiTextSize, formatBytes, newId, randomBase64Url, safeJson, utf8By
 import { activeContactSealedSlotRiskFor, contactActiveDeviceIds, contactAllKnownDevicesRevoked, contactCardDeviceCerts, contactKnownRevokedDeviceCount, contactRevokedDeviceCount, contactRevokedDeviceDetails, contactRevokedDeviceIds, contactSealedSlotStatusText, mergeContactCard } from './contact-utils'
 import { mailboxDedupeIds, mailboxEventSummaryText, mailboxFailureCategory, mailboxFailureDisplayText, mailboxFailureRecoveryHint } from './mailbox-utils'
 import { isLoopbackNodeUrl, nodeEntriesFromControlUrl, nodeEntryLine, nodeTokenForUrl, nodeUrlListFromEntries, type NodeEntry } from './node-utils'
+import { createPersistenceCodecs, normalizeProcessedMailboxRecords as normalizePersistedMailboxRecords } from './persistence-codecs'
 import type { IdentityOutput, RestoreOutput, ReencryptIdentityBackupOutput, DeviceOutput, DeviceRevokeInfo, DeviceCertItem, ContactInfo, ContactItem, FilterLevel, FilterAction, SafetyPolicy, GroupInviteItem, FriendRequestItem, FriendRequestRateRecord, GroupItem, GroupSenderKeyItem, MessageStatus, ChatMessage, OutgoingMessageJob, PerDeviceEnvelopeV1, MessageReceiptSyncItem, RatchetSessionItem, PendingSecureSessionOfferItem, OutboxItem, OutboxSyncSummary, MailboxFailedItem, MailboxFailureCategory, ContactCardUpdateFanoutRecord, ContactCardDhtAutoRefreshRecord, ProcessedMailboxRecord, PersistedState, IdentityAndSecurityBackupState, PersistedMeta, SelfSyncPackage, SelfSyncRequestPackage, SelfSyncCachedPackage, SelfSyncRequestRecord, LocalIdentityRecord, EncryptedStringV1 } from './app-types'
 
 const LoginPage = defineAsyncComponent(() => import('./components/LoginPage.vue'))
@@ -1451,182 +1452,31 @@ async function decryptLocalString(value: unknown, keyId: string | null): Promise
   throw new Error('本地存储解密 Worker 返回无效结果')
 }
 
-async function encryptContactForStore(contact: ContactItem, key: string | null): Promise<any> {
-  return {
-    ...contact,
-    display_name: contact.display_name ? await encryptLocalString(contact.display_name, key) : contact.display_name,
-    contact_card_text: await encryptLocalString(contact.contact_card_text, key),
-    block_reason: contact.block_reason ? await encryptLocalString(contact.block_reason, key) : contact.block_reason,
-    avatar_data_url: contact.avatar_data_url ? await encryptLocalString(contact.avatar_data_url, key) : contact.avatar_data_url,
-  }
-}
+const {
+  encryptContact: encryptContactForStore,
+  decryptContact: decryptContactFromStore,
+  encryptGroup: encryptGroupForStore,
+  decryptGroup: decryptGroupFromStore,
+  encryptMessage: encryptMessageForStore,
+  decryptMessage: decryptMessageFromStore,
+  encryptOutbox: encryptOutboxForStore,
+  decryptOutbox: decryptOutboxFromStore,
+  encryptFriendRequest: encryptFriendRequestForStore,
+  decryptFriendRequest: decryptFriendRequestFromStore,
+  encryptGroupInvite: encryptGroupInviteForStore,
+  decryptGroupInvite: decryptGroupInviteFromStore,
+  encryptGroupSenderKey: encryptGroupSenderKeyForStore,
+  decryptGroupSenderKey: decryptGroupSenderKeyFromStore,
+  encryptMailboxFailedItem: encryptMailboxFailedItemForStore,
+  decryptMailboxFailedItem: decryptMailboxFailedItemFromStore,
+  encryptRatchet: encryptRatchetForStore,
+  decryptRatchet: decryptRatchetFromStore,
+  encryptPendingSecureSessionOffer: encryptPendingSecureSessionOfferForStore,
+  decryptPendingSecureSessionOffer: decryptPendingSecureSessionOfferFromStore,
+} = createPersistenceCodecs({ encrypt: encryptLocalString, decrypt: decryptLocalString })
 
-async function decryptContactFromStore(contact: any, key: string | null): Promise<ContactItem> {
-  return {
-    ...contact,
-    state: contact.state ?? 'LocalOnly',
-    display_name: contact.display_name ? await decryptLocalString(contact.display_name, key) : contact.display_name,
-    contact_card_text: await decryptLocalString(contact.contact_card_text, key),
-    block_reason: contact.block_reason ? await decryptLocalString(contact.block_reason, key) : contact.block_reason,
-    avatar_data_url: contact.avatar_data_url ? await decryptLocalString(contact.avatar_data_url, key) : contact.avatar_data_url,
-  }
-}
-
-async function encryptGroupForStore(group: GroupItem, key: string | null): Promise<any> {
-  return {
-    ...group,
-    name: await encryptLocalString(group.name, key),
-    policy_state_json: group.policy_state_json ? await encryptLocalString(group.policy_state_json, key) : group.policy_state_json,
-  }
-}
-
-async function decryptGroupFromStore(group: any, key: string | null): Promise<GroupItem> {
-  return {
-    ...group,
-    sequence: group.sequence ?? 0,
-    admin_user_ids: group.admin_user_ids ?? [],
-    name: await decryptLocalString(group.name, key),
-    policy_state_json: group.policy_state_json ? await decryptLocalString(group.policy_state_json, key) : group.policy_state_json,
-  }
-}
-
-async function encryptMessageForStore(message: ChatMessage, key: string | null): Promise<any> {
-  return {
-    ...message,
-    text: await encryptLocalString(message.text, key),
-    envelope_json: message.envelope_json ? await encryptLocalString(message.envelope_json, key) : message.envelope_json,
-  }
-}
-
-async function decryptMessageFromStore(message: any, key: string | null): Promise<ChatMessage> {
-  return {
-    ...message,
-    status: message.status ?? (message.direction === 'in' ? 'received' : 'queued'),
-    text: await decryptLocalString(message.text, key),
-    envelope_json: message.envelope_json ? await decryptLocalString(message.envelope_json, key) : message.envelope_json,
-  }
-}
-
-async function encryptOutboxForStore(item: OutboxItem, key: string | null): Promise<any> {
-  return { ...item, envelope_json: await encryptLocalString(item.envelope_json, key) }
-}
-
-async function decryptOutboxFromStore(item: any, key: string | null): Promise<OutboxItem> {
-  return { ...item, status: item.status ?? 'queued', retry_count: item.retry_count ?? 0, envelope_json: await decryptLocalString(item.envelope_json, key) }
-}
-
-async function encryptFriendRequestForStore(item: FriendRequestItem, key: string | null): Promise<any> {
-  return {
-    ...item,
-    note: item.note ? await encryptLocalString(item.note, key) : item.note,
-    request_text: await encryptLocalString(item.request_text, key),
-    from_contact_card_text: await encryptLocalString(item.from_contact_card_text, key),
-    quarantine_reason: item.quarantine_reason ? await encryptLocalString(item.quarantine_reason, key) : item.quarantine_reason,
-  }
-}
-
-async function decryptFriendRequestFromStore(item: any, key: string | null): Promise<FriendRequestItem> {
-  return {
-    ...item,
-    note: item.note ? await decryptLocalString(item.note, key) : item.note,
-    request_text: await decryptLocalString(item.request_text, key),
-    from_contact_card_text: await decryptLocalString(item.from_contact_card_text, key),
-    quarantine_reason: item.quarantine_reason ? await decryptLocalString(item.quarantine_reason, key) : item.quarantine_reason,
-  }
-}
-
-async function encryptGroupInviteForStore(item: GroupInviteItem, key: string | null): Promise<any> {
-  return {
-    ...item,
-    group_name: await encryptLocalString(item.group_name, key),
-    invite_text: await encryptLocalString(item.invite_text, key),
-  }
-}
-
-async function decryptGroupInviteFromStore(item: any, key: string | null): Promise<GroupInviteItem> {
-  return {
-    ...item,
-    group_name: await decryptLocalString(item.group_name, key),
-    invite_text: await decryptLocalString(item.invite_text, key),
-  }
-}
-
-async function encryptGroupSenderKeyForStore(item: GroupSenderKeyItem, key: string | null): Promise<any> {
-  return {
-    ...item,
-    state_json: await encryptLocalString(item.state_json, key),
-    distribution_text: item.distribution_text ? await encryptLocalString(item.distribution_text, key) : item.distribution_text,
-  }
-}
-
-async function decryptGroupSenderKeyFromStore(item: any, key: string | null): Promise<GroupSenderKeyItem> {
-  return {
-    ...item,
-    state_json: await decryptLocalString(item.state_json, key),
-    distribution_text: item.distribution_text ? await decryptLocalString(item.distribution_text, key) : item.distribution_text,
-  }
-}
-
-async function encryptMailboxFailedItemForStore(item: MailboxFailedItem, key: string | null): Promise<any> {
-  return {
-    ...item,
-    message: await encryptLocalString(JSON.stringify(item.message ?? null), key),
-    reason: await encryptLocalString(item.reason, key),
-  }
-}
-
-async function decryptMailboxFailedItemFromStore(item: any, key: string | null): Promise<MailboxFailedItem> {
-  const messageText = await decryptLocalString(item.message, key)
-  let message: any = null
-  try { message = messageText ? JSON.parse(messageText) : null } catch { message = item.message }
-  return {
-    ...item,
-    message,
-    reason: await decryptLocalString(item.reason, key),
-    retry_count: item.retry_count ?? 0,
-  }
-}
-
-function normalizeProcessedMailboxRecords(records: Array<string | ProcessedMailboxRecord> | undefined): ProcessedMailboxRecord[] {
-  const now = Date.now()
-  const seen = new Set<string>()
-  const normalized: ProcessedMailboxRecord[] = []
-  for (const record of records ?? []) {
-    const id = typeof record === 'string' ? record : record.id
-    if (!id || seen.has(id)) continue
-    const processedAt = typeof record === 'string' ? now : record.processed_at || now
-    if (now - processedAt > MAILBOX_DEDUPE_RETENTION_MS) continue
-    seen.add(id)
-    normalized.push({ id, processed_at: processedAt })
-  }
-  return normalized
-    .sort((a, b) => b.processed_at - a.processed_at)
-    .slice(0, MAILBOX_DEDUPE_MAX_RECORDS)
-}
-
-async function encryptRatchetForStore(item: RatchetSessionItem, key: string | null): Promise<any> {
-  return { ...item, state_text: await encryptLocalString(item.state_text, key) }
-}
-
-async function decryptRatchetFromStore(item: any, key: string | null): Promise<RatchetSessionItem> {
-  return { ...item, state_text: await decryptLocalString(item.state_text, key) }
-}
-
-async function encryptPendingSecureSessionOfferForStore(item: PendingSecureSessionOfferItem, key: string | null): Promise<any> {
-  return {
-    ...item,
-    prekey_private_bundle_json: await encryptLocalString(item.prekey_private_bundle_json, key),
-    ratchet_dh_private_key: await encryptLocalString(item.ratchet_dh_private_key, key),
-  }
-}
-
-async function decryptPendingSecureSessionOfferFromStore(item: any, key: string | null): Promise<PendingSecureSessionOfferItem> {
-  return {
-    ...item,
-    prekey_private_bundle_json: await decryptLocalString(item.prekey_private_bundle_json, key),
-    ratchet_dh_private_key: await decryptLocalString(item.ratchet_dh_private_key, key),
-  }
-}
+const normalizeProcessedMailboxRecords = (records: Array<string | ProcessedMailboxRecord> | undefined) =>
+  normalizePersistedMailboxRecords(records, Date.now(), MAILBOX_DEDUPE_RETENTION_MS, MAILBOX_DEDUPE_MAX_RECORDS)
 
 async function decryptSensitiveStateInMemory() {
   const key = await localStorageCryptoKey()
