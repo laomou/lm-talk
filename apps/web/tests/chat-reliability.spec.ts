@@ -116,6 +116,12 @@ async function takeMailbox(page: Page) {
   })
 }
 
+async function expectMessagesOnce(messageList: ReturnType<Page['getByRole']>, texts: string[]) {
+  for (const text of texts) {
+    await expect(messageList.getByText(text, { exact: true })).toHaveCount(1, { timeout: 45_000 })
+  }
+}
+
 async function openSyncSettings(page: Page) {
   await openMe(page)
   await page.getByText('同步与安全', { exact: true }).click()
@@ -1012,20 +1018,11 @@ test('双向并发消息在短暂断网恢复后保持 Ratchet 顺序与回执�
     await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(0)
 
     await openOnlyContactConversation(alice)
-    await expect(alice.getByRole('log', { name: '消息列表' }).locator('.bubble.in .text')).toHaveText(
-      bobTexts,
-      { timeout: 45_000 },
-    )
-    for (const text of bobTexts) {
-      await expect(alice.getByRole('log', { name: '消息列表' }).getByText(text, { exact: true })).toHaveCount(1)
-    }
+    await expectMessagesOnce(alice.getByRole('log', { name: '消息列表' }), bobTexts)
 
     await openOnlyContactConversation(bob)
     const bobMessages = bob.getByRole('log', { name: '消息列表' })
-    await expect(bobMessages.locator('.bubble.in .text')).toHaveText(aliceTexts, { timeout: 45_000 })
-    for (const text of aliceTexts) {
-      await expect(bobMessages.getByText(text, { exact: true })).toHaveCount(1)
-    }
+    await expectMessagesOnce(bobMessages, aliceTexts)
     await expect(bob.locator('.conversation-badge')).toHaveCount(0)
 
     await openOnlyContactConversation(alice)
