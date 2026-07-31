@@ -15,6 +15,7 @@ import { isAbortError, mailboxFailedItemId, processMailboxBatch, summarizeMailbo
 import { isLoopbackNodeUrl, nodeEntriesFromControlUrl, nodeEntryLine, nodeTokenForUrl, nodeUrlListFromEntries, type NodeEntry } from './node-utils'
 import { createPersistenceCodecs, normalizeProcessedMailboxRecords as normalizePersistedMailboxRecords } from './persistence-codecs'
 import { createOutboxItem as buildOutboxItem, dueOutboxItems, isRetryableDeliveryError as isRetryableOutboxError, mailboxKindForOutboxKind as mailboxKindForOutbox, retryDelayMs as outboxRetryDelayMs } from './outbox-utils'
+import { KeyedTaskQueue, ratchetSessionFor as findRatchetSession, removeRatchetSession as withoutRatchetSession, saveRatchetSession as withRatchetSession } from './ratchet-runtime'
 import type { IdentityOutput, RestoreOutput, ReencryptIdentityBackupOutput, DeviceOutput, DeviceRevokeInfo, DeviceCertItem, ContactInfo, ContactItem, FilterLevel, FilterAction, SafetyPolicy, GroupInviteItem, FriendRequestItem, FriendRequestRateRecord, GroupItem, GroupSenderKeyItem, MessageStatus, ChatMessage, OutgoingMessageJob, PerDeviceEnvelopeV1, MessageReceiptSyncItem, RatchetSessionItem, PendingSecureSessionOfferItem, OutboxItem, OutboxSyncSummary, MailboxFailedItem, MailboxFailureCategory, ContactCardUpdateFanoutRecord, ContactCardDhtAutoRefreshRecord, ProcessedMailboxRecord, PersistedState, IdentityAndSecurityBackupState, PersistedMeta, SelfSyncPackage, SelfSyncRequestPackage, SelfSyncCachedPackage, SelfSyncRequestRecord, LocalIdentityRecord, EncryptedStringV1 } from './app-types'
 
 const LoginPage = defineAsyncComponent(() => import('./components/LoginPage.vue'))
@@ -5763,19 +5764,18 @@ async function recreateActiveRatchetSession() {
 
 
 function ratchetSessionFor(userId: string): RatchetSessionItem | null {
-  return ratchetSessions.value.find((r) => r.peer_user_id === userId) ?? null
+  return findRatchetSession(ratchetSessions.value, userId)
 }
 
 function saveRatchetSession(userId: string, stateText: string) {
-  const item: RatchetSessionItem = { peer_user_id: userId, state_text: stateText, updated_at: Date.now() }
-  const index = ratchetSessions.value.findIndex((r) => r.peer_user_id === userId)
-  if (index >= 0) ratchetSessions.value[index] = item
-  else ratchetSessions.value.push(item)
+  ratchetSessions.value = withRatchetSession(ratchetSessions.value, userId, stateText)
 }
 
 function removeRatchetSession(userId: string) {
-  ratchetSessions.value = ratchetSessions.value.filter((r) => r.peer_user_id !== userId)
+  ratchetSessions.value = withoutRatchetSession(ratchetSessions.value, userId)
   pendingSecureSessionOffers.value = pendingSecureSessionOffers.value.filter((item) => item.peer_user_id !== userId)
+  ratchetEncryptQueue.clear(userId)
+  ratchetDecryptQueue.clear(userId)
 }
 
 function pendingSecureSessionOfferFor(peerUserId: string, offerId?: string): PendingSecureSessionOfferItem | null {
@@ -5810,7 +5810,7 @@ type RatchetEncryptWorkerResponse = WorkerRpcResponse & {
   envelope_json?: string
 }
 
-const ratchetEncryptChains = new Map<string, Promise<unknown>>()
+const ratchetEncryptQueue = new KeyedTaskQueue()
 
 const ratchetEncryptRpc = new WorkerRpcClient<
   { stateText: string; conversationId: string; text: string },
@@ -5826,24 +5826,14 @@ async function encryptRatchetEnvelopeInWorker(stateText: string, conversationId:
 }
 
 function encryptRatchetEnvelopeForContact(contact: ContactItem, conversationId: string, text: string): Promise<string> {
-  const previous = ratchetEncryptChains.get(contact.user_id) ?? Promise.resolve()
-  const task = previous
-    .catch(() => undefined)
-    .then(async () => {
-      const session = ratchetSessionFor(contact.user_id)
-      if (!session) throw new Error('Ratchet 会话不存在')
-      const out = await encryptRatchetEnvelopeInWorker(session.state_text, conversationId, text)
-      saveRatchetSession(contact.user_id, out.stateText)
-      appendLog(`🔐 使用 Double Ratchet 加密给 ${contact.display_name || contact.user_id}`)
-      return out.envelopeJson
-    })
-  ratchetEncryptChains.set(contact.user_id, task)
-  void task.then(() => {
-    if (ratchetEncryptChains.get(contact.user_id) === task) ratchetEncryptChains.delete(contact.user_id)
-  }, () => {
-    if (ratchetEncryptChains.get(contact.user_id) === task) ratchetEncryptChains.delete(contact.user_id)
+  return ratchetEncryptQueue.run(contact.user_id, async () => {
+    const session = ratchetSessionFor(contact.user_id)
+    if (!session) throw new Error('Ratchet 会话不存在')
+    const out = await encryptRatchetEnvelopeInWorker(session.state_text, conversationId, text)
+    saveRatchetSession(contact.user_id, out.stateText)
+    appendLog(`🔐 使用 Double Ratchet 加密给 ${contact.display_name || contact.user_id}`)
+    return out.envelopeJson
   })
-  return task
 }
 
 type LegacyEnvelopeCryptoWorkerResponse = WorkerRpcResponse & {
@@ -5898,7 +5888,7 @@ type RatchetCryptoWorkerResponse = WorkerRpcResponse & {
   plain_json?: string
 }
 
-const ratchetDecryptChains = new Map<string, Promise<unknown>>()
+const ratchetDecryptQueue = new KeyedTaskQueue()
 
 const ratchetCryptoRpc = new WorkerRpcClient<
   { stateText: string; envelopeText: string },
@@ -5914,27 +5904,17 @@ async function decryptRatchetEnvelopeInWorker(stateText: string, envelopeText: s
 }
 
 function decryptRatchetEnvelopeForContact(sender: ContactItem, envelopeText: string): Promise<any> {
-  const previous = ratchetDecryptChains.get(sender.user_id) ?? Promise.resolve()
-  const task = previous
-    .catch(() => undefined)
-    .then(async () => {
-      const session = ratchetSessionFor(sender.user_id)
-      if (!session) {
-        recoverSecureSessionForContact(sender)
-        throw new Error('收到加密消息，但本地安全会话尚未建立；正在自动恢复，请稍后请对方重发这条消息')
-      }
-      const out = await decryptRatchetEnvelopeInWorker(session.state_text, envelopeText)
-      saveRatchetSession(sender.user_id, out.stateText)
-      appendLog(`🔓 已用 Double Ratchet 解密 ${sender.display_name || sender.user_id}`)
-      return safeJson<any>(out.plainJson)
+  return ratchetDecryptQueue.run(sender.user_id, async () => {
+    const session = ratchetSessionFor(sender.user_id)
+    if (!session) {
+      recoverSecureSessionForContact(sender)
+      throw new Error('收到加密消息，但本地安全会话尚未建立；正在自动恢复，请稍后请对方重发这条消息')
+    }
+    const out = await decryptRatchetEnvelopeInWorker(session.state_text, envelopeText)
+    saveRatchetSession(sender.user_id, out.stateText)
+    appendLog(`🔓 已用 Double Ratchet 解密 ${sender.display_name || sender.user_id}`)
+    return safeJson<any>(out.plainJson)
   })
-  ratchetDecryptChains.set(sender.user_id, task)
-  void task.then(() => {
-    if (ratchetDecryptChains.get(sender.user_id) === task) ratchetDecryptChains.delete(sender.user_id)
-  }, () => {
-    if (ratchetDecryptChains.get(sender.user_id) === task) ratchetDecryptChains.delete(sender.user_id)
-  })
-  return task
 }
 
 async function decryptEnvelopeForContact(envelopeText: string, sender: ContactItem): Promise<any> {
