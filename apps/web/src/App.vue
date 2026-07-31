@@ -9,6 +9,7 @@ import { TABLES, idbDel, idbGet, idbSet, idbTableApplyChanges, idbTableClear, id
 import { WorkerRpcClient, type WorkerRpcResponse } from './workers/WorkerRpcClient'
 import { CONTACT_CARD_DHT_FRESH_MS, CONTACT_CARD_UPDATE_ACK_STALE_MS, DHT_OPERATION_HISTORY_IMPORT_MAX_RECORDS, DHT_OPERATION_HISTORY_ITEM_MAX_CHARS, DHT_OPERATION_HISTORY_MAX_RECORDS, FILE_BASE64_CHUNK_BYTES, FRIEND_REQUEST_LONG_RATE_LIMIT, FRIEND_REQUEST_LONG_RATE_WINDOW_MS, FRIEND_REQUEST_RATE_LIMIT, FRIEND_REQUEST_RATE_WINDOW_MS, GROUP_EVENT_PAYLOAD_PREFIX, GROUP_SENDER_KEY_PAYLOAD_PREFIX, LOCAL_IDENTITIES_KEY, MAILBOX_DEDUPE_MAX_RECORDS, MAILBOX_DEDUPE_RETENTION_MS, MAILBOX_HINT_BACKGROUND_REFRESH_DELAY_MS, MAILBOX_LONG_POLL_TIMEOUT_MS, MAILBOX_LONG_POLL_WAIT_SECONDS, MAX_CONTACT_CARD_BYTES, MAX_FILE_BYTES, MAX_OUTBOX_RETRY_COUNT, MAX_PROFILE_AVATAR_BYTES, MAX_RTC_TEXT_BYTES, MAX_SIGNAL_BYTES, MAX_TEXT_MESSAGE_BYTES, NODE_FETCH_TIMEOUT_MS, PERSIST_DEBOUNCE_MS, PROFILE_AVATAR_DIMENSION, SECURE_SESSION_RECOVERY_COOLDOWN_MS } from './app-constants'
 import { ensureUiTextSize, formatBytes, newId, randomBase64Url, safeJson, utf8Bytes } from './app-utils'
+import { filePreviewKind, isDangerousFileName, readFileWithProgress as readAttachmentFileWithProgress, releaseAttachmentDownloads as releaseAttachmentDownloadUrls, type AttachmentDownload } from './attachment-utils'
 import { activeContactSealedSlotRiskFor, contactActiveDeviceIds, contactAllKnownDevicesRevoked, contactCardDeviceCerts, contactKnownRevokedDeviceCount, contactRevokedDeviceCount, contactRevokedDeviceDetails, contactRevokedDeviceIds, contactSealedSlotStatusText, mergeContactCard } from './contact-utils'
 import { acknowledgeContactCardUpdate, contactCardUpdateRecordIsStale as isContactCardUpdateRecordStale, normalizeContactCardUpdateFanoutRecords, rememberContactCardUpdateFanout as rememberContactCardUpdate } from './contact-card-sync-utils'
 import { mailboxDedupeIds, mailboxEventSummaryText, mailboxFailureCategory, mailboxFailureDisplayText, mailboxFailureRecoveryHint } from './mailbox-utils'
@@ -378,20 +379,10 @@ const storageEstimateText = ref('尚未估算')
 const webVersionText = `Version ${__APP_VERSION__} (${__BUILD_REF__})`
 const selectedFile = ref<File | null>(null)
 const filePackageText = ref('')
-type AttachmentDownload = { url: string; name: string; mime: string; meta: string; preview_kind: string }
 const attachmentDownloads = ref<Record<string, AttachmentDownload>>({})
 
 function releaseAttachmentDownloads(messageIds: Iterable<string>) {
-  const ids = new Set(messageIds)
-  if (ids.size === 0) return
-  const next = { ...attachmentDownloads.value }
-  for (const id of ids) {
-    const download = next[id]
-    if (!download) continue
-    URL.revokeObjectURL(download.url)
-    delete next[id]
-  }
-  attachmentDownloads.value = next
+  attachmentDownloads.value = releaseAttachmentDownloadUrls(attachmentDownloads.value, messageIds)
 }
 
 function releaseAllAttachmentDownloads() {
@@ -2318,10 +2309,6 @@ function exportIdentityAndSecurityBackupInWorker(backupText: string, passphrase:
 
 function importIdentityAndSecurityBackupInWorker(backupText: string, passphrase: string, dataBackupText: string): Promise<string> {
   return runBackupCryptoWorker({ type: 'import', backupText, passphrase, dataBackupText })
-}
-
-function isDangerousFileName(name: string): boolean {
-  return /\.(exe|bat|cmd|com|scr|ps1|vbs|js|jar|msi|apk|dmg|pkg|sh)$/i.test(name)
 }
 
 async function refreshStorageEstimate() {
@@ -9704,18 +9691,6 @@ async function inspectFilePackageInWorker<T = any>(filePackageText: string): Pro
   return JSON.parse(response.value) as T
 }
 
-function filePreviewKind(name: string, mime: string): string {
-  const lower = name.toLowerCase()
-  if (mime.startsWith('image/')) return '图片预览'
-  if (mime.startsWith('audio/')) return '音频文件'
-  if (mime.startsWith('video/')) return '视频文件'
-  if (mime === 'application/pdf' || lower.endsWith('.pdf')) return 'PDF 文档'
-  if (/(\.docx?|\.xlsx?|\.pptx?)$/.test(lower)) return 'Office 文档'
-  if (/(\.zip|\.7z|\.rar|\.tar|\.gz)$/.test(lower)) return '压缩包'
-  if (mime.startsWith('text/') || /\.(txt|md|csv|log)$/.test(lower)) return '文本文件'
-  return '普通附件'
-}
-
 function onFileSelected(event: Event) {
   const input = event.target as HTMLInputElement
   selectedFile.value = input.files?.[0] ?? null
@@ -9743,31 +9718,15 @@ function clearSelectedFileDraft(keepProgress = false) {
 }
 
 async function readFileWithProgress(file: File): Promise<Uint8Array> {
-  if (!file.stream) {
-    fileProgressText.value = '读取中'
-    return new Uint8Array(await file.arrayBuffer())
-  }
-  const reader = file.stream().getReader()
-  const chunks: Uint8Array[] = []
-  let loaded = 0
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    if (value) {
-      chunks.push(value)
-      loaded += value.byteLength
-      const percent = file.size > 0 ? Math.min(100, Math.round((loaded / file.size) * 100)) : 100
-      fileProgressText.value = `读取 ${formatBytes(loaded)} / ${formatBytes(file.size)} (${percent}%)`
-    }
-  }
-  const out = new Uint8Array(loaded)
-  let offset = 0
-  for (const chunk of chunks) {
-    out.set(chunk, offset)
-    offset += chunk.byteLength
-    if (offset < loaded && offset % FILE_BASE64_CHUNK_BYTES === 0) await yieldToBrowser()
-  }
-  return out
+  return readAttachmentFileWithProgress(file, {
+    mergeYieldBytes: FILE_BASE64_CHUNK_BYTES,
+    yieldToBrowser,
+    onProgress: (loaded, total, percent) => {
+      fileProgressText.value = loaded > 0
+        ? `读取 ${formatBytes(loaded)} / ${formatBytes(total)} (${percent}%)`
+        : '读取中'
+    },
+  })
 }
 
 async function createFilePackageForActive(): Promise<boolean> {
