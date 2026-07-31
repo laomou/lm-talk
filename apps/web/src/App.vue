@@ -15,6 +15,7 @@ import { acknowledgeContactCardUpdate, contactCardUpdateRecordIsStale as isConta
 import { mailboxDedupeIds, mailboxEventSummaryText, mailboxFailureCategory, mailboxFailureDisplayText, mailboxFailureRecoveryHint } from './mailbox-utils'
 import { isAbortError, mailboxFailedItemId, processMailboxBatch, summarizeMailboxFailures, unwrapMailboxDelivery, type MailboxEventKind, type MailboxTakeOptions } from './mailbox-runtime'
 import { isLoopbackNodeUrl, nodeEntriesFromControlUrl, nodeEntryLine, nodeTokenForUrl, nodeUrlListFromEntries, type NodeEntry } from './node-utils'
+import { fetchNodeJsonWithFallback, fetchNodeOnce as fetchSingleNode, NodeRequestError } from './node-api-client'
 import { createPersistenceCodecs, normalizeProcessedMailboxRecords as normalizePersistedMailboxRecords } from './persistence-codecs'
 import { createOutboxItem as buildOutboxItem, dueOutboxItems, isRetryableDeliveryError as isRetryableOutboxError, mailboxKindForOutboxKind as mailboxKindForOutbox, retryDelayMs as outboxRetryDelayMs } from './outbox-utils'
 import { friendRequestQuarantineReason as calculateFriendRequestQuarantineReason, recordFriendRequestRate as recordFriendRequestRateInUtils, upsertFriendRequest as upsertFriendRequestInUtils } from './friend-request-utils'
@@ -3112,22 +3113,6 @@ async function refreshOutgoingMailboxDeliveryStatusesFromNode() {
 }
 
 type NodeEntrySummary = { url: string; token_configured: boolean; missing_remote_token: boolean }
-class NodeRequestError extends Error {
-  status?: number
-  url?: string
-  errorCode?: string
-  recoveryHint?: string
-
-  constructor(message: string, status?: number, url?: string, errorCode?: string, recoveryHint?: string) {
-    super(message)
-    this.name = 'NodeRequestError'
-    this.status = status
-    this.url = url
-    this.errorCode = errorCode
-    this.recoveryHint = recoveryHint
-  }
-}
-
 function nodeEntries(): NodeEntry[] {
   return nodeEntriesFromControlUrl(nodeControlUrl.value)
 }
@@ -7800,71 +7785,34 @@ async function inspectMailboxMessageText() {
   })
 }
 
-function nodeControlEndpoint(path: string, baseUrl = primaryNodeUrl()): string {
-  if (!baseUrl) throw new Error('请先填写同步节点')
-  return `${baseUrl.replace(/\/$/, '')}${path}`
-}
-
 async function fetchNodeOnce(baseUrl: string, path: string, init?: RequestInit, timeoutMs = nodeFetchTimeoutMs()): Promise<any> {
-  const token = nodeTokenFor(baseUrl)
-  const endpoint = nodeControlEndpoint(path, baseUrl)
-  const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(new DOMException('同步服务请求超时', 'AbortError')), timeoutMs)
-  let res: Response
-  try {
-    res = await fetch(endpoint, {
-      ...init,
-      signal: init?.signal ?? controller.signal,
-      headers: {
-        'content-type': 'application/json',
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-        ...(init?.headers ?? {}),
-      },
-    })
-  } catch (e) {
-    if (init?.signal?.aborted) throw e
-    throw new NodeRequestError(userFacingError(e), undefined, baseUrl)
-  } finally {
-    window.clearTimeout(timeout)
-  }
-  const text = await res.text()
-  let body: any = text
-  try { body = text ? JSON.parse(text) : {} } catch {}
-  if (!res.ok) {
-    if (body && typeof body === 'object' && !Array.isArray(body)) {
-      throw new NodeRequestError(
-        String(body.message ?? JSON.stringify(body)),
-        res.status,
-        baseUrl,
-        typeof body.error_code === 'string' ? body.error_code : undefined,
-        typeof body.recovery_hint === 'string' ? body.recovery_hint : undefined,
-      )
-    }
-    throw new NodeRequestError(typeof body === 'string' ? body : JSON.stringify(body), res.status, baseUrl)
-  }
-  return body
+  return fetchSingleNode({
+    baseUrl,
+    path,
+    token: nodeTokenFor(baseUrl),
+    init,
+    timeoutMs,
+  })
 }
 
 async function nodeFetchJson(path: string, init?: RequestInit, timeoutMs?: number): Promise<any> {
   const entries = nodeEntries()
-  if (entries.length === 0) throw new Error('请先填写同步节点')
-  const errors: string[] = []
-  for (const entry of entries) {
-    try {
-      const body = await fetchNodeOnce(entry.url, path, init, timeoutMs)
-      // 把可用节点移到最前，保留其令牌
+  return fetchNodeJsonWithFallback({
+    entries,
+    path,
+    init,
+    timeoutMs: timeoutMs ?? nodeFetchTimeoutMs(),
+    tokenFor: nodeTokenFor,
+    formatError: userFacingError,
+    isAbortError,
+    onSuccess: (entry) => {
       const current = nodeEntries()
       if (current[0]?.url !== entry.url) {
         nodeControlUrl.value = [entry, ...current.filter((e) => e.url !== entry.url)].map(nodeEntryLine).join('\n')
         persist()
       }
-      return body
-    } catch (e) {
-      if (init?.signal?.aborted || isAbortError(e)) throw e
-      errors.push(`${entry.url}: ${userFacingError(e)}`)
-    }
-  }
-  throw new Error(`所有同步服务都不可用：${errors.join('；')}`)
+    },
+  })
 }
 
 function normalizeNodePeerHealth(status: any): Array<{ url: string; consecutive_failures: number; failures: number; quarantined: boolean; last_error?: string }> {
