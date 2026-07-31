@@ -72,3 +72,15 @@ export function compareOutboxDeliveryOrder(
   if (createdAtDelta !== 0) return createdAtDelta
   return left.id.localeCompare(right.id)
 }
+
+export function dueOutboxItems(
+  outbox: readonly OutboxItem[],
+  messages: readonly ChatMessage[],
+  now = Date.now(),
+): OutboxItem[] {
+  const messagesById = new Map(messages.map((message) => [message.id, message]))
+  return outbox
+    .filter((item) => item.status === 'queued' && (item.next_retry_at ?? item.created_at) <= now)
+    .slice()
+    .sort((left, right) => compareOutboxDeliveryOrder(left, right, messagesById))
+}

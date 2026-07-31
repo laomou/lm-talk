@@ -13,7 +13,7 @@ import { activeContactSealedSlotRiskFor, contactActiveDeviceIds, contactAllKnown
 import { mailboxDedupeIds, mailboxEventSummaryText, mailboxFailureCategory, mailboxFailureDisplayText, mailboxFailureRecoveryHint } from './mailbox-utils'
 import { isLoopbackNodeUrl, nodeEntriesFromControlUrl, nodeEntryLine, nodeTokenForUrl, nodeUrlListFromEntries, type NodeEntry } from './node-utils'
 import { createPersistenceCodecs, normalizeProcessedMailboxRecords as normalizePersistedMailboxRecords } from './persistence-codecs'
-import { compareOutboxDeliveryOrder as compareOutboxItems, createOutboxItem as buildOutboxItem, isRetryableDeliveryError as isRetryableOutboxError, mailboxKindForOutboxKind as mailboxKindForOutbox, retryDelayMs as outboxRetryDelayMs } from './outbox-utils'
+import { createOutboxItem as buildOutboxItem, dueOutboxItems, isRetryableDeliveryError as isRetryableOutboxError, mailboxKindForOutboxKind as mailboxKindForOutbox, retryDelayMs as outboxRetryDelayMs } from './outbox-utils'
 import type { IdentityOutput, RestoreOutput, ReencryptIdentityBackupOutput, DeviceOutput, DeviceRevokeInfo, DeviceCertItem, ContactInfo, ContactItem, FilterLevel, FilterAction, SafetyPolicy, GroupInviteItem, FriendRequestItem, FriendRequestRateRecord, GroupItem, GroupSenderKeyItem, MessageStatus, ChatMessage, OutgoingMessageJob, PerDeviceEnvelopeV1, MessageReceiptSyncItem, RatchetSessionItem, PendingSecureSessionOfferItem, OutboxItem, OutboxSyncSummary, MailboxFailedItem, MailboxFailureCategory, ContactCardUpdateFanoutRecord, ContactCardDhtAutoRefreshRecord, ProcessedMailboxRecord, PersistedState, IdentityAndSecurityBackupState, PersistedMeta, SelfSyncPackage, SelfSyncRequestPackage, SelfSyncCachedPackage, SelfSyncRequestRecord, LocalIdentityRecord, EncryptedStringV1 } from './app-types'
 
 const LoginPage = defineAsyncComponent(() => import('./components/LoginPage.vue'))
@@ -3651,15 +3651,6 @@ function isRetryableDeliveryError(errorText: string): boolean {
   return isRetryableOutboxError(errorText)
 }
 
-function outboxDeliveryTimestamp(item: OutboxItem): number {
-  const message = item.message_id ? messages.value.find((candidate) => candidate.id === item.message_id) : undefined
-  return message?.created_at || item.created_at
-}
-
-function compareOutboxDeliveryOrder(left: OutboxItem, right: OutboxItem): number {
-  return compareOutboxItems(left, right, new Map(messages.value.map((message) => [message.id, message])))
-}
-
 function compareConversationMessageOrder(left: ChatMessage, right: ChatMessage): number {
   return Number(left.created_at || 0) - Number(right.created_at || 0) || left.id.localeCompare(right.id)
 }
@@ -6957,9 +6948,7 @@ async function retryDueOutboxNow() {
   // IndexedDB reads table rows by key, not by insertion order. Retrying a
   // restored batch in that order can feed Ratchet envelopes out of sequence.
   // Preserve the original message creation order before redelivering.
-  const dueItems = outbox.value
-    .filter((item) => item.status === 'queued' && (item.next_retry_at ?? item.created_at) <= now)
-    .sort(compareOutboxDeliveryOrder)
+  const dueItems = dueOutboxItems(outbox.value, messages.value, now)
   for (const item of dueItems) {
     attempted += 1
     await retryOutboxItem(item)

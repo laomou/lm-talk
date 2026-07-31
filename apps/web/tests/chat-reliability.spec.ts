@@ -470,7 +470,7 @@ test('会话内搜索命中旧消息时会自动展开历史窗口并定位', as
     const firstSearchResult = alice.locator('.search-message-result').filter({ hasText: '历史窗口消息 1' }).first()
     await expect(firstSearchResult).toBeVisible({ timeout: 45_000 })
     await firstSearchResult.click()
-    await expect(alice.getByRole('log', { name: '消息列表' }).getByText(/历史窗口消息 1/))
+    await expect(alice.getByRole('log', { name: '消息列表' }).getByText('历史窗口消息 1', { exact: true }))
       .toBeVisible({ timeout: 45_000 })
   } finally {
     await aliceContext.close()
