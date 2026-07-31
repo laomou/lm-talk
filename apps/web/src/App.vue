@@ -11,6 +11,7 @@ import { CONTACT_CARD_DHT_FRESH_MS, CONTACT_CARD_UPDATE_ACK_STALE_MS, DHT_OPERAT
 import { ensureUiTextSize, formatBytes, newId, randomBase64Url, safeJson, utf8Bytes } from './app-utils'
 import { activeContactSealedSlotRiskFor, contactActiveDeviceIds, contactAllKnownDevicesRevoked, contactCardDeviceCerts, contactKnownRevokedDeviceCount, contactRevokedDeviceCount, contactRevokedDeviceDetails, contactRevokedDeviceIds, contactSealedSlotStatusText, mergeContactCard } from './contact-utils'
 import { mailboxDedupeIds, mailboxEventSummaryText, mailboxFailureCategory, mailboxFailureDisplayText, mailboxFailureRecoveryHint } from './mailbox-utils'
+import { isAbortError, mailboxFailedItemId, processMailboxBatch, summarizeMailboxFailures, unwrapMailboxDelivery, type MailboxEventKind, type MailboxTakeOptions } from './mailbox-runtime'
 import { isLoopbackNodeUrl, nodeEntriesFromControlUrl, nodeEntryLine, nodeTokenForUrl, nodeUrlListFromEntries, type NodeEntry } from './node-utils'
 import { createPersistenceCodecs, normalizeProcessedMailboxRecords as normalizePersistedMailboxRecords } from './persistence-codecs'
 import { createOutboxItem as buildOutboxItem, dueOutboxItems, isRetryableDeliveryError as isRetryableOutboxError, mailboxKindForOutboxKind as mailboxKindForOutbox, retryDelayMs as outboxRetryDelayMs } from './outbox-utils'
@@ -9083,15 +9084,6 @@ async function contactInfoFromCardText(cardText: string): Promise<ContactInfo | 
 }
 
 
-function unwrapMailboxDelivery(item: any): { deliveryId?: string; message: any } {
-  if (item && typeof item === 'object' && item.message) {
-    return { deliveryId: String(item.delivery_id ?? ''), message: item.message }
-  }
-  return { message: item }
-}
-
-type MailboxEventKind = 'message' | 'file' | 'friend-request' | 'friend-response' | 'group-invite' | 'delivery-ack' | 'read-receipt' | 'device-revoke' | 'contact-update' | 'secure-session' | 'data-backup' | 'self-sync' | 'other'
-
 async function handleMailboxPayload(item: any): Promise<{ handled: boolean; deliveryId?: string; event?: MailboxEventKind; reason?: string }> {
   const { deliveryId, message } = unwrapMailboxDelivery(item)
   const kind = typeof message.kind === 'string' ? message.kind : ''
@@ -9295,10 +9287,6 @@ function hasProcessedMailboxId(id: string): boolean {
   return hasProcessedMailboxIds([id])
 }
 
-function mailboxFailedItemId(deliveryId: string, messageId: string): string {
-  return deliveryId || messageId || `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
 function rememberFailedMailboxItem(item: any, reason: string) {
   const { deliveryId, message } = unwrapMailboxDelivery(item)
   const messageId = String(message?.message_id ?? '')
@@ -9346,73 +9334,44 @@ function clearFailedMailboxItems() {
   persist()
 }
 
-function summarizeMailboxFailures(reasons: string[]): string {
-  if (reasons.length === 0) return ''
-  const counts = new Map<string, number>()
-  for (const reason of reasons) {
-    const key = mailboxFailureDisplayText(reason)
-    counts.set(key, (counts.get(key) ?? 0) + 1)
-  }
-  return [...counts.entries()].map(([reason, count]) => `${reason} ${count}`).join('，')
-}
-
 function yieldToBrowser(): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, 0))
 }
 
 async function processMailboxMessages(messagesFromNode: any[]): Promise<string[]> {
-  let handled = 0
-  let duplicate = 0
-  let duplicateAckResent = 0
-  let failed = 0
-  const failureReasons: string[] = []
-  const events: MailboxEventKind[] = []
-  const ackIds: string[] = []
-  let nextYieldAt = performance.now() + 8
-  for (const [index, item] of messagesFromNode.entries()) {
-    const { deliveryId, message } = unwrapMailboxDelivery(item)
-    const messageId = String(message?.message_id ?? '')
-    // The same encrypted envelope can be accepted by lm_node while the sender
-    // loses the HTTP response, then be retried inside a new MailboxMessage
-    // wrapper. A delivery id or outer mailbox message id alone cannot identify
-    // that replay; use the signed direct-envelope protocol id as well.
-    const ciphertext = String(message?.ciphertext ?? '')
-    const protocolMessageId = protocolMessageIdFromDeliveryPayload(ciphertext)
-    const profileUpdateId = profileUpdateIdFromDeliveryPayload(ciphertext)
-    const dedupeIds = mailboxDedupeIds(deliveryId, messageId, protocolMessageId, profileUpdateId)
-    if (hasProcessedMailboxIds(dedupeIds)) {
-      duplicate += 1
-      if (resendAckForDuplicateMailboxMessage(message, deliveryId)) duplicateAckResent += 1
-      if (deliveryId) ackIds.push(deliveryId)
-      rememberProcessedMailboxIds(dedupeIds)
-      continue
-    }
-    const result = await handleMailboxPayload(item)
-    if (result.handled) {
-      handled += 1
-      if (result.event) events.push(result.event)
-      if (deliveryId) ackIds.push(deliveryId)
-      rememberProcessedMailboxIds(dedupeIds)
-    } else {
-      failed += 1
-      if (result.reason) failureReasons.push(result.reason)
-      if (result.reason) rememberFailedMailboxItem(item, result.reason)
-    }
-    if (index < messagesFromNode.length - 1 && performance.now() >= nextYieldAt) {
-      await yieldToBrowser()
-      nextYieldAt = performance.now() + 8
-    }
-  }
-  mailboxInboxStatus.value = `收到 ${messagesFromNode.length}，已处理 ${handled}，重复 ${duplicate}${duplicateAckResent ? `，补发回执 ${duplicateAckResent}` : ''}，失败 ${failed}`
-  mailboxInboxErrorText.value = failureReasons.slice(0, 3).join('\n')
-  mailboxFailureSummaryText.value = summarizeMailboxFailures(failureReasons)
+  const result = await processMailboxBatch(messagesFromNode, {
+    dedupeIdsFor: (item) => {
+      const { deliveryId, message } = unwrapMailboxDelivery(item)
+      const messageId = String(message?.message_id ?? '')
+      // A retry can get a new outer mailbox id after the sender loses the
+      // response, so include signed protocol ids in the local dedupe key.
+      const ciphertext = String(message?.ciphertext ?? '')
+      return mailboxDedupeIds(
+        deliveryId,
+        messageId,
+        protocolMessageIdFromDeliveryPayload(ciphertext),
+        profileUpdateIdFromDeliveryPayload(ciphertext),
+      )
+    },
+    isProcessed: hasProcessedMailboxIds,
+    resendDuplicateAck: (item) => {
+      const { deliveryId, message } = unwrapMailboxDelivery(item)
+      return resendAckForDuplicateMailboxMessage(message, deliveryId)
+    },
+    rememberProcessed: rememberProcessedMailboxIds,
+    handle: handleMailboxPayload,
+    rememberFailure: rememberFailedMailboxItem,
+  })
+  mailboxInboxStatus.value = `收到 ${messagesFromNode.length}，已处理 ${result.handled}，重复 ${result.duplicate}${result.duplicateAckResent ? `，补发回执 ${result.duplicateAckResent}` : ''}，失败 ${result.failed}`
+  mailboxInboxErrorText.value = result.failureReasons.slice(0, 3).join('\n')
+  mailboxFailureSummaryText.value = summarizeMailboxFailures(result.failureReasons)
   appendLog(`mailbox 自动处理完成：${mailboxInboxStatus.value}`)
   persist()
   // Do not acknowledge mailbox deliveries until the decrypted state (including
   // unread markers and Ratchet state) is durable. Otherwise a refresh after
   // the server ack can permanently lose the last item from a received batch.
   await flushPendingPersistenceNow()
-  return ackIds
+  return result.ackIds
 }
 
 async function retryFailedMailboxItemsNow() {
@@ -9597,12 +9556,6 @@ async function processMailboxTakeInfoText() {
   })
 }
 
-type MailboxTakeOptions = {
-  waitSeconds?: number
-  signal?: AbortSignal
-  quietEmpty?: boolean
-}
-
 function shouldMailboxLongPoll(): boolean {
   return loggedIn.value
     && nodeEnabled.value
@@ -9610,11 +9563,6 @@ function shouldMailboxLongPoll(): boolean {
     && navigator.onLine
     && document.visibilityState === 'visible'
     && Boolean(identity.value?.user_id)
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'AbortError'
-    || normalizeErrorText(error).includes('AbortError')
 }
 
 function stopMailboxLongPoll() {
