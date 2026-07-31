@@ -7,6 +7,7 @@ import UiActionGroup from './components/UiActionGroup.vue'
 import { applyPwaUpdate, onPwaUpdateReady, readPwaStatus } from './pwa'
 import { TABLES, idbDel, idbGet, idbSet, idbTableApplyChanges, idbTableClear, idbTableGet, idbTableGetAllByPrefix, idbTableReplaceByPrefix } from './idb'
 import { WorkerRpcClient, type WorkerRpcResponse } from './workers/WorkerRpcClient'
+import { installTestHooks } from './test-hooks'
 import { CONTACT_CARD_DHT_FRESH_MS, CONTACT_CARD_UPDATE_ACK_STALE_MS, DHT_OPERATION_HISTORY_IMPORT_MAX_RECORDS, DHT_OPERATION_HISTORY_ITEM_MAX_CHARS, DHT_OPERATION_HISTORY_MAX_RECORDS, FILE_BASE64_CHUNK_BYTES, FRIEND_REQUEST_LONG_RATE_LIMIT, FRIEND_REQUEST_LONG_RATE_WINDOW_MS, FRIEND_REQUEST_RATE_LIMIT, FRIEND_REQUEST_RATE_WINDOW_MS, GROUP_EVENT_PAYLOAD_PREFIX, GROUP_SENDER_KEY_PAYLOAD_PREFIX, LOCAL_IDENTITIES_KEY, MAILBOX_DEDUPE_MAX_RECORDS, MAILBOX_DEDUPE_RETENTION_MS, MAILBOX_HINT_BACKGROUND_REFRESH_DELAY_MS, MAILBOX_LONG_POLL_TIMEOUT_MS, MAILBOX_LONG_POLL_WAIT_SECONDS, MAX_CONTACT_CARD_BYTES, MAX_FILE_BYTES, MAX_OUTBOX_RETRY_COUNT, MAX_PROFILE_AVATAR_BYTES, MAX_RTC_TEXT_BYTES, MAX_SIGNAL_BYTES, MAX_TEXT_MESSAGE_BYTES, NODE_FETCH_TIMEOUT_MS, PERSIST_DEBOUNCE_MS, PROFILE_AVATAR_DIMENSION, SECURE_SESSION_RECOVERY_COOLDOWN_MS } from './app-constants'
 import { ensureUiTextSize, formatBytes, newId, randomBase64Url, safeJson, utf8Bytes } from './app-utils'
 import { filePreviewKind, isDangerousFileName, readFileWithProgress as readAttachmentFileWithProgress, releaseAttachmentDownloads as releaseAttachmentDownloadUrls, type AttachmentDownload } from './attachment-utils'
@@ -1860,27 +1861,27 @@ async function flushPendingPersistenceNow() {
   }
 }
 
-if (typeof window !== 'undefined') {
-  ;(window as any).flushPersistForTests = flushPendingPersistenceNow
-  ;(window as any).appendLogForTests = appendLog
-  ;(window as any).setDhtDiagnosticsForTests = (status: string, history: string[] = []) => {
+installTestHooks({
+  flushPersist: flushPendingPersistenceNow,
+  appendLog,
+  setDhtDiagnostics: (status: string, history: string[] = []) => {
     nodeDhtFindValueStatusText.value = status
     nodeDhtOperationHistory.value = history
     persist()
-  }
-  ;(window as any).getPersistMetricsForTests = () => ({
+  },
+  getPersistMetrics: () => ({
     flushes: persistFlushCount,
     pending: persistPending,
     running: persistRunning,
-  })
-  ;(window as any).mergeMessagesForTests = mergeMessagesForState
-  ;(window as any).resetRtcForTests = resetRtc
-  ;(window as any).mergeContactDeviceAndTrustStateForTests = mergeContactDeviceAndTrustState
-  ;(window as any).contactAllKnownDevicesRevokedForTests = contactAllKnownDevicesRevoked
-  ;(window as any).takeMailboxForTests = takeMailboxFromNodeNow
-  ;(window as any).seedFriendContactsForTests = seedFriendContactsForTests
-  ;(window as any).openFirstContactConversationForTests = openFirstContactConversationForTests
-}
+  }),
+  mergeMessages: mergeMessagesForState,
+  resetRtc,
+  mergeContactDeviceAndTrustState,
+  contactAllKnownDevicesRevoked,
+  takeMailbox: takeMailboxFromNodeNow,
+  seedFriendContacts: seedFriendContactsForTests,
+  openFirstContactConversation: openFirstContactConversationForTests,
+})
 
 async function writeStateToTables(state: PersistedState, options: { preserveConversationData?: boolean } = {}) {
   resetPersistSnapshots()
