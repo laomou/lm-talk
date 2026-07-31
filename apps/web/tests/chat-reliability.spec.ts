@@ -974,6 +974,10 @@ test('双向并发消息在短暂断网恢复后保持 Ratchet 顺序与回执�
     const aliceTexts = ['Alice 并发第一条', '⚡', 'Alice 并发第三条']
     const bobTexts = ['Bob 并发第一条', '🛰️', 'Bob 并发第三条']
     const aliceMessages = alice.getByRole('log', { name: '消息列表' })
+    // Open Bob's conversation before starting the concurrent senders.  Doing
+    // this inside Promise.all races the navigation with mailbox delivery and
+    // can leave the helper retrying on the wrong page in CI.
+    await openOnlyContactConversation(bob)
     await Promise.all([
       (async () => {
         for (const text of aliceTexts) {
@@ -983,7 +987,6 @@ test('双向并发消息在短暂断网恢复后保持 Ratchet 顺序与回执�
         }
       })(),
       (async () => {
-        await openOnlyContactConversation(bob)
         for (const text of bobTexts) {
           await bob.getByLabel('输入消息').fill(text)
           await bob.getByRole('button', { name: '发送' }).click()
