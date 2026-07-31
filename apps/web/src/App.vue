@@ -10,6 +10,7 @@ import { WorkerRpcClient, type WorkerRpcResponse } from './workers/WorkerRpcClie
 import { CONTACT_CARD_DHT_FRESH_MS, CONTACT_CARD_UPDATE_ACK_STALE_MS, DHT_OPERATION_HISTORY_IMPORT_MAX_RECORDS, DHT_OPERATION_HISTORY_ITEM_MAX_CHARS, DHT_OPERATION_HISTORY_MAX_RECORDS, FILE_BASE64_CHUNK_BYTES, FRIEND_REQUEST_LONG_RATE_LIMIT, FRIEND_REQUEST_LONG_RATE_WINDOW_MS, FRIEND_REQUEST_RATE_LIMIT, FRIEND_REQUEST_RATE_WINDOW_MS, GROUP_EVENT_PAYLOAD_PREFIX, GROUP_SENDER_KEY_PAYLOAD_PREFIX, LOCAL_IDENTITIES_KEY, MAILBOX_DEDUPE_MAX_RECORDS, MAILBOX_DEDUPE_RETENTION_MS, MAILBOX_HINT_BACKGROUND_REFRESH_DELAY_MS, MAILBOX_LONG_POLL_TIMEOUT_MS, MAILBOX_LONG_POLL_WAIT_SECONDS, MAX_CONTACT_CARD_BYTES, MAX_FILE_BYTES, MAX_OUTBOX_RETRY_COUNT, MAX_PROFILE_AVATAR_BYTES, MAX_RTC_TEXT_BYTES, MAX_SIGNAL_BYTES, MAX_TEXT_MESSAGE_BYTES, NODE_FETCH_TIMEOUT_MS, PERSIST_DEBOUNCE_MS, PROFILE_AVATAR_DIMENSION, SECURE_SESSION_RECOVERY_COOLDOWN_MS } from './app-constants'
 import { ensureUiTextSize, formatBytes, newId, randomBase64Url, safeJson, utf8Bytes } from './app-utils'
 import { activeContactSealedSlotRiskFor, contactActiveDeviceIds, contactAllKnownDevicesRevoked, contactCardDeviceCerts, contactKnownRevokedDeviceCount, contactRevokedDeviceCount, contactRevokedDeviceDetails, contactRevokedDeviceIds, contactSealedSlotStatusText, mergeContactCard } from './contact-utils'
+import { acknowledgeContactCardUpdate, contactCardUpdateRecordIsStale as isContactCardUpdateRecordStale, normalizeContactCardUpdateFanoutRecords, rememberContactCardUpdateFanout as rememberContactCardUpdate } from './contact-card-sync-utils'
 import { mailboxDedupeIds, mailboxEventSummaryText, mailboxFailureCategory, mailboxFailureDisplayText, mailboxFailureRecoveryHint } from './mailbox-utils'
 import { isAbortError, mailboxFailedItemId, processMailboxBatch, summarizeMailboxFailures, unwrapMailboxDelivery, type MailboxEventKind, type MailboxTakeOptions } from './mailbox-runtime'
 import { isLoopbackNodeUrl, nodeEntriesFromControlUrl, nodeEntryLine, nodeTokenForUrl, nodeUrlListFromEntries, type NodeEntry } from './node-utils'
@@ -3484,15 +3485,8 @@ function conversationIdFromEnvelope(envelope: string): string | undefined {
 
 
 
-function normalizeContactCardUpdateFanoutRecords(records: ContactCardUpdateFanoutRecord[]): ContactCardUpdateFanoutRecord[] {
-  return (records ?? [])
-    .filter((record) => record?.peer_user_id && record?.update_id && record?.sent_at)
-    .sort((a, b) => Number(b.sent_at ?? 0) - Number(a.sent_at ?? 0))
-    .slice(0, 100)
-}
-
 function contactCardUpdateRecordIsStale(record: ContactCardUpdateFanoutRecord, now = Date.now()): boolean {
-  return record.status !== 'acked' && now - Number(record.last_retry_at || record.sent_at || 0) >= CONTACT_CARD_UPDATE_ACK_STALE_MS
+  return isContactCardUpdateRecordStale(record, CONTACT_CARD_UPDATE_ACK_STALE_MS, now)
 }
 
 function contactCardUpdateId(cardText: string): string {
@@ -3548,20 +3542,18 @@ async function currentProfileAvatarUpdatePackage(): Promise<ProfileAvatarUpdateP
 }
 
 function rememberContactCardUpdateFanout(peerUserId: string, updateId: string, status: 'sent' | 'queued') {
-  const existing = contactCardUpdateFanoutRecords.value.find((item) => item.peer_user_id === peerUserId && item.update_id === updateId)
-  if (existing) {
-    existing.status = existing.status === 'acked' ? 'acked' : status
-    existing.sent_at = Date.now()
-  } else {
-    contactCardUpdateFanoutRecords.value = normalizeContactCardUpdateFanoutRecords([{ peer_user_id: peerUserId, update_id: updateId, status, sent_at: Date.now(), retry_count: 0 }, ...contactCardUpdateFanoutRecords.value])
-  }
+  contactCardUpdateFanoutRecords.value = rememberContactCardUpdate(
+    contactCardUpdateFanoutRecords.value,
+    peerUserId,
+    updateId,
+    status,
+  )
 }
 
 function markContactCardUpdateAck(updateId: string, fromUserId: string): boolean {
-  const record = contactCardUpdateFanoutRecords.value.find((item) => item.peer_user_id === fromUserId && item.update_id === updateId)
-  if (!record) return false
-  record.status = 'acked'
-  record.acked_at = record.acked_at || Date.now()
+  const result = acknowledgeContactCardUpdate(contactCardUpdateFanoutRecords.value, fromUserId, updateId)
+  if (!result.acknowledged) return false
+  contactCardUpdateFanoutRecords.value = result.records
   appendLog(`✅ 联系人设备证书更新已被 ${fromUserId} 确认合并`)
   persist()
   return true
