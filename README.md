@@ -1,5 +1,7 @@
 # LM Talk
 
+[中文](README_zh.md)
+
 A decentralized, end-to-end encrypted instant messaging app. No phone number or email required — your identity is entirely in your hands.
 
 ## Features
