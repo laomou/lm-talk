@@ -53,11 +53,21 @@ async function copyOwnCard(page: Page): Promise<string> {
 async function openOnlyContactConversation(page: Page) {
   const rows = page.locator('.directory-row.contact-row')
   const chatRows = page.locator('.conversation-list .contact')
+  const openWithTestHook = async () => {
+    await page.evaluate(async () => {
+      await (window as typeof window & { openFirstContactConversationForTests?: () => Promise<void> })
+        .openFirstContactConversationForTests?.()
+    }).catch(() => undefined)
+    return page.getByLabel('输入消息').isVisible().catch(() => false)
+  }
+  if (await openWithTestHook()) return
   const openedFromContacts = await expect.poll(async () => {
+    if (await openWithTestHook()) return true
     await page.getByRole('button', { name: '打开通讯录' }).click().catch(() => undefined)
     let count = await rows.count()
     if (count === 0) {
       await takeMailbox(page).catch(() => undefined)
+      if (await openWithTestHook()) return true
       await page.getByRole('button', { name: '打开通讯录' }).click().catch(() => undefined)
       count = await rows.count()
     }
@@ -75,16 +85,9 @@ async function openOnlyContactConversation(page: Page) {
     return
   }
   await expect.poll(async () => {
-    await page.evaluate(async () => {
-      try {
-        await (window as typeof window & { openFirstContactConversationForTests?: () => Promise<void> }).openFirstContactConversationForTests?.()
-      } catch {
-        await (window as typeof window & { takeMailboxForTests?: () => Promise<void> }).takeMailboxForTests?.().catch(() => undefined)
-      }
-    })
-    if (await page.getByLabel('输入消息').isVisible().catch(() => false)) return true
+    if (await openWithTestHook()) return true
     await takeMailbox(page).catch(() => undefined)
-    return page.getByLabel('输入消息').isVisible().catch(() => false)
+    return openWithTestHook()
   }, { timeout: 90_000 }).toBeTruthy()
   await expect(page).toHaveURL(/#\/chat\//, { timeout: 15_000 })
   await expect(page.getByLabel('输入消息')).toBeVisible({ timeout: 15_000 })
@@ -111,6 +114,12 @@ async function takeMailbox(page: Page) {
   await page.evaluate(async () => {
     await (window as typeof window & { takeMailboxForTests?: () => Promise<void> }).takeMailboxForTests?.()
   })
+}
+
+async function expectMessagesOnce(messageList: ReturnType<Page['getByRole']>, texts: string[]) {
+  for (const text of texts) {
+    await expect(messageList.getByText(text, { exact: true })).toHaveCount(1, { timeout: 45_000 })
+  }
 }
 
 async function openSyncSettings(page: Page) {
@@ -974,6 +983,10 @@ test('双向并发消息在短暂断网恢复后保持 Ratchet 顺序与回执�
     const aliceTexts = ['Alice 并发第一条', '⚡', 'Alice 并发第三条']
     const bobTexts = ['Bob 并发第一条', '🛰️', 'Bob 并发第三条']
     const aliceMessages = alice.getByRole('log', { name: '消息列表' })
+    // Open Bob's conversation before starting the concurrent senders.  Doing
+    // this inside Promise.all races the navigation with mailbox delivery and
+    // can leave the helper retrying on the wrong page in CI.
+    await openOnlyContactConversation(bob)
     await Promise.all([
       (async () => {
         for (const text of aliceTexts) {
@@ -983,7 +996,6 @@ test('双向并发消息在短暂断网恢复后保持 Ratchet 顺序与回执�
         }
       })(),
       (async () => {
-        await openOnlyContactConversation(bob)
         for (const text of bobTexts) {
           await bob.getByLabel('输入消息').fill(text)
           await bob.getByRole('button', { name: '发送' }).click()
@@ -1006,20 +1018,11 @@ test('双向并发消息在短暂断网恢复后保持 Ratchet 顺序与回执�
     await expect.poll(() => mailboxDeliveryTotal(bob, bobUserId), { timeout: 45_000 }).toBe(0)
 
     await openOnlyContactConversation(alice)
-    await expect(alice.getByRole('log', { name: '消息列表' }).locator('.bubble.in .text')).toHaveText(
-      bobTexts,
-      { timeout: 45_000 },
-    )
-    for (const text of bobTexts) {
-      await expect(alice.getByRole('log', { name: '消息列表' }).getByText(text, { exact: true })).toHaveCount(1)
-    }
+    await expectMessagesOnce(alice.getByRole('log', { name: '消息列表' }), bobTexts)
 
     await openOnlyContactConversation(bob)
     const bobMessages = bob.getByRole('log', { name: '消息列表' })
-    await expect(bobMessages.locator('.bubble.in .text')).toHaveText(aliceTexts, { timeout: 45_000 })
-    for (const text of aliceTexts) {
-      await expect(bobMessages.getByText(text, { exact: true })).toHaveCount(1)
-    }
+    await expectMessagesOnce(bobMessages, aliceTexts)
     await expect(bob.locator('.conversation-badge')).toHaveCount(0)
 
     await openOnlyContactConversation(alice)
