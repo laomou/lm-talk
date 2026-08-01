@@ -8,6 +8,7 @@ import { applyPwaUpdate, onPwaUpdateReady, readPwaStatus } from './pwa'
 import { TABLES, idbDel, idbGet, idbSet, idbTableApplyChanges, idbTableClear, idbTableGet, idbTableGetAllByPrefix, idbTableReplaceByPrefix } from './idb'
 import { WorkerRpcClient, type WorkerRpcResponse } from './workers/WorkerRpcClient'
 import { installTestHooks } from './test-hooks'
+import { compareConversationMessageOrder, mergeMessagesForState, mergeMessageStateInto, mergeUniqueBy } from './message-state-utils'
 import { CONTACT_CARD_DHT_FRESH_MS, CONTACT_CARD_UPDATE_ACK_STALE_MS, DHT_OPERATION_HISTORY_IMPORT_MAX_RECORDS, DHT_OPERATION_HISTORY_ITEM_MAX_CHARS, DHT_OPERATION_HISTORY_MAX_RECORDS, FILE_BASE64_CHUNK_BYTES, FRIEND_REQUEST_LONG_RATE_LIMIT, FRIEND_REQUEST_LONG_RATE_WINDOW_MS, FRIEND_REQUEST_RATE_LIMIT, FRIEND_REQUEST_RATE_WINDOW_MS, GROUP_EVENT_PAYLOAD_PREFIX, GROUP_SENDER_KEY_PAYLOAD_PREFIX, LOCAL_IDENTITIES_KEY, MAILBOX_DEDUPE_MAX_RECORDS, MAILBOX_DEDUPE_RETENTION_MS, MAILBOX_HINT_BACKGROUND_REFRESH_DELAY_MS, MAILBOX_LONG_POLL_TIMEOUT_MS, MAILBOX_LONG_POLL_WAIT_SECONDS, MAX_CONTACT_CARD_BYTES, MAX_FILE_BYTES, MAX_OUTBOX_RETRY_COUNT, MAX_PROFILE_AVATAR_BYTES, MAX_RTC_TEXT_BYTES, MAX_SIGNAL_BYTES, MAX_TEXT_MESSAGE_BYTES, NODE_FETCH_TIMEOUT_MS, PERSIST_DEBOUNCE_MS, PROFILE_AVATAR_DIMENSION, SECURE_SESSION_RECOVERY_COOLDOWN_MS } from './app-constants'
 import { ensureUiTextSize, formatBytes, newId, randomBase64Url, safeJson, utf8Bytes } from './app-utils'
 import { filePreviewKind, isDangerousFileName, readFileWithProgress as readAttachmentFileWithProgress, releaseAttachmentDownloads as releaseAttachmentDownloadUrls, type AttachmentDownload } from './attachment-utils'
@@ -2779,83 +2780,6 @@ async function importFullDataBackup() {
   }
 }
 
-function mergeUniqueBy<T>(current: T[], incoming: T[], keyOf: (item: T) => string | undefined): { items: T[]; added: number; skipped: number } {
-  const seen = new Set(current.map(keyOf).filter(Boolean) as string[])
-  const items = [...current]
-  let added = 0
-  let skipped = 0
-  for (const item of incoming) {
-    const key = keyOf(item)
-    if (!key) { skipped += 1; continue }
-    if (seen.has(key)) { skipped += 1; continue }
-    seen.add(key)
-    items.push(item)
-    added += 1
-  }
-  return { items, added, skipped }
-}
-
-
-function messageStateRank(message: ChatMessage): number {
-  if (message.status === 'read' || message.read_at) return 5
-  if (message.status === 'delivered' || message.delivered_at) return 4
-  if (message.status === 'mailbox') return 3
-  if (message.status === 'sent') return 2
-  if (message.status === 'failed') return 1
-  return 0
-}
-
-function messageMergeKey(message: ChatMessage): string | undefined {
-  if (message.protocol_message_id && message.peer_user_id) return `protocol:${message.peer_user_id}:${message.protocol_message_id}`
-  if (message.id) return `id:${message.id}`
-  return undefined
-}
-
-function mergeMessageStateInto(target: ChatMessage, incoming: ChatMessage): boolean {
-  let changed = false
-  const targetRank = messageStateRank(target)
-  const incomingRank = messageStateRank(incoming)
-  if (incomingRank > targetRank) {
-    target.status = incoming.status
-    changed = true
-  }
-  if (!target.delivered_at && incoming.delivered_at) { target.delivered_at = incoming.delivered_at; changed = true }
-  if (!target.read_at && incoming.read_at) { target.read_at = incoming.read_at; changed = true }
-  if (!target.mailbox_delivery_id && incoming.mailbox_delivery_id) { target.mailbox_delivery_id = incoming.mailbox_delivery_id; changed = true }
-  if (!target.protocol_message_id && incoming.protocol_message_id) { target.protocol_message_id = incoming.protocol_message_id; changed = true }
-  if (target.read_at && target.status !== 'read') { target.status = 'read'; changed = true }
-  else if (target.delivered_at && messageStateRank(target) < 4) { target.status = 'delivered'; changed = true }
-  return changed
-}
-
-function mergeMessagesForState(current: ChatMessage[], incoming: ChatMessage[]): { items: ChatMessage[]; added: number; merged: number; skipped: number } {
-  const items = [...current]
-  const byKey = new Map<string, ChatMessage>()
-  for (const item of items) {
-    const key = messageMergeKey(item)
-    if (key) byKey.set(key, item)
-    if (item.id) byKey.set(`id:${item.id}`, item)
-  }
-  let added = 0
-  let merged = 0
-  let skipped = 0
-  for (const item of incoming) {
-    const key = messageMergeKey(item)
-    const existing = key ? byKey.get(key) : item.id ? byKey.get(`id:${item.id}`) : undefined
-    if (existing) {
-      if (mergeMessageStateInto(existing, item)) merged += 1
-      else skipped += 1
-      continue
-    }
-    if (!key && !item.id) { skipped += 1; continue }
-    items.push(item)
-    if (key) byKey.set(key, item)
-    if (item.id) byKey.set(`id:${item.id}`, item)
-    added += 1
-  }
-  return { items, added, merged, skipped }
-}
-
 function mergeContactDeviceAndTrustState(current: ContactItem[], incoming: ContactItem[]): ContactItem[] {
   const byId = new Map(incoming.map((contact) => [contact.user_id, contact]))
   return current.map((contact) => {
@@ -3617,10 +3541,6 @@ function retryDelayMs(retryCount: number): number {
 
 function isRetryableDeliveryError(errorText: string): boolean {
   return isRetryableOutboxError(errorText)
-}
-
-function compareConversationMessageOrder(left: ChatMessage, right: ChatMessage): number {
-  return Number(left.created_at || 0) - Number(right.created_at || 0) || left.id.localeCompare(right.id)
 }
 
 function classifyDeliveryError(e: unknown): string {
